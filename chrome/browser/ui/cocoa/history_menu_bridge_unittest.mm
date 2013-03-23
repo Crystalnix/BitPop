@@ -11,8 +11,9 @@
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/cancelable_request.h"
-#include "chrome/browser/sessions/tab_restore_service.h"
+#include "chrome/browser/common/cancelable_request.h"
+#include "chrome/browser/sessions/persistent_tab_restore_service.h"
+#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/history_menu_bridge.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -23,9 +24,9 @@
 
 namespace {
 
-class MockTRS : public TabRestoreService {
+class MockTRS : public PersistentTabRestoreService {
  public:
-  MockTRS(Profile* profile) : TabRestoreService(profile, NULL) {}
+  MockTRS(Profile* profile) : PersistentTabRestoreService(profile, NULL) {}
   MOCK_CONST_METHOD0(entries, const TabRestoreService::Entries&());
 };
 
@@ -90,12 +91,12 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     return item;
   }
 
-  MockTRS::Tab CreateSessionTab(const GURL& url, const string16& title) {
+  MockTRS::Tab CreateSessionTab(const std::string& url,
+                                const std::string& title) {
     MockTRS::Tab tab;
     tab.current_navigation_index = 0;
     tab.navigations.push_back(
-        TabNavigation(0, url, content::Referrer(), title, std::string(),
-                      content::PAGE_TRANSITION_LINK));
+        SessionTypesTestHelper::CreateNavigation(url, title));
     return tab;
   }
 
@@ -103,9 +104,10 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     bridge_->GetFaviconForHistoryItem(item);
   }
 
-  void GotFaviconData(FaviconService::Handle handle,
-                      history::FaviconData favicon) {
-    bridge_->GotFaviconData(handle, favicon);
+  void GotFaviconData(
+      HistoryMenuBridge::HistoryItem* item,
+      const history::FaviconImageResult& image_result) {
+    bridge_->GotFaviconData(item, image_result);
   }
 
   CancelableRequestConsumerTSimple<HistoryMenuBridge::HistoryItem*>&
@@ -212,13 +214,11 @@ TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabs) {
   scoped_ptr<MockTRS> trs(new MockTRS(profile()));
   MockTRS::Entries entries;
 
-  MockTRS::Tab tab1 = CreateSessionTab(GURL("http://google.com"),
-                                       ASCIIToUTF16("Google"));
+  MockTRS::Tab tab1 = CreateSessionTab("http://google.com", "Google");
   tab1.id = 24;
   entries.push_back(&tab1);
 
-  MockTRS::Tab tab2 = CreateSessionTab(GURL("http://apple.com"),
-                                       ASCIIToUTF16("Apple"));
+  MockTRS::Tab tab2 = CreateSessionTab("http://apple.com", "Apple");
   tab2.id = 42;
   entries.push_back(&tab2);
 
@@ -248,37 +248,29 @@ TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabsAndWindows) {
   scoped_ptr<MockTRS> trs(new MockTRS(profile()));
   MockTRS::Entries entries;
 
-  MockTRS::Tab tab1 = CreateSessionTab(GURL("http://google.com"),
-                                       ASCIIToUTF16("Google"));
+  MockTRS::Tab tab1 = CreateSessionTab("http://google.com", "Google");
   tab1.id = 24;
   entries.push_back(&tab1);
 
   MockTRS::Window win1;
   win1.id = 30;
-  win1.tabs.push_back(
-      CreateSessionTab(GURL("http://foo.com"), ASCIIToUTF16("foo")));
+  win1.tabs.push_back(CreateSessionTab("http://foo.com", "foo"));
   win1.tabs[0].id = 31;
-  win1.tabs.push_back(
-      CreateSessionTab(GURL("http://bar.com"), ASCIIToUTF16("bar")));
+  win1.tabs.push_back(CreateSessionTab("http://bar.com", "bar"));
   win1.tabs[1].id = 32;
   entries.push_back(&win1);
 
-  MockTRS::Tab tab2 = CreateSessionTab(GURL("http://apple.com"),
-                                       ASCIIToUTF16("Apple"));
+  MockTRS::Tab tab2 = CreateSessionTab("http://apple.com", "Apple");
   tab2.id = 42;
   entries.push_back(&tab2);
 
   MockTRS::Window win2;
   win2.id = 50;
-  win2.tabs.push_back(
-      CreateSessionTab(GURL("http://magic.com"), ASCIIToUTF16("magic")));
+  win2.tabs.push_back(CreateSessionTab("http://magic.com", "magic"));
   win2.tabs[0].id = 51;
-  win2.tabs.push_back(
-      CreateSessionTab(GURL("http://goats.com"), ASCIIToUTF16("goats")));
+  win2.tabs.push_back(CreateSessionTab("http://goats.com", "goats"));
   win2.tabs[1].id = 52;
-  win2.tabs.push_back(
-      CreateSessionTab(GURL("http://teleporter.com"),
-                       ASCIIToUTF16("teleporter")));
+  win2.tabs.push_back(CreateSessionTab("http://teleporter.com", "teleporter"));
   win2.tabs[1].id = 53;
   entries.push_back(&win2);
 
@@ -340,15 +332,9 @@ TEST_F(HistoryMenuBridgeTest, GetFaviconForHistoryItem) {
   // Request the icon.
   GetFaviconForHistoryItem(&item);
 
-  // Make sure that there is ClientData for the request.
-  std::vector<HistoryMenuBridge::HistoryItem*> data;
-  favicon_consumer().GetAllClientData(&data);
-  ASSERT_EQ(data.size(), 1U);
-  EXPECT_EQ(&item, data[0]);
-
   // Make sure the item was modified properly.
   EXPECT_TRUE(item.icon_requested);
-  EXPECT_GT(item.icon_handle, 0);
+  EXPECT_NE(CancelableTaskTracker::kBadTaskId, item.icon_task_id);
 }
 
 TEST_F(HistoryMenuBridgeTest, GotFaviconData) {
@@ -358,25 +344,15 @@ TEST_F(HistoryMenuBridgeTest, GotFaviconData) {
   bitmap.allocPixels();
   bitmap.eraseRGB(255, 0, 0);
 
-  // Convert it to raw PNG bytes. We totally ignore color order here because
-  // we just want to test the roundtrip through the Bridge, not that we can
-  // make icons look pretty.
-  std::vector<unsigned char> raw;
-  gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, true, &raw);
-
   // Set up the HistoryItem.
   HistoryMenuBridge::HistoryItem item;
   item.menu_item.reset([[NSMenuItem alloc] init]);
   GetFaviconForHistoryItem(&item);
 
   // Pretend to be called back.
-  history::FaviconData favicon;
-  favicon.known_icon = true;
-  favicon.image_data = new base::RefCountedBytes(raw);
-  favicon.expired = false;
-  favicon.icon_url = GURL();
-  favicon.icon_type = history::FAVICON;
-  GotFaviconData(item.icon_handle, favicon);
+  history::FaviconImageResult image_result;
+  image_result.image = gfx::Image(bitmap);
+  GotFaviconData(&item, image_result);
 
   // Make sure the callback works.
   EXPECT_FALSE(item.icon_requested);

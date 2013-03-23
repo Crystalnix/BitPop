@@ -14,12 +14,18 @@
 #include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 
+namespace base {
+class RefCountedMemory;
+}
+
 namespace syncer {
 class WriteNode;
 class WriteTransaction;
 }  // namespace syncer
 
 namespace browser_sync {
+
+extern const char kBookmarkTransactionVersionKey[];
 
 // This class is responsible for taking changes from the BookmarkModel
 // and applying them to the sync API 'syncable' model, and vice versa.
@@ -30,7 +36,7 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
  public:
   BookmarkChangeProcessor(BookmarkModelAssociator* model_associator,
                           DataTypeErrorHandler* error_handler);
-  virtual ~BookmarkChangeProcessor() {}
+  virtual ~BookmarkChangeProcessor();
 
   // BookmarkModelObserver implementation.
   // BookmarkModel -> sync API model change application.
@@ -59,7 +65,15 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
   // the sync model to the bookmarks model.
   virtual void ApplyChangesFromSyncModel(
       const syncer::BaseTransaction* trans,
+      int64 model_version,
       const syncer::ImmutableChangeRecordList& changes) OVERRIDE;
+
+  // Create a bookmark node corresponding to |src| if one is not already
+  // associated with |src|.  Returns the node that was created or updated.
+  static const BookmarkNode* CreateOrUpdateBookmarkNode(
+      syncer::BaseNode* src,
+      BookmarkModel* model,
+      BookmarkModelAssociator* model_associator);
 
   // The following methods are static and hence may be invoked at any time,
   // and do not depend on having a running ChangeProcessor.
@@ -79,13 +93,14 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                                  const BookmarkNode* bookmark_node,
                                  BookmarkModel* model);
 
-  // Applies the favicon data in |icon_bytes_vector| to |bookmark_node|.
+  // Applies the 1x favicon |bitmap_data| and |icon_url| to |bookmark_node|.
   // |profile| is the profile that contains the HistoryService and BookmarkModel
   // for the bookmark in question.
   static void ApplyBookmarkFavicon(
       const BookmarkNode* bookmark_node,
       Profile* profile,
-      const std::vector<unsigned char>& icon_bytes_vector);
+      const GURL& icon_url,
+      const scoped_refptr<base::RefCountedMemory>& bitmap_data);
 
   // Sets the favicon of the given sync node from the given bookmark node.
   static void SetSyncNodeFavicon(const BookmarkNode* bookmark_node,
@@ -104,9 +119,15 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                               BookmarkModelAssociator* associator,
                               DataTypeErrorHandler* error_handler);
 
+  // Update transaction version of |model| and |nodes| to |new_version| if
+  // it's valid.
+  static void UpdateTransactionVersion(
+      int64 new_version,
+      BookmarkModel* model,
+      const std::vector<const BookmarkNode*>& nodes);
+
  protected:
   virtual void StartImpl(Profile* profile) OVERRIDE;
-  virtual void StopImpl() OVERRIDE;
 
  private:
   enum MoveOrCreate {
@@ -114,20 +135,15 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
     CREATE,
   };
 
-  // Create a bookmark node corresponding to |src| if one is not already
-  // associated with |src|.  Returns the node that was created or updated.
-  const BookmarkNode* CreateOrUpdateBookmarkNode(
-      syncer::BaseNode* src,
-      BookmarkModel* model);
-
   // Helper function to determine the appropriate insertion index of sync node
   // |node| under the Bookmark model node |parent|, to make the positions
   // match up between the two models. This presumes that the predecessor of the
   // item (in the bookmark model) has already been moved into its appropriate
   // position.
-  int CalculateBookmarkModelInsertionIndex(
+  static int CalculateBookmarkModelInsertionIndex(
       const BookmarkNode* parent,
-      const syncer::BaseNode* node) const;
+      const syncer::BaseNode* node,
+      BookmarkModelAssociator* model_associator);
 
   // Helper function used to fix the position of a sync node so that it matches
   // the position of a corresponding bookmark model node. |parent| and
@@ -149,10 +165,10 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                                        BookmarkModel* model,
                                        syncer::WriteNode* dst);
 
-  // Helper function to encode a bookmark's favicon into a PNG byte vector.
+  // Helper function to encode a bookmark's favicon into raw PNG data.
   static void EncodeFavicon(const BookmarkNode* src,
                             BookmarkModel* model,
-                            std::vector<unsigned char>* dst);
+                            scoped_refptr<base::RefCountedMemory>* dst);
 
   // Remove the sync node corresponding to |node|.  It shouldn't have
   // any children.

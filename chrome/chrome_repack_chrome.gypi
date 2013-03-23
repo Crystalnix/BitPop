@@ -7,13 +7,16 @@
     'pak_inputs': [
       '<(grit_out_dir)/browser_resources.pak',
       '<(grit_out_dir)/common_resources.pak',
-      '<(grit_out_dir)/renderer_resources.pak',
-      '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
+      '<(SHARED_INTERMEDIATE_DIR)/chrome/chrome_unscaled_resources.pak',
       '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
-      '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.pak',
-      '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.pak',
     ],
     'conditions': [
+      ['OS != "ios"', {
+        'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.pak',
+        ],
+      }],
       ['enable_extensions==1', {
         'pak_inputs': [
           '<(grit_out_dir)/extensions_api_resources.pak',
@@ -21,7 +24,7 @@
       }],
       ['use_ash==1', {
         'pak_inputs': [
-          '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_wallpapers.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/ash/ash_resources/ash_wallpaper_resources.pak',
         ],
       }],
     ],

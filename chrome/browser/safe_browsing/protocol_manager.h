@@ -18,22 +18,25 @@
 #include "base/gtest_prod_util.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/safe_browsing/chunk_range.h"
 #include "chrome/browser/safe_browsing/protocol_parser.h"
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
+#include "chrome/browser/safe_browsing/protocol_manager_helper.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
+#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 namespace net {
 class URLFetcher;
+class URLRequestContextGetter;
 }  // namespace net
 
 #if defined(COMPILER_GCC)
 // Allows us to use URLFetchers in a hash_map with gcc (MSVC is okay without
 // specifying this).
-namespace __gnu_cxx {
+namespace BASE_HASH_NAMESPACE {
 template<>
 struct hash<const net::URLFetcher*> {
   size_t operator()(const net::URLFetcher* fetcher) const {
@@ -43,37 +46,21 @@ struct hash<const net::URLFetcher*> {
 }
 #endif
 
-class SafeBrowsingProtocolManager;
-// Interface of a factory to create ProtocolManager.  Useful for tests.
-class SBProtocolManagerFactory {
- public:
-  SBProtocolManagerFactory() {}
-  virtual ~SBProtocolManagerFactory() {}
-  virtual SafeBrowsingProtocolManager* CreateProtocolManager(
-      SafeBrowsingService* sb_service,
-      const std::string& client_name,
-      net::URLRequestContextGetter* request_context_getter,
-      const std::string& url_prefix,
-      bool disable_auto_update) = 0;
- private:
-  DISALLOW_COPY_AND_ASSIGN(SBProtocolManagerFactory);
-};
+class SBProtocolManagerFactory;
+class SafeBrowsingProtocolManagerDelegate;
 
-class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestBackOffTimes);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestChunkStrings);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestGetHashUrl);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest,
-                           TestGetHashBackOffTimes);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest,
-                           TestSafeBrowsingHitUrl);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest,
-                           TestMalwareDetailsUrl);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestNextChunkUrl);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestUpdateUrl);
-  friend class SafeBrowsingServiceTest;
-
+class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
+                                    public base::NonThreadSafe {
  public:
+  // FullHashCallback is invoked when GetFullHash completes.
+  // Parameters:
+  //   - The vector of full hash results. If empty, indicates that there
+  //     were no matches, and that the resource is safe.
+  //   - Whether the result can be cached. This may not be the case when
+  //     the result did not come from the SB server, for example.
+  typedef base::Callback<void(const std::vector<SBFullHashResult>&,
+                              bool)> FullHashCallback;
+
   virtual ~SafeBrowsingProtocolManager();
 
   // Makes the passed |factory| the factory used to instantiate
@@ -82,28 +69,28 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
     factory_ = factory;
   }
 
-  // Create an instance of the safe browsing service.
+  // Create an instance of the safe browsing protocol manager.
   static SafeBrowsingProtocolManager* Create(
-      SafeBrowsingService* sb_service,
-      const std::string& client_name,
+      SafeBrowsingProtocolManagerDelegate* delegate,
       net::URLRequestContextGetter* request_context_getter,
-      const std::string& url_prefix,
-      bool disable_auto_update);
+      const SafeBrowsingProtocolConfig& config);
 
   // Sets up the update schedule and internal state for making periodic requests
-  // of the SafeBrowsing service.
+  // of the Safebrowsing servers.
   virtual void Initialize();
 
   // net::URLFetcherDelegate interface.
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
-  // API used by the SafeBrowsingService for issuing queries. When the results
-  // are available, SafeBrowsingService::HandleGetHashResults is called.
-  virtual void GetFullHash(SafeBrowsingService::SafeBrowsingCheck* check,
-                           const std::vector<SBPrefix>& prefixes);
+  // Retrieve the full hash for a set of prefixes, and invoke the callback
+  // argument when the results are retrieved. The callback may be invoked
+  // synchronously.
+  virtual void GetFullHash(const std::vector<SBPrefix>& prefixes,
+                           FullHashCallback callback,
+                           bool is_download);
 
-  // Forces the start of next update after |next_update_msec| in msec.
-  void ForceScheduleNextUpdate(int next_update_msec);
+  // Forces the start of next update after |interval| time.
+  void ForceScheduleNextUpdate(base::TimeDelta interval);
 
   // Scheduled update callback.
   void GetNextUpdate();
@@ -117,20 +104,6 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
 
   // Called after the chunks that were parsed were inserted in the database.
   void OnChunkInserted();
-
-  // For UMA users we report to Google when a SafeBrowsing interstitial is shown
-  // to the user.  |threat_type| should be one of the types known by
-  // SafeBrowsingHitUrl.
-  void ReportSafeBrowsingHit(const GURL& malicious_url,
-                             const GURL& page_url,
-                             const GURL& referrer_url,
-                             bool is_subresource,
-                             SafeBrowsingService::UrlCheckResult threat_type,
-                             const std::string& post_data);
-
-  // Users can opt-in on the SafeBrowsing interstitial to send detailed
-  // malware reports. |report| is the serialized report.
-  void ReportMalwareDetails(const std::string& report);
 
   // The last time we received an update.
   base::Time last_update() const { return last_update_; }
@@ -180,18 +153,22 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
                                   ResultType result_type);
 
  protected:
-  // Constructs a SafeBrowsingProtocolManager for |sb_service| that issues
-  // network requests using |request_context_getter|. When |disable_auto_update|
-  // is true, protocol manager won't schedule next update until
-  // ForceScheduleNextUpdate is called.
+  // Constructs a SafeBrowsingProtocolManager for |delegate| that issues
+  // network requests using |request_context_getter|.
   SafeBrowsingProtocolManager(
-      SafeBrowsingService* sb_service,
-      const std::string& client_name,
+      SafeBrowsingProtocolManagerDelegate* delegate,
       net::URLRequestContextGetter* request_context_getter,
-      const std::string& url_prefix,
-      bool disable_auto_update);
+      const SafeBrowsingProtocolConfig& config);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestBackOffTimes);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestChunkStrings);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestGetHashUrl);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest,
+                           TestGetHashBackOffTimes);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestNextChunkUrl);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingProtocolManagerTest, TestUpdateUrl);
+  friend class SafeBrowsingServerTest;
   friend class SBProtocolManagerFactoryImpl;
 
   // Internal API for fetching information from the SafeBrowsing servers. The
@@ -203,39 +180,25 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
     CHUNK_REQUEST,      // Request for a specific chunk
   };
 
-  // Composes a URL using |prefix|, |method| (e.g.: gethash, download, report).
-  // |client_name| and |version|. When not empty, |additional_query| is
-  // appended to the URL with an additional "&" in the front.
-  static std::string ComposeUrl(const std::string& prefix,
-                                const std::string& method,
-                                const std::string& client_name,
-                                const std::string& version,
-                                const std::string& additional_query);
-
   // Generates Update URL for querying about the latest set of chunk updates.
   GURL UpdateUrl() const;
   // Generates GetHash request URL for retrieving full hashes.
   GURL GetHashUrl() const;
   // Generates URL for reporting safe browsing hits for UMA users.
-  GURL SafeBrowsingHitUrl(
-      const GURL& malicious_url, const GURL& page_url, const GURL& referrer_url,
-      bool is_subresource,
-      SafeBrowsingService::UrlCheckResult threat_type) const;
-  // Generates URL for reporting malware details for users who opt-in.
-  GURL MalwareDetailsUrl() const;
 
   // Composes a ChunkUrl based on input string.
   GURL NextChunkUrl(const std::string& input) const;
 
-  // Returns the time (in milliseconds) for the next update request. If
-  // 'back_off' is true, the time returned will increment an error count and
-  // return the appriate next time (see ScheduleNextUpdate below).
-  int GetNextUpdateTime(bool back_off);
+  // Returns the time for the next update request. If |back_off| is true,
+  // the time returned will increment an error count and return the appriate
+  // next time (see ScheduleNextUpdate below).
+  base::TimeDelta GetNextUpdateInterval(bool back_off);
 
   // Worker function for calculating GetHash and Update backoff times (in
-  // seconds). 'Multiplier' is doubled for each consecutive error between the
-  // 2nd and 5th, and 'error_count' is incremented with each call.
-  int GetNextBackOffTime(int* error_count, int* multiplier);
+  // seconds). |multiplier| is doubled for each consecutive error between the
+  // 2nd and 5th, and |error_count| is incremented with each call.
+  base::TimeDelta GetNextBackOffInterval(int* error_count,
+                                         int* multiplier) const;
 
   // Manages our update with the next allowable update time. If 'back_off_' is
   // true, we must decrease the frequency of requests of the SafeBrowsing
@@ -275,12 +238,23 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
   void UpdateResponseTimeout();
 
  private:
+  // Map of GetHash requests to parameters which created it.
+  struct FullHashDetails {
+    FullHashDetails();
+    FullHashDetails(FullHashCallback callback, bool is_download);
+    ~FullHashDetails();
+
+    FullHashCallback callback;
+    bool is_download;
+  };
+  typedef base::hash_map<const net::URLFetcher*, FullHashDetails> HashRequests;
+
   // The factory that controls the creation of SafeBrowsingProtocolManager.
   // This is used by tests.
   static SBProtocolManagerFactory* factory_;
 
-  // Main SafeBrowsing interface object.
-  SafeBrowsingService* sb_service_;
+  // Our delegate.
+  SafeBrowsingProtocolManagerDelegate* delegate_;
 
   // Current active request (in case we need to cancel) for updates or chunks
   // from the SafeBrowsing service. We can only have one of these outstanding
@@ -306,15 +280,12 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
 
   // For managing the next earliest time to query the SafeBrowsing servers for
   // updates.
-  int next_update_sec_;
+  base::TimeDelta next_update_interval_;
   base::OneShotTimer<SafeBrowsingProtocolManager> update_timer_;
 
   // All chunk requests that need to be made.
   std::deque<ChunkUrl> chunk_request_urls_;
 
-  // Map of GetHash requests.
-  typedef base::hash_map<const net::URLFetcher*,
-                         SafeBrowsingService::SafeBrowsingCheck*> HashRequests;
   HashRequests hash_requests_;
 
   // The next scheduled update has special behavior for the first 2 requests.
@@ -344,10 +315,6 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
   // Tracks the size of each update (in bytes).
   int update_size_;
 
-  // Track outstanding SafeBrowsing report fetchers for clean up.
-  // We add both "hit" and "detail" fetchers in this set.
-  std::set<const net::URLFetcher*> safebrowsing_reports_;
-
   // The safe browsing client name sent in each request.
   std::string client_name_;
 
@@ -358,16 +325,63 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate {
   // The context we use to issue network requests.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
-  // URL prefix where browser fetches safebrowsing chunk updates, hashes, and
-  // reports hits to the safebrowsing list and sends detaild malware reports
-  // for UMA users.
+  // URL prefix where browser fetches safebrowsing chunk updates, and hashes.
   std::string url_prefix_;
 
   // When true, protocol manager will not start an update unless
   // ForceScheduleNextUpdate() is called. This is set for testing purpose.
   bool disable_auto_update_;
 
+  // ID for URLFetchers for testing.
+  int url_fetcher_id_;
+
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingProtocolManager);
+};
+
+// Interface of a factory to create ProtocolManager.  Useful for tests.
+class SBProtocolManagerFactory {
+ public:
+  SBProtocolManagerFactory() {}
+  virtual ~SBProtocolManagerFactory() {}
+  virtual SafeBrowsingProtocolManager* CreateProtocolManager(
+      SafeBrowsingProtocolManagerDelegate* delegate,
+      net::URLRequestContextGetter* request_context_getter,
+      const SafeBrowsingProtocolConfig& config) = 0;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SBProtocolManagerFactory);
+};
+
+// Delegate interface for the SafeBrowsingProtocolManager.
+class SafeBrowsingProtocolManagerDelegate {
+ public:
+  typedef base::Callback<void(const std::vector<SBListChunkRanges>&, bool)>
+      GetChunksCallback;
+
+  virtual ~SafeBrowsingProtocolManagerDelegate();
+
+  // |UpdateStarted()| is called just before the SafeBrowsing update protocol
+  // has begun.
+  virtual void UpdateStarted() = 0;
+
+  // |UpdateFinished()| is called just after the SafeBrowsing update protocol
+  // has completed.
+  virtual void UpdateFinished(bool success) = 0;
+
+  // Wipe out the local database. The SafeBrowsing server can request this.
+  virtual void ResetDatabase() = 0;
+
+  // Retrieve all the local database chunks, and invoke |callback| with the
+  // results. The SafeBrowsingProtocolManagerDelegate must only invoke the
+  // callback if the SafeBrowsingProtocolManager is still alive. Only one call
+  // may be made to GetChunks at a time.
+  virtual void GetChunks(GetChunksCallback callback) = 0;
+
+  // Add new chunks to the database.
+  virtual void AddChunks(const std::string& list, SBChunkList* chunks) = 0;
+
+  // Delete chunks from the database.
+  virtual void DeleteChunks(
+      std::vector<SBChunkDelete>* delete_chunks) = 0;
 };
 
 #endif  // CHROME_BROWSER_SAFE_BROWSING_PROTOCOL_MANAGER_H_

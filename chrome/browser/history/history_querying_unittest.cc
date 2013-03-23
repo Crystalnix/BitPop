@@ -7,8 +7,8 @@
 #include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -35,16 +35,24 @@ struct TestEntry {
 
   // These are deliberately added out of chronological order. The history
   // service should sort them by visit time when returning query results.
-  // The correct index sort order is 4 2 3 1 0.
+  // The correct index sort order is 4 2 3 1 7 6 5 0.
   {"http://www.google.com/1", "Title 1", 10,
    "PAGEONE FOO some body text"},
   {"http://www.google.com/3", "Title 3", 8,
    "PAGETHREE BAR some hello world for you"},
   {"http://www.google.com/2", "Title 2", 9,
-   "PAGETWO FOO some more blah blah blah"},
+   "PAGETWO FOO some more blah blah blah Title"},
 
   // A more recent visit of the first one.
   {"http://example.com/", "Other", 6, "Other"},
+
+  {"http://www.google.com/6", "Title 6", 12,
+   "I'm the second oldest"},
+
+  {"http://www.google.com/4", "Title 4", 11,
+   "duplicate timestamps"},
+  {"http://www.google.com/5", "Title 5", 11,
+   "duplicate timestamps"},
 };
 
 // Returns true if the nth result in the given results set matches. It will
@@ -85,8 +93,43 @@ class HistoryQueryTest : public testing::Test {
     results->Swap(&last_query_results_);
   }
 
+  // Test paging through results using a cursor.
+  // Defined here so code can be shared for the FTS version and the non-FTS
+  // version.
+  void TestWithCursor(const std::string& query_text,
+                      int* expected_results,
+                      int results_length) {
+    ASSERT_TRUE(history_.get());
+
+    QueryOptions options;
+    QueryResults results;
+
+    options.max_count = 1;
+    for (int i = 0; i < results_length; i++) {
+      SCOPED_TRACE(testing::Message() << "i = " << i);
+      QueryHistory(query_text, options, &results);
+      ASSERT_EQ(1U, results.size());
+      EXPECT_TRUE(NthResultIs(results, 0, expected_results[i]));
+      options.cursor = results.cursor();
+    }
+    QueryHistory(query_text, options, &results);
+    EXPECT_EQ(0U, results.size());
+
+    // Try using a cursor with a max_count > 1.
+    options.max_count = 2;
+    options.cursor.Clear();
+    for (int i = 0; i < results_length / 2; i++) {
+      SCOPED_TRACE(testing::Message() << "i = " << i);
+      QueryHistory(query_text, options, &results);
+      ASSERT_EQ(2U, results.size());
+      EXPECT_TRUE(NthResultIs(results, 0, expected_results[i * 2]));
+      EXPECT_TRUE(NthResultIs(results, 1, expected_results[i * 2 + 1]));
+      options.cursor = results.cursor();
+    }
+  }
+
  protected:
-  scoped_refptr<HistoryService> history_;
+  scoped_ptr<HistoryService> history_;
 
  private:
   virtual void SetUp() {
@@ -94,9 +137,9 @@ class HistoryQueryTest : public testing::Test {
     history_dir_ = temp_dir_.path().AppendASCII("HistoryTest");
     ASSERT_TRUE(file_util::CreateDirectory(history_dir_));
 
-    history_ = new HistoryService;
+    history_.reset(new HistoryService);
     if (!history_->Init(history_dir_, NULL)) {
-      history_ = NULL;  // Tests should notice this NULL ptr & fail.
+      history_.reset();  // Tests should notice this NULL ptr & fail.
       return;
     }
 
@@ -112,7 +155,7 @@ class HistoryQueryTest : public testing::Test {
       GURL url(test_entries[i].url);
 
       history_->AddPage(url, test_entries[i].time, id_scope, page_id, GURL(),
-                        content::PAGE_TRANSITION_LINK, history::RedirectList(),
+                        history::RedirectList(), content::PAGE_TRANSITION_LINK,
                         history::SOURCE_BROWSED, false);
       history_->SetPageTitle(url, UTF8ToUTF16(test_entries[i].title));
       history_->SetPageContents(url, UTF8ToUTF16(test_entries[i].body));
@@ -123,7 +166,7 @@ class HistoryQueryTest : public testing::Test {
     if (history_.get()) {
       history_->SetOnBackendDestroyTask(MessageLoop::QuitClosure());
       history_->Cleanup();
-      history_ = NULL;
+      history_.reset();
       MessageLoop::current()->Run();  // Wait for the other thread.
     }
   }
@@ -133,7 +176,7 @@ class HistoryQueryTest : public testing::Test {
     MessageLoop::current()->Quit();  // Will return out to QueryHistory.
   }
 
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 
   MessageLoop message_loop_;
 
@@ -154,13 +197,18 @@ TEST_F(HistoryQueryTest, Basic) {
   QueryOptions options;
   QueryResults results;
 
-  // Test duplicate collapsing.
+  // Test duplicate collapsing. 0 is an older duplicate of 4, and should not
+  // appear in the result set.
   QueryHistory(std::string(), options, &results);
-  EXPECT_EQ(4U, results.size());
+  EXPECT_EQ(7U, results.size());
+
   EXPECT_TRUE(NthResultIs(results, 0, 4));
   EXPECT_TRUE(NthResultIs(results, 1, 2));
   EXPECT_TRUE(NthResultIs(results, 2, 3));
   EXPECT_TRUE(NthResultIs(results, 3, 1));
+  EXPECT_TRUE(NthResultIs(results, 4, 7));
+  EXPECT_TRUE(NthResultIs(results, 5, 6));
+  EXPECT_TRUE(NthResultIs(results, 6, 5));
 
   // Next query a time range. The beginning should be inclusive, the ending
   // should be exclusive.
@@ -195,22 +243,60 @@ TEST_F(HistoryQueryTest, ReachedBeginning) {
 
   QueryHistory(std::string(), options, &results);
   EXPECT_TRUE(results.reached_beginning());
+  QueryHistory("some", options, &results);
+  EXPECT_TRUE(results.reached_beginning());
 
   options.begin_time = test_entries[1].time;
   QueryHistory(std::string(), options, &results);
   EXPECT_FALSE(results.reached_beginning());
+  QueryHistory("some", options, &results);
+  EXPECT_FALSE(results.reached_beginning());
 
+  // Try |begin_time| just later than the oldest visit.
   options.begin_time = test_entries[0].time + TimeDelta::FromMicroseconds(1);
   QueryHistory(std::string(), options, &results);
   EXPECT_FALSE(results.reached_beginning());
+  QueryHistory("some", options, &results);
+  EXPECT_FALSE(results.reached_beginning());
 
+  // Try |begin_time| equal to the oldest visit.
   options.begin_time = test_entries[0].time;
   QueryHistory(std::string(), options, &results);
   EXPECT_TRUE(results.reached_beginning());
+  QueryHistory("some", options, &results);
+  EXPECT_TRUE(results.reached_beginning());
 
+  // Try |begin_time| just earlier than the oldest visit.
   options.begin_time = test_entries[0].time - TimeDelta::FromMicroseconds(1);
   QueryHistory(std::string(), options, &results);
   EXPECT_TRUE(results.reached_beginning());
+  QueryHistory("some", options, &results);
+  EXPECT_TRUE(results.reached_beginning());
+
+  // Test with |max_count| specified.
+  options.max_count = 1;
+  QueryHistory(std::string(), options, &results);
+  EXPECT_FALSE(results.reached_beginning());
+  QueryHistory("some", options, &results);
+  EXPECT_FALSE(results.reached_beginning());
+
+  // Test with |max_count| greater than the number of results,
+  // and exactly equal to the number of results.
+  options.max_count = 100;
+  QueryHistory(std::string(), options, &results);
+  EXPECT_TRUE(results.reached_beginning());
+  options.max_count = results.size();
+  QueryHistory(std::string(), options, &results);
+  EXPECT_TRUE(results.reached_beginning());
+
+  options.max_count = 100;
+  QueryHistory("some", options, &results);
+  EXPECT_TRUE(results.reached_beginning());
+  options.max_count = results.size();
+  QueryHistory("some", options, &results);
+  // Since the query didn't cover the oldest visit in the database, we
+  // expect false here.
+  EXPECT_FALSE(results.reached_beginning());
 }
 
 // This does most of the same tests above, but searches for a FTS string that
@@ -251,8 +337,17 @@ TEST_F(HistoryQueryTest, FTSTitle) {
   QueryOptions options;
   QueryResults results;
 
+  // First execute a body-only query, to ensure that it works and that that
+  // version of the statement is not cached for the next query.
+  options.body_only = true;
+  QueryHistory("Title", options, &results);
+  EXPECT_EQ(1U, results.size());
+  EXPECT_TRUE(NthResultIs(results, 0, 3));
+  options.body_only = false;
+
   // Query all time but with a limit on the number of entries. We should
   // get the N most recent entries.
+  options.max_count = 3;
   QueryHistory("title", options, &results);
   EXPECT_EQ(3U, results.size());
   EXPECT_TRUE(NthResultIs(results, 0, 2));
@@ -349,5 +444,21 @@ TEST_F(HistoryQueryTest, FTSDupes) {
   EXPECT_TRUE(NthResultIs(results, 0, 4));
 }
 */
+
+// Test iterating over pages of results using a cursor.
+TEST_F(HistoryQueryTest, Cursor) {
+  // Since results are fetched 1 and 2 at a time, entry #0 and #6 will not
+  // be de-duplicated.
+  int expected_results[] = { 4, 2, 3, 1, 7, 6, 5, 0 };
+  TestWithCursor("", expected_results, arraysize(expected_results));
+}
+
+TEST_F(HistoryQueryTest, FTSCursor) {
+  // Since results are fetched 1 and 2 at a time, entry #0 and #6 will not
+  // be de-duplicated. Entry #4 does not contain the text "title", so it
+  // shouldn't appear.
+  int expected_results[] = { 2, 3, 1, 7, 6, 5 };
+  TestWithCursor("title", expected_results, arraysize(expected_results));
+}
 
 }  // namespace history

@@ -6,6 +6,7 @@
 
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/base_window.h"
 #include "chrome/browser/ui/views/extensions/extension_dialog_observer.h"
@@ -117,7 +118,8 @@ extensions::ExtensionHost* ExtensionDialog::CreateExtensionHost(
     const GURL& url,
     Profile* profile) {
   DCHECK(profile);
-  ExtensionProcessManager* manager = profile->GetExtensionProcessManager();
+  ExtensionProcessManager* manager =
+      extensions::ExtensionSystem::Get(profile)->process_manager();
 
   DCHECK(manager);
   if (!manager)
@@ -129,7 +131,7 @@ extensions::ExtensionHost* ExtensionDialog::CreateExtensionHost(
 void ExtensionDialog::InitWindowFullscreen() {
   aura::RootWindow* root_window = ash::Shell::GetPrimaryRootWindow();
   gfx::Rect screen_rect =
-      gfx::Screen::GetDisplayNearestWindow(root_window).bounds();
+      ash::Shell::GetScreen()->GetDisplayNearestWindow(root_window).bounds();
 
   // We want to be the fullscreen topmost child of the root window.
   window_ = new views::Widget;
@@ -164,9 +166,10 @@ void ExtensionDialog::InitWindow(BaseWindow* base_window,
   int y = center.y() - height / 2;
   // Ensure the top left and top right of the window are on screen, with
   // priority given to the top left.
-  gfx::Rect screen_rect = gfx::Screen::GetDisplayNearestPoint(center).bounds();
+  gfx::Rect screen_rect = gfx::Screen::GetScreenFor(parent)->
+      GetDisplayNearestPoint(center).bounds();
   gfx::Rect bounds_rect = gfx::Rect(x, y, width, height);
-  bounds_rect = bounds_rect.AdjustToFit(screen_rect);
+  bounds_rect.AdjustToFit(screen_rect);
   window_->SetBounds(bounds_rect);
 
   window_->Show();

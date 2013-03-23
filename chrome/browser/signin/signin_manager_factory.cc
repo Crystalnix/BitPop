@@ -24,12 +24,19 @@ SigninManager* SigninManagerFactory::GetForProfile(Profile* profile) {
       GetInstance()->GetServiceForProfile(profile, true));
 }
 
+SigninManager* SigninManagerFactory::GetForProfileIfExists(Profile* profile) {
+  return static_cast<SigninManager*>(
+      GetInstance()->GetServiceForProfile(profile, false));
+}
+
 // static
 SigninManagerFactory* SigninManagerFactory::GetInstance() {
   return Singleton<SigninManagerFactory>::get();
 }
 
 void SigninManagerFactory::RegisterUserPrefs(PrefService* user_prefs) {
+  user_prefs->RegisterStringPref(prefs::kGoogleServicesLastUsername, "",
+                                 PrefService::UNSYNCABLE_PREF);
   user_prefs->RegisterStringPref(prefs::kGoogleServicesUsername, "",
                                  PrefService::UNSYNCABLE_PREF);
   user_prefs->RegisterBooleanPref(prefs::kAutologinEnabled, true,

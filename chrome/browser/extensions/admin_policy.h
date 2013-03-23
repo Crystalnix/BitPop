@@ -22,10 +22,11 @@ namespace admin_policy {
 // from the command line, or when loaded as an unpacked extension).
 bool BlacklistedByDefault(const base::ListValue* blacklist);
 
-// Returns true if the extension is allowed by admin policy white- and
-// blacklists.
+// Returns true if the extension is allowed by the admin policy.
 bool UserMayLoad(const base::ListValue* blacklist,
                  const base::ListValue* whitelist,
+                 const base::DictionaryValue* forcelist,
+                 const base::ListValue* allowed_types,
                  const Extension* extension,
                  string16* error);
 

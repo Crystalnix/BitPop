@@ -44,7 +44,7 @@ void SpellCheckerSubMenuObserver::InitMenu(
           spellcheck_mac::SpellingPanelVisible() ?
               IDS_CONTENT_CONTEXT_HIDE_SPELLING_PANEL :
               IDS_CONTENT_CONTEXT_SHOW_SPELLING_PANEL));
-  submenu_model_.AddSeparator();
+  submenu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
 
   // Add a 'Check Spelling While Typing' item in the sub menu.
   submenu_model_.AddCheckItem(
@@ -82,7 +82,7 @@ bool SpellCheckerSubMenuObserver::IsCommandIdChecked(int command_id) {
   if (command_id == IDC_CHECK_SPELLING_WHILE_TYPING) {
     Profile* profile = proxy_->GetProfile();
     DCHECK(profile);
-    return profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck);
+    return profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck);
   }
 
   return false;
@@ -111,10 +111,8 @@ void SpellCheckerSubMenuObserver::ExecuteCommand(int command_id) {
   switch (command_id) {
     case IDC_CHECK_SPELLING_WHILE_TYPING:
       profile->GetPrefs()->SetBoolean(
-          prefs::kEnableSpellCheck,
-          !profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck));
-      if (rvh)
-        rvh->Send(new SpellCheckMsg_ToggleSpellCheck(rvh->GetRoutingID()));
+          prefs::kEnableContinuousSpellcheck,
+          !profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck));
       break;
 
     case IDC_SPELLPANEL_TOGGLE:

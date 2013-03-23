@@ -18,7 +18,6 @@
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
-#include "chrome/renderer/extensions/extension_dispatcher.h"
 #include "chrome/renderer/extensions/extension_groups.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
@@ -32,7 +31,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using WebKit::WebFrame;
@@ -50,18 +48,21 @@ namespace extensions {
 static const char kUserScriptHead[] = "(function (unsafeWindow) {\n";
 static const char kUserScriptTail[] = "\n})(window);";
 
-int UserScriptSlave::GetIsolatedWorldIdForExtension(
-    const Extension* extension, WebFrame* frame) {
+int UserScriptSlave::GetIsolatedWorldIdForExtension(const Extension* extension,
+                                                    WebFrame* frame) {
   static int g_next_isolated_world_id = 1;
 
   IsolatedWorldMap::iterator iter = isolated_world_ids_.find(extension->id());
   if (iter != isolated_world_ids_.end()) {
-    // We need to set the isolated world origin even if it's not a new world
-    // since that is stored per frame, and we might not have used this isolated
-    // world in this frame before.
+    // We need to set the isolated world origin and CSP even if it's not a new
+    // world since these are stored per frame, and we might not have used this
+    // isolated world in this frame before.
     frame->setIsolatedWorldSecurityOrigin(
         iter->second,
         WebSecurityOrigin::create(extension->url()));
+    frame->setIsolatedWorldContentSecurityPolicy(
+        iter->second,
+        WebString::fromUTF8(extension->content_security_policy()));
     return iter->second;
   }
 
@@ -75,6 +76,9 @@ int UserScriptSlave::GetIsolatedWorldIdForExtension(
   frame->setIsolatedWorldSecurityOrigin(
       new_id,
       WebSecurityOrigin::create(extension->url()));
+  frame->setIsolatedWorldContentSecurityPolicy(
+      new_id,
+      WebString::fromUTF8(extension->content_security_policy()));
   return new_id;
 }
 
@@ -89,9 +93,8 @@ std::string UserScriptSlave::GetExtensionIdForIsolatedWorld(
 }
 
 // static
-void UserScriptSlave::InitializeIsolatedWorld(
-    int isolated_world_id,
-    const Extension* extension) {
+void UserScriptSlave::InitializeIsolatedWorld(int isolated_world_id,
+                                              const Extension* extension) {
   const URLPatternSet& permissions =
       extension->GetEffectiveHostPermissions();
   for (URLPatternSet::const_iterator i = permissions.begin();
@@ -123,7 +126,7 @@ UserScriptSlave::UserScriptSlave(const ExtensionSet* extensions)
       script_deleter_(&scripts_),
       extensions_(extensions) {
   api_js_ = ResourceBundle::GetSharedInstance().GetRawDataResource(
-                IDR_GREASEMONKEY_API_JS, ui::SCALE_FACTOR_NONE);
+      IDR_GREASEMONKEY_API_JS);
 }
 
 UserScriptSlave::~UserScriptSlave() {}
@@ -264,7 +267,7 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
   int num_css = 0;
   int num_scripts = 0;
 
-  std::set<std::string> extensions_executing_scripts;
+  ExecutingScriptsMap extensions_executing_scripts;
 
   for (size_t i = 0; i < scripts_.size(); ++i) {
     std::vector<WebScriptSource> sources;
@@ -283,6 +286,7 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
     // Content scripts are not tab-specific.
     int kNoTabId = -1;
     if (!extension->CanExecuteScriptOnPage(data_source_url,
+                                           frame->top()->document().url(),
                                            kNoTabId,
                                            script,
                                            NULL)) {
@@ -333,7 +337,11 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
           EXTENSION_GROUP_CONTENT_SCRIPTS);
       UMA_HISTOGRAM_TIMES("Extensions.InjectScriptTime", exec_timer.Elapsed());
 
-      extensions_executing_scripts.insert(extension->id());
+      for (std::vector<WebScriptSource>::const_iterator iter = sources.begin();
+           iter != sources.end(); ++iter) {
+        extensions_executing_scripts[extension->id()].insert(
+            GURL(iter->url).path());
+      }
     }
   }
 

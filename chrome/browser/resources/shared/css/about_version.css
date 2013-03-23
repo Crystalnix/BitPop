@@ -26,10 +26,11 @@ body {
   font-size: 0.9em;
   font-weight: bold;
   text-align: end;
+  vertical-align: top;
   white-space: nowrap;
 }
 
-.label:after {
+.label::after {
   content: ':';
 }
 

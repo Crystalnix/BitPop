@@ -14,6 +14,8 @@
 #include "content/browser/renderer_host/java/java_method.h"
 #include "third_party/npapi/bindings/npruntime.h"
 
+namespace content {
+
 // Wrapper around a Java object.
 //
 // Represents a Java object for use in the Java bridge. Holds a global ref to
@@ -23,13 +25,15 @@
 // created and destroyed on different threads.
 class JavaBoundObject {
  public:
-  // Takes a Java object and creates a JavaBoundObject around it. Also takes
-  // a boolean that determines whether or not inherited methods are allowed
-  // to be called as well.  This property propagates to all Objects that get
-  // implicitly exposed as return values as well. Returns an NPObject with
-  // a ref count of one which owns the JavaBoundObject.
-  static NPObject* Create(const base::android::JavaRef<jobject>& object,
-                          bool allow_inherited_methods);
+  // Takes a Java object and creates a JavaBoundObject around it. The
+  // |require_annotation| flag specifies whether or not only methods with the
+  // JavascriptInterface annotation are exposed to JavaScript.  This property
+  // propagates to all Objects that get implicitly exposed as return values as
+  // well. Returns an NPObject with a ref count of one which owns the
+  // JavaBoundObject.
+  static NPObject* Create(
+      const base::android::JavaRef<jobject>& object,
+      base::android::JavaRef<jclass>& safe_annotation_clazz);
 
   virtual ~JavaBoundObject();
 
@@ -44,8 +48,9 @@ class JavaBoundObject {
               NPVariant* result);
 
  private:
-  explicit JavaBoundObject(const base::android::JavaRef<jobject>& object,
-                           bool allow_inherited_methods);
+  explicit JavaBoundObject(
+      const base::android::JavaRef<jobject>& object,
+      base::android::JavaRef<jclass>& safe_annotation_clazz);
 
   void EnsureMethodsAreSetUp() const;
 
@@ -60,9 +65,11 @@ class JavaBoundObject {
   mutable JavaMethodMap methods_;
   mutable bool are_methods_set_up_;
 
-  bool allow_inherited_methods_;
+  base::android::ScopedJavaGlobalRef<jclass> safe_annotation_clazz_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JavaBoundObject);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_JAVA_JAVA_BOUND_OBJECT_H_

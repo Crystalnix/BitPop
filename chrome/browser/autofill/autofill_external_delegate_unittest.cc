@@ -9,20 +9,19 @@
 #include "base/string16.h"
 #include "chrome/browser/autofill/autofill_manager.h"
 #include "chrome/browser/autofill/test_autofill_external_delegate.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
+#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
+#include "chrome/common/form_data.h"
+#include "chrome/common/form_field_data.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
 #include "ui/gfx/rect.h"
-#include "webkit/forms/form_data.h"
-#include "webkit/forms/form_field.h"
 
 using content::BrowserThread;
 using testing::_;
-using webkit::forms::FormData;
-using webkit::forms::FormField;
 using WebKit::WebAutofillClient;
 
 namespace {
@@ -33,11 +32,12 @@ const int kQueryId = 5;
 // A constant value to use as an Autofill profile ID.
 const int kAutofillProfileId = 1;
 
-class MockAutofillExternalDelegate : public TestAutofillExternalDelegate {
+class MockAutofillExternalDelegate :
+      public autofill::TestAutofillExternalDelegate {
  public:
-  MockAutofillExternalDelegate(TabContents* tab_contents,
+  MockAutofillExternalDelegate(content::WebContents* web_contents,
                                AutofillManager* autofill_manger)
-      : TestAutofillExternalDelegate(tab_contents, autofill_manger) {}
+      : TestAutofillExternalDelegate(web_contents, autofill_manger) {}
   ~MockAutofillExternalDelegate() {}
 
   MOCK_METHOD4(ApplyAutofillSuggestions, void(
@@ -46,31 +46,26 @@ class MockAutofillExternalDelegate : public TestAutofillExternalDelegate {
       const std::vector<string16>& autofill_icons,
       const std::vector<int>& autofill_unique_ids));
 
-  MOCK_METHOD4(OnQueryPlatformSpecific,
-               void(int query_id,
-                    const webkit::forms::FormData& form,
-                    const webkit::forms::FormField& field,
-                    const gfx::Rect& bounds));
-
   MOCK_METHOD0(ClearPreviewedForm, void());
 
-  MOCK_METHOD0(HideAutofillPopup, void());
+  MOCK_METHOD1(EnsurePopupForElement, void(const gfx::Rect& element_bounds));
 
- private:
-  virtual void HideAutofillPopupInternal() {};
+  MOCK_METHOD0(HideAutofillPopup, void());
 };
 
 class MockAutofillManager : public AutofillManager {
  public:
-  explicit MockAutofillManager(TabContents* tab_contents)
+  explicit MockAutofillManager(content::WebContents* web_contents,
+                               autofill::AutofillManagerDelegate* delegate)
       // Force to use the constructor designated for unit test, but we don't
       // really need personal_data in this test so we pass a NULL pointer.
-      : AutofillManager(tab_contents, NULL) {}
+      : AutofillManager(web_contents, delegate, NULL) {
+  }
 
   MOCK_METHOD4(OnFillAutofillFormData,
                void(int query_id,
-                    const webkit::forms::FormData& form,
-                    const webkit::forms::FormField& field,
+                    const FormData& form,
+                    const FormFieldData& field,
                     int unique_id));
 
  protected:
@@ -79,41 +74,53 @@ class MockAutofillManager : public AutofillManager {
 
 }  // namespace
 
-class AutofillExternalDelegateUnitTest : public TabContentsTestHarness {
+class AutofillExternalDelegateUnitTest
+    : public ChromeRenderViewHostTestHarness {
  public:
   AutofillExternalDelegateUnitTest()
       : ui_thread_(BrowserThread::UI, &message_loop_) {}
   virtual ~AutofillExternalDelegateUnitTest() {}
-
-  virtual void SetUp() OVERRIDE {
-    TabContentsTestHarness::SetUp();
-    autofill_manager_ = new MockAutofillManager(tab_contents());
-    external_delegate_.reset(new MockAutofillExternalDelegate(
-        tab_contents(),
-        autofill_manager_));
-  }
 
  protected:
   // Set up the expectation for a platform specific OnQuery call and then
   // execute it with the given QueryId.
   void IssueOnQuery(int query_id) {
     const FormData form;
-    FormField field;
+    FormFieldData field;
     field.is_focusable = true;
     field.should_autocomplete = true;
-    const gfx::Rect bounds;
+    const gfx::Rect element_bounds;
 
-    EXPECT_CALL(*external_delegate_,
-                OnQueryPlatformSpecific(query_id, form, field, bounds));
-
-    // This should call OnQueryPlatform specific.
-    external_delegate_->OnQuery(query_id, form, field, bounds, false);
+    EXPECT_CALL(*external_delegate_, EnsurePopupForElement(element_bounds));
+    external_delegate_->OnQuery(query_id, form, field, element_bounds, false);
   }
 
   scoped_refptr<MockAutofillManager> autofill_manager_;
-  scoped_ptr<MockAutofillExternalDelegate> external_delegate_;
+  scoped_ptr<testing::NiceMock<MockAutofillExternalDelegate> >
+      external_delegate_;
 
  private:
+  virtual void SetUp() OVERRIDE {
+    ChromeRenderViewHostTestHarness::SetUp();
+    TabAutofillManagerDelegate::CreateForWebContents(web_contents());
+    autofill_manager_ = new MockAutofillManager(
+        web_contents(),
+        TabAutofillManagerDelegate::FromWebContents(web_contents()));
+    external_delegate_.reset(
+        new testing::NiceMock<MockAutofillExternalDelegate>(
+            web_contents(),
+            autofill_manager_));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    // Order of destruction is important as AutofillManager relies on
+    // PersonalDataManager to be around when it gets destroyed. Also, a real
+    // AutofillManager is tied to the lifetime of the WebContents, so it must
+    // be destroyed at the destruction of the WebContents.
+    autofill_manager_ = NULL;
+    ChromeRenderViewHostTestHarness::TearDown();
+  }
+
   content::TestBrowserThread ui_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillExternalDelegateUnitTest);
@@ -142,16 +149,15 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
                                             autofill_item,
                                             autofill_ids);
 
-
-  EXPECT_CALL(*external_delegate_, HideAutofillPopup());
-
   // Called by DidAutofillSuggestions, add expectation to remove warning.
   EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _));
 
+  EXPECT_CALL(*external_delegate_, HideAutofillPopup());
+
   // This should trigger a call to hide the popup since
   // we've selected an option.
-  external_delegate_->DidAcceptAutofillSuggestions(autofill_item[0],
-                                                   autofill_ids[0], 0);
+  external_delegate_->DidAcceptAutofillSuggestion(autofill_item[0],
+                                                  autofill_ids[0], 0);
 }
 
 // Test that data list elements for a node will appear in the Autofill popup.
@@ -219,7 +225,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateInvalidUniqueId) {
 
   // Ensure it doesn't try to fill the form in with the negative id.
   EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _)).Times(0);
-  external_delegate_->DidAcceptAutofillSuggestions(string16(), -1, 0);
+  external_delegate_->DidAcceptAutofillSuggestion(string16(), -1, 0);
 }
 
 // Test that the ClearPreview IPC is only sent the form was being previewed
@@ -242,7 +248,48 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearPreviewedForm) {
 // Test that the popup is hidden once we are done editing the autofill field.
 TEST_F(AutofillExternalDelegateUnitTest,
        ExternalDelegateHidePopupAfterEditing) {
+  EXPECT_CALL(*external_delegate_, EnsurePopupForElement(_));
+  EXPECT_CALL(*external_delegate_, ApplyAutofillSuggestions(_, _, _, _));
+
+  autofill::GenerateTestAutofillPopup(external_delegate_.get());
+
   EXPECT_CALL(*external_delegate_, HideAutofillPopup());
 
   external_delegate_->DidEndTextFieldEditing();
+}
+
+// Test that the popup is marked as visible after recieving password
+// suggestions.
+TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
+  std::vector<string16> suggestions;
+  suggestions.push_back(string16());
+
+  FormFieldData field;
+  field.is_focusable = true;
+  field.should_autocomplete = true;
+  const gfx::Rect element_bounds;
+
+  EXPECT_CALL(*external_delegate_, EnsurePopupForElement(element_bounds));
+
+  // The enums must be cast to ints to prevent compile errors on linux_rel.
+  EXPECT_CALL(*external_delegate_,
+              ApplyAutofillSuggestions(_, _, _, testing::ElementsAre(
+                  static_cast<int>(
+                      WebAutofillClient::MenuItemIDPasswordEntry))));
+
+  external_delegate_->OnShowPasswordSuggestions(suggestions,
+                                                field,
+                                                element_bounds);
+
+  // Called by DidAutofillSuggestions, add expectation to remove warning.
+  EXPECT_CALL(*autofill_manager_, OnFillAutofillFormData(_, _, _, _));
+
+  EXPECT_CALL(*external_delegate_, HideAutofillPopup());
+
+  // This should trigger a call to hide the popup since
+  // we've selected an option.
+  external_delegate_->DidAcceptAutofillSuggestion(
+      suggestions[0],
+      WebAutofillClient::MenuItemIDPasswordEntry,
+      0);
 }

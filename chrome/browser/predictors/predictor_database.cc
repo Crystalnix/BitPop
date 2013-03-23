@@ -11,11 +11,15 @@
 #include "base/stringprintf.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_table.h"
+#include "chrome/browser/predictors/resource_prefetch_predictor.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor_tables.h"
+#include "chrome/browser/prerender/prerender_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -47,8 +51,9 @@ class PredictorDatabaseInternal
   // Cancels pending DB transactions. Should only be called on the UI thread.
   void SetCancelled();
 
+  bool is_resource_prefetch_predictor_enabled_;
   FilePath db_path_;
-  sql::Connection db_;
+  scoped_ptr<sql::Connection> db_;
 
   // TODO(shishir): These tables may not need to be refcounted. Maybe move them
   // to using a WeakPtr instead.
@@ -61,36 +66,43 @@ class PredictorDatabaseInternal
 
 PredictorDatabaseInternal::PredictorDatabaseInternal(Profile* profile)
     : db_path_(profile->GetPath().Append(kPredictorDatabaseName)),
+      db_(new sql::Connection()),
       autocomplete_table_(new AutocompleteActionPredictorTable()),
       resource_prefetch_tables_(new ResourcePrefetchPredictorTables()) {
+  ResourcePrefetchPredictorConfig config;
+  is_resource_prefetch_predictor_enabled_ =
+      IsSpeculativeResourcePrefetchingEnabled(profile, &config);
 }
 
 PredictorDatabaseInternal::~PredictorDatabaseInternal() {
+  // The connection pointer needs to be deleted on the DB thread since there
+  // might be a task in progress on the DB thread which uses this connection.
+  BrowserThread::DeleteSoon(BrowserThread::DB, FROM_HERE, db_.release());
 }
 
 void PredictorDatabaseInternal::Initialize() {
-  CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::DB));
-  db_.set_exclusive_locking();
-  bool success = db_.Open(db_path_);
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  db_->set_exclusive_locking();
+  bool success = db_->Open(db_path_);
 
   if (!success)
     return;
 
-  autocomplete_table_->Initialize(&db_);
-  resource_prefetch_tables_->Initialize(&db_);
+  autocomplete_table_->Initialize(db_.get());
+  resource_prefetch_tables_->Initialize(db_.get());
 
   LogDatabaseStats();
 }
 
 void PredictorDatabaseInternal::SetCancelled() {
-  CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   autocomplete_table_->SetCancelled();
   resource_prefetch_tables_->SetCancelled();
 }
 
 void PredictorDatabaseInternal::LogDatabaseStats() {
-  CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::DB));
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 
   int64 db_size;
   bool success = file_util::GetFileSize(db_path_, &db_size);
@@ -99,12 +111,13 @@ void PredictorDatabaseInternal::LogDatabaseStats() {
                           static_cast<int>(db_size / 1024));
 
   autocomplete_table_->LogDatabaseStats();
-  resource_prefetch_tables_->LogDatabaseStats();
+  if (is_resource_prefetch_predictor_enabled_)
+    resource_prefetch_tables_->LogDatabaseStats();
 }
 
 PredictorDatabase::PredictorDatabase(Profile* profile)
     : db_(new PredictorDatabaseInternal(profile)) {
-  content::BrowserThread::PostTask(content::BrowserThread::DB, FROM_HERE,
+  BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
       base::Bind(&PredictorDatabaseInternal::Initialize, db_));
 }
 
@@ -126,7 +139,7 @@ scoped_refptr<ResourcePrefetchPredictorTables>
 }
 
 sql::Connection* PredictorDatabase::GetDatabase() {
-  return &db_->db_;
+  return db_->db_.get();
 }
 
 }  // namespace predictors

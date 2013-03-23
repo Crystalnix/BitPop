@@ -33,20 +33,20 @@
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/test/base/profile_mock.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "googleurl/src/gurl.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/protocol/typed_url_specifics.pb.h"
-#include "sync/test/engine/test_id_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using base::Time;
@@ -100,8 +100,7 @@ class HistoryServiceMock : public HistoryService {
   virtual ~HistoryServiceMock() {}
 };
 
-scoped_refptr<RefcountedProfileKeyedService> BuildHistoryService(
-    Profile* profile) {
+ProfileKeyedService* BuildHistoryService(Profile* profile) {
   return new HistoryServiceMock(profile);
 }
 
@@ -152,7 +151,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
  public:
   void AddTypedUrlSyncNode(const history::URLRow& url,
                            const history::VisitVector& visits) {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode typed_url_root(&trans);
     ASSERT_EQ(syncer::BaseNode::INIT_OK,
               typed_url_root.InitByTagLookup(browser_sync::kTypedUrlTag));
@@ -176,7 +175,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     history_backend_ = new HistoryBackendMock();
     history_service_ = static_cast<HistoryServiceMock*>(
         HistoryServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-            &profile_, BuildHistoryService).get());
+            &profile_, BuildHistoryService));
     EXPECT_CALL((*history_service_), ScheduleDBTask(_, _))
         .WillRepeatedly(RunTaskOnDBThread(&history_thread_,
                                           history_backend_.get()));
@@ -186,7 +185,8 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
   virtual void TearDown() {
     history_backend_ = NULL;
     history_service_ = NULL;
-    service_.reset();
+    ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(
+        &profile_, NULL);
     history_thread_.Stop();
     profile_.ResetRequestContext();
     AbstractProfileSyncServiceTest::TearDown();
@@ -194,42 +194,39 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
 
   TypedUrlModelAssociator* StartSyncService(const base::Closure& callback) {
     TypedUrlModelAssociator* model_associator = NULL;
-    if (!service_.get()) {
+    if (!sync_service_) {
       SigninManager* signin = SigninManagerFactory::GetForProfile(&profile_);
       signin->SetAuthenticatedUsername("test");
       token_service_ = static_cast<TokenService*>(
           TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
               &profile_, BuildTokenService));
-      ProfileSyncComponentsFactoryMock* factory =
-          new ProfileSyncComponentsFactoryMock();
-      service_.reset(
-          new TestProfileSyncService(factory,
-                                     &profile_,
-                                     signin,
-                                     ProfileSyncService::AUTO_START,
-                                     false,
-                                     callback));
+      sync_service_ = static_cast<TestProfileSyncService*>(
+          ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+              &profile_, &TestProfileSyncService::BuildAutoStartAsyncInit));
+      sync_service_->set_backend_init_callback(callback);
+      ProfileSyncComponentsFactoryMock* components =
+          sync_service_->components_factory_mock();
       TypedUrlDataTypeController* data_type_controller =
-          new TypedUrlDataTypeController(factory,
+          new TypedUrlDataTypeController(components,
                                          &profile_,
-                                         service_.get());
+                                         sync_service_);
 
-      EXPECT_CALL(*factory, CreateTypedUrlSyncComponents(_, _, _)).
+      EXPECT_CALL(*components, CreateTypedUrlSyncComponents(_, _, _)).
           WillOnce(MakeTypedUrlSyncComponents(&profile_,
-                                              service_.get(),
+                                              sync_service_,
                                               history_backend_.get(),
                                               data_type_controller,
                                               &error_handler_,
                                               &model_associator));
-      EXPECT_CALL(*factory, CreateDataTypeManager(_, _)).
+      EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _)).
           WillOnce(ReturnNewDataTypeManager());
 
       token_service_->IssueAuthTokenForTest(
           GaiaConstants::kSyncService, "token");
 
-      service_->RegisterDataTypeController(data_type_controller);
+      sync_service_->RegisterDataTypeController(data_type_controller);
 
-      service_->Initialize();
+      sync_service_->Initialize();
       MessageLoop::current()->Run();
     }
     return model_associator;
@@ -237,7 +234,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
 
   void GetTypedUrlsFromSyncDB(history::URLRows* urls) {
     urls->clear();
-    syncer::ReadTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode typed_url_root(&trans);
     if (typed_url_root.InitByTagLookup(browser_sync::kTypedUrlTag) !=
             syncer::BaseNode::INIT_OK)
@@ -908,7 +905,7 @@ TEST_F(ProfileSyncServiceTypedUrlTest, FailWriteToHistoryBackend) {
   // Errors writing to the DB should be recorded, but should not cause an
   // unrecoverable error.
   ASSERT_FALSE(
-      service_->failed_datatypes_handler().GetFailedTypes().Has(
+      sync_service_->failed_datatypes_handler().GetFailedTypes().Has(
           syncer::TYPED_URLS));
   // Some calls should have succeeded, so the error percentage should be
   // somewhere > 0 and < 100.
@@ -940,10 +937,113 @@ TEST_F(ProfileSyncServiceTypedUrlTest, FailToGetTypedURLs) {
   // Errors getting typed URLs will cause an unrecoverable error (since we can
   // do *nothing* in that case).
   ASSERT_TRUE(
-      service_->failed_datatypes_handler().GetFailedTypes().Has(
+      sync_service_->failed_datatypes_handler().GetFailedTypes().Has(
           syncer::TYPED_URLS));
   ASSERT_EQ(
-      1u, service_->failed_datatypes_handler().GetFailedTypes().Size());
+      1u, sync_service_->failed_datatypes_handler().GetFailedTypes().Size());
   // Can't check GetErrorPercentage(), because generating an unrecoverable
   // error will free the model associator.
+}
+TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreLocalFileURL) {
+  history::VisitVector original_visits;
+  // Create http and file url.
+  history::URLRow url_entry(MakeTypedUrlEntry("http://yey.com",
+                                              "yey", 12, 15, false,
+                                              &original_visits));
+  history::URLRow file_entry(MakeTypedUrlEntry("file:///kitty.jpg",
+                                               "kitteh", 12, 15, false,
+                                               &original_visits));
+
+  history::URLRows original_entries;
+  original_entries.push_back(url_entry);
+  original_entries.push_back(file_entry);
+
+  EXPECT_CALL((*history_backend_.get()), GetAllTypedURLs(_)).
+      WillRepeatedly(DoAll(SetArgumentPointee<0>(original_entries),
+                     Return(true)));
+  EXPECT_CALL((*history_backend_.get()), GetMostRecentVisitsForURL(_, _, _)).
+      WillRepeatedly(DoAll(SetArgumentPointee<2>(original_visits),
+                     Return(true)));
+  CreateRootHelper create_root(this, syncer::TYPED_URLS);
+  StartSyncService(create_root.callback());
+
+  history::VisitVector updated_visits;
+  // Create updates for the previous urls + a new file one.
+  history::URLRow updated_url_entry(MakeTypedUrlEntry("http://yey.com",
+                                                      "yey", 20, 15, false,
+                                                      &updated_visits));
+  history::URLRow updated_file_entry(MakeTypedUrlEntry("file:///cat.jpg",
+                                                       "cat", 20, 15, false,
+                                                       &updated_visits));
+  history::URLRow new_file_entry(MakeTypedUrlEntry("file:///dog.jpg",
+                                                   "dog", 20, 15, false,
+                                                   &updated_visits));
+  history::URLsModifiedDetails details;
+  details.changed_urls.push_back(updated_url_entry);
+  details.changed_urls.push_back(updated_file_entry);
+  details.changed_urls.push_back(new_file_entry);
+  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+                   content::Source<Profile>(&profile_),
+                   content::Details<history::URLsModifiedDetails>(&details));
+
+  history::URLRows new_sync_entries;
+  GetTypedUrlsFromSyncDB(&new_sync_entries);
+
+  // We should ignore the local file urls (existing and updated),
+  // and only be left with the updated http url.
+  ASSERT_EQ(1U, new_sync_entries.size());
+  EXPECT_TRUE(URLsEqual(updated_url_entry, new_sync_entries[0]));
+}
+
+TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreLocalhostURL) {
+  history::VisitVector original_visits;
+  // Create http and localhost url.
+  history::URLRow url_entry(MakeTypedUrlEntry("http://yey.com",
+                                              "yey", 12, 15, false,
+                                              &original_visits));
+  history::URLRow localhost_entry(MakeTypedUrlEntry("http://localhost",
+                                              "localhost", 12, 15, false,
+                                              &original_visits));
+
+  history::URLRows original_entries;
+  original_entries.push_back(url_entry);
+  original_entries.push_back(localhost_entry);
+
+  EXPECT_CALL((*history_backend_.get()), GetAllTypedURLs(_)).
+      WillRepeatedly(DoAll(SetArgumentPointee<0>(original_entries),
+                     Return(true)));
+  EXPECT_CALL((*history_backend_.get()), GetMostRecentVisitsForURL(_, _, _)).
+      WillRepeatedly(DoAll(SetArgumentPointee<2>(original_visits),
+                     Return(true)));
+  CreateRootHelper create_root(this, syncer::TYPED_URLS);
+  StartSyncService(create_root.callback());
+
+  history::VisitVector updated_visits;
+  // Update the previous entries and add a new localhost.
+  history::URLRow updated_url_entry(MakeTypedUrlEntry("http://yey.com",
+                                                  "yey", 20, 15, false,
+                                                  &updated_visits));
+  history::URLRow updated_localhost_entry(MakeTypedUrlEntry(
+                                                  "http://localhost:80",
+                                                  "localhost", 20, 15, false,
+                                                  &original_visits));
+  history::URLRow localhost_ip_entry(MakeTypedUrlEntry("http://127.0.0.1",
+                                                  "localhost", 12, 15, false,
+                                                  &original_visits));
+  history::URLsModifiedDetails details;
+  details.changed_urls.push_back(updated_url_entry);
+  details.changed_urls.push_back(updated_localhost_entry);
+  details.changed_urls.push_back(localhost_ip_entry);
+  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+                   content::Source<Profile>(&profile_),
+                   content::Details<history::URLsModifiedDetails>(&details));
+
+  history::URLRows new_sync_entries;
+  GetTypedUrlsFromSyncDB(&new_sync_entries);
+
+  // We should ignore the localhost urls and left only with http url.
+  ASSERT_EQ(1U, new_sync_entries.size());
+  EXPECT_TRUE(URLsEqual(updated_url_entry, new_sync_entries[0]));
 }

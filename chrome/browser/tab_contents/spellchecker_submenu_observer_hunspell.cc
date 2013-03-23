@@ -5,11 +5,11 @@
 #include "chrome/browser/tab_contents/spellchecker_submenu_observer.h"
 
 #include "base/logging.h"
+#include "base/prefs/public/pref_member.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/spellchecker/spellcheck_host.h"
+#include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -44,7 +44,7 @@ void SpellCheckerSubMenuObserver::InitMenu(
   Profile* profile = proxy_->GetProfile();
   DCHECK(profile);
   language_selected_ =
-      SpellCheckHost::GetSpellCheckLanguages(profile, &languages_);
+      SpellcheckService::GetSpellCheckLanguages(profile, &languages_);
   DCHECK(languages_.size() <
          IDC_SPELLCHECK_LANGUAGES_LAST - IDC_SPELLCHECK_LANGUAGES_FIRST);
   const std::string app_locale = g_browser_process->GetApplicationLocale();
@@ -57,7 +57,7 @@ void SpellCheckerSubMenuObserver::InitMenu(
   }
 
   // Add an item that opens the 'fonts and languages options' page.
-  submenu_model_.AddSeparator();
+  submenu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
   submenu_model_.AddItemWithStringId(
       IDC_CONTENT_CONTEXT_LANGUAGE_SETTINGS,
       IDS_CONTENT_CONTEXT_LANGUAGE_SETTINGS);
@@ -114,7 +114,7 @@ bool SpellCheckerSubMenuObserver::IsCommandIdChecked(int command_id) {
   if (command_id == IDC_CHECK_SPELLING_WHILE_TYPING) {
     Profile* profile = proxy_->GetProfile();
     DCHECK(profile);
-    return profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck);
+    return profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck);
   }
 
   return false;
@@ -128,7 +128,7 @@ bool SpellCheckerSubMenuObserver::IsCommandIdEnabled(int command_id) {
   const PrefService* pref = profile->GetPrefs();
   if (command_id >= IDC_SPELLCHECK_LANGUAGES_FIRST &&
       command_id < IDC_SPELLCHECK_LANGUAGES_LAST) {
-    return pref->GetBoolean(prefs::kEnableSpellCheck);
+    return pref->GetBoolean(prefs::kEnableContinuousSpellcheck);
   }
 
   switch (command_id) {
@@ -153,21 +153,17 @@ void SpellCheckerSubMenuObserver::ExecuteCommand(int command_id) {
     if (profile && language < languages_.size()) {
       StringPrefMember dictionary_language;
       dictionary_language.Init(prefs::kSpellCheckDictionary,
-                               profile->GetPrefs(),
-                               NULL);
+                               profile->GetPrefs());
       dictionary_language.SetValue(languages_[language]);
     }
     return;
   }
 
-  content::RenderViewHost* rvh = proxy_->GetRenderViewHost();
   switch (command_id) {
     case IDC_CHECK_SPELLING_WHILE_TYPING:
       profile->GetPrefs()->SetBoolean(
-          prefs::kEnableSpellCheck,
-          !profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck));
-      if (rvh)
-        rvh->Send(new SpellCheckMsg_ToggleSpellCheck(rvh->GetRoutingID()));
-      break;
+          prefs::kEnableContinuousSpellcheck,
+          !profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck));
+    break;
   }
 }

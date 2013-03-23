@@ -11,22 +11,22 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/command_updater_delegate.h"
+#include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/base_window.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
-class Browser;
-class BrowserWindow;
 class GURL;
 class NativePanel;
+class PanelCollection;
 class PanelHost;
 class PanelManager;
-class PanelStrip;
 class Profile;
-class SkBitmap;
 
 namespace content {
 class WebContents;
@@ -34,6 +34,7 @@ struct NativeWebKeyboardEvent;
 }
 
 namespace extensions {
+class Extension;
 class WindowController;
 }
 
@@ -47,8 +48,9 @@ class WindowController;
 // - Invoke an appropriate PanelManager function to do stuff that might affect
 //   other Panels. For example deleting a panel would rearrange other panels.
 class Panel : public BaseWindow,
-              public CommandUpdater::CommandUpdaterDelegate,
-              public content::NotificationObserver {
+              public CommandUpdaterDelegate,
+              public content::NotificationObserver,
+              public ImageLoadingTracker::Observer {
  public:
   enum ExpansionState {
     // The panel is fully expanded with both title-bar and the client-area.
@@ -76,18 +78,19 @@ class Panel : public BaseWindow,
   PanelManager* manager() const;
 
   const std::string& app_name() const { return app_name_; }
+  const gfx::Image& app_icon() const { return app_icon_; }
   const SessionID& session_id() const { return session_id_; }
   extensions::WindowController* extension_window_controller() const {
     return extension_window_controller_.get();
   }
   const std::string extension_id() const;
 
-  virtual CommandUpdater* command_updater();
-  virtual Profile* profile() const;
+  CommandUpdater* command_updater();
+  Profile* profile() const;
 
   // Returns web contents of the panel, if any. There may be none if web
   // contents have not been added to the panel yet.
-  virtual content::WebContents* GetWebContents() const;
+  content::WebContents* GetWebContents() const;
 
   void SetExpansionState(ExpansionState new_expansion_state);
 
@@ -107,7 +110,7 @@ class Panel : public BaseWindow,
   int TitleOnlyHeight() const;
 
   // Returns true if the panel can be minimized or restored, depending on the
-  // strip the panel is in.
+  // collection the panel is in.
   bool CanMinimize() const;
   bool CanRestore() const;
 
@@ -121,6 +124,7 @@ class Panel : public BaseWindow,
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void ShowInactive() OVERRIDE;
+  virtual void Hide() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void Activate() OVERRIDE;
   virtual void Deactivate() OVERRIDE;
@@ -128,11 +132,10 @@ class Panel : public BaseWindow,
   virtual void Minimize() OVERRIDE;
   virtual void Restore() OVERRIDE;
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual void SetDraggableRegion(SkRegion* region) OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
 
-  // Overridden from CommandUpdater::CommandUpdaterDelegate:
+  // Overridden from CommandUpdaterDelegate:
   virtual void ExecuteCommandWithDisposition(
       int id,
       WindowOpenDisposition disposition) OVERRIDE;
@@ -141,12 +144,6 @@ class Panel : public BaseWindow,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // Construct a native panel BrowserWindow implementation for the specified
-  // |browser|. (legacy)
-  static NativePanel* CreateNativePanel(Browser* browser,
-                                        Panel* panel,
-                                        const gfx::Rect& bounds);
 
   // Construct a native panel implementation.
   static NativePanel* CreateNativePanel(Panel* panel,
@@ -168,18 +165,16 @@ class Panel : public BaseWindow,
   // Asynchronous completion of panel close request.
   void OnNativePanelClosed();
 
-  // Legacy accessors.
-  virtual Browser* browser() const;
-  virtual BrowserWindow* browser_window() const;
-
   // May be NULL if:
   // * panel is newly created and has not been positioned yet.
   // * panel is being closed asynchronously.
   // Please use it with caution.
-  PanelStrip* panel_strip() const { return panel_strip_; }
+  PanelCollection* collection() const { return collection_; }
 
-  // Sets the current panel strip that contains this panel.
-  void set_panel_strip(PanelStrip* new_strip) { panel_strip_ = new_strip; }
+  // Sets the current panel collection that contains this panel.
+  void set_collection(PanelCollection* new_collection) {
+    collection_ = new_collection;
+  }
 
   ExpansionState expansion_state() const { return expansion_state_; }
   const gfx::Size& min_size() const { return min_size_; }
@@ -196,21 +191,19 @@ class Panel : public BaseWindow,
   }
 
   // The full size is the size of the panel when it is detached or expanded
-  // in the docked strip and squeezing mode is not on.
+  // in the docked collection and squeezing mode is not on.
   gfx::Size full_size() const { return full_size_; }
   void set_full_size(const gfx::Size& size) { full_size_ = size; }
 
   // Panel must be initialized to be "fully created" and ready for use.
   // Only called by PanelManager.
   bool initialized() const { return initialized_; }
-  virtual void Initialize(const gfx::Rect& bounds, Browser* browser);  // legacy
-  virtual void Initialize(Profile* profile, const GURL& url,
-                          const gfx::Rect& bounds);
+  void Initialize(Profile* profile, const GURL& url, const gfx::Rect& bounds);
 
-  // This is different from BrowserWindow::SetBounds():
+  // This is different from BaseWindow::SetBounds():
   // * SetPanelBounds() is only called by PanelManager to manage its position.
-  // * SetBounds() is called by the API to try to change the bounds, which is
-  //   not allowed for Panel.
+  // * SetBounds() is called by the API to try to change the bounds, which may
+  //   only change the size for Panel.
   void SetPanelBounds(const gfx::Rect& bounds);
 
   // Updates the panel bounds instantly without any animation.
@@ -253,7 +246,6 @@ class Panel : public BaseWindow,
 
   // Whether the panel window is always on top.
   void SetAlwaysOnTop(bool on_top);
-  bool always_on_top() const { return always_on_top_; }
 
   // Sets whether the panel is shown in preview mode. When the panel is
   // being dragged, it is in preview mode.
@@ -278,11 +270,11 @@ class Panel : public BaseWindow,
   void OnPanelEndUserResizing();
 
   // Gives beforeunload handlers the chance to cancel the close.
-  virtual bool ShouldCloseWindow();
+  bool ShouldCloseWindow();
 
   // Invoked when the window containing us is closing. Performs the necessary
   // cleanup.
-  virtual void OnWindowClosing();
+  void OnWindowClosing();
 
   // Executes a command if it's enabled.
   // Returns true if the command is executed.
@@ -292,7 +284,7 @@ class Panel : public BaseWindow,
   string16 GetWindowTitle() const;
 
   // Gets the Favicon of the web contents.
-  virtual SkBitmap GetCurrentPageIcon() const;
+  gfx::Image GetCurrentPageIcon() const;
 
   // Updates the title bar to display the current title and icon.
   void UpdateTitleBar();
@@ -314,7 +306,6 @@ class Panel : public BaseWindow,
  private:
   friend class PanelManager;
   friend class PanelBrowserTest;
-  friend class OldPanelBrowserTest;
 
   enum MaxSizePolicy {
     // Default maximum size is proportional to the work area.
@@ -323,11 +314,21 @@ class Panel : public BaseWindow,
     CUSTOM_MAX_SIZE
   };
 
+  // ImageLoadingTracker::Observer implementation.
+  virtual void OnImageLoaded(const gfx::Image& image,
+                             const std::string& extension_id,
+                             int index) OVERRIDE;
+
   // Initialize state for all supported commands.
   void InitCommandState();
 
   // Configures the renderer for auto resize (if auto resize is enabled).
   void ConfigureAutoResize(content::WebContents* web_contents);
+
+  const extensions::Extension* GetExtension() const;
+
+  // Load the app's image, firing a load state change when loaded.
+  void UpdateAppIcon();
 
   // Prepares a title string for display (removes embedded newlines, etc).
   static void FormatTitleForDisplay(string16* title);
@@ -337,14 +338,16 @@ class Panel : public BaseWindow,
   // This name should be set when the panel is created.
   const std::string app_name_;
 
+  Profile* profile_;
+
   // Current collection of panels to which this panel belongs. This determines
   // the panel's screen layout.
-  PanelStrip* panel_strip_;  // Owned by PanelManager.
+  PanelCollection* collection_;  // Owned by PanelManager.
 
   bool initialized_;
 
   // Stores the full size of the panel so we can restore it after it's
-  // been minimized or squeezed due to lack of space in the strip.
+  // been minimized or squeezed due to lack of space in the collection.
   gfx::Size full_size_;
 
   // This is the minimum size that the panel can shrink to.
@@ -359,17 +362,14 @@ class Panel : public BaseWindow,
   // True if this panel auto resizes based on content.
   bool auto_resizable_;
 
-  // True if this panel should always stay on top of other windows.
-  bool always_on_top_;
-
   // True if this panel is in preview mode. When in preview mode, panel bounds
   // should not be affected by layout refresh. This is currently used by drag
-  // controller to add a panel to the strip without causing its bounds to
+  // controller to add a panel to the collection without causing its bounds to
   // change.
   bool in_preview_mode_;
 
   // Platform specifc implementation for panels.  It'd be one of
-  // PanelBrowserWindowGtk/PanelBrowserView/PanelBrowserWindowCocoa.
+  // PanelGtk/PanelView/PanelCocoa.
   NativePanel* native_panel_;  // Weak, owns us.
 
   AttentionMode attention_mode_;
@@ -383,6 +383,12 @@ class Panel : public BaseWindow,
   const SessionID session_id_;
   scoped_ptr<extensions::WindowController> extension_window_controller_;
   scoped_ptr<PanelHost> panel_host_;
+
+  // Used for loading app_icon_.
+  scoped_ptr<ImageLoadingTracker> app_icon_loader_;
+
+  // Icon showed in the task bar.
+  gfx::Image app_icon_;
 
   DISALLOW_COPY_AND_ASSIGN(Panel);
 };

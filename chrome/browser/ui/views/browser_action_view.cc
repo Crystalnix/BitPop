@@ -7,6 +7,8 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/browser_actions_container.h"
@@ -17,41 +19,109 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas.h"
-#include "ui/gfx/skbitmap_operations.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/image/image_skia_source.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using extensions::Extension;
 
-namespace {
+////////////////////////////////////////////////////////////////////////////////
+// BrowserActionView
 
-// Return a more transparent |image|, with 25% of its original opacity.
-SkBitmap MakeTransparent(const SkBitmap& image) {
-  SkBitmap alpha;
-  alpha.setConfig(SkBitmap::kARGB_8888_Config, image.width(), image.height());
-  alpha.allocPixels();
-  alpha.eraseColor(SkColorSetARGB(64, 0, 0, 0));
-
-  return SkBitmapOperations::CreateMaskedBitmap(image, alpha);
+bool BrowserActionView::Delegate::NeedToShowMultipleIconStates() const {
+  return true;
 }
 
-}  // namespace
+bool BrowserActionView::Delegate::NeedToShowTooltip() const {
+  return true;
+}
+
+BrowserActionView::BrowserActionView(const Extension* extension,
+                                     Browser* browser,
+                                     BrowserActionView::Delegate* delegate)
+    : browser_(browser),
+      delegate_(delegate),
+      button_(NULL),
+      extension_(extension) {
+  button_ = new BrowserActionButton(extension_, browser_, delegate_);
+  button_->set_drag_controller(delegate_);
+  button_->set_owned_by_client();
+  AddChildView(button_);
+  button_->UpdateState();
+}
+
+BrowserActionView::~BrowserActionView() {
+  button_->Destroy();
+}
+
+gfx::ImageSkia BrowserActionView::GetIconWithBadge() {
+  int tab_id = delegate_->GetCurrentTabId();
+
+  const ExtensionAction* action =
+      extensions::ExtensionActionManager::Get(browser_->profile())->
+      GetBrowserAction(*button_->extension());
+  gfx::Size spacing(0, ToolbarView::kVertSpacing);
+  gfx::ImageSkia icon = *button_->icon_factory().GetIcon(tab_id).ToImageSkia();
+  if (!button_->IsEnabled(tab_id))
+    icon = gfx::ImageSkiaOperations::CreateTransparentImage(icon, .25);
+  return action->GetIconWithBadge(icon, tab_id, spacing);
+}
+
+void BrowserActionView::Layout() {
+  // We can't rely on button_->GetPreferredSize() here because that's not set
+  // correctly until the first call to
+  // BrowserActionsContainer::RefreshBrowserActionViews(), whereas this can be
+  // called before that when the initial bounds are set (and then not after,
+  // since the bounds don't change).  So instead of setting the height from the
+  // button's preferred size, we use IconHeight(), since that's how big the
+  // button should be regardless of what it's displaying.
+  gfx::Point offset = delegate_->GetViewContentOffset();
+  button_->SetBounds(offset.x(), offset.y(), width() - offset.x(),
+                     BrowserActionsContainer::IconHeight());
+}
+
+void BrowserActionView::GetAccessibleState(ui::AccessibleViewState* state) {
+  state->name = l10n_util::GetStringUTF16(
+      IDS_ACCNAME_EXTENSIONS_BROWSER_ACTION);
+  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+}
+
+gfx::Size BrowserActionView::GetPreferredSize() {
+  return gfx::Size(BrowserActionsContainer::IconWidth(false),
+                   BrowserActionsContainer::IconHeight());
+}
+
+void BrowserActionView::PaintChildren(gfx::Canvas* canvas) {
+  View::PaintChildren(canvas);
+  ExtensionAction* action = button()->browser_action();
+  int tab_id = delegate_->GetCurrentTabId();
+  if (tab_id >= 0)
+    action->PaintBadge(canvas, GetLocalBounds(), tab_id);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserActionButton
 
 BrowserActionButton::BrowserActionButton(const Extension* extension,
-                                         BrowserActionsContainer* panel)
+                                         Browser* browser,
+                                         BrowserActionView::Delegate* delegate)
     : ALLOW_THIS_IN_INITIALIZER_LIST(
           MenuButton(this, string16(), NULL, false)),
-      browser_action_(extension->browser_action()),
+      browser_(browser),
+      browser_action_(
+          extensions::ExtensionActionManager::Get(browser->profile())->
+          GetBrowserAction(*extension)),
       extension_(extension),
-      ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)),
-      panel_(panel),
-      context_menu_(NULL) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(
+          icon_factory_(extension, browser_action_, this)),
+      delegate_(delegate),
+      context_menu_(NULL),
+      called_registered_extension_command_(false) {
   set_border(NULL);
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
@@ -59,14 +129,14 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
   // No UpdateState() here because View hierarchy not setup yet. Our parent
   // should call UpdateState() after creation.
 
+  content::NotificationSource notification_source =
+      content::Source<Profile>(browser_->profile()->GetOriginalProfile());
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
                  content::Source<ExtensionAction>(browser_action_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED,
-                 content::Source<Profile>(
-                     panel_->profile()->GetOriginalProfile()));
+                 notification_source);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED,
-                 content::Source<Profile>(
-                     panel_->profile()->GetOriginalProfile()));
+                 notification_source);
 }
 
 void BrowserActionButton::Destroy() {
@@ -82,22 +152,10 @@ void BrowserActionButton::Destroy() {
 
 void BrowserActionButton::ViewHierarchyChanged(
     bool is_add, View* parent, View* child) {
-  if (is_add && child == this) {
-    // The Browser Action API does not allow the default icon path to be
-    // changed at runtime, so we can load this now and cache it.
-    std::string relative_path = browser_action_->default_icon_path();
-    if (!relative_path.empty()) {
-      // LoadImage is not guaranteed to be synchronous, so we might see the
-      // callback OnImageLoaded execute immediately. It (through UpdateState)
-      // expects parent() to return the owner for this button, so this
-      // function is as early as we can start this request.
-      tracker_.LoadImage(extension_, extension_->GetResource(relative_path),
-                         gfx::Size(Extension::kBrowserActionIconMaxSize,
-                                   Extension::kBrowserActionIconMaxSize),
-                         ImageLoadingTracker::DONT_CACHE);
-    }
 
+  if (is_add && !called_registered_extension_command_ && GetFocusManager()) {
     MaybeRegisterExtensionCommand();
+    called_registered_extension_command_ = true;
   }
 
   MenuButton::ViewHierarchyChanged(is_add, parent, child);
@@ -116,8 +174,8 @@ void BrowserActionButton::GetAccessibleState(ui::AccessibleViewState* state) {
 }
 
 void BrowserActionButton::ButtonPressed(views::Button* sender,
-                                        const views::Event& event) {
-  panel_->OnBrowserActionExecuted(this);
+                                        const ui::Event& event) {
+  delegate_->OnBrowserActionExecuted(this);
 }
 
 void BrowserActionButton::ShowContextMenuForView(View* source,
@@ -129,97 +187,75 @@ void BrowserActionButton::ShowContextMenuForView(View* source,
 
   // Reconstructs the menu every time because the menu's contents are dynamic.
   scoped_refptr<ExtensionContextMenuModel> context_menu_contents_(
-      new ExtensionContextMenuModel(extension(), panel_->browser()));
+      new ExtensionContextMenuModel(extension(), browser_, delegate_));
   views::MenuModelAdapter menu_model_adapter(context_menu_contents_.get());
-  views::MenuRunner menu_runner(menu_model_adapter.CreateMenu());
+  menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
 
-  context_menu_ = menu_runner.GetMenu();
+  context_menu_ = menu_runner_->GetMenu();
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
-  if (menu_runner.RunMenuAt(GetWidget(), NULL, gfx::Rect(screen_loc, size()),
-          views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS) ==
-      views::MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(screen_loc, size()),
+          views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS |
+          views::MenuRunner::CONTEXT_MENU) ==
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 
+  menu_runner_.reset();
   SetButtonNotPushed();
   context_menu_ = NULL;
 }
 
-void BrowserActionButton::OnImageLoaded(const gfx::Image& image,
-                                        const std::string& extension_id,
-                                        int index) {
-  browser_action_->CacheIcon(browser_action_->default_icon_path(), image);
-
-  // Call back to UpdateState() because a more specific icon might have been set
-  // while the load was outstanding.
-  UpdateState();
-}
-
 void BrowserActionButton::UpdateState() {
-  int tab_id = panel_->GetCurrentTabId();
+  int tab_id = delegate_->GetCurrentTabId();
   if (tab_id < 0)
     return;
 
+  SetShowMultipleIconStates(delegate_->NeedToShowMultipleIconStates());
+
   if (!IsEnabled(tab_id)) {
-    SetState(views::CustomButton::BS_DISABLED);
+    SetState(views::CustomButton::STATE_DISABLED);
   } else {
     SetState(menu_visible_ ?
-             views::CustomButton::BS_PUSHED :
-             views::CustomButton::BS_NORMAL);
+             views::CustomButton::STATE_PRESSED :
+             views::CustomButton::STATE_NORMAL);
   }
 
-  SkBitmap icon(*browser_action()->GetIcon(tab_id).ToSkBitmap());
+  gfx::ImageSkia icon = *icon_factory_.GetIcon(tab_id).ToImageSkia();
+
   if (!icon.isNull()) {
     if (!browser_action()->GetIsVisible(tab_id))
-      icon = MakeTransparent(icon);
-    SkPaint paint;
-    paint.setXfermode(SkXfermode::Create(SkXfermode::kSrcOver_Mode));
+      icon = gfx::ImageSkiaOperations::CreateTransparentImage(icon, .25);
+
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
-    SkBitmap bg;
-    rb.GetBitmapNamed(IDR_BROWSER_ACTION)->copyTo(&bg,
-        SkBitmap::kARGB_8888_Config);
-    SkCanvas bg_canvas(bg);
-    bg_canvas.drawBitmap(icon, SkIntToScalar((bg.width() - icon.width()) / 2),
-        SkIntToScalar((bg.height() - icon.height()) / 2), &paint);
-    SetIcon(bg);
+    gfx::ImageSkia bg = *rb.GetImageSkiaNamed(IDR_BROWSER_ACTION);
+    SetIcon(gfx::ImageSkiaOperations::CreateSuperimposedImage(bg, icon));
 
-    SkBitmap bg_h;
-    rb.GetBitmapNamed(IDR_BROWSER_ACTION_H)->copyTo(&bg_h,
-        SkBitmap::kARGB_8888_Config);
-    SkCanvas bg_h_canvas(bg_h);
-    bg_h_canvas.drawBitmap(icon,
-        SkIntToScalar((bg_h.width() - icon.width()) / 2),
-        SkIntToScalar((bg_h.height() - icon.height()) / 2), &paint);
-    SetHoverIcon(bg_h);
+    gfx::ImageSkia bg_h = *rb.GetImageSkiaNamed(IDR_BROWSER_ACTION_H);
+    SetHoverIcon(gfx::ImageSkiaOperations::CreateSuperimposedImage(bg_h, icon));
 
-    SkBitmap bg_p;
-    rb.GetBitmapNamed(IDR_BROWSER_ACTION_P)->copyTo(&bg_p,
-        SkBitmap::kARGB_8888_Config);
-    SkCanvas bg_p_canvas(bg_p);
-    bg_p_canvas.drawBitmap(icon,
-        SkIntToScalar((bg_p.width() - icon.width()) / 2),
-        SkIntToScalar((bg_p.height() - icon.height()) / 2), &paint);
-    SetPushedIcon(bg_p);
+    gfx::ImageSkia bg_p = *rb.GetImageSkiaNamed(IDR_BROWSER_ACTION_P);
+    SetPushedIcon(
+        gfx::ImageSkiaOperations::CreateSuperimposedImage(bg_p, icon));
   }
 
   // If the browser action name is empty, show the extension name instead.
-  string16 name = UTF8ToUTF16(browser_action()->GetTitle(tab_id));
-  if (name.empty())
-    name = UTF8ToUTF16(extension()->name());
-  SetTooltipText(name);
+  std::string title = browser_action()->GetTitle(tab_id);
+  string16 name = UTF8ToUTF16(title.empty() ? extension()->name() : title);
+  SetTooltipText(delegate_->NeedToShowTooltip() ? name : string16());
   SetAccessibleName(name);
 
   parent()->SchedulePaint();
 }
 
 bool BrowserActionButton::IsPopup() {
-  int tab_id = panel_->GetCurrentTabId();
+  int tab_id = delegate_->GetCurrentTabId();
   return (tab_id < 0) ? false : browser_action_->HasPopup(tab_id);
 }
 
 GURL BrowserActionButton::GetPopupUrl() {
-  int tab_id = panel_->GetCurrentTabId();
+  int tab_id = delegate_->GetCurrentTabId();
   return (tab_id < 0) ? GURL() : browser_action_->GetPopupUrl(tab_id);
 }
 
@@ -231,7 +267,7 @@ void BrowserActionButton::Observe(int type,
       UpdateState();
       // The browser action may have become visible/hidden so we need to make
       // sure the state gets updated.
-      panel_->OnBrowserActionVisibilityChanged();
+      delegate_->OnBrowserActionVisibilityChanged();
       break;
     case chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED:
     case chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED: {
@@ -254,11 +290,15 @@ void BrowserActionButton::Observe(int type,
   }
 }
 
+void BrowserActionButton::OnIconUpdated() {
+  UpdateState();
+}
+
 bool BrowserActionButton::Activate() {
   if (!IsPopup())
     return true;
 
-  panel_->OnBrowserActionExecuted(this);
+  delegate_->OnBrowserActionExecuted(this);
 
   // TODO(erikkay): Run a nested modal loop while the mouse is down to
   // enable menu-like drag-select behavior.
@@ -270,10 +310,10 @@ bool BrowserActionButton::Activate() {
   return false;
 }
 
-bool BrowserActionButton::OnMousePressed(const views::MouseEvent& event) {
+bool BrowserActionButton::OnMousePressed(const ui::MouseEvent& event) {
   if (!event.IsRightMouseButton()) {
-    return IsPopup() ? MenuButton::OnMousePressed(event)
-                     : TextButton::OnMousePressed(event);
+    return IsPopup() ? MenuButton::OnMousePressed(event) :
+                       TextButton::OnMousePressed(event);
   }
 
   // See comments in MenuButton::Activate() as to why this is needed.
@@ -283,7 +323,7 @@ bool BrowserActionButton::OnMousePressed(const views::MouseEvent& event) {
   return false;
 }
 
-void BrowserActionButton::OnMouseReleased(const views::MouseEvent& event) {
+void BrowserActionButton::OnMouseReleased(const ui::MouseEvent& event) {
   if (IsPopup() || context_menu_) {
     // TODO(erikkay) this never actually gets called (probably because of the
     // loss of focus).
@@ -293,31 +333,38 @@ void BrowserActionButton::OnMouseReleased(const views::MouseEvent& event) {
   }
 }
 
-void BrowserActionButton::OnMouseExited(const views::MouseEvent& event) {
+void BrowserActionButton::OnMouseExited(const ui::MouseEvent& event) {
   if (IsPopup() || context_menu_)
     MenuButton::OnMouseExited(event);
   else
     TextButton::OnMouseExited(event);
 }
 
-bool BrowserActionButton::OnKeyReleased(const views::KeyEvent& event) {
-  return IsPopup() ? MenuButton::OnKeyReleased(event)
-                   : TextButton::OnKeyReleased(event);
+bool BrowserActionButton::OnKeyReleased(const ui::KeyEvent& event) {
+  return IsPopup() ? MenuButton::OnKeyReleased(event) :
+                     TextButton::OnKeyReleased(event);
+}
+
+void BrowserActionButton::OnGestureEvent(ui::GestureEvent* event) {
+  if (IsPopup())
+    MenuButton::OnGestureEvent(event);
+  else
+    TextButton::OnGestureEvent(event);
 }
 
 bool BrowserActionButton::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
-  panel_->OnBrowserActionExecuted(this);
+  delegate_->OnBrowserActionExecuted(this);
   return true;
 }
 
 void BrowserActionButton::SetButtonPushed() {
-  SetState(views::CustomButton::BS_PUSHED);
+  SetState(views::CustomButton::STATE_PRESSED);
   menu_visible_ = true;
 }
 
 void BrowserActionButton::SetButtonNotPushed() {
-  SetState(views::CustomButton::BS_NORMAL);
+  SetState(views::CustomButton::STATE_NORMAL);
   menu_visible_ = false;
 }
 
@@ -325,13 +372,16 @@ bool BrowserActionButton::IsEnabled(int tab_id) const {
   return browser_action_->GetIsVisible(tab_id);
 }
 
+gfx::ImageSkia BrowserActionButton::GetIconForTest() {
+  return icon();
+}
+
 BrowserActionButton::~BrowserActionButton() {
 }
 
 void BrowserActionButton::MaybeRegisterExtensionCommand() {
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(
-          panel_->browser()->profile());
+      extensions::CommandServiceFactory::GetForProfile(browser_->profile());
   extensions::Command browser_action_command;
   if (command_service->GetBrowserActionCommand(
           extension_->id(),
@@ -340,18 +390,17 @@ void BrowserActionButton::MaybeRegisterExtensionCommand() {
           NULL)) {
     keybinding_.reset(new ui::Accelerator(
         browser_action_command.accelerator()));
-    panel_->GetFocusManager()->RegisterAccelerator(
+    GetFocusManager()->RegisterAccelerator(
         *keybinding_.get(), ui::AcceleratorManager::kHighPriority, this);
   }
 }
 
 void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
-  if (!keybinding_.get() || !panel_->GetFocusManager())
+  if (!keybinding_.get() || !GetFocusManager())
     return;
 
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(
-          panel_->browser()->profile());
+      extensions::CommandServiceFactory::GetForProfile(browser_->profile());
 
   extensions::Command browser_action_command;
   if (!only_if_active || !command_service->GetBrowserActionCommand(
@@ -359,71 +408,6 @@ void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
           extensions::CommandService::ACTIVE_ONLY,
           &browser_action_command,
           NULL)) {
-    panel_->GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
+    GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
   }
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-// BrowserActionView
-
-BrowserActionView::BrowserActionView(const Extension* extension,
-                                     BrowserActionsContainer* panel)
-    : panel_(panel) {
-  button_ = new BrowserActionButton(extension, panel);
-  button_->set_drag_controller(panel_);
-  AddChildView(button_);
-  button_->UpdateState();
-}
-
-BrowserActionView::~BrowserActionView() {
-  RemoveChildView(button_);
-  button_->Destroy();
-}
-
-gfx::Canvas* BrowserActionView::GetIconWithBadge() {
-  int tab_id = panel_->GetCurrentTabId();
-
-  SkBitmap icon = *button_->extension()->browser_action()->GetIcon(
-      tab_id).ToSkBitmap();
-
-  // Dim the icon if our button is disabled.
-  if (!button_->IsEnabled(tab_id))
-    icon = MakeTransparent(icon);
-
-  gfx::Canvas* canvas =
-      new gfx::Canvas(gfx::ImageSkiaRep(icon, ui::SCALE_FACTOR_100P), false);
-
-  if (tab_id >= 0) {
-    gfx::Rect bounds(icon.width(), icon.height() + ToolbarView::kVertSpacing);
-    button_->extension()->browser_action()->PaintBadge(canvas, bounds, tab_id);
-  }
-
-  return canvas;
-}
-
-void BrowserActionView::Layout() {
-  // We can't rely on button_->GetPreferredSize() here because that's not set
-  // correctly until the first call to
-  // BrowserActionsContainer::RefreshBrowserActionViews(), whereas this can be
-  // called before that when the initial bounds are set (and then not after,
-  // since the bounds don't change).  So instead of setting the height from the
-  // button's preferred size, we use IconHeight(), since that's how big the
-  // button should be regardless of what it's displaying.
-  button_->SetBounds(0, ToolbarView::kVertSpacing, width(),
-                     BrowserActionsContainer::IconHeight());
-}
-
-void BrowserActionView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->name = l10n_util::GetStringUTF16(
-      IDS_ACCNAME_EXTENSIONS_BROWSER_ACTION);
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
-}
-
-void BrowserActionView::PaintChildren(gfx::Canvas* canvas) {
-  View::PaintChildren(canvas);
-  ExtensionAction* action = button()->browser_action();
-  int tab_id = panel_->GetCurrentTabId();
-  if (tab_id >= 0)
-    action->PaintBadge(canvas, gfx::Rect(width(), height()), tab_id);
 }

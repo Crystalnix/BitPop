@@ -48,6 +48,14 @@ class AutocompleteTextFieldObserver {
   // Called when the user does a copy or drag.
   virtual void CopyToPasteboard(NSPasteboard* pboard) = 0;
 
+  // Clears |pboard| and adds the current URL. Specifically used when the user
+  // explicitly requests to copy the URL in cases where extended instant has
+  // overridden the URL with the search terms.
+  virtual void CopyURLToPasteboard(NSPasteboard* pboard) = 0;
+
+  // Returns true if the Copy to URL option should be available.
+  virtual bool ShouldEnableCopyURL() = 0;
+
   // Returns true if the current clipboard text supports paste and go
   // (or paste and search).
   virtual bool CanPasteAndGo() = 0;
@@ -96,6 +104,9 @@ class AutocompleteTextFieldObserver {
   // Called whenever the autocomplete text field is losing focus.
   virtual void OnKillFocus() = 0;
 
+  // Called before the text field handles a mouse down event.
+  virtual void OnMouseDown(NSInteger button_number) = 0;
+
  protected:
   virtual ~AutocompleteTextFieldObserver() {}
 };
@@ -132,7 +143,7 @@ class AutocompleteTextFieldObserver {
 // Updates cursor and tooltip rects depending on the contents of the text field
 // e.g. the security icon should have a default pointer shown on hover instead
 // of an I-beam.
-- (void)updateCursorAndToolTipRects;
+- (void)updateMouseTracking;
 
 // Return the appropriate menu for any decoration under |event|.
 - (NSMenu*)decorationMenuForEvent:(NSEvent*)event;

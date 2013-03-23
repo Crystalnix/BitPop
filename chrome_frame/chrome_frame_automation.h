@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/stack_container.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_handle.h"
-#include "base/stack_container.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/timer.h"
@@ -294,7 +294,7 @@ class ProxyFactory {
                                        LaunchDelegate* delegate);
 
  private:
-  typedef StackVector<scoped_refptr<AutomationProxyCacheEntry>, 4> Vector;
+  typedef base::StackVector<scoped_refptr<AutomationProxyCacheEntry>, 4> Vector;
   Vector proxies_;
   // Lock if we are going to call GetAutomationServer from more than one thread.
   base::Lock lock_;
@@ -457,10 +457,11 @@ class ChromeFrameAutomationClient
 
   // PluginUrlRequestDelegate implementation. Simply adds tab's handle
   // as parameter and forwards to Chrome via IPC.
-  virtual void OnResponseStarted(int request_id, const char* mime_type,
-      const char* headers, int size, base::Time last_modified,
-      const std::string& redirect_url, int redirect_status,
-      const net::HostPortPair& socket_address);
+  virtual void OnResponseStarted(
+      int request_id, const char* mime_type, const char* headers, int size,
+      base::Time last_modified, const std::string& redirect_url,
+      int redirect_status, const net::HostPortPair& socket_address,
+      uint64 upload_size);
   virtual void OnReadComplete(int request_id, const std::string& data);
   virtual void OnResponseEnd(int request_id,
                              const net::URLRequestStatus& status);

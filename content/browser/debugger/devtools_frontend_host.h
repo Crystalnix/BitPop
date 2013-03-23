@@ -12,11 +12,10 @@
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/render_view_host_observer.h"
 
-class WebContentsImpl;
-
 namespace content {
 
 class DevToolsFrontendHostDelegate;
+class WebContentsImpl;
 
 // This class handles messages from DevToolsClient and calls corresponding
 // methods on DevToolsFrontendHostDelegate which is implemented by the
@@ -31,21 +30,20 @@ class DevToolsFrontendHost : public DevToolsClientHost,
  private:
   virtual ~DevToolsFrontendHost();
 
-  // DevToolsFrontendHost implementation.
+  // DevToolsClientHost implementation.
   virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
   virtual void InspectedContentsClosing() OVERRIDE;
   virtual void FrameNavigating(const std::string& url) OVERRIDE;
   virtual void ContentsReplaced(WebContents* new_contents) OVERRIDE;
+  virtual void ReplacedWithAnotherClient() OVERRIDE;
 
-  // content::RenderViewHostObserver overrides.
+  // RenderViewHostObserver overrides.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void OnDispatchOnInspectorBackend(const std::string& message);
   void OnActivateWindow();
   void OnCloseWindow();
   void OnMoveWindow(int x, int y);
-  void OnRequestDockWindow();
-  void OnRequestUndockWindow();
   void OnRequestSetDockSide(const std::string& side);
   void OnOpenInNewTab(const std::string& url);
   void OnSave(const std::string& url, const std::string& content, bool save_as);

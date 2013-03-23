@@ -16,19 +16,18 @@
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api_constants.h"
 #include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/debugger.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/devtools_agent_host_registry.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_manager.h"
@@ -37,6 +36,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
+#include "extensions/common/error_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/glue/webkit_glue.h"
@@ -47,6 +47,7 @@ using content::DevToolsClientHost;
 using content::DevToolsManager;
 using content::WebContents;
 using extensions::api::debugger::Debuggee;
+using extensions::ErrorUtils;
 
 namespace keys = debugger_api_constants;
 namespace Attach = extensions::api::debugger::Attach;
@@ -55,12 +56,19 @@ namespace OnDetach = extensions::api::debugger::OnDetach;
 namespace OnEvent = extensions::api::debugger::OnEvent;
 namespace SendCommand = extensions::api::debugger::SendCommand;
 
+class ExtensionDevToolsClientHost;
+
 class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   ExtensionDevToolsInfoBarDelegate(
       InfoBarTabHelper* infobar_helper,
-      const std::string& client_name);
+      const std::string& client_name,
+      ExtensionDevToolsClientHost* client_host);
   virtual ~ExtensionDevToolsInfoBarDelegate();
+
+  // Notifies infobar delegate that associated DevToolsClientHost will be
+  // destroyed.
+  void DiscardClientHost();
 
  private:
   // ConfirmInfoBarDelegate:
@@ -69,8 +77,11 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual int GetButtons() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
+  virtual void InfoBarDismissed() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
 
   std::string client_name_;
+  ExtensionDevToolsClientHost* client_host_;
   DISALLOW_COPY_AND_ASSIGN(ExtensionDevToolsInfoBarDelegate);
 };
 
@@ -91,10 +102,14 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
                             const std::string& method,
                             SendCommand::Params::CommandParams* command_params);
 
+  // Marks connection as to-be-terminated by the user.
+  void MarkAsDismissed();
+
   // DevToolsClientHost interface
   virtual void InspectedContentsClosing() OVERRIDE;
   virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
   virtual void ContentsReplaced(WebContents* web_contents) OVERRIDE;
+  virtual void ReplacedWithAnotherClient() OVERRIDE;
   virtual void FrameNavigating(const std::string& url) OVERRIDE {}
 
  private:
@@ -114,6 +129,7 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
       PendingRequests;
   PendingRequests pending_requests_;
   ExtensionDevToolsInfoBarDelegate* infobar_delegate_;
+  OnDetach::Reason detach_reason_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDevToolsClientHost);
 };
@@ -167,7 +183,8 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
       extension_id_(extension_id),
       tab_id_(tab_id),
       last_request_id_(0),
-      infobar_delegate_(NULL) {
+      infobar_delegate_(NULL),
+      detach_reason_(OnDetach::REASON_TARGET_CLOSED) {
   AttachedClientHosts::GetInstance()->Add(this);
 
   // Detach from debugger when extension unloads.
@@ -182,9 +199,10 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
   DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(agent, this);
 
   InfoBarTabHelper* infobar_helper =
-      TabContents::FromWebContents(web_contents_)->infobar_tab_helper();
-  infobar_delegate_ =
-      new ExtensionDevToolsInfoBarDelegate(infobar_helper, extension_name);
+      InfoBarTabHelper::FromWebContents(web_contents_);
+  infobar_delegate_ = new ExtensionDevToolsInfoBarDelegate(infobar_helper,
+                                                           extension_name,
+                                                           this);
   if (infobar_helper->AddInfoBar(infobar_delegate_)) {
     registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
                    content::Source<InfoBarTabHelper>(infobar_helper));
@@ -199,10 +217,11 @@ ExtensionDevToolsClientHost::~ExtensionDevToolsClientHost() {
   registrar_.RemoveAll();
 
   if (infobar_delegate_) {
-    TabContents* tab_contents = TabContents::FromWebContents(web_contents_);
-    InfoBarTabHelper* helper = tab_contents->infobar_tab_helper();
-    if (helper)
-      helper->RemoveInfoBar(infobar_delegate_);
+    infobar_delegate_->DiscardClientHost();
+    InfoBarTabHelper* infobar_tab_helper =
+        InfoBarTabHelper::FromWebContents(web_contents_);
+    if (infobar_tab_helper)
+      infobar_tab_helper->RemoveInfoBar(infobar_delegate_);
   }
   AttachedClientHosts::GetInstance()->Remove(this);
 }
@@ -221,6 +240,10 @@ void ExtensionDevToolsClientHost::InspectedContentsClosing() {
 
 void ExtensionDevToolsClientHost::ContentsReplaced(WebContents* web_contents) {
   web_contents_ = web_contents;
+}
+
+void ExtensionDevToolsClientHost::ReplacedWithAnotherClient() {
+  detach_reason_ = OnDetach::REASON_REPLACED_WITH_DEVTOOLS;
 }
 
 void ExtensionDevToolsClientHost::Close() {
@@ -247,16 +270,24 @@ void ExtensionDevToolsClientHost::SendMessageToBackend(
   DevToolsManager::GetInstance()->DispatchOnInspectorBackend(this, json_args);
 }
 
+void ExtensionDevToolsClientHost::MarkAsDismissed() {
+  detach_reason_ = OnDetach::REASON_CANCELED_BY_USER;
+}
+
 void ExtensionDevToolsClientHost::SendDetachedEvent() {
   Profile* profile =
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-  if (profile != NULL && profile->GetExtensionEventRouter()) {
+  if (profile != NULL &&
+      extensions::ExtensionSystem::Get(profile)->event_router()) {
     Debuggee debuggee;
     debuggee.tab_id = tab_id_;
-
-    std::string json_args = OnDetach::ToJson(debuggee);
-    profile->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, keys::kOnDetach, json_args, profile, GURL());
+    scoped_ptr<base::ListValue> args(OnDetach::Create(debuggee,
+                                                      detach_reason_));
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        keys::kOnDetach, args.Pass()));
+    event->restrict_to_profile = profile;
+    extensions::ExtensionSystem::Get(profile)->event_router()->
+        DispatchEventToExtension(extension_id_, event.Pass());
   }
 }
 
@@ -285,7 +316,8 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
     const std::string& message) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-  if (profile == NULL || !profile->GetExtensionEventRouter())
+  if (profile == NULL ||
+      !extensions::ExtensionSystem::Get(profile)->event_router())
     return;
 
   scoped_ptr<Value> result(base::JSONReader::Read(message));
@@ -307,10 +339,12 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
     if (dictionary->GetDictionary("params", &params_value))
       params.additional_properties.Swap(params_value);
 
-    std::string json_args = OnEvent::ToJson(debuggee, method_name, params);
-
-    profile->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, keys::kOnEvent, json_args, profile, GURL());
+    scoped_ptr<ListValue> args(OnEvent::Create(debuggee, method_name, params));
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        keys::kOnEvent, args.Pass()));
+    event->restrict_to_profile = profile;
+    extensions::ExtensionSystem::Get(profile)->event_router()->
+        DispatchEventToExtension(extension_id_, event.Pass());
   } else {
     SendCommandDebuggerFunction* function = pending_requests_[id];
     if (!function)
@@ -323,12 +357,18 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
 
 ExtensionDevToolsInfoBarDelegate::ExtensionDevToolsInfoBarDelegate(
     InfoBarTabHelper* infobar_helper,
-    const std::string& client_name)
+    const std::string& client_name,
+    ExtensionDevToolsClientHost* client_host)
     : ConfirmInfoBarDelegate(infobar_helper),
-      client_name_(client_name) {
+      client_name_(client_name),
+      client_host_(client_host) {
 }
 
 ExtensionDevToolsInfoBarDelegate::~ExtensionDevToolsInfoBarDelegate() {
+}
+
+void ExtensionDevToolsInfoBarDelegate::DiscardClientHost() {
+  client_host_ = NULL;
 }
 
 bool ExtensionDevToolsInfoBarDelegate::ShouldExpire(
@@ -349,29 +389,40 @@ string16 ExtensionDevToolsInfoBarDelegate::GetMessageText() const {
                                     UTF8ToUTF16(client_name_));
 }
 
+void ExtensionDevToolsInfoBarDelegate::InfoBarDismissed() {
+  if (client_host_)
+    client_host_->MarkAsDismissed();
+}
+
+bool ExtensionDevToolsInfoBarDelegate::Cancel() {
+  if (client_host_)
+    client_host_->MarkAsDismissed();
+  return true;
+}
+
 DebuggerFunction::DebuggerFunction()
     : contents_(0),
       tab_id_(0),
       client_host_(0) {
 }
 
-bool DebuggerFunction::InitTabContents() {
-  // Find the TabContents that contains this tab id.
+bool DebuggerFunction::InitWebContents() {
+  // Find the WebContents that contains this tab id.
   contents_ = NULL;
-  TabContents* tab_contents = NULL;
+  WebContents* web_contents = NULL;
   bool result = ExtensionTabUtil::GetTabById(
-      tab_id_, profile(), include_incognito(), NULL, NULL, &tab_contents, NULL);
-  if (!result || !tab_contents) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+      tab_id_, profile(), include_incognito(), NULL, NULL, &web_contents, NULL);
+  if (!result || !web_contents) {
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoTabError,
         base::IntToString(tab_id_));
     return false;
   }
-  contents_ = tab_contents->web_contents();
+  contents_ = web_contents;
 
   if (content::GetContentClient()->HasWebUIScheme(
           contents_->GetURL())) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kAttachToWebUIError,
         contents_->GetURL().scheme());
     return false;
@@ -381,7 +432,7 @@ bool DebuggerFunction::InitTabContents() {
 }
 
 bool DebuggerFunction::InitClientHost() {
-  if (!InitTabContents())
+  if (!InitWebContents())
     return false;
 
   // Don't fetch rvh from the contents since it'll be wrong upon navigation.
@@ -390,7 +441,7 @@ bool DebuggerFunction::InitClientHost() {
   if (!client_host_ ||
       !client_host_->MatchesContentsAndExtensionId(contents_,
                                                    GetExtension()->id())) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kNotAttachedError,
         base::IntToString(tab_id_));
     return false;
@@ -407,12 +458,12 @@ bool AttachDebuggerFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   tab_id_ = params->target.tab_id;
-  if (!InitTabContents())
+  if (!InitWebContents())
     return false;
 
   if (!webkit_glue::IsInspectorProtocolVersionSupported(
       params->required_version)) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kProtocolVersionNotSupportedError,
         params->required_version);
     return false;
@@ -424,7 +475,7 @@ bool AttachDebuggerFunction::RunImpl() {
       GetDevToolsClientHostFor(agent);
 
   if (client_host != NULL) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kAlreadyAttachedError,
         base::IntToString(tab_id_));
     return false;

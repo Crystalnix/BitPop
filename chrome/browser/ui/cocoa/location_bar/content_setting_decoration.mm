@@ -13,13 +13,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_content_setting_bubble_model_delegate.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #import "chrome/browser/ui/cocoa/content_settings/content_setting_bubble_cocoa.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/net_util.h"
@@ -123,7 +121,7 @@ enum AnimationState {
 }
 
 - (void)dealloc {
-  [self stopAnimation];
+  DCHECK(!timer_);
   [super dealloc];
 }
 
@@ -188,7 +186,8 @@ bool ContentSettingDecoration::UpdateFromWebContents(
     // TODO(thakis): We should use pdfs for these icons on OSX.
     // http://crbug.com/35847
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    SetImage(rb.GetNativeImageNamed(content_setting_image_model_->get_icon()));
+    SetImage(rb.GetNativeImageNamed(
+        content_setting_image_model_->get_icon()).ToNSImage());
     SetToolTip(base::SysUTF8ToNSString(
         content_setting_image_model_->get_tooltip()));
 
@@ -198,7 +197,7 @@ bool ContentSettingDecoration::UpdateFromWebContents(
 
     // Check if the animation has already run.
     TabSpecificContentSettings* content_settings =
-        TabContents::FromWebContents(web_contents)->content_settings();
+        TabSpecificContentSettings::FromWebContents(web_contents);
     ContentSettingsType content_type =
         content_setting_image_model_->get_content_settings_type();
     bool ran_animation = content_settings->IsBlockageIndicated(content_type);
@@ -210,12 +209,12 @@ bool ContentSettingDecoration::UpdateFromWebContents(
       // cached so it is not allowed to change during the animation.
       animation_.reset(
           [[ContentSettingAnimationState alloc] initWithOwner:this]);
-      animated_text_.reset(CreateAnimatedText());
+      animated_text_ = CreateAnimatedText();
       text_width_ = MeasureTextWidth();
     } else if (!has_animated_text) {
       // Decoration no longer has animation, stop it (ok to always do this).
       [animation_ stopAnimation];
-      animation_.reset(nil);
+      animation_.reset();
     }
   } else {
     // Decoration no longer visible, stop/clear animation.
@@ -229,18 +228,16 @@ CGFloat ContentSettingDecoration::MeasureTextWidth() {
   return [animated_text_ size].width;
 }
 
-// Returns an attributed string with the animated text. Caller is responsible
-// for releasing.
-NSAttributedString* ContentSettingDecoration::CreateAnimatedText() {
+scoped_nsobject<NSAttributedString>
+    ContentSettingDecoration::CreateAnimatedText() {
   NSString* text =
       l10n_util::GetNSString(
           content_setting_image_model_->explanatory_string_id());
   NSDictionary* attributes =
       [NSDictionary dictionaryWithObject:[NSFont labelFontOfSize:14]
                                   forKey:NSFontAttributeName];
-  NSAttributedString* attr_string =
-      [[NSAttributedString alloc] initWithString:text attributes:attributes];
-  return attr_string;
+  return scoped_nsobject<NSAttributedString>(
+      [[NSAttributedString alloc] initWithString:text attributes:attributes]);
 }
 
 NSPoint ContentSettingDecoration::GetBubblePointInFrame(NSRect frame) {
@@ -262,9 +259,9 @@ bool ContentSettingDecoration::AcceptsMousePress() {
 
 bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
   // Get host. This should be shared on linux/win/osx medium-term.
-  Browser* browser = browser::GetLastActiveBrowser();
-  TabContents* tabContents = chrome::GetActiveTabContents(browser);
-  if (!tabContents)
+  Browser* browser = owner_->browser();
+  WebContents* web_contents = owner_->GetWebContents();
+  if (!web_contents)
     return true;
 
   // Find point for bubble's arrow in screen coordinates.
@@ -281,7 +278,7 @@ bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
   ContentSettingBubbleModel* model =
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
           browser->content_setting_bubble_model_delegate(),
-          tabContents, profile_,
+          web_contents, profile_,
           content_setting_image_model_->get_content_settings_type());
   [ContentSettingBubbleController showForModel:model
                                   parentWindow:[field window]

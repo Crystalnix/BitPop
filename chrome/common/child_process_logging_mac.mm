@@ -13,7 +13,7 @@
 #include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/common/metrics/experiments_helper.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/common/gpu_info.h"
 #include "googleurl/src/gurl.h"
@@ -37,7 +37,7 @@ const char *kGPUVertexShaderVersionParamName = "gpu-vsver";
 const char *kGPUGLVersionParamName = "gpu-glver";
 const char *kNumberOfViews = "num-views";
 NSString* const kNumExtensionsName = @"num-extensions";
-NSString* const kExtensionNameFormat = @"extension-%d";
+NSString* const kExtensionNameFormat = @"extension-%zu";
 NSString* const kPrinterInfoNameFormat = @"prn-info-%zu";
 
 // Account for the terminating null character.
@@ -122,7 +122,7 @@ void SetActiveExtensions(const std::set<std::string>& extension_ids) {
   // Record up to |kMaxReportedActiveExtensions| extensions, clearing
   // keys if there aren't that many.
   std::set<std::string>::const_iterator iter = extension_ids.begin();
-  for (int i = 0; i < kMaxReportedActiveExtensions; ++i) {
+  for (size_t i = 0; i < kMaxReportedActiveExtensions; ++i) {
     NSString* key = [NSString stringWithFormat:kExtensionNameFormat, i];
     if (iter != extension_ids.end()) {
       SetCrashKeyValue(key, [NSString stringWithUTF8String:iter->c_str()]);
@@ -163,7 +163,7 @@ void SetGpuInfoImpl(const content::GPUInfo& gpu_info,
 }
 
 void SetGpuInfo(const content::GPUInfo& gpu_info) {
-    SetGpuInfoImpl(gpu_info, SetCrashKeyValue);
+  SetGpuInfoImpl(gpu_info, SetCrashKeyValue);
 }
 
 void SetPrinterInfo(const char* printer_info) {
@@ -188,7 +188,7 @@ void SetNumberOfViewsImpl(int number_of_views,
 }
 
 void SetNumberOfViews(int number_of_views) {
-    SetNumberOfViewsImpl(number_of_views, SetCrashKeyValue);
+  SetNumberOfViewsImpl(number_of_views, SetCrashKeyValue);
 }
 
 void SetCommandLine(const CommandLine* command_line) {
@@ -227,10 +227,10 @@ void SetExperimentList(const std::vector<string16>& experiments) {
   NSString* const kExperimentChunkFormat = @"experiment-chunk-%zu";  // 1-based.
 
   std::vector<string16> chunks;
-  experiments_helper::GenerateExperimentChunks(experiments, &chunks);
+  chrome_variations::GenerateVariationChunks(experiments, &chunks);
 
-  // Store up to |kMaxReportedExperimentChunks| chunks.
-  for (size_t i = 0; i < kMaxReportedExperimentChunks; ++i) {
+  // Store up to |kMaxReportedVariationChunks| chunks.
+  for (size_t i = 0; i < kMaxReportedVariationChunks; ++i) {
     NSString* key = [NSString stringWithFormat:kExperimentChunkFormat, i + 1];
     if (i < chunks.size()) {
       NSString* value = base::SysUTF16ToNSString(chunks[i]);
@@ -241,8 +241,8 @@ void SetExperimentList(const std::vector<string16>& experiments) {
   }
 
   // Make note of the total number of experiments, which may be greater than
-  // what was able to fit in |kMaxReportedExperimentChunks|. This is useful
-  // when correlating stability with the number of experiments running
+  // what was able to fit in |kMaxReportedVariationChunks|. This is useful when
+  // correlating stability with the number of experiments running
   // simultaneously.
   SetCrashKeyValue(kNumExperimentsKey,
                    [NSString stringWithFormat:@"%zu", experiments.size()]);

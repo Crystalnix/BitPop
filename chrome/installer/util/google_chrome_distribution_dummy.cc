@@ -116,15 +116,21 @@ string16 GoogleChromeDistribution::GetVersionKey() {
   return string16();
 }
 
-bool GoogleChromeDistribution::GetDelegateExecuteHandlerData(
-    string16* handler_class_uuid,
-    string16* type_lib_uuid,
-    string16* type_lib_version,
-    string16* interface_uuid) {
+string16 GoogleChromeDistribution::GetIconFilename() {
+  NOTREACHED();
+  return string16();
+}
+
+bool GoogleChromeDistribution::GetCommandExecuteImplClsid(
+    string16* handler_class_uuid) {
   NOTREACHED();
   return false;
 }
 
+bool GoogleChromeDistribution::AppHostIsSupported() {
+  NOTREACHED();
+  return false;
+}
 
 void GoogleChromeDistribution::UpdateInstallStatus(bool system_install,
     installer::ArchiveType archive_type,

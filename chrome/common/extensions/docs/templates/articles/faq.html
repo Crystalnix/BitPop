@@ -73,8 +73,8 @@ try the
   </p>
 
   <p>
-  Click the wrench icon
-  <img src="{{static}}/images/toolsmenu.gif" height="29" width="29" alt=""
+  Click the Chrome menu icon
+  <img src="{{static}}/images/hotdogmenu.png" height="29" width="29" alt=""
     class="nomargin" />
   and select <b>Extensions</b> from the <b>Tools</b> menu.
   If there's a "+" next to "Developer mode",
@@ -275,10 +275,11 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
 <h3 id="faq-lifecycle-events">Can extensions be notified when they are
   installed/uninstalled?</h3>
 <p>
-  No, there are no events an extension can listen to in order to determine
-  whether it has been installed or uninstalled.  However, an extension can
-  determine when it has been run for the first time.  See <a
-    href="#faq-firstrun">this FAQ entry</a> for information.
+  You can listen to the
+  $ref:runtime.onInstalled
+  event to be notified when your extension is installed or updated, or when
+  Chrome itself is updated. There is no corresponding event for when your
+  extension is uninstalled.
 </p>
 
 
@@ -351,18 +352,9 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
 <h3 id="faq-firstrun">How can an extension determine whether it is running for
   the first time?</h3>
 <p>
-  An extension can check to see whether it is running for the first time by
-  checking for the presence of a value in localStorage, and writing the value if
-  it does not exist. For example:
-</p>
-
-<pre>var firstRun = (localStorage['firstRun'] == 'true');
-if (!firstRun) {
-  localStorage['firstRun'] = 'true';
-}</pre>
-
-<p>
-  Note that this check should be run in a background page, not a content script.
+  You can listen to the
+  $ref:runtime.onInstalled
+  event. See <a href="#faq-lifecycle-events">this FAQ entry</a>.
 </p>
 
 <h2 id="features2">Features and bugs</h2>
@@ -391,7 +383,7 @@ if (!firstRun) {
   </li>
   <li>
     Search the issue tracker at
-    <a href="http://www.crbug.com">http://www.crbug.com</a> to see whether
+    <a href="http://crbug.com">http://crbug.com</a> to see whether
     someone has reported a similar issue.  Most issues related to
     extensions are filed under <strong>Feature=Extensions</strong>, so to
     look for an extension bug related to the
@@ -446,7 +438,7 @@ if (!firstRun) {
 <ol>
   <li>
     Search the issue tracker at
-    <a href="http://www.crbug.com">http://www.crbug.com</a> to see whether
+    <a href="http://crbug.com">http://crbug.com</a> to see whether
     someone has requested a similar feature.  Most requests related to
     extensions are filed under <strong>Feature=Extensions</strong>, so to
     look for an extension feature request related to keyboard shortcuts

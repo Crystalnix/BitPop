@@ -5,15 +5,19 @@
 #include "chrome/browser/automation/automation_event_observers.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
+#include "content/public/browser/notification_service.h"
+
+using chromeos::ExistingUserController;
 
 LoginEventObserver::LoginEventObserver(
     AutomationEventQueue* event_queue,
-    chromeos::ExistingUserController* controller,
     AutomationProvider* automation)
     : AutomationEventObserver(event_queue, false),
-      controller_(controller),
       automation_(automation->AsWeakPtr()) {
-  controller_->set_login_status_consumer(this);
+  ExistingUserController* controller =
+      ExistingUserController::current_controller();
+  DCHECK(controller);
+  controller->set_login_status_consumer(this);
 }
 
 LoginEventObserver::~LoginEventObserver() {}
@@ -32,7 +36,19 @@ void LoginEventObserver::OnLoginSuccess(const std::string& username,
     automation_->set_profile(
         g_browser_process->profile_manager()->GetLastUsedProfile());
   }
-  _NotifyLoginEvent(std::string());
+  VLOG(1) << "Successfully logged in. Waiting for a page to load";
+  registrar_.Add(this, content::NOTIFICATION_LOAD_STOP,
+                 content::NotificationService::AllBrowserContextsAndSources());
+}
+
+void LoginEventObserver::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == content::NOTIFICATION_LOAD_STOP) {
+    VLOG(1) << "Page load done.";
+    _NotifyLoginEvent(std::string());
+  }
 }
 
 void LoginEventObserver::_NotifyLoginEvent(const std::string& error_string) {
@@ -41,6 +57,9 @@ void LoginEventObserver::_NotifyLoginEvent(const std::string& error_string) {
   if (error_string.length())
     dict->SetString("error_string", error_string);
   NotifyEvent(dict);
-  controller_->set_login_status_consumer(NULL);
+  ExistingUserController* controller =
+      ExistingUserController::current_controller();
+  if (controller)
+    controller->set_login_status_consumer(NULL);
   RemoveIfDone();
 }

@@ -15,6 +15,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_url_index.h"
@@ -74,6 +75,9 @@ struct TestURLInfo {
   {"http://cda.com/Dogs%20Cats%20Gorillas%20Sea%20Slugs%20and%20Mice",
    "Dogs & Cats & Mice & Other Animals", 1, 1, 0},
   {"https://monkeytrap.org/", "", 3, 1, 0},
+  {"http://popularsitewithpathonly.com/moo",
+   "popularsitewithpathonly.com/moo", 50, 50, 0},
+  {"http://popularsitewithroot.com/", "popularsitewithroot.com", 50, 50, 0}
 };
 
 class HistoryQuickProviderTest : public testing::Test,
@@ -84,7 +88,7 @@ class HistoryQuickProviderTest : public testing::Test,
         file_thread_(BrowserThread::FILE, &message_loop_) {}
 
   // AutocompleteProviderListener:
-  virtual void OnProviderUpdate(bool updated_matches) OVERRIDE;
+  virtual void OnProviderUpdate(bool updated_matches) OVERRIDE {}
 
  protected:
   class SetShouldContain : public std::unary_function<const std::string&,
@@ -128,7 +132,6 @@ class HistoryQuickProviderTest : public testing::Test,
 
   ACMatches ac_matches_;  // The resulting matches after running RunTest.
 
- private:
   scoped_refptr<HistoryQuickProvider> provider_;
 };
 
@@ -137,6 +140,7 @@ void HistoryQuickProviderTest::SetUp() {
   profile_->CreateHistoryService(true, false);
   profile_->CreateBookmarkModel(true);
   profile_->BlockUntilBookmarkModelLoaded();
+  profile_->BlockUntilHistoryIndexIsRefreshed();
   history_service_ =
       HistoryServiceFactory::GetForProfile(profile_.get(),
                                            Profile::EXPLICIT_ACCESS);
@@ -150,16 +154,15 @@ void HistoryQuickProviderTest::TearDown() {
 }
 
 bool HistoryQuickProviderTest::UpdateURL(const history::URLRow& row) {
+  history::URLDatabase* db = history_service_->InMemoryDatabase();
+  DCHECK(db);
+  EXPECT_NE(db->AddURL(row), 0);
   history::InMemoryURLIndex* index = provider_->GetIndex();
   DCHECK(index);
   history::URLIndexPrivateData* private_data = index->private_data();
   DCHECK(private_data);
   return private_data->UpdateURL(row, index->languages_,
                                  index->scheme_whitelist_);
-}
-
-void HistoryQuickProviderTest::OnProviderUpdate(bool updated_matches) {
-  MessageLoop::current()->Quit();
 }
 
 void HistoryQuickProviderTest::GetTestData(size_t* data_count,
@@ -211,8 +214,8 @@ void HistoryQuickProviderTest::RunTest(const string16 text,
                                        bool can_inline_top_result,
                                        string16 expected_fill_into_edit) {
   SCOPED_TRACE(text);  // Minimal hint to query being run.
-  MessageLoop::current()->RunAllPending();
-  AutocompleteInput input(text, string16(), false, false, true,
+  MessageLoop::current()->RunUntilIdle();
+  AutocompleteInput input(text, string16::npos, string16(), false, false, true,
                           AutocompleteInput::ALL_MATCHES);
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
@@ -235,10 +238,11 @@ void HistoryQuickProviderTest::RunTest(const string16 text,
       << " unexpected results, one of which was: '"
       << *(leftovers.begin()) << "'.";
 
-  // We always expect to get at least one result.
-  ASSERT_FALSE(ac_matches_.empty());
-  int best_score = ac_matches_.begin()->relevance + 1;
+  if (expected_urls.empty())
+    return;
+
   // Verify that we got the results in the order expected.
+  int best_score = ac_matches_.begin()->relevance + 1;
   int i = 0;
   std::vector<std::string>::const_iterator expected = expected_urls.begin();
   for (ACMatches::const_iterator actual = ac_matches_.begin();
@@ -318,8 +322,8 @@ TEST_F(HistoryQuickProviderTest, StartRelativeMatch) {
 TEST_F(HistoryQuickProviderTest, PrefixOnlyMatch) {
   std::vector<std::string> expected_urls;
   expected_urls.push_back("http://foo.com/");
+  expected_urls.push_back("http://popularsitewithroot.com/");
   expected_urls.push_back("http://slashdot.org/favorite_page.html");
-  expected_urls.push_back("http://foo.com/dir/another/");
   RunTest(ASCIIToUTF16("http://"), expected_urls, true,
           ASCIIToUTF16("http://foo.com"));
 }
@@ -430,6 +434,86 @@ TEST_F(HistoryQuickProviderTest, Spans) {
             spans_b[2].style);
 }
 
+TEST_F(HistoryQuickProviderTest, DeleteMatch) {
+  std::vector<std::string> expected_urls;
+  expected_urls.push_back("http://slashdot.org/favorite_page.html");
+  // Fill up ac_matches_; we don't really care about the test yet.
+  RunTest(ASCIIToUTF16("slashdot"), expected_urls, true,
+          ASCIIToUTF16("slashdot.org/favorite_page.html"));
+  EXPECT_EQ(1U, ac_matches_.size());
+  provider_->DeleteMatch(ac_matches_[0]);
+  // Verify it's no longer an indexed visit.
+  expected_urls.clear();
+  RunTest(ASCIIToUTF16("slashdot"), expected_urls, true,
+          ASCIIToUTF16("NONE EXPECTED"));
+}
+
+TEST_F(HistoryQuickProviderTest, PreventBeatingURLWhatYouTypedMatch) {
+  std::vector<std::string> expected_urls;
+
+  expected_urls.clear();
+  expected_urls.push_back("http://popularsitewithroot.com/");
+  // If the user enters a hostname (no path) that he/she has visited
+  // before, we should make sure that all HistoryQuickProvider results
+  // have scores less than what HistoryURLProvider will assign the
+  // URL-what-you-typed match.
+  RunTest(ASCIIToUTF16("popularsitewithroot.com"), expected_urls, true,
+          ASCIIToUTF16("popularsitewithroot.com"));
+  EXPECT_LT(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForBestInlineableResult);
+
+  // Check that if the user didn't quite enter the full hostname, this
+  // hostname would've normally scored above the URL-what-you-typed match.
+  RunTest(ASCIIToUTF16("popularsitewithroot.c"), expected_urls, true,
+          ASCIIToUTF16("popularsitewithroot.com"));
+  EXPECT_GE(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForWhatYouTypedResult);
+
+  expected_urls.clear();
+  expected_urls.push_back("http://popularsitewithpathonly.com/moo");
+  // If the user enters a hostname of a host that he/she has visited
+  // but never visited the root page of, we should make sure that all
+  // HistoryQuickProvider results have scores less than what the
+  // HistoryURLProvider will assign the URL-what-you-typed match.
+  RunTest(ASCIIToUTF16("popularsitewithpathonly.com"), expected_urls, true,
+          ASCIIToUTF16("popularsitewithpathonly.com/moo"));
+  EXPECT_LT(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForWhatYouTypedResult);
+
+  // Verify the same thing happens if the user adds a / to end of the
+  // hostname.
+  RunTest(ASCIIToUTF16("popularsitewithpathonly.com/"), expected_urls, true,
+          ASCIIToUTF16("popularsitewithpathonly.com/moo"));
+  EXPECT_LT(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForWhatYouTypedResult);
+
+
+  // Check that if the user didn't quite enter the full hostname, this
+  // page would've normally scored above the URL-what-you-typed match.
+  RunTest(ASCIIToUTF16("popularsitewithpathonly.co"), expected_urls, true,
+          ASCIIToUTF16("popularsitewithpathonly.com/moo"));
+  EXPECT_GE(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForWhatYouTypedResult);
+
+  // If the user enters a hostname + path that he/she has not visited
+  // before (but visited other things on the host), we can allow
+  // inline autocompletions.
+  RunTest(ASCIIToUTF16("popularsitewithpathonly.com/mo"), expected_urls, true,
+          ASCIIToUTF16("popularsitewithpathonly.com/moo"));
+  EXPECT_GE(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForWhatYouTypedResult);
+
+  // If the user enters a hostname + path that he/she has visited
+  // before, we should make sure that all HistoryQuickProvider results
+  // have scores less than what the HistoryURLProvider will assign
+  // the URL-what-you-typed match.
+  RunTest(ASCIIToUTF16("popularsitewithpathonly.com/moo"),
+          expected_urls, true,
+          ASCIIToUTF16("popularsitewithpathonly.com/moo"));
+  EXPECT_LT(ac_matches_[0].relevance,
+            HistoryURLProvider::kScoreForBestInlineableResult);
+}
+
 // HQPOrderingTest -------------------------------------------------------------
 
 TestURLInfo ordering_test_db[] = {
@@ -497,4 +581,3 @@ TEST_F(HQPOrderingTest, TEAMatch) {
   RunTest(ASCIIToUTF16("tea"), expected_urls, true,
           ASCIIToUTF16("www.teamliquid.net"));
 }
-

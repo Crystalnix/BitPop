@@ -19,13 +19,16 @@
 #include <cstdlib>
 #include <iterator>
 #include <limits>
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/process_util.h"
+#include "base/string16.h"
 #include "base/string_number_conversions.h"
+#include "base/string_util.h"
 #include "base/time.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_com_initializer.h"
@@ -65,7 +68,8 @@ const wchar_t kChromeRegVersion[] = L"pv";
 const wchar_t kNoChromeOfferUntil[] =
     L"SOFTWARE\\Google\\No Chrome Offer Until";
 
-const wchar_t kChromeWindowClass[] = L"Chrome_WidgetWin_0";
+// Prefix used to match the window class for Chrome windows.
+const wchar_t kChromeWindowClassPrefix[] = L"Chrome_WidgetWin_";
 
 // Return the company name specified in the file version info resource.
 bool GetCompanyName(const wchar_t* filename, wchar_t* buffer, DWORD out_len) {
@@ -320,6 +324,36 @@ bool GetUserIdForProcess(size_t pid, wchar_t** user_sid) {
   ::CloseHandle(process_handle);
   return result;
 }
+
+struct SetWindowPosParams {
+  int x;
+  int y;
+  int width;
+  int height;
+  DWORD flags;
+  HWND window_insert_after;
+  bool success;
+  std::set<HWND> shunted_hwnds;
+};
+
+BOOL CALLBACK ChromeWindowEnumProc(HWND hwnd, LPARAM lparam) {
+  wchar_t window_class[MAX_PATH] = {};
+  SetWindowPosParams* params = reinterpret_cast<SetWindowPosParams*>(lparam);
+
+  if (!params->shunted_hwnds.count(hwnd) &&
+      ::GetClassName(hwnd, window_class, arraysize(window_class)) &&
+      StartsWith(window_class, kChromeWindowClassPrefix, false) &&
+      ::SetWindowPos(hwnd, params->window_insert_after, params->x,
+                     params->y, params->width, params->height, params->flags)) {
+    params->shunted_hwnds.insert(hwnd);
+    params->success = true;
+  }
+
+  // Return TRUE to ensure we hit all possible top-level Chrome windows as per
+  // http://msdn.microsoft.com/en-us/library/windows/desktop/ms633498.aspx
+  return TRUE;
+}
+
 }  // namespace
 
 BOOL __stdcall GoogleChromeCompatibilityCheck(BOOL set_flag,
@@ -374,7 +408,11 @@ BOOL __stdcall LaunchGoogleChrome() {
 
   // Now grab the uninstall string from the appropriate ClientState key
   // and use that as the base for a path to chrome.exe.
-  FilePath chrome_exe_path(chrome_launcher_support::GetAnyChromePath());
+  FilePath chrome_exe_path(
+      chrome_launcher_support::GetChromePathForInstallationLevel(
+          install_key == HKEY_LOCAL_MACHINE ?
+              chrome_launcher_support::SYSTEM_LEVEL_INSTALLATION :
+              chrome_launcher_support::USER_LEVEL_INSTALLATION));
   if (chrome_exe_path.empty()) {
     return false;
   }
@@ -465,39 +503,44 @@ BOOL __stdcall LaunchGoogleChromeWithDimensions(int x,
   if (!LaunchGoogleChrome())
     return false;
 
-  HWND handle = NULL;
-  int seconds_elapsed = 0;
+  HWND hwnd_insert_after = in_background ? HWND_BOTTOM : NULL;
+  DWORD set_window_flags = in_background ? SWP_NOACTIVATE : SWP_NOZORDER;
+
+  if (x == -1 && y == -1)
+    set_window_flags |= SWP_NOMOVE;
+
+  if (width == -1 && height == -1)
+    set_window_flags |= SWP_NOSIZE;
+
+  SetWindowPosParams enum_params = { x, y, width, height, set_window_flags,
+                                     hwnd_insert_after, false };
 
   // Chrome may have been launched, but the window may not have appeared
   // yet. Wait for it to appear for 10 seconds, but exit if it takes longer
   // than that.
-  while (!handle && seconds_elapsed < 10) {
-    handle = FindWindowEx(NULL, handle, kChromeWindowClass, NULL);
-    if (!handle) {
-      Sleep(1000);
-      seconds_elapsed++;
+  int seconds_elapsed = 0;
+  int timeout = 10;
+  bool found_window = false;
+  while (seconds_elapsed < timeout) {
+    // Enum all top-level windows looking for Chrome windows.
+    ::EnumWindows(ChromeWindowEnumProc, reinterpret_cast<LPARAM>(&enum_params));
+
+    // Give it ten more seconds after finding the first window until we stop
+    // shoving new windows into the background.
+    if (!found_window && enum_params.success) {
+      found_window = true;
+      timeout = seconds_elapsed + 10;
     }
+
+    Sleep(1000);
+    seconds_elapsed++;
   }
 
-  if (!handle)
-    return false;
+  return found_window;
+}
 
-  // At this point, there are several top-level Chrome windows
-  // but we only want the window that has child windows.
-
-  // This loop iterates through all of the top-level Windows named
-  // kChromeWindowClass, and looks for the first one with any children.
-  while (handle && !FindWindowEx(handle, NULL, kChromeWindowClass, NULL)) {
-    // Get the next top-level Chrome window.
-    handle = FindWindowEx(NULL, handle, kChromeWindowClass, NULL);
-  }
-
-  HWND set_window_hwnd_insert_after = in_background ? HWND_BOTTOM : NULL;
-  DWORD set_window_flags = in_background ? SWP_NOACTIVATE : SWP_NOZORDER;
-
-  return (handle &&
-          SetWindowPos(handle, set_window_hwnd_insert_after, x, y,
-                       width, height, set_window_flags));
+BOOL __stdcall LaunchGoogleChromeInBackground() {
+  return LaunchGoogleChromeWithDimensions(-1, -1, -1, -1, true);
 }
 
 int __stdcall GoogleChromeDaysSinceLastRun() {

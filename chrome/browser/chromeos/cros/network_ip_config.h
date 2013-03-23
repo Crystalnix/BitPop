@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 
 namespace chromeos {
 
@@ -33,11 +34,6 @@ struct NetworkIPConfig {
 
   std::string ToString() const;
 
-  // Gets the PrefixLength for an IPv4 netmask.
-  // For example, "255.255.255.0" => 24
-  // If the netmask is invalid, this will return -1;
-  // TODO(chocobo): Add support for IPv6.
-  int32 GetPrefixLength() const;
   std::string device_path;  // This looks like "/device/0011aa22bb33"
   IPConfigType type;
   std::string address;
@@ -47,6 +43,14 @@ struct NetworkIPConfig {
 };
 
 typedef std::vector<NetworkIPConfig> NetworkIPConfigVector;
+
+// Used to return the list of IP configs and hardware address from an
+// asynchronous call to Shill. The hardware address is usually a MAC address
+// like "0011AA22BB33". |hardware_address| will be an empty string, if no
+// hardware address is found.
+typedef base::Callback<void(const NetworkIPConfigVector& ip_configs,
+                            const std::string& hardware_address)>
+    NetworkGetIPConfigsCallback;
 
 }  // namespace chromeos
 

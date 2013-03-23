@@ -7,12 +7,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/property_bag.h"
 #include "base/string_number_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
@@ -20,6 +18,7 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_details.h"
@@ -32,14 +31,16 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
+using content::WebContents;
 using test::GetCenterInScreenCoordinates;
-using test::SetID;
-using test::ResetIDs;
-using test::IDString;
 using test::GetTabStripForBrowser;
+using test::IDString;
+using test::ResetIDs;
+using test::SetID;
 
 // The tests in this file exercise detaching the dragged tab into a standalone
-// window (not a Browser).
+// window (not a Browser). They are not applicable to aura as aura forces real
+// window dragging.
 
 // Creates a browser with two tabs, drags the second to the first.
 IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DragInSameWindow) {
@@ -62,8 +63,17 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DragInSameWindow) {
 }
 
 // Creates two browsers, drags from first into second.
-IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DragToSeparateWindow) {
+// This test often crashes on Vista <http://crbug.com/156787>
+#if defined(OS_WIN)
+#define MAYBE_DragToSeparateWindow DISABLED_DragToSeparateWindow
+#else
+#define MAYBE_DragToSeparateWindow DragToSeparateWindow
+#endif
+IN_PROC_BROWSER_TEST_F(TabDragControllerTest, MAYBE_DragToSeparateWindow) {
   TabStrip* tab_strip = GetTabStripForBrowser(browser());
+
+  // Add another tab to browser().
+  AddTabAndResetBrowser(browser());
 
   // Create another browser.
   Browser* browser2 = CreateAnotherWindowBrowserAndRelayout();
@@ -146,7 +156,7 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteBeforeStartedDragging) {
   ASSERT_TRUE(TabDragController::IsActive());
 
   // Delete the tab being dragged.
-  delete browser()->tab_strip_model()->GetTabContentsAt(0);
+  delete browser()->tab_strip_model()->GetWebContentsAt(0);
 
   // Should have canceled dragging.
   ASSERT_FALSE(tab_strip->IsDragSessionActive());
@@ -175,7 +185,7 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteTabWhileAttached) {
   ASSERT_TRUE(TabDragController::IsActive());
 
   // Delete the tab being dragged.
-  delete browser()->tab_strip_model()->GetTabContentsAt(0);
+  delete browser()->tab_strip_model()->GetWebContentsAt(0);
 
   // Should have canceled dragging.
   ASSERT_FALSE(tab_strip->IsDragSessionActive());
@@ -193,7 +203,7 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteTabWhileDetached) {
 
   // Move to the first tab and drag it enough so that it detaches.
   gfx::Point tab_0_center(GetCenterInScreenCoordinates(tab_strip->tab_at(0)));
-  TabContents* to_delete = browser()->tab_strip_model()->GetTabContentsAt(0);
+  WebContents* to_delete = browser()->tab_strip_model()->GetWebContentsAt(0);
   ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(tab_0_center));
   ASSERT_TRUE(ui_test_utils::SendMouseEventsSync(
                   ui_controls::LEFT, ui_controls::DOWN));
@@ -209,17 +219,6 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteTabWhileDetached) {
   EXPECT_EQ("1", IDString(browser()->tab_strip_model()));
 }
 
-namespace {
-
-void DeleteSourceDetachedStep2(TabContents* tab) {
-  // This ends up closing the source window.
-  delete tab;
-  // Cancel the drag.
-  ui_controls::SendKeyPress(NULL, ui::VKEY_ESCAPE, false, false, false, false);
-}
-
-}  // namespace
-
 // Detaches a tab and while detached deletes a tab from the source and releases
 // the mouse.
 IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteSourceDetached) {
@@ -229,7 +228,7 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteSourceDetached) {
 
   // Move to the first tab and drag it enough so that it detaches.
   gfx::Point tab_0_center(GetCenterInScreenCoordinates(tab_strip->tab_at(0)));
-  TabContents* to_delete = browser()->tab_strip_model()->GetTabContentsAt(1);
+  WebContents* to_delete = browser()->tab_strip_model()->GetWebContentsAt(1);
   ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(tab_0_center));
   ASSERT_TRUE(ui_test_utils::SendMouseEventsSync(
                   ui_controls::LEFT, ui_controls::DOWN));
@@ -261,6 +260,9 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DeleteSourceDetached) {
 // Creates two browsers, selects all tabs in first and drags into second.
 IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DragAllToSeparateWindow) {
   TabStrip* tab_strip = GetTabStripForBrowser(browser());
+
+  // Add another tab to browser().
+  AddTabAndResetBrowser(browser());
 
   // Create another browser.
   Browser* browser2 = CreateAnotherWindowBrowserAndRelayout();
@@ -307,6 +309,9 @@ IN_PROC_BROWSER_TEST_F(TabDragControllerTest, DragAllToSeparateWindow) {
 IN_PROC_BROWSER_TEST_F(TabDragControllerTest,
                        DragAllToSeparateWindowAndCancel) {
   TabStrip* tab_strip = GetTabStripForBrowser(browser());
+
+  // Add another tab to browser().
+  AddTabAndResetBrowser(browser());
 
   // Create another browser.
   Browser* browser2 = CreateAnotherWindowBrowserAndRelayout();

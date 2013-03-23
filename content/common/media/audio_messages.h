@@ -11,7 +11,7 @@
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
 #include "content/common/content_export.h"
-#include "content/common/media/audio_param_traits.h"
+#include "content/common/media/media_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "media/audio/audio_buffers_state.h"
 #include "media/audio/audio_input_ipc.h"
@@ -85,9 +85,10 @@ IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyDeviceStarted,
 // Messages sent from the renderer to the browser.
 
 // Request that got sent to browser for creating an audio output stream
-IPC_MESSAGE_CONTROL2(AudioHostMsg_CreateStream,
+IPC_MESSAGE_CONTROL3(AudioHostMsg_CreateStream,
                      int /* stream_id */,
-                     media::AudioParameters /* params */)
+                     media::AudioParameters, /* params */
+                     int /* input_channels */)
 
 // Request that got sent to browser for creating an audio input stream
 IPC_MESSAGE_CONTROL4(AudioInputHostMsg_CreateStream,
@@ -95,6 +96,16 @@ IPC_MESSAGE_CONTROL4(AudioInputHostMsg_CreateStream,
                      media::AudioParameters /* params */,
                      std::string /* device_id */,
                      bool /* automatic_gain_control */)
+
+// Indicate that audio for a stream is produced by the specified render view.
+IPC_MESSAGE_CONTROL2(AudioHostMsg_AssociateStreamWithProducer,
+                     int /* stream_id */,
+                     int /* render_view_id */)
+
+// Indicate that audio for a stream is consumed by the specified render view.
+IPC_MESSAGE_CONTROL2(AudioInputHostMsg_AssociateStreamWithConsumer,
+                     int /* stream_id */,
+                     int /* render_view_id */)
 
 // Start buffering and play the audio stream specified by stream_id.
 IPC_MESSAGE_CONTROL1(AudioHostMsg_PlayStream,

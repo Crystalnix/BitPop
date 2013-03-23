@@ -9,14 +9,12 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_temp_dir.h"
 #include "content/public/browser/browser_context.h"
 
 namespace content {
 
 class DownloadManagerDelegate;
 class ResourceContext;
-class ShellBrowserMainParts;
 class ShellDownloadManagerDelegate;
 
 class ShellBrowserContext : public BrowserContext {
@@ -31,13 +29,21 @@ class ShellBrowserContext : public BrowserContext {
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContextForMedia() OVERRIDE;
+  virtual net::URLRequestContextGetter* GetMediaRequestContext() OVERRIDE;
+  virtual net::URLRequestContextGetter* GetMediaRequestContextForRenderProcess(
+      int renderer_child_id) OVERRIDE;
+  virtual net::URLRequestContextGetter*
+      GetMediaRequestContextForStoragePartition(
+          const FilePath& partition_path,
+          bool in_memory) OVERRIDE;
+  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
+      const FilePath& partition_path,
+      bool in_memory) OVERRIDE;
   virtual ResourceContext* GetResourceContext() OVERRIDE;
   virtual GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
   virtual SpeechRecognitionPreferences*
       GetSpeechRecognitionPreferences() OVERRIDE;
-  virtual bool DidLastSessionExitCleanly() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
  private:
@@ -46,7 +52,7 @@ class ShellBrowserContext : public BrowserContext {
   void InitWhileIOAllowed();
 
   bool off_the_record_;
-  ScopedTempDir testing_path_;
+  bool ignore_certificate_errors_;
   FilePath path_;
   scoped_ptr<ResourceContext> resource_context_;
   scoped_refptr<ShellDownloadManagerDelegate> download_manager_delegate_;

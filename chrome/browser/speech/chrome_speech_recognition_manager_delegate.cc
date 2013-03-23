@@ -57,6 +57,7 @@ bool RequiresBubble(int session_id) {
 bool RequiresTrayIcon(int session_id) {
   return !RequiresBubble(session_id);
 }
+
 }  // namespace
 
 namespace speech {
@@ -339,9 +340,7 @@ void ChromeSpeechRecognitionManagerDelegate::OnAudioStart(int session_id) {
     DCHECK_EQ(session_id, GetBubbleController()->GetActiveSessionID());
     GetBubbleController()->SetBubbleRecordingMode();
   } else if (RequiresTrayIcon(session_id)) {
-    // We post the action to the UI thread for sessions requiring a tray icon,
-    // since ChromeSpeechRecognitionPreferences (which requires UI thread) is
-    // involved for determining whether a security alert balloon is required.
+    // We post the action to the UI thread for sessions requiring a tray icon.
     const content::SpeechRecognitionSessionContext& context =
         SpeechRecognitionManager::GetInstance()->GetSessionContext(session_id);
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
@@ -374,8 +373,8 @@ void ChromeSpeechRecognitionManagerDelegate::OnAudioEnd(int session_id) {
   }
 }
 
-void ChromeSpeechRecognitionManagerDelegate::OnRecognitionResult(
-    int session_id, const content::SpeechRecognitionResult& result) {
+void ChromeSpeechRecognitionManagerDelegate::OnRecognitionResults(
+    int session_id, const content::SpeechRecognitionResults& result) {
   // The bubble will be closed upon the OnEnd event, which will follow soon.
 }
 
@@ -464,7 +463,7 @@ void ChromeSpeechRecognitionManagerDelegate::GetDiagnosticInformation(
 
 void ChromeSpeechRecognitionManagerDelegate::CheckRecognitionIsAllowed(
     int session_id,
-    base::Callback<void(int session_id, bool is_allowed)> callback) {
+    base::Callback<void(bool ask_user, bool is_allowed)> callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   const content::SpeechRecognitionSessionContext& context =
@@ -475,23 +474,14 @@ void ChromeSpeechRecognitionManagerDelegate::CheckRecognitionIsAllowed(
   // ChromeSpeechRecognitionPreferences associated to their profile.
   DCHECK_NE(context.render_process_id, 0);
 
-  // We don't need any particular check for sessions not using a bubble. In such
-  // cases, we just notify it to the manager (calling-back synchronously, since
-  // we remain in the IO thread).
-  if (RequiresTrayIcon(session_id)) {
-    callback.Run(session_id, true /* is_allowed */);
-    return;
-  }
-
-  // Sessions using bubbles, conversely, need a check on the renderer view type.
-  // The check must be performed in the UI thread. We defer it posting to
-  // CheckRenderViewType, which will issue the callback on our behalf.
+  // Check that the render view type is appropriate, and whether or not we
+  // need to request permission from the user.
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&CheckRenderViewType,
-                                     session_id,
                                      callback,
                                      context.render_process_id,
-                                     context.render_view_id));
+                                     context.render_view_id,
+                                     RequiresTrayIcon(session_id)));
 }
 
 content::SpeechRecognitionEventListener*
@@ -511,6 +501,8 @@ void ChromeSpeechRecognitionManagerDelegate::ShowTrayIconOnUIThread(
   Profile* profile = Profile::FromBrowserContext(browser_context);
   scoped_refptr<ChromeSpeechRecognitionPreferences> pref =
       ChromeSpeechRecognitionPreferences::GetForProfile(profile);
+  // TODO(xians): clean up the code since we don't need to show the balloon
+  // bubble any more.
   bool show_notification = pref->ShouldShowSecurityNotification(context_name);
   if (show_notification)
     pref->SetHasShownSecurityNotification(context_name);
@@ -529,33 +521,52 @@ void ChromeSpeechRecognitionManagerDelegate::ShowTrayIconOnUIThread(
     initiator_name = UTF8ToUTF16(extension->name());
   }
 
-  tray_icon_controller->Show(initiator_name, show_notification);
+  tray_icon_controller->Show(initiator_name);
 }
 
 void ChromeSpeechRecognitionManagerDelegate::CheckRenderViewType(
-    int session_id,
-    base::Callback<void(int session_id, bool is_allowed)> callback,
+    base::Callback<void(bool ask_user, bool is_allowed)> callback,
     int render_process_id,
-    int render_view_id) {
+    int render_view_id,
+    bool js_api) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const content::RenderViewHost* render_view_host =
       content::RenderViewHost::FromID(render_process_id, render_view_id);
+
   bool allowed = false;
-  if (render_view_host) {
-    // For host delegates other than VIEW_TYPE_TAB_CONTENTS we can't reliably
-    // show a popup, including the speech input bubble. In these cases for
-    // privacy reasons we don't want to start recording if the user can't be
-    // properly notified. An example of this is trying to show the speech input
-    // bubble within an extension popup: http://crbug.com/92083. In these
-    // situations the speech input extension API should be used instead.
-    WebContents* web_contents =
-        WebContents::FromRenderViewHost(render_view_host);
-    chrome::ViewType view_type = chrome::GetViewType(web_contents);
-    if (view_type == chrome::VIEW_TYPE_TAB_CONTENTS)
+  bool ask_permission = false;
+
+  if (!render_view_host) {
+    if (!js_api) {
+      // If there is no render view, we cannot show the speech bubble, so this
+      // is not allowed.
+      allowed = false;
+      ask_permission = false;
+    } else {
+      // This happens for extensions. Manifest should be checked for permission.
       allowed = true;
+      ask_permission = false;
+    }
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                            base::Bind(callback, ask_permission, allowed));
+    return;
   }
+
+  WebContents* web_contents = WebContents::FromRenderViewHost(render_view_host);
+  chrome::ViewType view_type = chrome::GetViewType(web_contents);
+
+  if (view_type == chrome::VIEW_TYPE_TAB_CONTENTS ||
+      web_contents->GetRenderProcessHost()->IsGuest()) {
+    // If it is a tab, we can show the speech input bubble or ask for
+    // permission.
+
+    allowed = true;
+    if (js_api)
+      ask_permission = true;
+  }
+
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::Bind(callback, session_id, allowed));
+                          base::Bind(callback, ask_permission, allowed));
 }
 
 SpeechRecognitionBubbleController*

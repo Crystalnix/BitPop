@@ -9,14 +9,20 @@
 #import "chrome/browser/ui/cocoa/base_bubble_controller.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
 
-class TabContents;
 class WebsiteSettingsUIBridge;
+
+namespace content {
+class WebContents;
+}
 
 // This NSWindowController subclass manages the InfoBubbleWindow and view that
 // are displayed when the user clicks the favicon or security lock icon.
 @interface WebsiteSettingsBubbleController : BaseBubbleController {
  @private
+  content::WebContents* webContents_;
+
   scoped_nsobject<NSView> contentView_;
+  scoped_nsobject<NSSegmentedControl> segmentedControl_;
   scoped_nsobject<NSTabView> tabView_;
 
   // Displays the web site identity.
@@ -25,7 +31,27 @@ class WebsiteSettingsUIBridge;
   // Display the identity status (e.g. verified, not verified).
   NSTextField* identityStatusField_;
 
-  NSView* permissionsContentView_;
+  // The main content view for the Permissions tab.
+  NSView* permissionsTabContentView_;
+
+  // The main content view for the Connection tab.
+  NSView* connectionTabContentView_;
+
+  // Container for cookies info on the Permissions tab.
+  NSView* cookiesView_;
+
+  // The link button for showing cookies and site data info.
+  NSButton* cookiesButton_;
+
+  // The link button for showing certificate information.
+  NSButton* certificateInfoButton_;
+
+  // The ID of the server certificate from the identity info.
+  // This should always be non-zero on a secure connection, and 0 otherwise.
+  int certificateId_;
+
+  // Container for permission info on the Permissions tab.
+  NSView* permissionsView_;
 
   NSImageView* identityStatusIcon_;
   NSTextField* identityStatusDescriptionField_;
@@ -38,8 +64,11 @@ class WebsiteSettingsUIBridge;
   NSImageView* firstVisitIcon_;
   NSTextField* firstVisitHeaderField_;
   NSTextField* firstVisitDescriptionField_;
+  NSView* separatorAfterFirstVisit_;
 
-  CGFloat permissionsTabHeight_;
+  // The link button for launch the help center article explaining the
+  // connection info.
+  NSButton* helpButton_;
 
   // The UI translates user actions to specific events and forwards them to the
   // |presenter_|. The |presenter_| handles these events and updates the UI.
@@ -51,11 +80,16 @@ class WebsiteSettingsUIBridge;
 }
 
 // Designated initializer. The controller will release itself when the bubble
-// is closed. |parentWindow| cannot be nil.
+// is closed. |parentWindow| cannot be nil. |webContents| may be nil for
+// testing purposes.
 - (id)initWithParentWindow:(NSWindow*)parentWindow
-   websiteSettingsUIBridge:(WebsiteSettingsUIBridge*)bridge;
+   websiteSettingsUIBridge:(WebsiteSettingsUIBridge*)bridge
+               webContents:(content::WebContents*)webContents
+            isInternalPage:(BOOL)isInternalPage;
 
-- (void)permissionValueChanged:(id)sender;
+// Return the default width of the window. It may be wider to fit the content.
+// This may be overriden by a subclass for testing purposes.
+- (CGFloat)defaultWindowWidth;
 
 @end
 
@@ -70,10 +104,10 @@ class WebsiteSettingsUIBridge : public WebsiteSettingsUI {
   // contains the currently active window, |profile| contains the currently
   // active profile and |ssl| contains the |SSLStatus| of the connection to the
   // website in the currently active tab that is wrapped by the
-  // |tab_contents|.
+  // |web_contents|.
   static void Show(gfx::NativeWindow parent,
                    Profile* profile,
-                   TabContents* tab_contents,
+                   content::WebContents* web_contents,
                    const GURL& url,
                    const content::SSLStatus& ssl);
 
@@ -86,6 +120,7 @@ class WebsiteSettingsUIBridge : public WebsiteSettingsUI {
       const PermissionInfoList& permission_info_list) OVERRIDE;
   virtual void SetIdentityInfo(const IdentityInfo& identity_info) OVERRIDE;
   virtual void SetFirstVisit(const string16& first_visit) OVERRIDE;
+  virtual void SetSelectedTab(TabId tab_id) OVERRIDE;
 
  private:
   // The Cocoa controller for the bubble UI.

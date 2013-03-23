@@ -12,6 +12,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "net/base/mock_host_resolver.h"
@@ -26,11 +27,19 @@ namespace {
 const std::string kHostname = "127.0.0.1";
 const int kPort = 8888;
 
-class SocketApiTest : public PlatformAppApiTest {
+class SocketApiTest : public ExtensionApiTest {
  public:
   SocketApiTest() : resolver_event_(true, false),
                     resolver_creator_(
                         new extensions::MockHostResolverCreator()) {
+  }
+
+  // We need this while the socket.{listen,accept} methods require the
+  // enable-experimental-extension-apis flag. After that we should remove it,
+  // as well as the "experimental" permission in the test apps' manifests.
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    ExtensionApiTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
   }
 
   void SetUpOnMainThread() OVERRIDE {
@@ -93,20 +102,22 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPCreateGood) {
   ASSERT_TRUE(socketId > 0);
 }
 
-IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketCreateBad) {
-  scoped_refptr<extensions::SocketCreateFunction> socket_create_function(
-      new extensions::SocketCreateFunction());
+IN_PROC_BROWSER_TEST_F(SocketApiTest, GetNetworkList) {
+  scoped_refptr<extensions::SocketGetNetworkListFunction> socket_function(
+      new extensions::SocketGetNetworkListFunction());
   scoped_refptr<Extension> empty_extension(utils::CreateEmptyExtension());
 
-  socket_create_function->set_extension(empty_extension.get());
-  socket_create_function->set_has_callback(true);
+  socket_function->set_extension(empty_extension.get());
+  socket_function->set_has_callback(true);
 
-  // TODO(miket): this test currently passes only because of artificial code
-  // that doesn't run in production. Fix this when we're able to.
-  utils::RunFunctionAndReturnError(
-      socket_create_function,
-      "[\"xxxx\"]",
-      browser(), utils::NONE);
+  scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
+      socket_function, "[]", browser(), utils::NONE));
+  ASSERT_EQ(base::Value::TYPE_LIST, result->GetType());
+
+  // If we're invoking socket tests, all we can confirm is that we have at
+  // least one address, but not what it is.
+  ListValue *value = static_cast<ListValue*>(result.get());
+  ASSERT_TRUE(value->GetSize() > 0);
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPExtension) {
@@ -161,4 +172,21 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPExtension) {
       base::StringPrintf("tcp:%s:%d", host_port_pair.host().c_str(), port));
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPServerExtension) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+  ExtensionTestMessageListener listener("info_please", true);
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("socket/api")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  listener.Reply(
+      base::StringPrintf("tcp_server:%s:%d", kHostname.c_str(), kPort));
+
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPServerUnbindOnUnload) {
+  ASSERT_TRUE(RunExtensionTest("socket/unload")) << message_;
+  ASSERT_TRUE(RunExtensionTest("socket/unload")) << message_;
 }

@@ -15,15 +15,10 @@
 #include "chrome/renderer/page_click_listener.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 
-namespace webkit {
-namespace forms {
-struct FormData;
-struct FormDataPredictions;
-struct FormField;
-}
-}
+struct FormFieldData;
 
 namespace WebKit {
 class WebNode;
@@ -94,18 +89,20 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void textFieldDidReceiveKeyDown(
       const WebKit::WebInputElement& element,
       const WebKit::WebKeyboardEvent& event) OVERRIDE;
+  virtual void didRequestAutocomplete(
+      WebKit::WebFrame* frame,
+      const WebKit::WebFormElement& form) OVERRIDE;
 
   void OnSuggestionsReturned(int query_id,
                              const std::vector<string16>& values,
                              const std::vector<string16>& labels,
                              const std::vector<string16>& icons,
                              const std::vector<int>& unique_ids);
-  void OnFormDataFilled(int query_id, const webkit::forms::FormData& form);
+  void OnFormDataFilled(int query_id, const FormData& form);
   void OnFieldTypePredictionsAvailable(
-      const std::vector<webkit::forms::FormDataPredictions>& forms);
+      const std::vector<FormDataPredictions>& forms);
 
   // For external Autofill selection.
-  void OnSelectAutofillSuggestionAtIndex(int listIndex);
   void OnSetAutofillActionFill();
   void OnClearForm();
   void OnSetAutofillActionPreview();
@@ -113,6 +110,14 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnSetNodeText(const string16& value);
   void OnAcceptDataListSuggestion(const string16& value);
   void OnAcceptPasswordAutofillSuggestion(const string16& value);
+
+  // For interactive autocomplete.
+  void OnRequestAutocompleteSuccess(const FormData& form_data);
+  void OnRequestAutocompleteError();
+
+  // Called when an autocomplete request succeeds or fails with the |result|.
+  void FinishAutocompleteRequest(
+      WebKit::WebFormElement::AutocompleteResult result);
 
   // Called in a posted task by textFieldDidChange() to work-around a WebKit bug
   // http://bugs.webkit.org/show_bug.cgi?id=16976
@@ -163,11 +168,17 @@ class AutofillAgent : public content::RenderViewObserver,
   // |node|. Returns true if the data was found; and false otherwise.
   bool FindFormAndFieldForNode(
       const WebKit::WebNode& node,
-      webkit::forms::FormData* form,
-      webkit::forms::FormField* field) WARN_UNUSED_RESULT;
+      FormData* form,
+      FormFieldData* field) WARN_UNUSED_RESULT;
 
   // Set |node| to display the given |value|.
   void SetNodeText(const string16& value, WebKit::WebInputElement* node);
+
+  // Hides any currently showing Autofill popups in the renderer or browser.
+  void HidePopups();
+
+  // Hides any currently showing Autofill popups in the browser only.
+  void HideHostPopups();
 
   FormCache form_cache_;
 
@@ -179,6 +190,9 @@ class AutofillAgent : public content::RenderViewObserver,
 
   // The element corresponding to the last request sent for form field Autofill.
   WebKit::WebInputElement element_;
+
+  // The form element currently requesting an interactive autocomplete.
+  WebKit::WebFormElement in_flight_request_form_;
 
   // The action to take when receiving Autofill data from the AutofillManager.
   AutofillAction autofill_action_;
@@ -199,8 +213,9 @@ class AutofillAgent : public content::RenderViewObserver,
   base::WeakPtrFactory<AutofillAgent> weak_ptr_factory_;
 
   friend class PasswordAutofillManagerTest;
-  FRIEND_TEST_ALL_PREFIXES(ChromeRenderViewTest, SendForms);
   FRIEND_TEST_ALL_PREFIXES(ChromeRenderViewTest, FillFormElement);
+  FRIEND_TEST_ALL_PREFIXES(ChromeRenderViewTest, SendForms);
+  FRIEND_TEST_ALL_PREFIXES(ChromeRenderViewTest, ShowAutofillWarning);
   FRIEND_TEST_ALL_PREFIXES(PasswordAutofillManagerTest, WaitUsername);
   FRIEND_TEST_ALL_PREFIXES(PasswordAutofillManagerTest, SuggestionAccept);
   FRIEND_TEST_ALL_PREFIXES(PasswordAutofillManagerTest, SuggestionSelect);

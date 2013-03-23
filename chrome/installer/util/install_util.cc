@@ -18,16 +18,19 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/process_util.h"
 #include "base/string_util.h"
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "base/version.h"
+#include "base/win/metro.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_constants.h"
-#include "chrome/installer/util/l10n_string_util.h"
+#include "chrome/installer/util/helper.h"
 #include "chrome/installer/util/installation_state.h"
+#include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item_list.h"
 
@@ -53,6 +56,7 @@ const wchar_t kStageUncompressing[] = L"uncompressing";
 const wchar_t kStageUnpacking[] = L"unpacking";
 const wchar_t kStageUpdatingChannels[] = L"updating_channels";
 const wchar_t kStageCreatingVisualManifest[] = L"creating_visual_manifest";
+const wchar_t kStageDeferringToHigherVersion[] = L"deferring_to_higher_version";
 
 const wchar_t* const kStages[] = {
   NULL,
@@ -73,6 +77,7 @@ const wchar_t* const kStages[] = {
   kStageFinishing,
   kStageConfiguringAutoLaunch,
   kStageCreatingVisualManifest,
+  kStageDeferringToHigherVersion,
 };
 
 COMPILE_ASSERT(installer::NUM_STAGES == arraysize(kStages),
@@ -115,6 +120,38 @@ HWND CreateUACForegroundWindow() {
 }
 
 }  // namespace
+
+string16 InstallUtil::GetActiveSetupPath(BrowserDistribution* dist) {
+  static const wchar_t kInstalledComponentsPath[] =
+      L"Software\\Microsoft\\Active Setup\\Installed Components\\";
+  return kInstalledComponentsPath + dist->GetAppGuid();
+}
+
+void InstallUtil::TriggerActiveSetupCommand() {
+  string16 active_setup_reg(
+      GetActiveSetupPath(BrowserDistribution::GetDistribution()));
+  base::win::RegKey active_setup_key(
+      HKEY_LOCAL_MACHINE, active_setup_reg.c_str(), KEY_QUERY_VALUE);
+  string16 cmd_str;
+  LONG read_status = active_setup_key.ReadValue(L"StubPath", &cmd_str);
+  if (read_status != ERROR_SUCCESS) {
+    LOG(ERROR) << active_setup_reg << ", " << read_status;
+    // This should never fail if Chrome is registered at system-level, but if it
+    // does there is not much else to be done.
+    return;
+  }
+
+  CommandLine cmd(CommandLine::FromString(cmd_str));
+  // Force creation of shortcuts as the First Run beacon might land between now
+  // and the time setup.exe checks for it.
+  cmd.AppendSwitch(installer::switches::kForceConfigureUserSettings);
+
+  base::LaunchOptions launch_options;
+  if (base::win::IsMetroProcess())
+    launch_options.force_breakaway_from_job_ = true;
+  if (!base::LaunchProcess(cmd.GetCommandLineString(), launch_options, NULL))
+    PLOG(ERROR) << cmd.GetCommandLineString();
+}
 
 bool InstallUtil::ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code) {
   FilePath::StringType program(cmd.GetProgram().value());
@@ -339,23 +376,27 @@ bool InstallUtil::IsChromeSxSProcess() {
   return sxs;
 }
 
-bool InstallUtil::HasDelegateExecuteHandler(BrowserDistribution* dist,
-                                            const string16& chrome_exe) {
-  bool found = false;
-  bool system_install = !IsPerUserInstall(chrome_exe.c_str());
-  Version version;
-  GetChromeVersion(dist, system_install, &version);
-  if (!version.IsValid()) {
-    LOG(ERROR) << __FUNCTION__ << " failed to determine version of "
-               << dist->GetAppShortCutName() << " installed at " << chrome_exe;
+bool InstallUtil::GetSentinelFilePath(const FilePath::CharType* file,
+                                      BrowserDistribution* dist,
+                                      FilePath* path) {
+  FilePath exe_path;
+  if (!PathService::Get(base::DIR_EXE, &exe_path))
+    return false;
+
+  if (IsPerUserInstall(exe_path.value().c_str())) {
+    *path = exe_path;
   } else {
-    FilePath handler(
-        FilePath(chrome_exe).DirName()
-            .AppendASCII(version.GetString())
-            .Append(installer::kDelegateExecuteExe));
-    found = file_util::PathExists(handler);
+    std::vector<FilePath> user_data_dir_paths;
+    installer::GetChromeUserDataPaths(dist, &user_data_dir_paths);
+
+    if (!user_data_dir_paths.empty())
+      *path = user_data_dir_paths[0];
+    else
+      return false;
   }
-  return found;
+
+  *path = path->Append(file);
+  return true;
 }
 
 // This method tries to delete a registry key and logs an error message
@@ -399,7 +440,6 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryKeyIf(
     const wchar_t* value_name,
     const RegistryValuePredicate& predicate) {
   DCHECK(root_key);
-  DCHECK(value_name);
   ConditionalDeleteResult delete_result = NOT_FOUND;
   RegKey key;
   string16 actual_value;
@@ -422,7 +462,6 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryValueIf(
     const RegistryValuePredicate& predicate) {
   DCHECK(root_key);
   DCHECK(key_path);
-  DCHECK(value_name);
   ConditionalDeleteResult delete_result = NOT_FOUND;
   RegKey key;
   string16 actual_value;
@@ -432,7 +471,8 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryValueIf(
       predicate.Evaluate(actual_value)) {
     LONG result = key.DeleteValue(value_name);
     if (result != ERROR_SUCCESS) {
-      LOG(ERROR) << "Failed to delete registry value: " << value_name
+      LOG(ERROR) << "Failed to delete registry value: "
+                 << (value_name ? value_name : L"(Default)")
                  << " error: " << result;
       delete_result = DELETE_FAILED;
     }

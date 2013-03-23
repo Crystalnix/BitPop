@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_command.h"
+#include "chrome/common/cancelable_task_tracker.h"
 
 namespace net {
 class FileStream;
@@ -53,6 +54,7 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // NOTE: this is invoked before every command, and does nothing if we've
   // already Init'ed.
   void Init();
+  bool inited() const { return inited_; }
 
   // Appends the specified commands to the current file. If reset_first is
   // true the the current file is recreated.
@@ -65,7 +67,8 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // Invoked from the service to read the commands that make up the last
   // session, invokes ReadLastSessionCommandsImpl to do the work.
   void ReadLastSessionCommands(
-      scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request);
+      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const BaseSessionService::InternalGetCommandsCallback& callback);
 
   // Reads the commands from the last file.
   //
@@ -80,11 +83,6 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // called during startup and if the user launchs the app and no tabbed
   // browsers are running.
   void MoveCurrentSessionToLastSession();
-
-  // Invoked from the service to read the commands that make up the current
-  // session, invokes ReadCurrentSessionCommandsImpl to do the work.
-  void ReadCurrentSessionCommands(
-      scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request);
 
   // Reads the commands from the current file.
   //

@@ -19,7 +19,7 @@ class TimeDelta;
 class TimeTicks;
 }
 
-namespace download_stats {
+namespace content {
 
 // We keep a count of how often various events occur in the
 // histogram "Download.Counts".
@@ -63,6 +63,10 @@ enum DownloadCountTypes {
   // progress.
   APPEND_TO_DETACHED_FILE_COUNT,
 
+  // Counts the number of instances where the downloaded file is missing after a
+  // successful invocation of ScanAndSaveDownloadedFile().
+  FILE_MISSING_AFTER_SUCCESSFUL_SCAN_COUNT,
+
   DOWNLOAD_COUNT_TYPES_LAST_ENTRY
 };
 
@@ -99,12 +103,15 @@ void RecordDownloadSource(DownloadSource source);
 void RecordDownloadCompleted(const base::TimeTicks& start, int64 download_len);
 
 // Record INTERRUPTED_COUNT, |reason|, |received| and |total| bytes.
-void RecordDownloadInterrupted(content::DownloadInterruptReason reason,
+void RecordDownloadInterrupted(DownloadInterruptReason reason,
                                int64 received,
                                int64 total);
 
 // Records the mime type of the download.
 void RecordDownloadMimeType(const std::string& mime_type);
+
+// Records usage of Content-Disposition header.
+void RecordDownloadContentDisposition(const std::string& content_disposition);
 
 // Record WRITE_SIZE_COUNT and data_len.
 void RecordDownloadWriteSize(size_t data_len);
@@ -123,10 +130,6 @@ void RecordBandwidth(double actual_bandwidth, double potential_bandwidth);
 // Record the time of both the first open and all subsequent opens since the
 // download completed.
 void RecordOpen(const base::Time& end, bool first);
-
-// Record the number of items that are in the history at the time that a
-// new download is added to the history.
-void RecordHistorySize(int size);
 
 // Record whether or not the server accepts ranges, and the download size.
 void RecordAcceptsRanges(const std::string& accepts_ranges, int64 download_len);
@@ -172,6 +175,6 @@ enum SavePackageEvent {
 
 void RecordSavePackageEvent(SavePackageEvent event);
 
-}  // namespace download_stats
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_DOWNLOAD_DOWNLOAD_STATS_H_

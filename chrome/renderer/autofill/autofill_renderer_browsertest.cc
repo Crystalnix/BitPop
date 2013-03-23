@@ -4,20 +4,18 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/common/autofill_messages.h"
+#include "chrome/common/form_data.h"
+#include "chrome/common/form_field_data.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "webkit/forms/form_data.h"
-#include "webkit/forms/form_field.h"
 
 using WebKit::WebDocument;
 using WebKit::WebFrame;
 using WebKit::WebInputElement;
 using WebKit::WebString;
-using webkit::forms::FormData;
-using webkit::forms::FormField;
 
 namespace autofill {
 
@@ -49,31 +47,33 @@ TEST_F(ChromeRenderViewTest, SendForms) {
   ASSERT_EQ(1UL, forms.size());
   ASSERT_EQ(4UL, forms[0].fields.size());
 
-  FormField expected;
+  FormFieldData expected;
 
   expected.name = ASCIIToUTF16("firstname");
   expected.value = string16();
-  expected.form_control_type = ASCIIToUTF16("text");
+  expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_EQUALS(expected, forms[0].fields[0]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[0]);
 
   expected.name = ASCIIToUTF16("middlename");
   expected.value = string16();
-  expected.form_control_type = ASCIIToUTF16("text");
+  expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_EQUALS(expected, forms[0].fields[1]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[1]);
 
   expected.name = ASCIIToUTF16("lastname");
   expected.value = string16();
-  expected.form_control_type = ASCIIToUTF16("text");
+  expected.form_control_type = "text";
+  expected.autocomplete_attribute = "off";
   expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_EQUALS(expected, forms[0].fields[2]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[2]);
+  expected.autocomplete_attribute = std::string();  // reset
 
   expected.name = ASCIIToUTF16("state");
   expected.value = ASCIIToUTF16("?");
-  expected.form_control_type = ASCIIToUTF16("select-one");
+  expected.form_control_type = "select-one";
   expected.max_length = 0;
-  EXPECT_FORM_FIELD_EQUALS(expected, forms[0].fields[3]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[3]);
 
   // Verify that |didAcceptAutofillSuggestion()| sends the expected number of
   // fields.
@@ -108,21 +108,21 @@ TEST_F(ChromeRenderViewTest, SendForms) {
 
   expected.name = ASCIIToUTF16("firstname");
   expected.value = string16();
-  expected.form_control_type = ASCIIToUTF16("text");
+  expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_EQUALS(expected, form2.fields[0]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[0]);
 
   expected.name = ASCIIToUTF16("middlename");
   expected.value = string16();
-  expected.form_control_type = ASCIIToUTF16("text");
+  expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_EQUALS(expected, form2.fields[1]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[1]);
 
   expected.name = ASCIIToUTF16("state");
   expected.value = ASCIIToUTF16("?");
-  expected.form_control_type = ASCIIToUTF16("select-one");
+  expected.form_control_type = "select-one";
   expected.max_length = 0;
-  EXPECT_FORM_FIELD_EQUALS(expected, form2.fields[2]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[2]);
 }
 
 TEST_F(ChromeRenderViewTest, FillFormElement) {
@@ -171,6 +171,52 @@ TEST_F(ChromeRenderViewTest, FillFormElement) {
   // No message should be sent in this case.  |firstname| is filled directly.
   ASSERT_EQ(static_cast<IPC::Message*>(NULL), message2);
   EXPECT_EQ(firstname.value(), WebKit::WebString::fromUTF8("David"));
+}
+
+TEST_F(ChromeRenderViewTest, ShowAutofillWarning) {
+  // Don't want any delay for form state sync changes.  This will still post a
+  // message so updates will get coalesced, but as soon as we spin the message
+  // loop, it will generate an update.
+  SendContentStateImmediately();
+
+  LoadHTML("<form method=\"POST\" autocomplete=\"Off\">"
+           "  <input id=\"firstname\" autocomplete=\"OFF\"/>"
+           "  <input id=\"middlename\"/>"
+           "  <input id=\"lastname\"/>"
+           "</form>");
+
+  // Verify that "QueryFormFieldAutofill" isn't sent prior to a user
+  // interaction.
+  const IPC::Message* message0 = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_QueryFormFieldAutofill::ID);
+  EXPECT_EQ(static_cast<IPC::Message*>(NULL), message0);
+
+  WebFrame* web_frame = GetMainFrame();
+  WebDocument document = web_frame->document();
+  WebInputElement firstname =
+      document.getElementById("firstname").to<WebInputElement>();
+  WebInputElement middlename =
+      document.getElementById("middlename").to<WebInputElement>();
+
+  // Simulate attempting to Autofill the form from the first element, which
+  // specifies autocomplete="off".  This should still not trigger an IPC, as we
+  // don't show warnings for elements that have autocomplete="off".
+  autofill_agent_->InputElementClicked(firstname, true, true);
+  const IPC::Message* message1 = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_QueryFormFieldAutofill::ID);
+  EXPECT_EQ(static_cast<IPC::Message*>(NULL), message1);
+
+  // Simulate attempting to Autofill the form from the second element, which
+  // does not specify autocomplete="off".  This *should* trigger an IPC, as we
+  // *do* show warnings for elements that don't themselves set
+  // autocomplete="off", but for which the form does.
+  autofill_agent_->InputElementClicked(middlename, true, true);
+  const IPC::Message* message2 = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_QueryFormFieldAutofill::ID);
+  ASSERT_NE(static_cast<IPC::Message*>(NULL), message2);
+  // TODO(isherman): It would be nice to verify here that the message includes
+  // the correct data.  I'm not sure how to extract that information from an
+  // IPC::Message though.
 }
 
 }  // namespace autofill

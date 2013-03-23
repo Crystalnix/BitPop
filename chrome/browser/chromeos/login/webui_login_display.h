@@ -11,12 +11,14 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/ui/webui/chromeos/login/native_window_delegate.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "ui/views/widget/widget.h"
 
 namespace chromeos {
 // WebUI-based login UI implementation.
 class WebUILoginDisplay : public LoginDisplay,
+                          public NativeWindowDelegate,
                           public SigninScreenHandlerDelegate {
  public:
   explicit WebUILoginDisplay(LoginDisplay::Delegate* delegate);
@@ -38,22 +40,30 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual void ShowError(int error_msg_id,
                          int login_attempts,
                          HelpAppLauncher::HelpTopic help_topic_id) OVERRIDE;
+  virtual void ShowErrorScreen(LoginDisplay::SigninError error_id) OVERRIDE;
   virtual void ShowGaiaPasswordChanged(const std::string& username) OVERRIDE;
+  virtual void ShowPasswordChangedDialog(bool show_password_error) OVERRIDE;
+
+  // NativeWindowDelegate implementation:
+  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
 
   // SigninScreenHandlerDelegate implementation:
-  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
+  virtual void CancelPasswordChangedFlow() OVERRIDE;
+  virtual void CreateAccount() OVERRIDE;
   virtual void CompleteLogin(const std::string& username,
                              const std::string& password) OVERRIDE;
   virtual void Login(const std::string& username,
                      const std::string& password) OVERRIDE;
-  virtual void LoginAsDemoUser() OVERRIDE;
+  virtual void LoginAsRetailModeUser() OVERRIDE;
   virtual void LoginAsGuest() OVERRIDE;
-  virtual void Signout() OVERRIDE;
-  virtual void CreateAccount() OVERRIDE;
-  virtual void OnUserDeselected() OVERRIDE;
-  virtual void OnUserSelected(const std::string& username) OVERRIDE;
+  virtual void MigrateUserData(const std::string& old_password) OVERRIDE;
+  virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
+  virtual void LoadWallpaper(const std::string& username) OVERRIDE;
+  virtual void LoadSigninWallpaper() OVERRIDE;
   virtual void RemoveUser(const std::string& username) OVERRIDE;
+  virtual void ResyncUserData() OVERRIDE;
   virtual void ShowEnterpriseEnrollmentScreen() OVERRIDE;
+  virtual void ShowResetScreen() OVERRIDE;
   virtual void SetWebUIHandler(
       LoginDisplayWebUIHandler* webui_handler) OVERRIDE;
   virtual void ShowSigninScreenForCreds(const std::string& username,
@@ -63,6 +73,7 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual bool IsShowUsers() const OVERRIDE;
   virtual bool IsShowNewUser() const OVERRIDE;
   virtual void SetDisplayEmail(const std::string& email) OVERRIDE;
+  virtual void Signout() OVERRIDE;
 
  private:
   // Set of Users that are visible.

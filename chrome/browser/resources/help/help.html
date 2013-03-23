@@ -37,6 +37,21 @@
       <div>
         <span i18n-content="firmware"></span>&nbsp;<span id="firmware"></span>
       </div>
+</if>
+<if expr="pp_ifdef('chromeos') or pp_ifdef('_google_chrome') or is_linux">
+      <div id="update-status-container" hidden>
+        <div id="update-status-icon" class="up-to-date"></div>
+        <span id="update-status" i18n-content="updateCheckStarted"></span>
+      </div>
+      <div id="update-buttons-container">
+        <div id="update-percentage" hidden></div>
+<if expr="is_macosx">
+        <button id="promote" i18n-content="promote" hidden></button>
+</if>
+        <button id="relaunch" i18n-content="relaunch" hidden></button>
+      </div>
+</if>
+<if expr="pp_ifdef('chromeos')">
       <div id="more-info-container">
         <section id="channel-changer-container">
           <h3 i18n-content="channel"></h3>
@@ -45,6 +60,7 @@
             <option value="beta-channel" i18n-content="beta"></option>
             <option value="dev-channel" i18n-content="dev"></option>
           </select>
+          <div id="channel-change-confirmation" hidden></div>
         </section>
         <section>
           <h3 i18n-content="webkit"></h3>
@@ -62,34 +78,14 @@
           <h3 i18n-content="commandLine"></h3>
           <div i18n-content="commandLineInfo" dir="ltr"></div>
         </section>
-        <section id="last-updated-container" class="empty">
-          <h3 i18n-content="lastUpdated"></h3>
-          <div id="last-updated"></div>
+        <section id="build-date-container" class="empty">
+          <h3 i18n-content="buildDate"></h3>
+          <div id="build-date"></div>
         </section>
       </div>
       <button id="more-info-expander" class="link-button"
           i18n-content="showMoreInfo">
       </button>
-</if>
-<if expr="pp_ifdef('chromeos') or pp_ifdef('_google_chrome') or is_linux">
-      <div id="update-status-container" hidden>
-        <div id="update-status-icon" class="up-to-date"></div>
-        <span id="update-status" i18n-content="updateCheckStarted"></span>
-      </div>
-<if expr="is_macosx">
-      <div id="update-obsolete-os-container" hidden>
-        <span id="update-obsolete-os" i18n-content="updateObsoleteOS"></span>
-        <a i18n-values="href:updateObsoleteOSURL" i18n-content="learnMore"
-            target="_blank"></a>
-      </div>
-</if>
-      <div id="update-buttons-container">
-        <div id="update-percentage" hidden></div>
-<if expr="is_macosx">
-        <button id="promote" i18n-content="promote" hidden></button>
-</if>
-        <button id="relaunch" i18n-content="relaunch" hidden></button>
-      </div>
 </if>
     </div>
     <div id="product-container">

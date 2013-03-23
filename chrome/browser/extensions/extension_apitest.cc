@@ -6,20 +6,20 @@
 
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/api/test/test_api.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/test/browser_test_utils.h"
 #include "net/base/net_util.h"
+#include "net/test/test_server.h"
 
 namespace {
 
@@ -103,6 +103,7 @@ void ExtensionApiTest::SetUpInProcessBrowserTestFixture() {
   test_config_.reset(new DictionaryValue());
   test_config_->SetString(kTestDataDirectory,
                           net::FilePathToFileURL(test_data_dir_).spec());
+  test_config_->SetInteger(kTestWebSocketPort, 0);
   extensions::TestGetConfigFunction::set_test_config_state(
       test_config_.get());
 }
@@ -119,6 +120,20 @@ bool ExtensionApiTest::RunExtensionTest(const char* extension_name) {
 bool ExtensionApiTest::RunExtensionTestIncognito(const char* extension_name) {
   return RunExtensionTestImpl(
       extension_name, "", kFlagEnableIncognito | kFlagEnableFileAccess);
+}
+
+bool ExtensionApiTest::RunExtensionTestIgnoreManifestWarnings(
+    const char* extension_name) {
+  return RunExtensionTestImpl(
+      extension_name, "", kFlagIgnoreManifestWarnings);
+}
+
+bool ExtensionApiTest::RunExtensionTestAllowOldManifestVersion(
+    const char* extension_name) {
+  return RunExtensionTestImpl(
+      extension_name,
+      "",
+      kFlagEnableFileAccess | kFlagAllowOldManifestVersions);
 }
 
 bool ExtensionApiTest::RunComponentExtensionTest(const char* extension_name) {
@@ -167,8 +182,6 @@ bool ExtensionApiTest::RunPlatformAppTest(const char* extension_name) {
 bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
                                             const std::string& page_url,
                                             int flags) {
-  bool enable_incognito = (flags & kFlagEnableIncognito) != 0;
-  bool enable_fileaccess = (flags & kFlagEnableFileAccess) != 0;
   bool load_as_component = (flags & kFlagLoadAsComponent) != 0;
   bool launch_platform_app = (flags & kFlagLaunchPlatformApp) != 0;
   bool use_incognito = (flags & kFlagUseIncognito) != 0;
@@ -183,8 +196,18 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
     if (load_as_component) {
       extension = LoadExtensionAsComponent(extension_path);
     } else {
-      extension = LoadExtensionWithOptions(extension_path,
-                                           enable_incognito, enable_fileaccess);
+      int browser_test_flags = ExtensionBrowserTest::kFlagNone;
+      if (flags & kFlagEnableIncognito)
+        browser_test_flags |= ExtensionBrowserTest::kFlagEnableIncognito;
+      if (flags & kFlagEnableFileAccess)
+        browser_test_flags |= ExtensionBrowserTest::kFlagEnableFileAccess;
+      if (flags & kFlagIgnoreManifestWarnings)
+        browser_test_flags |= ExtensionBrowserTest::kFlagIgnoreManifestWarnings;
+      if (flags & kFlagAllowOldManifestVersions) {
+        browser_test_flags |=
+            ExtensionBrowserTest::kFlagAllowOldManifestVersions;
+      }
+      extension = LoadExtensionWithFlags(extension_path, browser_test_flags);
     }
     if (!extension) {
       message_ = "Failed to load extension.";
@@ -229,7 +252,8 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
 
 // Test that exactly one extension is loaded, and return it.
 const extensions::Extension* ExtensionApiTest::GetSingleLoadedExtension() {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   const extensions::Extension* extension = NULL;
   for (ExtensionSet::const_iterator it = service->extensions()->begin();
@@ -271,30 +295,21 @@ bool ExtensionApiTest::StartTestServer() {
 }
 
 bool ExtensionApiTest::StartWebSocketServer(const FilePath& root_directory) {
-  websocket_server_.reset(new content::TestWebSocketServer());
-  int port = websocket_server_->UseRandomPort();
-  if (!websocket_server_->Start(root_directory))
+  websocket_server_.reset(new net::TestServer(
+      net::TestServer::TYPE_WS,
+      net::TestServer::kLocalhost,
+      root_directory));
+
+  if (!websocket_server_->Start())
     return false;
 
-  test_config_->SetInteger(kTestWebSocketPort, port);
+  test_config_->SetInteger(kTestWebSocketPort,
+                           websocket_server_->host_port_pair().port());
+
   return true;
 }
 
 void ExtensionApiTest::SetUpCommandLine(CommandLine* command_line) {
   ExtensionBrowserTest::SetUpCommandLine(command_line);
   test_data_dir_ = test_data_dir_.AppendASCII("api_test");
-}
-
-PlatformAppApiTest::PlatformAppApiTest() {}
-
-PlatformAppApiTest::~PlatformAppApiTest() {}
-
-void PlatformAppApiTest::SetUpCommandLine(CommandLine* command_line) {
-  ExtensionApiTest::SetUpCommandLine(command_line);
-
-  // If someone is using this class, we're going to insist on management of the
-  // relevant flags. If these flags are already set, die.
-  DCHECK(!command_line->HasSwitch(switches::kEnableExperimentalExtensionApis));
-
-  command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
 }

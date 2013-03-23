@@ -8,19 +8,18 @@
 #include "content/browser/device_orientation/provider.h"
 #include "content/public/browser/browser_thread.h"
 
-using content::BrowserThread;
+namespace content {
 
-namespace device_orientation {
-
-MessageFilter::MessageFilter(DeviceData::Type device_data_type)
+DeviceOrientationMessageFilter::DeviceOrientationMessageFilter(
+    DeviceData::Type device_data_type)
     : provider_(NULL),
       device_data_type_(device_data_type) {
 }
 
-MessageFilter::~MessageFilter() {
+DeviceOrientationMessageFilter::~DeviceOrientationMessageFilter() {
 }
 
-void MessageFilter::OnStartUpdating(int render_view_id) {
+void DeviceOrientationMessageFilter::OnStartUpdating(int render_view_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   if (!provider_)
@@ -30,10 +29,10 @@ void MessageFilter::OnStartUpdating(int render_view_id) {
       provider_, render_view_id, this);
 }
 
-void MessageFilter::OnStopUpdating(int render_view_id) {
+void DeviceOrientationMessageFilter::OnStopUpdating(int render_view_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   observers_map_.erase(render_view_id);
 }
 
-}  // namespace device_orientation
+}  // namespace content

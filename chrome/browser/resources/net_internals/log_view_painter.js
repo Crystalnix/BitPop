@@ -5,6 +5,7 @@
 // TODO(eroman): put these methods into a namespace.
 
 var printLogEntriesAsText;
+var searchLogEntriesForText;
 var proxySettingsToString;
 var stripCookiesAndLoginInfo;
 
@@ -24,14 +25,41 @@ function canCollapseBeginWithEnd(beginEntry) {
  * Adds a child pre element to the end of |parent|, and writes the
  * formatted contents of |logEntries| to it.
  */
-printLogEntriesAsText = function(logEntries, parent, enableSecurityStripping,
+printLogEntriesAsText = function(logEntries, parent, privacyStripping,
                                  logCreationTime) {
+  var tablePrinter = createTablePrinter(logEntries, privacyStripping,
+                                        logCreationTime);
+
+  // Format the table for fixed-width text.
+  tablePrinter.toText(0, parent);
+}
+
+/**
+ * Searches the table that would be output by printLogEntriesAsText for
+ * |searchString|.  Returns true if |searchString| would appear entirely within
+ * any field in the table.  |searchString| must be lowercase.
+ *
+ * Seperate function from printLogEntriesAsText since TablePrinter.toText
+ * modifies the DOM.
+ */
+searchLogEntriesForText = function(searchString, logEntries, privacyStripping) {
+  var tablePrinter =
+      createTablePrinter(logEntries, privacyStripping, undefined);
+
+  // Format the table for fixed-width text.
+  return tablePrinter.search(searchString);
+}
+
+/**
+ * Creates a TablePrinter for use by the above two functions.
+ */
+function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
   var entries = LogGroupEntry.createArrayFrom(logEntries);
   var tablePrinter = new TablePrinter();
   var parameterOutputter = new ParameterOutputter(tablePrinter);
 
   if (entries.length == 0)
-    return;
+    return tablePrinter;
 
   var startTime = timeutil.convertTimeTicksToTime(entries[0].orig.time);
 
@@ -68,7 +96,7 @@ printLogEntriesAsText = function(logEntries, parent, enableSecurityStripping,
     if (typeof entry.orig.params == 'object') {
       // Those 5 skipped cells are: two for "t=", and three for "st=".
       tablePrinter.setNewRowCellIndent(5 + entry.getDepth());
-      writeParameters(entry.orig, enableSecurityStripping, parameterOutputter);
+      writeParameters(entry.orig, privacyStripping, parameterOutputter);
 
       tablePrinter.setNewRowCellIndent(0);
     }
@@ -81,8 +109,7 @@ printLogEntriesAsText = function(logEntries, parent, enableSecurityStripping,
     addRowWithTime(tablePrinter, logCreationTime, startTime);
   }
 
-  // Format the table for fixed-width text.
-  tablePrinter.toText(0, parent);
+  return tablePrinter;
 }
 
 /**
@@ -228,15 +255,18 @@ var ParameterOutputter = (function() {
 })();  // end of ParameterOutputter
 
 /**
- * Formats the parameters for |entry| to |out| using a custom.
- *
- * Certain event types will have custom pretty printers. Everything else will
+ * Formats the parameters for |entry| and writes them to |out|.
+ * Certain event types have custom pretty printers. Everything else will
  * default to a JSON-like format.
  */
-function writeParameters(entry, enableSecurityStripping, out) {
-  // If security stripping is enabled, remove data as needed.
-  if (enableSecurityStripping)
+function writeParameters(entry, privacyStripping, out) {
+  if (privacyStripping) {
+    // If privacy stripping is enabled, remove data as needed.
     entry = stripCookiesAndLoginInfo(entry);
+  } else {
+    // If headers are in an object, convert them to an array for better display.
+    entry = reformatHeaders(entry);
+  }
 
   // Use any parameter writer available for this event type.
   var paramsWriter = getParamaterWriterForEventType(entry.type);
@@ -319,6 +349,12 @@ function defaultWriteParameter(key, value, out) {
     return;
   }
 
+  if (key == 'load_state' && typeof value == 'number') {
+    var valueStr = value + ' (' + getKeyWithValue(LoadState, value) + ')';
+    out.writeArrowKeyValue(key, valueStr);
+    return;
+  }
+
   // Otherwise just default to JSON formatting of the value.
   out.writeArrowKeyValue(key, JSON.stringify(value));
 }
@@ -388,6 +424,34 @@ function indentLines(start, lines) {
 }
 
 /**
+ * If entry.param.headers exists and is an object other than an array, converts
+ * it into an array and returns a new entry.  Otherwise, just returns the
+ * original entry.
+ */
+function reformatHeaders(entry) {
+  // If there are no headers, or it is not an object other than an array,
+  // return |entry| without modification.
+  if (!entry.params || entry.params.headers === undefined ||
+      typeof entry.params.headers != 'object' ||
+      entry.params.headers instanceof Array) {
+    return entry;
+  }
+
+  // Duplicate the top level object, and |entry.params|, so the original object
+  // will not be modified.
+  entry = shallowCloneObject(entry);
+  entry.params = shallowCloneObject(entry.params);
+
+  // Convert headers to an array.
+  var headers = [];
+  for (var key in entry.params.headers)
+    headers.push(key + ': ' + entry.params.headers[key]);
+  entry.params.headers = headers;
+
+  return entry;
+}
+
+/**
  * Removes a cookie or unencrypted login information from a single HTTP header
  * line, if present, and returns the modified line.  Otherwise, just returns
  * the original line.
@@ -395,44 +459,64 @@ function indentLines(start, lines) {
 function stripCookieOrLoginInfo(line) {
   var patterns = [
       // Cookie patterns
-      /^set-cookie:/i,
-      /^set-cookie2:/i,
-      /^cookie:/i,
+      /^set-cookie: /i,
+      /^set-cookie2: /i,
+      /^cookie: /i,
 
       // Unencrypted authentication patterns
-      /^authorization: \S*/i,
-      /^proxy-authorization: \S*/i];
+      /^authorization: \S*\s*/i,
+      /^proxy-authorization: \S*\s*/i];
+
+  // Prefix will hold the first part of the string that contains no private
+  // information.  If null, no part of the string contains private information.
+  var prefix = null;
   for (var i = 0; i < patterns.length; i++) {
     var match = patterns[i].exec(line);
-    if (match != null)
-      return match[0] + ' [value was stripped]';
+    if (match != null) {
+      prefix = match[0];
+      break;
+    }
   }
 
-  // Remove authentication information from data received from the server in
+  // Look for authentication information from data received from the server in
   // multi-round Negotiate authentication.
-  var challengePatterns = [
-      /^www-authenticate: (\S*)\s*/i,
-      /^proxy-authenticate: (\S*)\s*/i];
-  for (var i = 0; i < challengePatterns.length; i++) {
-    var match = challengePatterns[i].exec(line);
-    if (!match)
-      continue;
+  if (prefix === null) {
+    var challengePatterns = [
+        /^www-authenticate: (\S*)\s*/i,
+        /^proxy-authenticate: (\S*)\s*/i];
+    for (var i = 0; i < challengePatterns.length; i++) {
+      var match = challengePatterns[i].exec(line);
+      if (!match)
+        continue;
 
-    // If there's no data after the scheme name, do nothing.
-    if (match[0].length == line.length)
+      // If there's no data after the scheme name, do nothing.
+      if (match[0].length == line.length)
+        break;
+
+      // Ignore lines with commas, as they may contain lists of schemes, and
+      // the information we want to hide is Base64 encoded, so has no commas.
+      if (line.indexOf(',') >= 0)
+        break;
+
+      // Ignore Basic and Digest authentication challenges, as they contain
+      // public information.
+      if (/^basic$/i.test(match[1]) || /^digest$/i.test(match[1]))
+        break;
+
+      prefix = match[0];
       break;
+    }
+  }
 
-    // Ignore lines with commas in them, as they may contain lists of schemes,
-    // and the information we want to hide is Base64 encoded, so has no commas.
-    if (line.indexOf(',') >= 0)
-      break;
-
-    // Ignore Basic and Digest authentication challenges, as they contain
-    // public information.
-    if (/^basic$/i.test(match[1]) || /^digest$/i.test(match[1]))
-      break;
-
-    return match[0] + '[value was stripped]';
+  if (prefix) {
+    var suffix = line.slice(prefix.length);
+    // If private information has already been removed, keep the line as-is.
+    // This is often the case when viewing a loaded log.
+    // TODO(mmenke):  Remove '[value was stripped]' check once M24 hits stable.
+    if (suffix.search(/^\[[0-9]+ bytes were stripped\]$/) == -1 &&
+        suffix != '[value was stripped]') {
+      return prefix + '[' + suffix.length + ' bytes were stripped]';
+    }
   }
 
   return line;
@@ -442,13 +526,16 @@ function stripCookieOrLoginInfo(line) {
  * If |entry| has headers, returns a copy of |entry| with all cookie and
  * unencrypted login text removed.  Otherwise, returns original |entry| object.
  * This is needed so that JSON log dumps can be made without affecting the
- * source data.
+ * source data.  Converts headers stored in objects to arrays.
  */
 stripCookiesAndLoginInfo = function(entry) {
-  if (!entry.params || !entry.params.headers ||
-      !(entry.params.headers instanceof Array)) {
+  if (!entry.params || entry.params.headers === undefined ||
+      !(entry.params.headers instanceof Object)) {
     return entry;
   }
+
+  // Make sure entry's headers are in an array.
+  entry = reformatHeaders(entry);
 
   // Duplicate the top level object, and |entry.params|.  All other fields are
   // just pointers to the original values, as they won't be modified, other than
@@ -634,4 +721,3 @@ proxySettingsToString = function(config) {
 
 // End of anonymous namespace.
 })();
-

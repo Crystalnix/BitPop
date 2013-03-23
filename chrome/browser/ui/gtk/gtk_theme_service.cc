@@ -202,7 +202,7 @@ void BuildIconFromIDRWithColor(int id,
                                GtkIconSet* icon_set) {
   SkColor color = gfx::GdkColorToSkColor(style->fg[state]);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  SkBitmap original = *rb.GetBitmapNamed(id);
+  SkBitmap original = rb.GetImageNamed(id).AsBitmap();
 
   SkBitmap fill_color;
   fill_color.setConfig(SkBitmap::kARGB_8888_Config,
@@ -291,34 +291,29 @@ GtkThemeService::~GtkThemeService() {
 
 void GtkThemeService::Init(Profile* profile) {
   registrar_.Init(profile->GetPrefs());
-  registrar_.Add(prefs::kUsesSystemTheme, this);
+  registrar_.Add(prefs::kUsesSystemTheme,
+                 base::Bind(&GtkThemeService::OnUsesSystemThemeChanged,
+                            base::Unretained(this)));
   use_gtk_ = profile->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme);
   ThemeService::Init(profile);
-}
-
-SkBitmap* GtkThemeService::GetBitmapNamed(int id) const {
-  // TODO(erg): Remove this const cast. The gfx::Image interface returns its
-  // images const. GetBitmapNamed() also should but doesn't and has a million
-  // callsites.
-  return const_cast<SkBitmap*>(GetImageNamed(id)->ToSkBitmap());
 }
 
 gfx::ImageSkia* GtkThemeService::GetImageSkiaNamed(int id) const {
   // TODO(pkotwicz): Remove this const cast.  The gfx::Image interface returns
   // its images const. GetImageSkiaNamed() also should but has many callsites.
-  return const_cast<gfx::ImageSkia*>(GetImageNamed(id)->ToImageSkia());
+  return const_cast<gfx::ImageSkia*>(GetImageNamed(id).ToImageSkia());
 }
 
-const gfx::Image* GtkThemeService::GetImageNamed(int id) const {
+gfx::Image GtkThemeService::GetImageNamed(int id) const {
   // Try to get our cached version:
   ImageCache::const_iterator it = gtk_images_.find(id);
   if (it != gtk_images_.end())
-    return it->second;
+    return *it->second;
 
   if (use_gtk_ && IsOverridableImage(id)) {
     gfx::Image* image = new gfx::Image(GenerateGtkThemeBitmap(id));
     gtk_images_[id] = image;
-    return image;
+    return *image;
   }
 
   return ThemeService::GetImageNamed(id);
@@ -341,7 +336,7 @@ bool GtkThemeService::HasCustomImage(int id) const {
   return ThemeService::HasCustomImage(id);
 }
 
-void GtkThemeService::InitThemesFor(NotificationObserver* observer) {
+void GtkThemeService::InitThemesFor(content::NotificationObserver* observer) {
   observer->Observe(chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
                     content::Source<ThemeService>(this),
                     content::NotificationService::NoDetails());
@@ -374,18 +369,6 @@ bool GtkThemeService::UsingNativeTheme() const {
   return use_gtk_;
 }
 
-void GtkThemeService::Observe(int type,
-                              const content::NotificationSource& source,
-                              const content::NotificationDetails& details) {
-  if ((type == chrome::NOTIFICATION_PREF_CHANGED) &&
-      (*content::Details<std::string>(details).ptr() ==
-          prefs::kUsesSystemTheme)) {
-    use_gtk_ = profile()->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme);
-  } else {
-    ThemeService::Observe(type, source, details);
-  }
-}
-
 GtkWidget* GtkThemeService::BuildChromeButton() {
   GtkWidget* button = HoverControllerGtk::CreateChromeButton();
   gtk_chrome_button_set_use_gtk_rendering(GTK_CHROME_BUTTON(button), use_gtk_);
@@ -410,10 +393,10 @@ GtkWidget* GtkThemeService::BuildChromeLinkButton(const std::string& text) {
 }
 
 GtkWidget* GtkThemeService::BuildLabel(const std::string& text,
-                                       GdkColor color) {
+                                       const GdkColor& color) {
   GtkWidget* label = gtk_label_new(text.empty() ? NULL : text.c_str());
   if (!use_gtk_)
-    gtk_widget_modify_fg(label, GTK_STATE_NORMAL, &color);
+    gtk_util::SetLabelColor(label, &color);
   labels_.insert(std::make_pair(label, color));
 
   signals_->Connect(label, "destroy", G_CALLBACK(OnDestroyLabelThunk), this);
@@ -815,6 +798,10 @@ void GtkThemeService::LoadGtkValues() {
       gfx::GdkColorToSkColor(entry_style->base[GTK_STATE_ACTIVE]);
   inactive_selection_fg_color_ =
       gfx::GdkColorToSkColor(entry_style->text[GTK_STATE_ACTIVE]);
+  location_bar_bg_color_ =
+      gfx::GdkColorToSkColor(entry_style->base[GTK_STATE_NORMAL]);
+  location_bar_text_color_ =
+      gfx::GdkColorToSkColor(entry_style->text[GTK_STATE_NORMAL]);
 }
 
 GdkColor GtkThemeService::BuildFrameColors(GtkStyle* frame_style) {
@@ -1029,13 +1016,12 @@ SkBitmap GtkThemeService::GenerateFrameImage(
         color_utils::HSLShift(base, kGtkFrameShift);
     if (gradient_top_color)
       gdk_color_free(gradient_top_color);
-    SkShader* shader = gfx::CreateGradientShader(
+    skia::RefPtr<SkShader> shader = gfx::CreateGradientShader(
         0, gradient_size, lighter, base);
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     paint.setAntiAlias(true);
-    paint.setShader(shader);
-    shader->unref();
+    paint.setShader(shader.get());
 
     canvas.DrawRect(gfx::Rect(0, 0, kToolbarImageWidth, gradient_size), paint);
   }
@@ -1046,9 +1032,9 @@ SkBitmap GtkThemeService::GenerateFrameImage(
 }
 
 SkBitmap GtkThemeService::GenerateTabImage(int base_id) const {
-  SkBitmap* base_image = GetBitmapNamed(base_id);
+  SkBitmap base_image = GetImageNamed(base_id).AsBitmap();
   SkBitmap bg_tint = SkBitmapOperations::CreateHSLShiftedBitmap(
-      *base_image, GetTint(ThemeService::TINT_BACKGROUND_TAB));
+      base_image, GetTint(ThemeService::TINT_BACKGROUND_TAB));
   return SkBitmapOperations::CreateTiledBitmap(
       bg_tint, 0, 0, bg_tint.width(), bg_tint.height());
 }
@@ -1058,7 +1044,7 @@ SkBitmap GtkThemeService::GenerateTintedIcon(
     const color_utils::HSL& tint) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return SkBitmapOperations::CreateHSLShiftedBitmap(
-      *rb.GetBitmapNamed(base_id), tint);
+      rb.GetImageNamed(base_id).AsBitmap(), tint);
 }
 
 void GtkThemeService::GetNormalButtonTintHSL(
@@ -1159,4 +1145,8 @@ gboolean GtkThemeService::OnSeparatorExpose(GtkWidget* widget,
   cairo_pattern_destroy(pattern);
 
   return TRUE;
+}
+
+void GtkThemeService::OnUsesSystemThemeChanged() {
+  use_gtk_ = profile()->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme);
 }

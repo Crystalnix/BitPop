@@ -8,20 +8,19 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "net/url_request/url_request_job_factory.h"
 
 class ChromeURLDataManagerBackend;
 class ChromeURLRequestContextFactory;
 class IOThread;
 class Profile;
 class ProfileIOData;
+struct StoragePartitionDescriptor;
 
 namespace chrome_browser_net {
-class CacheStats;
+class LoadTimeStats;
 }
 
 // Subclass of net::URLRequestContext which can be used to store extra
@@ -38,7 +37,7 @@ class ChromeURLRequestContext : public net::URLRequestContext {
     CONTEXT_TYPE_APP
   };
   ChromeURLRequestContext(ContextType type,
-                          chrome_browser_net::CacheStats* cache_stats);
+                          chrome_browser_net::LoadTimeStats* load_time_stats);
   virtual ~ChromeURLRequestContext();
 
   base::WeakPtr<ChromeURLRequestContext> GetWeakPtr() {
@@ -52,8 +51,6 @@ class ChromeURLRequestContext : public net::URLRequestContext {
     return is_incognito_;
   }
 
-  virtual const std::string& GetUserAgent(const GURL& url) const OVERRIDE;
-
   // TODO(willchan): Get rid of the need for this accessor. Really, this should
   // move completely to ProfileIOData.
   ChromeURLDataManagerBackend* chrome_url_data_manager_backend() const;
@@ -65,12 +62,6 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   void set_chrome_url_data_manager_backend(
       ChromeURLDataManagerBackend* backend);
 
-  // Callback for when the accept language changes.
-  void OnAcceptLanguageChange(const std::string& accept_language);
-
-  // Callback for when the default charset changes.
-  void OnDefaultCharsetChange(const std::string& default_charset);
-
  private:
   base::WeakPtrFactory<ChromeURLRequestContext> weak_factory_;
 
@@ -81,7 +72,7 @@ class ChromeURLRequestContext : public net::URLRequestContext {
 
   ChromeURLDataManagerBackend* chrome_url_data_manager_backend_;
   bool is_incognito_;
-  chrome_browser_net::CacheStats* cache_stats_;
+  chrome_browser_net::LoadTimeStats* load_time_stats_;
 
   // ---------------------------------------------------------------------------
   // Important: When adding any new members above, consider whether they need to
@@ -97,16 +88,12 @@ class ChromeURLRequestContext : public net::URLRequestContext {
 //
 // Most methods are expected to be called on the UI thread, except for
 // the destructor and GetURLRequestContext().
-class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
-                                      public content::NotificationObserver {
+class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
   // Constructs a ChromeURLRequestContextGetter that will use |factory| to
-  // create the ChromeURLRequestContext. If |profile| is non-NULL, then the
-  // ChromeURLRequestContextGetter will additionally watch the preferences for
-  // changes to charset/language and CleanupOnUIThread() will need to be
-  // called to unregister.
-  ChromeURLRequestContextGetter(Profile* profile,
-                                ChromeURLRequestContextFactory* factory);
+  // create the ChromeURLRequestContext.
+  explicit ChromeURLRequestContextGetter(
+      ChromeURLRequestContextFactory* factory);
 
   // Note that GetURLRequestContext() can only be called from the IO
   // thread (it will assert otherwise).
@@ -144,7 +131,17 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
   static ChromeURLRequestContextGetter* CreateOriginalForIsolatedApp(
       Profile* profile,
       const ProfileIOData* profile_io_data,
-      const std::string& app_id);
+      const StoragePartitionDescriptor& partition_descriptor,
+      scoped_ptr<net::URLRequestJobFactory::Interceptor>
+          protocol_handler_interceptor);
+
+  // Create an instance for an original profile for media with isolated
+  // storage. This is expected to get called on UI thread.
+  static ChromeURLRequestContextGetter* CreateOriginalForIsolatedMedia(
+      Profile* profile,
+      ChromeURLRequestContextGetter* app_context,
+      const ProfileIOData* profile_io_data,
+      const StoragePartitionDescriptor& partition_descriptor);
 
   // Create an instance for use with an OTR profile. This is expected to get
   // called on the UI thread.
@@ -161,31 +158,12 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
   static ChromeURLRequestContextGetter* CreateOffTheRecordForIsolatedApp(
       Profile* profile,
       const ProfileIOData* profile_io_data,
-      const std::string& app_id);
-
-  // Clean up UI thread resources. This is expected to get called on the UI
-  // thread before the instance is deleted on the IO thread.
-  void CleanupOnUIThread();
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+      const StoragePartitionDescriptor& partition_descriptor,
+      scoped_ptr<net::URLRequestJobFactory::Interceptor>
+          protocol_handler_interceptor);
 
  private:
-  // Must be called on the IO thread.
   virtual ~ChromeURLRequestContextGetter();
-
-  // Registers an observer on |profile|'s preferences which will be used
-  // to update the context when the default language and charset change.
-  void RegisterPrefsObserver(Profile* profile);
-
-  // These methods simply forward to the corresponding method on
-  // ChromeURLRequestContext.
-  void OnAcceptLanguageChange(const std::string& accept_language);
-  void OnDefaultCharsetChange(const std::string& default_charset);
-
-  PrefChangeRegistrar registrar_;
 
   // Deferred logic for creating a ChromeURLRequestContext.
   // Access only from the IO thread.

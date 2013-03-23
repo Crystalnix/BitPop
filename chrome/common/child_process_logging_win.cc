@@ -12,6 +12,7 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/common/gpu_info.h"
 #include "googleurl/src/gurl.h"
@@ -52,8 +53,8 @@ typedef void (__cdecl *MainSetNumberOfViews)(int);
 typedef void (__cdecl *MainSetCommandLine)(const wchar_t**, size_t);
 
 // exported in breakpad_field_trial_win.cc:
-//   void __declspec(dllexport) __cdecl SetExperimentList2
-typedef void (__cdecl *MainSetExperimentList)(const wchar_t**, size_t);
+//   void __declspec(dllexport) __cdecl SetExperimentList3
+typedef void (__cdecl *MainSetExperimentList)(const wchar_t**, size_t, size_t);
 
 // Copied from breakpad_win.cc.
 void StringVectorToCStringVector(const std::vector<std::wstring>& wstrings,
@@ -204,12 +205,15 @@ void SetCommandLine(const CommandLine* command_line) {
       return;
   }
 
+  if (command_line->argv().empty())
+    return;
+
   std::vector<const wchar_t*> cstrings;
   StringVectorToCStringVector(command_line->argv(), &cstrings);
   (set_command_line)(&cstrings[0], cstrings.size());
 }
 
-void SetExperimentList(const std::vector<string16>& state) {
+void SetExperimentList(const std::vector<string16>& experiments) {
   static MainSetExperimentList set_experiment_list = NULL;
   // note: benign race condition on set_experiment_list.
   if (!set_experiment_list) {
@@ -217,14 +221,24 @@ void SetExperimentList(const std::vector<string16>& state) {
     if (!exe_module)
       return;
     set_experiment_list = reinterpret_cast<MainSetExperimentList>(
-        GetProcAddress(exe_module, "SetExperimentList2"));
+        GetProcAddress(exe_module, "SetExperimentList3"));
     if (!set_experiment_list)
       return;
   }
 
+  std::vector<string16> chunks;
+  chrome_variations::GenerateVariationChunks(experiments, &chunks);
+
+  // If the list is empty, notify the child process of the number of experiments
+  // and exit early.
+  if (chunks.empty()) {
+    (set_experiment_list)(NULL, 0, 0);
+    return;
+  }
+
   std::vector<const wchar_t*> cstrings;
-  StringVectorToCStringVector(state, &cstrings);
-  (set_experiment_list)(&cstrings[0], cstrings.size());
+  StringVectorToCStringVector(chunks, &cstrings);
+  (set_experiment_list)(&cstrings[0], cstrings.size(), experiments.size());
 }
 
 void SetNumberOfViews(int number_of_views) {

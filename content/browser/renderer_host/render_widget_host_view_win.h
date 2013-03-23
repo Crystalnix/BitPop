@@ -9,7 +9,6 @@
 #include <atlapp.h>
 #include <atlcrack.h>
 #include <atlmisc.h>
-#include <peninputpanel.h>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -25,6 +24,8 @@
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/gestures/gesture_recognizer.h"
 #include "ui/base/gestures/gesture_types.h"
+#include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/win/tsf_bridge.h"
 #include "ui/base/win/extra_sdk_defines.h"
 #include "ui/base/win/ime_input.h"
 #include "ui/gfx/native_widget_types.h"
@@ -81,7 +82,8 @@ class RenderWidgetHostViewWin
       public NotificationObserver,
       public BrowserAccessibilityDelegate,
       public ui::GestureConsumer,
-      public ui::GestureEventHelper {
+      public ui::GestureEventHelper,
+      public ui::TextInputClient {  // for Win8/metro TSF support.
  public:
   virtual ~RenderWidgetHostViewWin();
 
@@ -138,9 +140,9 @@ class RenderWidgetHostViewWin
     MESSAGE_HANDLER(WM_MOUSEACTIVATE, OnMouseActivate)
     MESSAGE_HANDLER(WM_GETOBJECT, OnGetObject)
     MESSAGE_HANDLER(WM_PARENTNOTIFY, OnParentNotify)
-    MESSAGE_HANDLER(WM_POINTERDOWN, OnPointerMessage)
-    MESSAGE_HANDLER(WM_POINTERUP, OnPointerMessage)
     MESSAGE_HANDLER(WM_GESTURE, OnGestureEvent)
+    MESSAGE_HANDLER(WM_MOVE, OnMoveOrSize)
+    MESSAGE_HANDLER(WM_SIZE, OnMoveOrSize)
   END_MSG_MAP()
 
   // RenderWidgetHostView implementation.
@@ -167,21 +169,26 @@ class RenderWidgetHostViewWin
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
+      const gfx::Vector2d& scroll_offset,
       const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(ui::TextInputType type,
-                                     bool can_compose_inline) OVERRIDE;
-  virtual void SelectionBoundsChanged(const gfx::Rect& start_rect,
-                                      const gfx::Rect& end_rect) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void SelectionBoundsChanged(
+      const gfx::Rect& start_rect,
+      WebKit::WebTextDirection start_direction,
+      const gfx::Rect& end_rect,
+      WebKit::WebTextDirection end_direction) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
   virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect, int scroll_dx, int scroll_dy,
+      const gfx::Rect& scroll_rect,
+      const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
@@ -194,14 +201,15 @@ class RenderWidgetHostViewWin
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool)>& callback,
-      skia::PlatformCanvas* output) OVERRIDE;
+      skia::PlatformBitmap* output) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
-  virtual void ProcessTouchAck(WebKit::WebInputEvent::Type type,
-                               bool processed) OVERRIDE;
+  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
+                                      InputEventAckState ack_result) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
+  virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
@@ -232,21 +240,37 @@ class RenderWidgetHostViewWin
       int acc_obj_id, gfx::Point point) OVERRIDE;
   virtual void AccessibilitySetTextSelection(
       int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
+  virtual gfx::Point GetLastTouchEventLocation() const OVERRIDE;
 
   // Overridden from ui::GestureEventHelper.
-  virtual ui::GestureEvent* CreateGestureEvent(
-      const ui::GestureEventDetails& details,
-      const gfx::Point& location,
-      int flags,
-      base::Time time,
-      unsigned int touch_id_bitfield) OVERRIDE;
-  virtual ui::TouchEvent* CreateTouchEvent(
-      ui::EventType type,
-      const gfx::Point& location,
-      int touch_id,
-      base::TimeDelta time_stamp) OVERRIDE;
   virtual bool DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual bool DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
+
+  // Overridden from ui::TextInputClient for Win8/metro TSF support.
+  // Following methods are not used in existing IMM32 related implementation.
+  virtual void SetCompositionText(
+      const ui::CompositionText& composition) OVERRIDE;
+  virtual void ConfirmCompositionText()  OVERRIDE;
+  virtual void ClearCompositionText() OVERRIDE;
+  virtual void InsertText(const string16& text) OVERRIDE;
+  virtual void InsertChar(char16 ch, int flags) OVERRIDE;
+  virtual ui::TextInputType GetTextInputType() const OVERRIDE;
+  virtual bool CanComposeInline() const OVERRIDE;
+  virtual gfx::Rect GetCaretBounds() OVERRIDE;
+  virtual bool GetCompositionCharacterBounds(uint32 index,
+                                             gfx::Rect* rect) OVERRIDE;
+  virtual bool HasCompositionText() OVERRIDE;
+  virtual bool GetTextRange(ui::Range* range) OVERRIDE;
+  virtual bool GetCompositionTextRange(ui::Range* range) OVERRIDE;
+  virtual bool GetSelectionRange(ui::Range* range) OVERRIDE;
+  virtual bool SetSelectionRange(const ui::Range& range) OVERRIDE;
+  virtual bool DeleteRange(const ui::Range& range) OVERRIDE;
+  virtual bool GetTextFromRange(const ui::Range& range,
+                                string16* text) OVERRIDE;
+  virtual void OnInputMethodChanged() OVERRIDE;
+  virtual bool ChangeTextDirectionAndLayoutAlignment(
+      base::i18n::TextDirection direction) OVERRIDE;
+  virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
 
  protected:
   friend class RenderWidgetHostView;
@@ -305,12 +329,11 @@ class RenderWidgetHostViewWin
   LRESULT OnParentNotify(UINT message, WPARAM wparam, LPARAM lparam,
                          BOOL& handled);
 
-  // Handle the new pointer messages
-  LRESULT OnPointerMessage(UINT message, WPARAM wparam, LPARAM lparam,
-                           BOOL& handled);
   // Handle high-level touch events.
   LRESULT OnGestureEvent(UINT message, WPARAM wparam, LPARAM lparam,
                          BOOL& handled);
+  LRESULT OnMoveOrSize(UINT message, WPARAM wparam, LPARAM lparam,
+                       BOOL& handled);
 
   void OnFinalMessage(HWND window);
 
@@ -360,9 +383,6 @@ class RenderWidgetHostViewWin
   // origin of |dc|.
   void DrawBackground(const RECT& rect, CPaintDC* dc);
 
-  // Create an intermediate window between the given HWND and its parent.
-  HWND ReparentWindow(HWND window);
-
   // Clean up the compositor window, if needed.
   void CleanupCompositorWindow();
 
@@ -385,22 +405,13 @@ class RenderWidgetHostViewWin
   LRESULT OnReconvertString(RECONVERTSTRING* reconv);
   LRESULT OnQueryCharPosition(IMECHARPOSITION* position);
 
-  // Displays the on screen keyboard for editable fields.
-  void DisplayOnScreenKeyboardIfNeeded();
+  // Sets the appropriate mode for raw-touches or gestures. Currently touch mode
+  // will only take effect on Win7+.
+  void UpdateDesiredTouchMode();
 
-  // Invoked in a delayed task to reset the fact that we are in the context of
-  // a WM_POINTERDOWN message.
-  void ResetPointerDownContext();
-
-  // Switches between raw-touches mode and gesture mode. Currently touch mode
-  // will only take effect when kEnableTouchEvents is in effect.
-  void UpdateDesiredTouchMode(bool touch);
-
-  // Set window to receive gestures.
-  void SetToGestureMode();
-
-  // Set window to raw touch events. Returns whether registering was successful.
-  bool SetToTouchMode();
+  // Configures the enable/disable state of |ime_input_| to match with the
+  // current |text_input_type_|.
+  void UpdateIMEState();
 
   // The associated Model.  While |this| is being Destroyed,
   // |render_widget_host_| is NULL and the Windows message loop is run one last
@@ -487,6 +498,7 @@ class RenderWidgetHostViewWin
   // Stores the current text input type received by TextInputStateChanged()
   // method.
   ui::TextInputType text_input_type_;
+  bool can_compose_inline_;
 
   ScopedVector<ui::ViewProp> props_;
 
@@ -524,24 +536,21 @@ class RenderWidgetHostViewWin
   // The current composition character bounds.
   std::vector<gfx::Rect> composition_character_bounds_;
 
-  // TODO(ananta)
-  // The WM_POINTERDOWN and on screen keyboard handling related members should
-  // be moved to an independent class to reduce the clutter. This includes all
-  // members starting from virtual_keyboard_ to
-  // received_focus_change_after_pointer_down_.
+  // A cached latest caret rectangle sent from renderer.
+  gfx::Rect caret_rect_;
 
-  // ITextInputPanel to allow us to show the Windows virtual keyboard when a
-  // user touches an editable field on the page.
-  base::win::ScopedComPtr<ITextInputPanel> virtual_keyboard_;
+  // TODO(ananta)
+  // The WM_POINTERDOWN and touch related members should be moved to an
+  // independent class to reduce the clutter. This includes members
+  // pointer_down_context_ and last_touch_location_;
 
   // Set to true if we are in the context of a WM_POINTERDOWN message
   bool pointer_down_context_;
 
-  // Set to true if the focus is currently on an editable field on the page.
-  bool focus_on_editable_field_;
-
-  // Set to true if we received a focus change after a WM_POINTERDOWN message.
-  bool received_focus_change_after_pointer_down_;
+  // The global x, y coordinates of the last point a touch event was
+  // received, used to determine if it's okay to open the on-screen
+  // keyboard. Reset when the window loses focus.
+  gfx::Point last_touch_location_;
 
   // Region in which the view will be transparent to clicks.
   scoped_ptr<SkRegion> transparent_region_;

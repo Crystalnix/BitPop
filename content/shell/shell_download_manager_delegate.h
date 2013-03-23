@@ -26,19 +26,32 @@ class ShellDownloadManagerDelegate
       DownloadItem* download,
       const DownloadTargetCallback& callback) OVERRIDE;
 
+  // Inhibits prompting and sets the default download path.
+  void SetDownloadBehaviorForTesting(
+      const FilePath& default_download_path);
+
+ protected:
+  // To allow subclasses for testing.
+  virtual ~ShellDownloadManagerDelegate();
+
  private:
   friend class base::RefCountedThreadSafe<ShellDownloadManagerDelegate>;
 
-  virtual ~ShellDownloadManagerDelegate();
 
   void GenerateFilename(int32 download_id,
                         const DownloadTargetCallback& callback,
-                        const FilePath& generated_name);
+                        const FilePath& generated_name,
+                        const FilePath& suggested_directory);
+  void OnDownloadPathGenerated(int32 download_id,
+                               const DownloadTargetCallback& callback,
+                               const FilePath& suggested_path);
   void ChooseDownloadPath(int32 download_id,
                           const DownloadTargetCallback& callback,
                           const FilePath& suggested_path);
 
   DownloadManager* download_manager_;
+  FilePath default_download_path_;
+  bool suppress_prompting_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellDownloadManagerDelegate);
 };

@@ -15,6 +15,7 @@
 class FaviconTabHelper;
 class GURL;
 class Panel;
+class PrefsTabHelper;
 class Profile;
 
 namespace content {
@@ -26,6 +27,7 @@ class WindowController;
 }
 
 namespace gfx {
+class Image;
 class Rect;
 }
 
@@ -43,11 +45,20 @@ class PanelHost : public content::WebContentsDelegate,
   void DestroyWebContents();
 
   // Returns the icon for the current page.
-  SkBitmap GetPageIcon() const;
+  gfx::Image GetPageIcon() const;
 
   // content::WebContentsDelegate overrides.
+  virtual content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) OVERRIDE;
   virtual void NavigationStateChanged(const content::WebContents* source,
                                       unsigned changed_flags) OVERRIDE;
+  virtual void AddNewContents(content::WebContents* source,
+                              content::WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
   virtual void DeactivateContents(content::WebContents* contents) OVERRIDE;
   virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
@@ -57,16 +68,16 @@ class PanelHost : public content::WebContentsDelegate,
   virtual bool IsPopupOrPanel(
       const content::WebContents* source) const OVERRIDE;
   virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
-  virtual bool IsApplication() const OVERRIDE;
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
   virtual void HandleKeyboardEvent(
+      content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE;
   virtual void ResizeDueToAutoResize(content::WebContents* web_contents,
                                      const gfx::Size& new_size) OVERRIDE;
 
   // content::WebContentsObserver overrides.
+  virtual void RenderViewCreated(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
@@ -97,7 +108,6 @@ class PanelHost : public content::WebContentsDelegate,
   // The following factory is used to close the panel via the message loop.
   base::WeakPtrFactory<PanelHost> weak_factory_;
 
-  scoped_ptr<FaviconTabHelper> favicon_tab_helper_;
   scoped_ptr<content::WebContents> web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(PanelHost);

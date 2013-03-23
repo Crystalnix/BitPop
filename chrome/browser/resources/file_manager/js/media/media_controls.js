@@ -346,6 +346,17 @@ MediaControls.prototype.detachMedia = function() {
 };
 
 /**
+ * Force-empty the media pipeline. This is a workaround for crbug.com/149957.
+ * The document is not going to be GC-ed until the last Files app window closes,
+ * but we want the media pipeline to deinitialize ASAP to minimize leakage.
+ */
+MediaControls.prototype.cleanup = function() {
+  this.media_.src = '';
+  this.media_.load();
+  this.detachMedia();
+};
+
+/**
  * 'play' and 'pause' event handler.
  * @param {boolean} playing True if playing.
  * @private
@@ -384,6 +395,9 @@ MediaControls.prototype.onMediaDuration_ = function() {
 
   if (this.progressSlider_.setValueToStringFunction)
     this.progressSlider_.setValueToStringFunction(valueToString);
+
+  if (this.media_.seekable)
+    this.restorePlayState();
 };
 
 /**
@@ -417,8 +431,75 @@ MediaControls.prototype.onMediaComplete = function() {};
 
 /**
  * Called when play/pause state is changed or on playback progress.
+ * This is the right moment to save the play state.
  */
 MediaControls.prototype.onPlayStateChanged = function() {};
+
+/**
+ * Restore play state. Base implementation is empty.
+ */
+MediaControls.prototype.restorePlayState = function() {};
+
+/**
+ * Encode current state into the page URL or the app state.
+ */
+MediaControls.prototype.encodeState = function() {
+  if (!this.media_.duration)
+    return;
+
+  if (window.appState) {
+    window.appState.time = this.media_.currentTime;
+    util.saveAppState();
+    return;
+  }
+
+  var playState = JSON.stringify({
+      play: this.isPlaying(),
+      time: this.media_.currentTime
+    });
+
+  var newLocation = document.location.origin + document.location.pathname +
+      document.location.search + '#' + playState;
+
+  document.location.href = newLocation;
+};
+
+/**
+ * Decode current state from the page URL or the app state.
+ * @return {boolean} True if decode succeeded.
+ */
+MediaControls.prototype.decodeState = function() {
+  if (window.appState) {
+    if (!('time' in window.appState))
+      return false;
+    // There is no page reload for apps v2, only app restart.
+    // Always restart in paused state.
+    this.media_.currentTime = appState.time;
+    this.pause();
+    return true;
+  }
+
+  var hash = document.location.hash.substring(1);
+  if (hash) {
+    try {
+      var playState = JSON.parse(hash);
+      if (!('time' in playState))
+        return false;
+
+      this.media_.currentTime = playState.time;
+
+      if (playState.play)
+        this.play();
+      else
+        this.pause();
+
+      return true;
+    } catch (e) {
+      console.warn('Cannot decode play state');
+    }
+  }
+  return false;
+};
 
 /**
  * Create a customized slider control.
@@ -854,21 +935,10 @@ function VideoControls(containerElement, onMediaError,
         'playback-state-icon', opt_stateIconParent);
   }
 
-  this.resumePositions_ = new TimeLimitedMap(
-      'VideoResumePosition',
-      VideoControls.RESUME_POSITIONS_CAPACITY,
-      VideoControls.RESUME_POSITION_LIFETIME);
+  var video_controls = this;
+  chrome.mediaPlayerPrivate.onTogglePlayState.addListener(
+      function() { video_controls.togglePlayStateWithFeedback(); });
 }
-
-/**
- * Capacity of the resume position storage.
- */
-VideoControls.RESUME_POSITIONS_CAPACITY = 100;
-
-/**
- * Maximum lifetime of a stored position.
- */
-VideoControls.RESUME_POSITION_LIFETIME = 30 * 24 * 60 * 60 * 1000;  // 30 days.
 
 /**
  * No resume if we are withing this margin from the start or the end.
@@ -904,45 +974,10 @@ VideoControls.prototype.togglePlayStateWithFeedback = function() {
 
   this.togglePlayState();
 
-  var self = this;
-
-  var delay = function(action, opt_timeout) {
-    if (self.statusIconTimer_) {
-      clearTimeout(self.statusIconTimer_);
-    }
-    self.statusIconTimer_ = setTimeout(function() {
-      self.statusIconTimer_ = null;
-      action();
-    }, opt_timeout || 0);
-  };
-
-  function hideStatusIcon() {
-    self.stateIcon_.removeAttribute('visible');
-    self.stateIcon_.removeAttribute('state');
-  }
-
-  hideStatusIcon();
-
-  // The delays are required to trigger the layout between attribute changes.
-  // Otherwise everything just goes to the final state without the animation.
-  delay(function() {
-    self.stateIcon_.setAttribute('visible', true);
-    delay(function() {
-      self.stateIcon_.setAttribute(
-          'state', self.isPlaying() ? 'play' : 'pause');
-      delay(hideStatusIcon, 1000);  /* Twice the animation duration. */
-    });
-  });
-};
-
-/**
- * 'durationchange' handler.
- * @private
- */
-VideoControls.prototype.onMediaDuration_ = function() {
-  MediaControls.prototype.onMediaDuration_.apply(this, arguments);
-  if (this.media_.duration && this.media_.seekable)
-    this.resumePosition();
+  this.stateIcon_.removeAttribute('state');
+  setTimeout(function() {
+    this.stateIcon_.setAttribute('state', this.isPlaying() ? 'play' : 'pause');
+  }.bind(this), 0);
 };
 
 /**
@@ -958,32 +993,47 @@ VideoControls.prototype.togglePlayState = function() {
 
 /**
  * Save the playback position to the persistent storage.
+ * @param {boolean} opt_sync True if the position must be saved synchronously
+ *   (required when closing app windows).
  */
-VideoControls.prototype.savePosition = function() {
+VideoControls.prototype.savePosition = function(opt_sync) {
   if (!this.media_.duration ||
-      this.media_.duration_ < VideoControls.RESUME_THRESHOLD)
+      this.media_.duration < VideoControls.RESUME_THRESHOLD) {
     return;
+  }
 
   var ratio = this.media_.currentTime / this.media_.duration;
+  var position;
   if (ratio < VideoControls.RESUME_MARGIN ||
       ratio > (1 - VideoControls.RESUME_MARGIN)) {
     // We are too close to the beginning or the end.
     // Remove the resume position so that next time we start from the beginning.
-    this.resumePositions_.removeValue(this.media_.src);
+    position = null;
   } else {
-    this.resumePositions_.setValue(this.media_.src, Math.floor(Math.max(0,
-        this.media_.currentTime - VideoControls.RESUME_REWIND)));
+    position = Math.floor(
+        Math.max(0, this.media_.currentTime - VideoControls.RESUME_REWIND));
+  }
+
+  if (opt_sync && util.platform.v2()) {
+    // Packaged apps cannot save synchronously.
+    // Pass the data to the background page.
+    if (!window.saveOnExit)
+      window.saveOnExit = [];
+    window.saveOnExit.push({ key: this.media_.src, value: position });
+  } else {
+    util.AppCache.update(this.media_.src, position);
   }
 };
 
 /**
  * Resume the playback position saved in the persistent storage.
  */
-VideoControls.prototype.resumePosition = function() {
+VideoControls.prototype.restorePlayState = function() {
   if (this.media_.duration >= VideoControls.RESUME_THRESHOLD) {
-    var position = this.resumePositions_.getValue(this.media_.src);
-    if (position)
-      this.media_.currentTime = position;
+    util.AppCache.getValue(this.media_.src, function(position) {
+      if (position)
+        this.media_.currentTime = position;
+    }.bind(this));
   }
 };
 
@@ -1012,114 +1062,6 @@ VideoControls.prototype.updateStyle = function() {
 };
 
 /**
- *  TimeLimitedMap is persistent timestamped key-value storage backed by
- *  HTML5 local storage.
- *
- *  It is not designed for frequent access. In order to avoid costly
- *  localStorage iteration all data is kept in a single localStorage item.
- *  There is no in-memory caching, so concurrent access is OK.
- *
- *  @param {string} localStorageKey A key in the local storage.
- *  @param {number} capacity Maximim number of items. If exceeded, oldest items
- *                           are removed.
- *  @param {number} lifetime Maximim time to keep an item (in milliseconds).
- */
-function TimeLimitedMap(localStorageKey, capacity, lifetime) {
-  this.localStorageKey_ = localStorageKey;
-  this.capacity_ = capacity;
-  this.lifetime_ = lifetime;
-}
-
-/**
- * @param {string} key Key
- * @return {string} Value
- */
-TimeLimitedMap.prototype.getValue = function(key) {
-  var map = this.read_();
-  var entry = map[key];
-  return entry && entry.value;
-};
-
-/**
- * @param {string} key Key.
- * @param {string} value Value.
- */
-TimeLimitedMap.prototype.setValue = function(key, value) {
-  var map = this.read_();
-  map[key] = { value: value, timestamp: Date.now() };
-  this.cleanup_(map);
-  this.write_(map);
-};
-
-/**
- * @param {string} key Key to remove.
- */
-TimeLimitedMap.prototype.removeValue = function(key) {
-  var map = this.read_();
-  if (!(key in map))
-    return;  // Nothing to do.
-
-  delete map[key];
-  this.cleanup_(map);
-  this.write_(map);
-};
-
-/**
- * @return {Object} A map of timestamped key-value pairs.
- * @private
- */
-TimeLimitedMap.prototype.read_ = function() {
-  var json = localStorage[this.localStorageKey_];
-  if (json) {
-    try {
-      return JSON.parse(json);
-    } catch (e) {
-      // The localStorage item somehow got messed up, start fresh.
-    }
-  }
-  return {};
-};
-
-/**
- * @param {Object} map A map of timestamped key-value pairs.
- * @private
- */
-TimeLimitedMap.prototype.write_ = function(map) {
-  localStorage[this.localStorageKey_] = JSON.stringify(map);
-};
-
-/**
- * Remove over-capacity and obsolete items.
- *
- * @param {Object} map A map of timestamped key-value pairs.
- * @private
- */
-TimeLimitedMap.prototype.cleanup_ = function(map) {
-  // Sort keys by ascending timestamps.
-  var keys = [];
-  for (var key in map) {
-    keys.push(key);
-  }
-  keys.sort(function(a, b) { return map[a].timestamp > map[b].timestamp });
-
-  var cutoff = Date.now() - this.lifetime_;
-
-  var obsolete = 0;
-  while (obsolete < keys.length &&
-         map[keys[obsolete]].timestamp < cutoff) {
-    obsolete++;
-  }
-
-  var overCapacity = Math.max(0, keys.length - this.capacity_);
-
-  var itemsToDelete = Math.max(obsolete, overCapacity);
-  for (var i = 0; i != itemsToDelete; i++) {
-    delete map[keys[i]];
-  }
-};
-
-
-/**
  * Create audio controls.
  *
  * @param {HTMLElement} container Parent container.
@@ -1139,6 +1081,14 @@ function AudioControls(container, advanceTrack, onError) {
   /* No volume controls */
   this.createButton('previous', this.onAdvanceClick_.bind(this, false));
   this.createButton('next', this.onAdvanceClick_.bind(this, true));
+
+  var audio_controls = this;
+  chrome.mediaPlayerPrivate.onNextTrack.addListener(
+      function() { audio_controls.onAdvanceClick_(true); });
+  chrome.mediaPlayerPrivate.onPrevTrack.addListener(
+      function() { audio_controls.onAdvanceClick_(false); });
+  chrome.mediaPlayerPrivate.onTogglePlayState.addListener(
+      function() { audio_controls.togglePlayState(); });
 }
 
 AudioControls.prototype = { __proto__: MediaControls.prototype };

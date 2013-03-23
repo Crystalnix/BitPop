@@ -239,6 +239,12 @@ class TabRendererGtk : public ui::AnimationDelegate,
  private:
   class FaviconCrashAnimation;
 
+  enum CaptureState {
+    NONE,
+    RECORDING,
+    PROJECTING
+  };
+
   // Model data. We store this here so that we don't need to ask the underlying
   // model, which is tricky since instances of this object can outlive the
   // corresponding objects in the underlying model.
@@ -248,6 +254,7 @@ class TabRendererGtk : public ui::AnimationDelegate,
 
     SkBitmap favicon;
     gfx::CairoCachedSurface cairo_favicon;
+    gfx::CairoCachedSurface cairo_overlay;
     bool is_default_favicon;
     string16 title;
     bool loading;
@@ -258,6 +265,7 @@ class TabRendererGtk : public ui::AnimationDelegate,
     bool blocked;
     bool animating_mini_change;
     bool app;
+    CaptureState capture_state;
   };
 
   // Overridden from ui::AnimationDelegate:
@@ -277,6 +285,10 @@ class TabRendererGtk : public ui::AnimationDelegate,
 
   void DisplayCrashedFavicon();
   void ResetCrashedFavicon();
+
+  // Sets up an overlay for the favicon and starts a throbbing animation
+  // if this tab is currently capturing media.
+  void UpdateFaviconOverlay(content::WebContents* contents);
 
   // Generates the bounds for the interior items of the tab.
   void Layout();
@@ -305,7 +317,7 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // sides for the rounded tab shape.
   void DrawTabBackground(cairo_t* cr,
                          GtkWidget* widget,
-                         const gfx::Image* tab_bg,
+                         const gfx::Image& tab_bg,
                          int offset_x,
                          int offset_y);
 
@@ -400,6 +412,9 @@ class TabRendererGtk : public ui::AnimationDelegate,
 
   // Animation used when the title of an inactive mini-tab changes.
   scoped_ptr<ui::ThrobAnimation> mini_title_animation_;
+
+  // Animation used when the favicon has an overlay (e.g. for recording).
+  scoped_ptr<ui::ThrobAnimation> favicon_overlay_animation_;
 
   // Contains the loading animation state.
   LoadingAnimation loading_animation_;

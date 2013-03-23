@@ -12,6 +12,7 @@
 #include "base/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_HISTORY_MENU
 #import "chrome/browser/app_controller_mac.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/profiles/profile.h"
@@ -30,6 +31,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/mac/nsimage_cache.h"
 
@@ -54,6 +56,7 @@ const unsigned int kRecentlyClosedCount = 10;
 
 HistoryMenuBridge::HistoryItem::HistoryItem()
    : icon_requested(false),
+     icon_task_id(CancelableTaskTracker::kBadTaskId),
      menu_item(nil),
      session_id(0) {
 }
@@ -62,6 +65,7 @@ HistoryMenuBridge::HistoryItem::HistoryItem(const HistoryItem& copy)
    : title(copy.title),
      url(copy.url),
      icon_requested(false),
+     icon_task_id(CancelableTaskTracker::kBadTaskId),
      menu_item(nil),
      session_id(copy.session_id) {
 }
@@ -103,11 +107,12 @@ HistoryMenuBridge::HistoryMenuBridge(Profile* profile)
   }
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  default_favicon_.reset([rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON) retain]);
+  default_favicon_.reset(
+      rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).CopyNSImage());
 
   // Set the static icons in the menu.
   NSMenuItem* item = [HistoryMenu() itemWithTag:IDC_SHOW_HISTORY];
-  [item setImage:rb.GetNativeImageNamed(IDR_HISTORY_FAVICON)];
+  [item setImage:rb.GetNativeImageNamed(IDR_HISTORY_FAVICON).ToNSImage()];
 
   // The service is not ready for use yet, so become notified when it does.
   if (!history_service_) {
@@ -452,49 +457,42 @@ HistoryMenuBridge::HistoryItem* HistoryMenuBridge::HistoryItemForTab(
 
 void HistoryMenuBridge::GetFaviconForHistoryItem(HistoryItem* item) {
   FaviconService* service =
-      profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
-  FaviconService::Handle handle = service->GetFaviconForURL(
-      item->url, history::FAVICON, &favicon_consumer_,
-      base::Bind(&HistoryMenuBridge::GotFaviconData, base::Unretained(this)));
-  favicon_consumer_.SetClientData(service, handle, item);
-  item->icon_handle = handle;
+      FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
+  CancelableTaskTracker::TaskId task_id = service->GetFaviconImageForURL(
+      FaviconService::FaviconForURLParams(profile_,
+                                          item->url,
+                                          history::FAVICON,
+                                          gfx::kFaviconSize),
+      base::Bind(&HistoryMenuBridge::GotFaviconData,
+                 base::Unretained(this),
+                 item),
+      &cancelable_task_tracker_);
+  item->icon_task_id = task_id;
   item->icon_requested = true;
 }
 
-void HistoryMenuBridge::GotFaviconData(FaviconService::Handle handle,
-                                       history::FaviconData favicon) {
+void HistoryMenuBridge::GotFaviconData(
+    HistoryItem* item,
+    const history::FaviconImageResult& image_result) {
   // Since we're going to do Cocoa-y things, make sure this is the main thread.
   DCHECK([NSThread isMainThread]);
 
-  HistoryItem* item =
-      favicon_consumer_.GetClientData(
-          profile_->GetFaviconService(Profile::EXPLICIT_ACCESS), handle);
   DCHECK(item);
   item->icon_requested = false;
-  item->icon_handle = NULL;
+  item->icon_task_id = CancelableTaskTracker::kBadTaskId;
 
-  // Convert the raw data to Skia and then to a NSImage.
-  // TODO(rsesek): Is there an easier way to do this?
-  SkBitmap icon;
-  if (favicon.is_valid() &&
-      gfx::PNGCodec::Decode(favicon.image_data->front(),
-          favicon.image_data->size(), &icon)) {
-    NSImage* image = gfx::SkBitmapToNSImage(icon);
-    if (image) {
-      // The conversion was successful.
-      item->icon.reset([image retain]);
-      [item->menu_item setImage:item->icon.get()];
-    }
+  NSImage* image = image_result.image.AsNSImage();
+  if (image) {
+    item->icon.reset([image retain]);
+    [item->menu_item setImage:item->icon.get()];
   }
 }
 
 void HistoryMenuBridge::CancelFaviconRequest(HistoryItem* item) {
   DCHECK(item);
   if (item->icon_requested) {
-    FaviconService* service =
-        profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
-    service->CancelRequest(item->icon_handle);
+    cancelable_task_tracker_.TryCancel(item->icon_task_id);
     item->icon_requested = false;
-    item->icon_handle = NULL;
+    item->icon_task_id = CancelableTaskTracker::kBadTaskId;
   }
 }

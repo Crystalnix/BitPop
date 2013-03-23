@@ -37,6 +37,7 @@ using content::BrowserThread;
 namespace {
 
 const char kNameKey[] = "name";
+const char kShortcutNameKey[] = "shortcut_name";
 const char kGAIANameKey[] = "gaia_name";
 const char kUseGAIANameKey[] = "use_gaia_name";
 const char kUserNameKey[] = "user_name";
@@ -149,13 +150,14 @@ void ReadBitmap(const FilePath& image_path,
 
   const unsigned char* data =
       reinterpret_cast<const unsigned char*>(image_data.data());
-  gfx::Image* image = gfx::ImageFromPNGEncodedData(data, image_data.length());
-  if (image == NULL) {
+  gfx::Image image =
+      gfx::Image::CreateFrom1xPNGBytes(data, image_data.length());
+  if (image.IsEmpty()) {
     LOG(ERROR) << "Failed to decode PNG file.";
     return;
   }
 
-  *out_image = image;
+  *out_image = new gfx::Image(image);
 }
 
 void DeleteBitmap(const FilePath& image_path) {
@@ -275,6 +277,14 @@ string16 ProfileInfoCache::GetNameOfProfileAtIndex(size_t index) const {
   if (name.empty())
     GetInfoForProfileAtIndex(index)->GetString(kNameKey, &name);
   return name;
+}
+
+string16 ProfileInfoCache::GetShortcutNameOfProfileAtIndex(size_t index)
+    const {
+  string16 shortcut_name;
+  GetInfoForProfileAtIndex(index)->GetString(
+      kShortcutNameKey, &shortcut_name);
+  return shortcut_name;
 }
 
 FilePath ProfileInfoCache::GetPathOfProfileAtIndex(size_t index) const {
@@ -431,6 +441,17 @@ void ProfileInfoCache::SetNameOfProfileAtIndex(size_t index,
   }
 }
 
+void ProfileInfoCache::SetShortcutNameOfProfileAtIndex(
+    size_t index,
+    const string16& shortcut_name) {
+  if (shortcut_name == GetShortcutNameOfProfileAtIndex(index))
+    return;
+  scoped_ptr<DictionaryValue> info(GetInfoForProfileAtIndex(index)->DeepCopy());
+  info->SetString(kShortcutNameKey, shortcut_name);
+  // This takes ownership of |info|.
+  SetInfoForProfileAtIndex(index, info.release());
+}
+
 void ProfileInfoCache::SetUserNameOfProfileAtIndex(size_t index,
                                                    const string16& user_name) {
   if (user_name == GetUserNameOfProfileAtIndex(index))
@@ -536,7 +557,9 @@ void ProfileInfoCache::SetGAIAPictureOfProfileAtIndex(size_t index,
     // Save the new bitmap to disk.
     gaia_pictures_[key] = new gfx::Image(*image);
     scoped_ptr<ImageData> data(new ImageData);
-    if (!gfx::PNGEncodedDataFromImage(*image, data.get())) {
+    scoped_refptr<base::RefCountedMemory> png_data = image->As1xPNGBytes();
+    data->assign(png_data->front(), png_data->front() + png_data->size());
+    if (!data->size()) {
       LOG(ERROR) << "Failed to PNG encode the image.";
     } else {
       new_file_name =

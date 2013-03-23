@@ -9,8 +9,9 @@
 #include <set>
 #include <string>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/policy/policy_constants.h"
+#include "chrome/browser/policy/policy_types.h"
 
 namespace policy {
 
@@ -66,6 +67,9 @@ class PolicyMap {
 
   // |this| becomes a copy of |other|. Any existing policies are dropped.
   void CopyFrom(const PolicyMap& other);
+
+  // Returns a copy of |this|.
+  scoped_ptr<PolicyMap> DeepCopy() const;
 
   // Merges policies from |other| into |this|. Existing policies are only
   // overridden by those in |other| if they have a higher priority, as defined

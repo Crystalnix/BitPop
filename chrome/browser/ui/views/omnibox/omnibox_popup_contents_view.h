@@ -35,8 +35,7 @@ class OmniboxPopupContentsView : public views::View,
   static OmniboxPopupView* Create(const gfx::Font& font,
                                   OmniboxView* omnibox_view,
                                   OmniboxEditModel* edit_model,
-                                  views::View* location_bar,
-                                  views::View* popup_parent_view);
+                                  views::View* location_bar);
 
   // Returns the bounds the popup should be shown at. This is the display bounds
   // and includes offsets for the dropshadow which this view's border renders.
@@ -55,7 +54,7 @@ class OmniboxPopupContentsView : public views::View,
   // Overridden from OmniboxResultViewModel:
   virtual bool IsSelectedIndex(size_t index) const OVERRIDE;
   virtual bool IsHoveredIndex(size_t index) const OVERRIDE;
-  virtual const SkBitmap* GetIconIfExtensionMatch(size_t index) const OVERRIDE;
+  virtual gfx::Image GetIconIfExtensionMatch(size_t index) const OVERRIDE;
 
   // Overridden from ui::AnimationDelegate:
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
@@ -64,15 +63,16 @@ class OmniboxPopupContentsView : public views::View,
   virtual void Layout() OVERRIDE;
   virtual views::View* GetEventHandlerForPoint(
       const gfx::Point& point) OVERRIDE;
-  virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
-  virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
+  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
+  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual void OnMouseMoved(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
-  virtual ui::GestureStatus OnGestureEvent(
-      const views::GestureEvent& event) OVERRIDE;
+  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
+
+  // Overridden from ui::EventHandler:
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  protected:
   OmniboxPopupContentsView(const gfx::Font& font,
@@ -134,16 +134,18 @@ class OmniboxPopupContentsView : public views::View,
 
   // Processes a located event (e.g. mouse/gesture) and sets the selection/hover
   // state of a line in the list.
-  void UpdateLineEvent(const views::LocatedEvent& event,
+  void UpdateLineEvent(const ui::LocatedEvent& event,
                        bool should_set_selected_line);
 
   // Opens an entry from the list depending on the event and the selected
   // disposition.
-  void OpenSelectedLine(const views::LocatedEvent& event,
+  void OpenSelectedLine(const ui::LocatedEvent& event,
                         WindowOpenDisposition disposition);
 
   // Returns the target bounds given the specified content height.
   gfx::Rect CalculateTargetBounds(int h);
+
+  OmniboxResultView* result_view_at(size_t i);
 
   // The popup that contains this view.  We create this, but it deletes itself
   // when its window is destroyed.  This is a WeakPtr because it's possible for

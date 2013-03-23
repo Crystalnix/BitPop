@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/file_path.h"
-#include "chrome/browser/chromeos/gdata/gdata_operation_registry.h"
+#include "chrome/browser/google_apis/drive_service_interface.h"
 #include "googleurl/src/gurl.h"
 #include "ui/base/dialogs/select_file_dialog.h"
 
@@ -64,6 +64,10 @@ string16 GetTitleFromType(ui::SelectFileDialog::Type type);
 // |path|. In this case the tab will automatically close on |path| unmount.
 void ViewRemovableDrive(const FilePath& path);
 
+// Opens an action choice dialog for an external drive.
+// One of the actions is opening the File Manager.
+void OpenActionChoiceDialog(const FilePath& path);
+
 // Opens file browser UI in its own tab on file system location defined with
 // |dir|.
 void ViewFolder(const FilePath& dir);
@@ -73,9 +77,6 @@ void ViewFile(const FilePath& path);
 
 // Opens file browser on the folder containing the file, with the file selected.
 void ShowFileInFolder(const FilePath& path);
-
-// Opens file browser application.
-void OpenApplication();
 
 // Executes the built-in File Manager handler or tries to open |file| directly
 // in the browser. Returns false if neither is possible.
@@ -91,7 +92,7 @@ bool ShouldBeOpenedWithPdfPlugin(Profile* profile, const char* file_extension);
 // Converts the vector of progress status to their JSON (Value) form.
 base::ListValue* ProgressStatusVectorToListValue(
     Profile* profile, const GURL& origin_url,
-    const std::vector<gdata::GDataOperationRegistry::ProgressStatus>& list);
+    const google_apis::OperationProgressStatusList& list);
 
 }  // namespace file_manager_util
 

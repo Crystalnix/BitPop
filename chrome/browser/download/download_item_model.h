@@ -21,18 +21,29 @@ namespace gfx {
 class Font;
 }
 
-// This class is an abstraction for common UI tasks associated with a download.
-class BaseDownloadItemModel {
+// This class is an abstraction for common UI tasks and properties associated
+// with a DownloadItem.
+//
+// It is intended to be used as a thin wrapper around a |DownloadItem*|. As
+// such, the caller is expected to ensure that the |download| passed into the
+// constructor outlives this |DownloadItemModel|. In addition, multiple
+// DownloadItemModel objects could be wrapping the same DownloadItem.
+class DownloadItemModel {
  public:
-  explicit BaseDownloadItemModel(content::DownloadItem* download)
-      : download_(download) { }
-  virtual ~BaseDownloadItemModel() { }
+  // Constructs a DownloadItemModel. The caller must ensure that |download|
+  // outlives this object.
+  explicit DownloadItemModel(content::DownloadItem* download);
+  ~DownloadItemModel();
 
   // Cancel the task corresponding to the item.
-  virtual void CancelTask() = 0;
+  void CancelTask();
+
+  // Returns a long descriptive string for a download that's in the INTERRUPTED
+  // state. For other downloads, the returned string will be empty.
+  string16 GetInterruptReasonText() const;
 
   // Returns a short one-line status string for the download.
-  virtual string16 GetStatusText() = 0;
+  string16 GetStatusText() const;
 
   // Returns a string suitable for use as a tooltip. For a regular download, the
   // tooltip is the filename. For an interrupted download, the string states the
@@ -43,59 +54,60 @@ class BaseDownloadItemModel {
   // |font| and |max_width| are used to elide the filename and/or interrupt
   // reason as necessary to keep the width of the tooltip text under
   // |max_width|. The tooltip will be at most 2 lines.
-  virtual string16 GetTooltipText(const gfx::Font& font,
-                                  int max_width) const = 0;
-
-  // Rough percent complete. Returns -1 if the progress is unknown.
-  virtual int PercentComplete() const = 0;
+  string16 GetTooltipText(const gfx::Font& font, int max_width) const;
 
   // Get the warning text to display for a dangerous download. The |base_width|
   // is the maximum width of an embedded filename (if there is one). The metrics
   // for the filename will be based on |font|. Should only be called if
   // IsDangerous() is true.
-  virtual string16 GetWarningText(const gfx::Font& font, int base_width) = 0;
+  string16 GetWarningText(const gfx::Font& font, int base_width) const;
 
   // Get the caption text for a button for confirming a dangerous download
   // warning.
-  virtual string16 GetWarningConfirmButtonText() = 0;
+  string16 GetWarningConfirmButtonText() const;
 
-  // Is this considered a malicious download? Implies IsDangerous().
-  virtual bool IsMalicious() = 0;
+  // Get the number of bytes that has completed so far. Virtual for testing.
+  int64 GetCompletedBytes() const;
+
+  // Get the total number of bytes for this download. Should return 0 if the
+  // total size of the download is not known. Virual for testing.
+  int64 GetTotalBytes() const;
+
+  // Rough percent complete. Returns -1 if the progress is unknown.
+  int PercentComplete() const;
 
   // Is this considered a dangerous download?
-  virtual bool IsDangerous() = 0;
+  bool IsDangerous() const;
+
+  // Is this considered a malicious download? Implies IsDangerous().
+  bool IsMalicious() const;
+
+  // Returns |true| if this download should be displayed in the downloads shelf.
+  bool ShouldShowInShelf() const;
+
+  // Change whether the download should be displayed on the downloads
+  // shelf. Setting this is only effective if the download hasn't already been
+  // displayed in the shelf.
+  void SetShouldShowInShelf(bool should_show);
 
   content::DownloadItem* download() { return download_; }
 
-  // Get the status message of the given interrupt |reason|.
-  static string16 InterruptReasonStatusMessage(int reason);
-
-  // Get the description of the given interrupt |reason|.
-  static string16 InterruptReasonMessage(int reason);
-
- protected:
-  content::DownloadItem* download_;
-};
-
-// Concrete implementation of BaseDownloadItemModel.
-class DownloadItemModel : public BaseDownloadItemModel {
- public:
-  explicit DownloadItemModel(content::DownloadItem* download);
-  virtual ~DownloadItemModel() { }
-
-  // BaseDownloadItemModel
-  virtual void CancelTask() OVERRIDE;
-  virtual string16 GetStatusText() OVERRIDE;
-  virtual string16 GetTooltipText(const gfx::Font& font,
-                                  int max_width) const OVERRIDE;
-  virtual int PercentComplete() const OVERRIDE;
-  virtual string16 GetWarningText(const gfx::Font& font,
-                                  int base_width) OVERRIDE;
-  virtual string16 GetWarningConfirmButtonText() OVERRIDE;
-  virtual bool IsMalicious() OVERRIDE;
-  virtual bool IsDangerous() OVERRIDE;
-
  private:
+  // Returns a string representations of the current download progress sizes. If
+  // the total size of the download is known, this string looks like: "100/200
+  // MB" where the numerator is the transferred size and the denominator is the
+  // total size. If the total isn't known, returns the transferred size as a
+  // string (e.g.: "100 MB").
+  string16 GetProgressSizesString() const;
+
+  // Returns a string indicating the status of an in-progress download.
+  string16 GetInProgressStatusString() const;
+
+  // The DownloadItem that this model represents. Note that DownloadItemModel
+  // itself shouldn't maintain any state since there can be more than one
+  // DownloadItemModel in use with the same DownloadItem.
+  content::DownloadItem* download_;
+
   DISALLOW_COPY_AND_ASSIGN(DownloadItemModel);
 };
 

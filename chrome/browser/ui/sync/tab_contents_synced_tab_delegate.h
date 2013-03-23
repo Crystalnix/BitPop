@@ -8,13 +8,16 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate.h"
+#include "content/public/browser/web_contents_user_data.h"
 
-class TabContents;
+namespace content {
+class WebContents;
+}
 
 class TabContentsSyncedTabDelegate
-    : public browser_sync::SyncedTabDelegate {
+    : public browser_sync::SyncedTabDelegate,
+      public content::WebContentsUserData<TabContentsSyncedTabDelegate> {
  public:
-  explicit TabContentsSyncedTabDelegate(TabContents* tab_contents);
   virtual ~TabContentsSyncedTabDelegate();
 
   // Methods from SyncedTabDelegate.
@@ -22,17 +25,20 @@ class TabContentsSyncedTabDelegate
   virtual SessionID::id_type GetSessionId() const OVERRIDE;
   virtual bool IsBeingDestroyed() const OVERRIDE;
   virtual Profile* profile() const OVERRIDE;
-  virtual bool HasExtensionAppId() const OVERRIDE;
-  virtual const std::string& GetExtensionAppId() const OVERRIDE;
+  virtual std::string GetExtensionAppId() const OVERRIDE;
   virtual int GetCurrentEntryIndex() const OVERRIDE;
   virtual int GetEntryCount() const OVERRIDE;
   virtual int GetPendingEntryIndex() const OVERRIDE;
   virtual content::NavigationEntry* GetPendingEntry() const OVERRIDE;
   virtual content::NavigationEntry* GetEntryAtIndex(int i) const OVERRIDE;
   virtual content::NavigationEntry* GetActiveEntry() const OVERRIDE;
+  virtual bool IsPinned() const OVERRIDE;
 
  private:
-  TabContents* tab_contents_;
+  explicit TabContentsSyncedTabDelegate(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<TabContentsSyncedTabDelegate>;
+
+  content::WebContents* web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(TabContentsSyncedTabDelegate);
 };

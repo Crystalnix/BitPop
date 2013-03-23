@@ -3,13 +3,10 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/panels/base_panel_browser_test.h"
-#include "chrome/browser/ui/panels/detached_panel_strip.h"
+#include "chrome/browser/ui/panels/detached_panel_collection.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/ui/panels/panel_resize_controller.h"
-
-// Refactor has only been done for Win and Mac panels so far.
-#if defined(OS_WIN) || defined(OS_MACOSX)
 
 class PanelResizeBrowserTest : public BasePanelBrowserTest {
  public:
@@ -55,7 +52,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the top.
-  mouse_location = bounds.origin().Add(gfx::Point(10, 1));
+  mouse_location = bounds.origin() + gfx::Vector2d(10, 1);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_TOP);
   mouse_location.Offset(5, -10);
@@ -69,7 +66,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the left side.
-  mouse_location = bounds.origin().Add(gfx::Point(1, 30));
+  mouse_location = bounds.origin() + gfx::Vector2d(1, 30);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_LEFT);
   mouse_location.Offset(-5, 25);
@@ -83,7 +80,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the top right side.
-  mouse_location = bounds.origin().Add(gfx::Point(bounds.width() - 1, 2));
+  mouse_location = bounds.origin() + gfx::Vector2d(bounds.width() - 1, 2);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_TOP_RIGHT);
   mouse_location.Offset(30, 20);
@@ -95,11 +92,11 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
 
   panel_manager->EndResizingByMouse(false);
   WaitForBoundsAnimationFinished(panel);
-  bounds.Offset(-30, 0);  // Layout of panel adjusted in docked strip.
+  bounds.Offset(-30, 0);  // Layout of panel adjusted in docked collection.
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the right side.
-  mouse_location = bounds.origin().Add(gfx::Point(bounds.width() - 1, 30));
+  mouse_location = bounds.origin() + gfx::Vector2d(bounds.width() - 1, 30);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_RIGHT);
   mouse_location.Offset(5, 25);
@@ -110,11 +107,11 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
 
   panel_manager->EndResizingByMouse(false);
   WaitForBoundsAnimationFinished(panel);
-  bounds.Offset(-5, 0);  // Layout of panel adjusted in docked strip.
+  bounds.Offset(-5, 0);  // Layout of panel adjusted in docked collection.
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the bottom side; verify resize won't work.
-  mouse_location = bounds.origin().Add(gfx::Point(10, bounds.height() - 1));
+  mouse_location = bounds.origin() + gfx::Vector2d(10, bounds.height() - 1);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM);
   mouse_location.Offset(30, -10);
@@ -125,7 +122,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the bottom left corner; verify resize won't work.
-  mouse_location = bounds.origin().Add(gfx::Point(1, bounds.height() - 1));
+  mouse_location = bounds.origin() + gfx::Vector2d(1, bounds.height() - 1);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM_LEFT);
   mouse_location.Offset(-10, 15);
@@ -136,8 +133,8 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, DockedPanelResizability) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the bottom right corner; verify resize won't work.
-  mouse_location = bounds.origin().Add(
-      gfx::Point(bounds.width() - 2, bounds.height()));
+  mouse_location = bounds.origin() +
+      gfx::Vector2d(bounds.width() - 2, bounds.height());
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM_RIGHT);
   mouse_location.Offset(20, 10);
@@ -159,8 +156,8 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanel) {
   gfx::Rect bounds = panel->GetBounds();
 
   // Try resizing by the right side; verify resize will change width only.
-  gfx::Point mouse_location = bounds.origin().Add(
-      gfx::Point(bounds.width() - 1, 30));
+  gfx::Point mouse_location = bounds.origin() +
+      gfx::Vector2d(bounds.width() - 1, 30);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_RIGHT);
   mouse_location.Offset(5, 25);
@@ -173,7 +170,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanel) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the bottom left side.
-  mouse_location = bounds.origin().Add(gfx::Point(1, bounds.height() - 1));
+  mouse_location = bounds.origin() + gfx::Vector2d(1, bounds.height() - 1);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM_LEFT);
   mouse_location.Offset(-10, 15);
@@ -187,7 +184,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanel) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the top right side.
-  mouse_location = bounds.origin().Add(gfx::Point(bounds.width() - 1, 2));
+  mouse_location = bounds.origin() + gfx::Vector2d(bounds.width() - 1, 2);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_TOP_RIGHT);
   mouse_location.Offset(30, 20);
@@ -201,7 +198,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanel) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Try resizing by the top left side.
-  mouse_location = bounds.origin().Add(gfx::Point(1, 0));
+  mouse_location = bounds.origin() + gfx::Vector2d(1, 0);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_TOP_LEFT);
   mouse_location.Offset(-20, -10);
@@ -226,8 +223,8 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanelToClampSize) {
   gfx::Rect bounds = panel->GetBounds();
 
   // Make sure the panel does not resize smaller than its min size.
-  gfx::Point mouse_location = bounds.origin().Add(
-      gfx::Point(30, bounds.height() - 2));
+  gfx::Point mouse_location = bounds.origin() +
+      gfx::Vector2d(30, bounds.height() - 2);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM);
   mouse_location.Offset(-20, -500);
@@ -240,8 +237,8 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanelToClampSize) {
   EXPECT_EQ(bounds, panel->GetBounds());
 
   // Make sure the panel can resize larger than its size. User is in control.
-  mouse_location = bounds.origin().Add(
-      gfx::Point(bounds.width(), bounds.height() - 2));
+  mouse_location = bounds.origin() +
+      gfx::Vector2d(bounds.width(), bounds.height() - 2);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM_RIGHT);
 
@@ -265,13 +262,14 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanelToClampSize) {
 IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, CloseDetachedPanelOnResize) {
   PanelManager* panel_manager = PanelManager::GetInstance();
   PanelResizeController* resize_controller = panel_manager->resize_controller();
-  DetachedPanelStrip* detached_strip = panel_manager->detached_strip();
+  DetachedPanelCollection* detached_collection =
+      panel_manager->detached_collection();
 
   // Create 3 detached panels.
   Panel* panel1 = CreateDetachedPanel("1", gfx::Rect(100, 200, 100, 100));
   Panel* panel2 = CreateDetachedPanel("2", gfx::Rect(200, 210, 110, 110));
   Panel* panel3 = CreateDetachedPanel("3", gfx::Rect(300, 220, 120, 120));
-  ASSERT_EQ(3, detached_strip->num_panels());
+  ASSERT_EQ(3, detached_collection->num_panels());
 
   gfx::Rect panel1_bounds = panel1->GetBounds();
   gfx::Rect panel2_bounds = panel2->GetBounds();
@@ -279,8 +277,8 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, CloseDetachedPanelOnResize) {
 
   // Start resizing panel1, and close panel2 in the process.
   // Panel1 is not affected.
-  gfx::Point mouse_location = panel1_bounds.origin().Add(
-      gfx::Point(1, panel1_bounds.height() - 1));
+  gfx::Point mouse_location = panel1_bounds.origin() +
+      gfx::Vector2d(1, panel1_bounds.height() - 1);
   panel_manager->StartResizingByMouse(panel1, mouse_location,
                                       panel::RESIZE_BOTTOM_LEFT);
   mouse_location.Offset(-10, 15);
@@ -293,15 +291,15 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, CloseDetachedPanelOnResize) {
 
   CloseWindowAndWait(panel2);
   EXPECT_TRUE(resize_controller->IsResizing());
-  EXPECT_EQ(2, detached_strip->num_panels());
+  EXPECT_EQ(2, detached_collection->num_panels());
 
   panel_manager->EndResizingByMouse(false);
   EXPECT_EQ(panel1_bounds, panel1->GetBounds());
 
   // Start resizing panel3, and close it in the process.
   // Resize should abort, panel1 will not be affected.
-  mouse_location = panel3_bounds.origin().Add(
-      gfx::Point(panel3_bounds.width() - 1, panel3_bounds.height() - 2));
+  mouse_location = panel3_bounds.origin() +
+      gfx::Vector2d(panel3_bounds.width() - 1, panel3_bounds.height() - 2);
   panel_manager->StartResizingByMouse(panel3, mouse_location,
                                       panel::RESIZE_BOTTOM_RIGHT);
   mouse_location.Offset(7, -12);
@@ -312,7 +310,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, CloseDetachedPanelOnResize) {
   EXPECT_EQ(panel3_bounds, panel3->GetBounds());
 
   CloseWindowAndWait(panel3);
-  EXPECT_EQ(1, detached_strip->num_panels());
+  EXPECT_EQ(1, detached_collection->num_panels());
   // Since we closed the panel we were resizing, we should be out of the
   // resizing mode by now.
   EXPECT_FALSE(resize_controller->IsResizing());
@@ -336,8 +334,8 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeAndCancel) {
   // Resizing the panel, then cancelling should return it to the original state.
   // Try resizing by the top right side.
   gfx::Rect bounds = panel->GetBounds();
-  gfx::Point mouse_location = bounds.origin().Add(
-      gfx::Point(bounds.width() - 1, 1));
+  gfx::Point mouse_location = bounds.origin() +
+      gfx::Vector2d(bounds.width() - 1, 1);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_TOP_RIGHT);
   mouse_location.Offset(5, 25);
@@ -352,8 +350,7 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeAndCancel) {
 
   // Try resizing by the bottom left side.
   bounds = panel->GetBounds();
-  mouse_location = bounds.origin().Add(
-      gfx::Point(1, bounds.height() - 1));
+  mouse_location = bounds.origin() + gfx::Vector2d(1, bounds.height() - 1);
   panel_manager->StartResizingByMouse(panel, mouse_location,
                                       panel::RESIZE_BOTTOM_LEFT);
   mouse_location.Offset(-10, 15);
@@ -413,5 +410,3 @@ IN_PROC_BROWSER_TEST_F(PanelResizeBrowserTest, ResizeDetachedPanelToTop) {
 
   panel_manager->CloseAll();
 }
-
-#endif // OS_WIN || OS_MACOSX

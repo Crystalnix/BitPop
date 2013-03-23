@@ -79,7 +79,13 @@ be available for now. -->
     <output filename="chromium_strings_nb.pak" type="data_package" lang="no" />
     <!-- 'no' for Norwegian Bokmål. It should be 'nb'. -->
     <output filename="chromium_strings_pl.pak" type="data_package" lang="pl" />
-    <output filename="chromium_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
+    <if expr="pp_ifdef('ios')">
+      <!-- iOS uses pt for pt-BR -->
+      <output filename="chromium_strings_pt.pak" type="data_package" lang="pt-BR" />
+    </if>
+    <if expr="not pp_ifdef('ios')">
+      <output filename="chromium_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
+    </if>
     <output filename="chromium_strings_pt-PT.pak" type="data_package" lang="pt-PT" />
     <output filename="chromium_strings_ro.pak" type="data_package" lang="ro" />
     <output filename="chromium_strings_ru.pak" type="data_package" lang="ru" />
@@ -211,6 +217,9 @@ be available for now. -->
       <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
         Chromium is a web browser that runs webpages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Chromium.
       </message>
+      <message name="IDS_APP_LAUNCHER_PRODUCT_DESCRIPTION" desc="App Launcher description">
+        Chromium App Launcher is a standalone platform for Chromium apps.
+      </message>
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_PRODUCT_OS_NAME" desc="The Chrome OS application name">
           Chromium OS
@@ -247,6 +256,9 @@ be available for now. -->
         <message name="IDS_CHROME_FRAME_READY_MODE_PROMPT" desc="Ready Mode prompt message">
           This site recommends Chromium Frame (already installed).
         </message>
+        <message name="IDS_SHORTCUT_NEW_WINDOW" desc="The text label of the New window shortcut context menu entry as of Windows 8">
+          New window
+        </message>
       </if>
       <message name="IDS_INSTANT_OPT_IN_TITLE" desc="Title of the instant confirm dialog">
         Instant
@@ -276,9 +288,6 @@ be available for now. -->
       <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
         <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium
       </message>
-      <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT_NO_LOGO" desc="The format for titles displayed when the window has no distributor logo displayed">
-        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph>
-      </message>
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
           Get help with using Chromium
@@ -293,10 +302,7 @@ be available for now. -->
         The Chromium Authors
       </message>
       <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-        Copyright © 2006-2012 The Chromium Authors. All Rights Reserved.
-      </message>
-      <message name="IDS_ABOUT_OLD_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
-        Chromium is made possible by the <ph name="BEGIN_LINK_CHROMIUM">BEGIN_LINK_CHR</ph>Chromium<ph name="END_LINK_CHROMIUM">END_LINK_CHR</ph> open source project and other <ph name="BEGIN_LINK_OSS">BEGIN_LINK_OSS</ph>open source software<ph name="END_LINK_OSS">END_LINK_OSS</ph>.
+        Copyright 2013 The Chromium Authors. All rights reserved.
       </message>
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
         Chromium is made possible by the <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Chromium<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open source project and other <ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2"&gt;</ph>open source software<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.
@@ -308,12 +314,6 @@ be available for now. -->
       </if>
       <message name="IDS_ABOUT_TERMS_OF_SERVICE" desc="The terms of service label in the About box.">
         Not used in Chromium. Placeholder to keep resource maps in sync. It expects one argument: $1.
-      </message>
-      <message name="IDS_ABOUT_OLD_TERMS_OF_SERVICE" desc="The terms of service label in the About box.">
-        Not used in Chromium. Placeholder to keep resource maps in sync.
-      </message>
-      <message name="IDS_TERMS_OF_SERVICE" desc="The Terms of Service link text in the About box. Used in IDS_ABOUT_TERMS_OF_SERVICE.">
-        Not used in Chromium. Placeholder to keep resource maps in sync.
       </message>
       <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu.">
         Chromium
@@ -328,28 +328,29 @@ be available for now. -->
       <message name="IDS_IMPORT_PROGRESS_INFO" desc="Explanatory text for the importing progress dialog">
         Chromium is now importing the following items from <ph name="BROWSER_COMPONENT">$1<ex>History</ex></ph>:
       </message>
+      <message name="IDS_IMPORT_FIND_YOUR_BOOKMARKS" desc="Helpful reminder for where to find imported bookmarks">
+        Find your bookmarks in the Chromium menu or on the bookmarks bar.
+      </message>
       <message name="IDS_IMPORTER_LOCK_TEXT" desc="The message to be displayed on dialog">
         Sadly, your Mozilla Firefox settings are not available while that browser is running. To import those settings to Chromium, save your work and close all Firefox windows. Then click Continue.
       </message>
-      <if expr="not pp_ifdef('chromeos')">
-        <message name="IDS_ABOUT_CHROME_TITLE" desc="Title of the about page.">
-          About Chromium
-        </message>
-      </if>
-      <if expr="pp_ifdef('chromeos')">
-        <message name="IDS_ABOUT_CHROME_TITLE" desc="Title of the about page.">
-          About Chromium OS
-        </message>
-      </if>
       <!-- Uninstall messages -->
-      <message name="IDS_UNINSTALL_CLOSE_APP" desc="Message to user when uninstall detects other app instance running">
-        Please close all Chromium windows and try again.
-      </message>
+      <if expr="is_win">
+        <message name="IDS_UNINSTALL_CLOSE_APP" desc="Message to user when uninstall detects other app instance running">
+          Please close all Chromium windows and try again.
+        </message>
+        <message name="IDS_UNINSTALL_CLOSE_APP_IMMERSIVE" desc="Message to user when uninstall detects other app instance running, possibly in the Windows 8 immersive mode">
+          Please close all Chromium windows (including those in Windows 8 mode) and try again.
+        </message>
+      </if>
       <message name="IDS_UNINSTALL_VERIFY" desc="Message to confirm user wants to uninstall">
         Are you sure you want to uninstall Chromium?
       </message>
       <message name="IDS_UNINSTALL_CHROME" desc="The text of the shortcut in the Start Menu for uninstalling chrome.">
         Uninstall Chromium
+      </message>
+      <message name="IDS_UNINSTALL_APP_LAUNCHER" desc="The text of the shortcut in the Start Menu for uninstalling App Launcher.">
+        Uninstall Chromium App Launcher
       </message>
       <message name="IDS_FIRSTRUN_DLG_TITLE" desc="Dialog title for first-run dialog">
         Welcome to Chromium
@@ -360,10 +361,24 @@ be available for now. -->
       <message name="IDS_FR_CUSTOMIZE_DEFAULT_BROWSER" desc="Default browser checkbox label">
         Make Chromium the default browser
       </message>
-      <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
-               desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show.">
-        Welcome to Chromium
-      </message>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
+                 desc="Title for the hard-coded thumbnail that represents the Chromium OS Welcome page. This is used on the NTP when there aren't enough thumbnails to show.">
+          Get Started with Chromium OS
+        </message>
+      </if>
+      <if expr="pp_ifdef('ios')">
+        <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
+                 desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show. [Length: 14em]">
+          Welcome
+        </message>
+      </if>
+      <if expr="not pp_ifdef('chromeos') and not pp_ifdef('ios')">
+        <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
+                 desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show.">
+          Welcome to Chromium
+        </message>
+      </if>
       <message name="IDS_NTP4_INTRO_MESSAGE" desc="Message explaning the navigation bar at the bottom of the new NTP.">
         Chromium's New Tab page has been remodeled. Switch between sections by clicking these labels. Chromium will remember your preference for next time.
       </message>
@@ -537,6 +552,9 @@ Chromium is unable to recover your settings.
       <message name="IDS_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the Chromium shortcuts.">
         Access the Internet
       </message>
+      <message name="IDS_APP_LAUNCHER_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the App Launcher shortcut.">
+        Launch Chromium apps
+      </message>
       <message name="IDS_UNINSTALL_DELETE_PROFILE" desc="Text to show user to ask whether to delete all the profile data also during uninstallation.">
         Also delete your browsing data?
       </message>
@@ -571,7 +589,7 @@ Chromium is unable to recover your settings.
         Chromium lets you click a phone number on the web and call it with Skype!
       </message>
       <message name="IDS_TRY_TOAST_TRY_OPT" desc="First option radio button on the dialog to try chrome">
-        Try it out (already installed)
+        Try it out, it's already installed
       </message>
       <message name="IDS_TRY_TOAST_CANCEL" desc="Try chrome again dialog Cancel button">
         Don't bug me
@@ -641,7 +659,16 @@ Chromium is unable to recover your settings.
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to restart Chromium OS. Shown next to a button that says 'Restart Now'.">
           Your changes will take effect the next time you restart your device.
         </message>
+	<message name="IDS_FLAGS_CHROME_CAPTIVE_PORTAL_DETECTOR" desc="Description for the option of Captive Portal detector.">
+          Chromium Captive Portal detector
+	</message>
       </if>
+      <message name="IDS_FLAGS_SHOW_APP_LIST_SHORTCUT_NAME" desc="Name for the flag to show the Chromium app list shortcut in the taskbar.">
+        Show Chromium Apps Launcher.
+      </message>
+      <message name="IDS_FLAGS_SHOW_APP_LIST_SHORTCUT_DESCRIPTION" desc="Description for the flag to show the Chromium app list shortcut in the taskbar.">
+        Show a shortcut to the Chromium Apps Launcher in the Windows TaskBar.
+      </message>
 
       <!-- Obsolete System info bar -->
       <message name="IDS_SYSTEM_OBSOLETE_MESSAGE" desc="Message shown when your OS is no longer supported. This messages is followed by a 'Learn more' link.">
@@ -665,16 +692,6 @@ For Chromium, processes used to display diagnostics information (such as this "a
       </if>
 
       <!-- About Chrome page -->
-      <if expr="not pp_ifdef('chromeos')">
-        <message name="IDS_UPGRADE_SUCCESSFUL" desc="Status label: Successfully upgraded Chromium">
-          Chromium has been updated to <ph name="VERSION">$1<ex>0.1.131</ex></ph>
-        </message>
-      </if>
-      <if expr="pp_ifdef('chromeos')">
-        <message name="IDS_UPGRADE_SUCCESSFUL" desc="Status label: Successfully upgraded Chromium OS">
-          Your device has been updated to <ph name="VERSION">$1<ex>0.1.131</ex></ph>
-        </message>
-      </if>
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Chromium">
           Nearly up-to-date! Relaunch Chromium to finish updating.
@@ -706,24 +723,19 @@ For Chromium, processes used to display diagnostics information (such as this "a
         </message>
       </if>
 
-      <!-- About Chrome View (only used on Windows: http://crbug.com/115123) -->
-      <message name="IDS_OLD_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated">
-        Relaunch Chromium to finish updating
-      </message>
-      <message name="IDS_UPGRADE_ALREADY_UP_TO_DATE" desc="Status label: Already up to date">
-        Chromium is up to date (<ph name="VERSION">$1<ex>0.1.131</ex></ph>)
-      </message>
+      <!-- iOS Upgrade available info bar-->
+      <if expr="pp_ifdef('ios')">
+        <message name="IDS_UPGRADE_AVAILABLE" desc="Text to inform the user of the presence of a new version of the application">
+          Chromium just got better! A new version is available.
+        </message>
+        <message name="IDS_UPGRADE_AVAILABLE_BUTTON" desc="Diplayed on a button the user can use to upgrade the a more recent version of the application. [Length: 10em]">
+          Update
+        </message>
+      </if>
 
       <!-- Extension/App install prompt -->
       <message name="IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE" desc="Titlebar of the extension or app inline installation prompt window">
         Add to Chromium
-      </message>
-
-      <!-- Extension alerts. -->
-      <message name="IDS_EXTENSION_ALERT_ITEM_EXTERNAL" desc="A statement that an external extension has been newly installed. End users have no idea what an 'external' extension is, so we simply call them extensions. The trailing character must be a newline.">
-The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been added.
-
-'''
       </message>
 
       <!-- Extension installed bubble -->
@@ -739,7 +751,7 @@ The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been
         Remove from Chromium
       </message>
 
-      <!-- Wrench menu -->
+      <!-- Main Chrome menu -->
       <if expr="pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
         <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
           About &amp;Chromium
@@ -807,6 +819,9 @@ The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been
       <message name="IDS_SYNC_PROMO_V_LEARN_MORE" desc="Learn more link at the bottom of the sync promo.">
         See <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>more benefits<ph name="END_LINK">&lt;/a&gt;</ph> of signing in to Chromium.
       </message>
+      <message name="IDS_SYNC_DIFFERENT_EMAIL" desc="Error message to display when setting up sync for a second time and the user name is different from the previous user name.">
+        You were previously signed in with a different account, signing in will merge your data. Consider creating a new Chromium user via the <ph name="BEGIN_LINK">&lt;a href="chrome://settings/search#Users" target="_parent"&gt;</ph>settings page<ph name="END_LINK">&lt;/a&gt;</ph> for your Chromium stuff.
+      </message>
 
       <!-- One click sign in infobar -->
       <if expr="not pp_ifdef('chromeos')">
@@ -828,6 +843,97 @@ The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been
       <!-- Web Intents -->
       <message name="IDS_INTENT_PICKER_INSTALL_EXTENSION" desc="Text on the button in the web intent picker that installs an extension then uses the extension as an intent service.">
         Add to Chromium
+      </message>
+
+      <!-- Network Error Pages -->
+      <message name="IDS_ERRORPAGES_SUGGESTION_NETWORK_PREDICTION" desc="When a page fails to load, sometimes we suggest disabling network prediction.">
+        Try disabling network prediction by following these steps:
+        Go to
+        <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+        the Chromium menu &gt;
+        <ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+        &gt;
+        <ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
+        <ph name="END_BOLD">&lt;/strong&gt;</ph>
+        and deselect &quot;<ph name="NO_PREFETCH_DESCRIPTION">&lt;span jscontent="noNetworkPredictionTitle"&gt;&lt;/span&gt;<ex>Predict network actions to improve page load performance</ex></ph>.&quot;
+        If this does not resolve the issue, we recommend selecting this option
+        again for improved performance.
+      </message>
+      <if expr="is_macosx">
+        <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Mac OSX instructions for disabling use of a proxy server.">
+          Go to
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+          Applications &gt; System Preferences &gt; Network &gt; Advanced &gt; Proxies
+          <ph name="END_BOLD">&lt;/strong&gt;</ph>
+          and deselect any proxies that have been selected.
+        </message>
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="ChromeOS instructions for disabling use of a proxy server.">
+          Go to
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+          the Chromium menu &gt;
+          <ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+          &gt;
+          <ph name="INTERNET_TITLE">&lt;span jscontent="internetTitle"&gt;&lt;/span&gt;<ex>Internet</ex></ph>
+          &gt;
+          &quot;<ph name="OPTIONS_BUTTON">&lt;span jscontent="optionsButton"&gt;&lt;/span&gt;<ex>Options...</ex></ph>&quot;
+          <ph name="END_BOLD">&lt;/strong&gt;</ph>
+          (for the current Network). If the
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+          &quot;<ph name="PROXY_BUTTON">&lt;span jscontent="proxyButton"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>&quot;
+          <ph name="END_BOLD">&lt;/strong&gt;</ph>button (in the
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+          <ph name="NETWORK_TAB">&lt;span jscontent="networkTab"&gt;&lt;/span&gt;<ex>Network</ex></ph>
+          <ph name="END_BOLD">&lt;/strong&gt;</ph>
+          tab) is present, click on that and make sure your configuration
+          is set to &quot;Direct&quot;.
+        </message>
+      </if>
+      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx">
+        <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Linux instructions for disabling use of a proxy server.">
+          Go to
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+          the Chromium menu &gt;
+          <ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+          &gt;
+          <ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
+          &gt;
+          <ph name="PROXIES_TITLE">&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>
+          <ph name="END_BOLD">&lt;/strong&gt;</ph>
+          and make sure your configuration is set to &quot;no proxy&quot; or &quot;direct.&quot;
+        </message>
+      </if>
+      <if expr="is_win">
+        <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Windows instructions for disabling use of a proxy server.">
+          Go to
+          <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>
+          the Chromium menu &gt;
+          <ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+          &gt;
+          <ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
+          &gt;
+          <ph name="PROXIES_TITLE">&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>
+          &gt;
+          LAN Settings
+          <ph name="END_BOLD">&lt;/strong&gt;</ph>
+          and deselect the &quot;Use a proxy server for your LAN&quot; checkbox.
+        </message>
+      </if>
+
+      <!-- Chrome OS keyboard overlay-->
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_KEYBOARD_OVERLAY_SHOW_WRENCH_MENU" desc="The text in the keyboard overlay to explain the shortcut that opens the main Chrome menu.">
+          Show the Chromium menu
+        </message>
+      </if>
+
+      <!-- App list -->
+      <message name="IDS_APP_LIST_SHORTCUT_NAME" desc="Name for the Chromium App List to appear in the taskbar and in any shortcuts to it.">
+        Chromium Apps Launcher
+      </message>
+      <message name="IDS_APP_LIST_OPT_IN_TEXT" desc="Text to appear in the prompt to use the Chrome app list.">
+        Use the Chromium Apps Launcher to launch your apps.
       </message>
     </messages>
   </release>

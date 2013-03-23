@@ -45,7 +45,7 @@ class TestProvider : public AutocompleteProvider {
   TestProvider(int relevance, const string16& prefix,
                Profile* profile,
                const string16 match_keyword)
-      : AutocompleteProvider(NULL, profile, ""),
+      : AutocompleteProvider(NULL, profile, AutocompleteProvider::TYPE_SEARCH),
         relevance_(relevance),
         prefix_(prefix),
         match_keyword_(match_keyword) {
@@ -59,7 +59,7 @@ class TestProvider : public AutocompleteProvider {
   }
 
  private:
-  ~TestProvider() {}
+  virtual ~TestProvider() {}
 
   void Run();
 
@@ -137,7 +137,7 @@ void TestProvider::AddResultsWithSearchTermsArgs(
         new TemplateURLRef::SearchTermsArgs(search_terms_args));
     if (!match_keyword_.empty()) {
       match.keyword = match_keyword_;
-      ASSERT_TRUE(match.GetTemplateURL(profile_) != NULL);
+      ASSERT_TRUE(match.GetTemplateURL(profile_, false) != NULL);
     }
 
     matches_.push_back(match);
@@ -163,7 +163,11 @@ class AutocompleteProviderTest : public testing::Test,
   void RegisterTemplateURL(const string16 keyword,
                            const std::string& template_url);
 
-  void ResetControllerWithTestProviders(bool same_destinations);
+  // Resets |controller_| with two TestProviders.  |provider1_ptr| and
+  // |provider2_ptr| are updated to point to the new providers if non-NULL.
+  void ResetControllerWithTestProviders(bool same_destinations,
+                                        TestProvider** provider1_ptr,
+                                        TestProvider** provider2_ptr);
 
   // Runs a query on the input "a", and makes sure both providers' input is
   // properly collected.
@@ -177,12 +181,9 @@ class AutocompleteProviderTest : public testing::Test,
 
   void RunQuery(const string16 query);
 
-  void ResetControllerWithTestProvidersWithKeywordAndSearchProviders();
+  void ResetControllerWithKeywordAndSearchProviders();
   void ResetControllerWithKeywordProvider();
   void RunExactKeymatchTest(bool allow_exact_keyword_match);
-
-  // These providers are owned by the controller once it's created.
-  ACProviders providers_;
 
   AutocompleteResult result_;
   scoped_ptr<AutocompleteController> controller_;
@@ -198,7 +199,7 @@ class AutocompleteProviderTest : public testing::Test,
   TestingProfile profile_;
 };
 
-void AutocompleteProviderTest:: RegisterTemplateURL(
+void AutocompleteProviderTest::RegisterTemplateURL(
     const string16 keyword,
     const std::string& template_url) {
   TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -211,16 +212,15 @@ void AutocompleteProviderTest:: RegisterTemplateURL(
       TemplateURLServiceFactory::GetForProfile(&profile_);
   turl_model->Add(default_t_url);
   turl_model->SetDefaultSearchProvider(default_t_url);
+  turl_model->Load();
   TemplateURLID default_provider_id = default_t_url->id();
   ASSERT_NE(0, default_provider_id);
 }
 
 void AutocompleteProviderTest::ResetControllerWithTestProviders(
-    bool same_destinations) {
-  // Forget about any existing providers.  The controller owns them and will
-  // Release() them below, when we delete it during the call to reset().
-  providers_.clear();
-
+    bool same_destinations,
+    TestProvider** provider1_ptr,
+    TestProvider** provider2_ptr) {
   // TODO: Move it outside this method, after refactoring the existing
   // unit tests.  Specifically:
   //   (1) Make sure that AutocompleteMatch.keyword is set iff there is
@@ -234,39 +234,45 @@ void AutocompleteProviderTest::ResetControllerWithTestProviders(
   RegisterTemplateURL(ASCIIToUTF16(kTestTemplateURLKeyword),
                       "http://aqs/{searchTerms}/{google:assistedQueryStats}");
 
-  // Construct two new providers, with either the same or different prefixes.
-  TestProvider* providerA =
-      new TestProvider(kResultsPerProvider,
-                       ASCIIToUTF16("http://a"),
-                       &profile_,
-                       ASCIIToUTF16(kTestTemplateURLKeyword));
-  providerA->AddRef();
-  providers_.push_back(providerA);
+  ACProviders providers;
 
-  TestProvider* providerB = new TestProvider(
+  // Construct two new providers, with either the same or different prefixes.
+  TestProvider* provider1 = new TestProvider(
+      kResultsPerProvider,
+      ASCIIToUTF16("http://a"),
+      &profile_,
+      ASCIIToUTF16(kTestTemplateURLKeyword));
+  provider1->AddRef();
+  providers.push_back(provider1);
+
+  TestProvider* provider2 = new TestProvider(
       kResultsPerProvider * 2,
       same_destinations ? ASCIIToUTF16("http://a") : ASCIIToUTF16("http://b"),
       &profile_,
       string16());
-  providerB->AddRef();
-  providers_.push_back(providerB);
+  provider2->AddRef();
+  providers.push_back(provider2);
 
   // Reset the controller to contain our new providers.
-  AutocompleteController* controller =
-      new AutocompleteController(providers_, &profile_);
-  controller_.reset(controller);
-  providerA->set_listener(controller);
-  providerB->set_listener(controller);
+  controller_.reset(new AutocompleteController(&profile_, NULL, 0));
+  controller_->providers_.swap(providers);
+  provider1->set_listener(controller_.get());
+  provider2->set_listener(controller_.get());
 
   // The providers don't complete synchronously, so listen for "result updated"
   // notifications.
   registrar_.Add(this,
                  chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,
-                 content::Source<AutocompleteController>(controller));
+                 content::Source<AutocompleteController>(controller_.get()));
+
+  if (provider1_ptr)
+    *provider1_ptr = provider1;
+  if (provider2_ptr)
+    *provider2_ptr = provider2;
 }
 
 void AutocompleteProviderTest::
-    ResetControllerWithTestProvidersWithKeywordAndSearchProviders() {
+    ResetControllerWithKeywordAndSearchProviders() {
   TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
       &profile_, &TemplateURLServiceFactory::BuildInstanceFor);
 
@@ -289,20 +295,9 @@ void AutocompleteProviderTest::
   turl_model->Add(keyword_t_url);
   ASSERT_NE(0, keyword_t_url->id());
 
-  // Forget about any existing providers.  The controller owns them and will
-  // Release() them below, when we delete it during the call to reset().
-  providers_.clear();
-
-  // Create both a keyword and search provider, and add them in that order.
-  // (Order is important; see comments in RunExactKeymatchTest().)
-  AutocompleteProvider* keyword_provider = new KeywordProvider(NULL, &profile_);
-  keyword_provider->AddRef();
-  providers_.push_back(keyword_provider);
-  AutocompleteProvider* search_provider = new SearchProvider(NULL, &profile_);
-  search_provider->AddRef();
-  providers_.push_back(search_provider);
-
-  controller_.reset(new AutocompleteController(providers_, &profile_));
+  controller_.reset(new AutocompleteController(
+      &profile_, NULL,
+      AutocompleteProvider::TYPE_KEYWORD | AutocompleteProvider::TYPE_SEARCH));
 }
 
 void AutocompleteProviderTest::ResetControllerWithKeywordProvider() {
@@ -329,20 +324,8 @@ void AutocompleteProviderTest::ResetControllerWithKeywordProvider() {
   turl_model->Add(keyword_t_url);
   ASSERT_NE(0, keyword_t_url->id());
 
-  // Forget about any existing providers.  The controller owns them and will
-  // Release() them below, when we delete it during the call to reset().
-  providers_.clear();
-
-  // Create both a keyword and search provider, and add them in that order.
-  // (Order is important; see comments in RunExactKeymatchTest().)
-  KeywordProvider* keyword_provider = new KeywordProvider(NULL, &profile_);
-  keyword_provider->AddRef();
-  providers_.push_back(keyword_provider);
-
-  AutocompleteController* controller =
-      new AutocompleteController(providers_, &profile_);
-  controller->set_keyword_provider(keyword_provider);
-  controller_.reset(controller);
+  controller_.reset(new AutocompleteController(
+      &profile_, NULL, AutocompleteProvider::TYPE_KEYWORD));
 }
 
 void AutocompleteProviderTest::RunTest() {
@@ -400,8 +383,9 @@ void AutocompleteProviderTest::RunAssistedQueryStatsTest(
 
 void AutocompleteProviderTest::RunQuery(const string16 query) {
   result_.Reset();
-  controller_->Start(query, string16(), true, false, true,
-      AutocompleteInput::ALL_MATCHES);
+  controller_->Start(AutocompleteInput(
+      query, string16::npos, string16(), true, false, true,
+      AutocompleteInput::ALL_MATCHES));
 
   if (!controller_->done())
     // The message loop will terminate when all autocomplete input has been
@@ -415,15 +399,13 @@ void AutocompleteProviderTest::RunExactKeymatchTest(
   // created in ResetControllerWithKeywordAndSearchProviders().  The default
   // match should thus be a keyword match iff |allow_exact_keyword_match| is
   // true.
-  controller_->Start(ASCIIToUTF16("k test"), string16(), true, false,
-                     allow_exact_keyword_match,
-                     AutocompleteInput::SYNCHRONOUS_MATCHES);
+  controller_->Start(AutocompleteInput(
+      ASCIIToUTF16("k test"), string16::npos, string16(), true, false,
+      allow_exact_keyword_match, AutocompleteInput::SYNCHRONOUS_MATCHES));
   EXPECT_TRUE(controller_->done());
-  // ResetControllerWithKeywordAndSearchProviders() adds the keyword provider
-  // first, then the search provider.  So if the default match is a keyword
-  // match, it will come from provider 0, otherwise from provider 1.
-  EXPECT_EQ(providers_[allow_exact_keyword_match ? 0 : 1],
-      controller_->result().default_match()->provider);
+  EXPECT_EQ(allow_exact_keyword_match ?
+      AutocompleteProvider::TYPE_KEYWORD : AutocompleteProvider::TYPE_SEARCH,
+      controller_->result().default_match()->provider->type());
 }
 
 void AutocompleteProviderTest::Observe(
@@ -438,19 +420,21 @@ void AutocompleteProviderTest::Observe(
 
 // Tests that the default selection is set properly when updating results.
 TEST_F(AutocompleteProviderTest, Query) {
-  ResetControllerWithTestProviders(false);
+  TestProvider* provider1 = NULL;
+  TestProvider* provider2 = NULL;
+  ResetControllerWithTestProviders(false, &provider1, &provider2);
   RunTest();
 
   // Make sure the default match gets set to the highest relevance match.  The
   // highest relevance matches should come from the second provider.
   EXPECT_EQ(kResultsPerProvider * 2, result_.size());  // two providers
   ASSERT_NE(result_.end(), result_.default_match());
-  EXPECT_EQ(providers_[1], result_.default_match()->provider);
+  EXPECT_EQ(provider2, result_.default_match()->provider);
 }
 
 // Tests assisted query stats.
 TEST_F(AutocompleteProviderTest, AssistedQueryStats) {
-  ResetControllerWithTestProviders(false);
+  ResetControllerWithTestProviders(false, NULL, NULL);
   RunTest();
 
   EXPECT_EQ(kResultsPerProvider * 2, result_.size());  // two providers
@@ -469,7 +453,9 @@ TEST_F(AutocompleteProviderTest, AssistedQueryStats) {
 }
 
 TEST_F(AutocompleteProviderTest, RemoveDuplicates) {
-  ResetControllerWithTestProviders(true);
+  TestProvider* provider1 = NULL;
+  TestProvider* provider2 = NULL;
+  ResetControllerWithTestProviders(true, &provider1, &provider2);
   RunTest();
 
   // Make sure all the first provider's results were eliminated by the second
@@ -477,11 +463,11 @@ TEST_F(AutocompleteProviderTest, RemoveDuplicates) {
   EXPECT_EQ(kResultsPerProvider, result_.size());
   for (AutocompleteResult::const_iterator i(result_.begin());
        i != result_.end(); ++i)
-    EXPECT_EQ(providers_[1], i->provider);
+    EXPECT_EQ(provider2, i->provider);
 }
 
 TEST_F(AutocompleteProviderTest, AllowExactKeywordMatch) {
-  ResetControllerWithTestProvidersWithKeywordAndSearchProviders();
+  ResetControllerWithKeywordAndSearchProviders();
   RunExactKeymatchTest(true);
   RunExactKeymatchTest(false);
 }
@@ -529,7 +515,7 @@ TEST_F(AutocompleteProviderTest, RedundantKeywordsIgnoredInResult) {
 }
 
 TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
-  ResetControllerWithTestProviders(false);
+  ResetControllerWithTestProviders(false, NULL, NULL);
 
   {
     AssistedQueryStatsTestData test_data[] = {
@@ -564,4 +550,3 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
     RunAssistedQueryStatsTest(test_data, ARRAYSIZE_UNSAFE(test_data));
   }
 }
-

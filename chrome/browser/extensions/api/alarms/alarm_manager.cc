@@ -29,7 +29,7 @@ const char kRegisteredAlarms[] = "alarms";
 const char kAlarmGranularity[] = "granularity";
 
 // The minimum period between polling for alarms to run.
-const base::TimeDelta kDefaultMinPollPeriod = base::TimeDelta::FromMinutes(5);
+const base::TimeDelta kDefaultMinPollPeriod = base::TimeDelta::FromMinutes(1);
 
 class DefaultAlarmDelegate : public AlarmManager::Delegate {
  public:
@@ -38,12 +38,11 @@ class DefaultAlarmDelegate : public AlarmManager::Delegate {
 
   virtual void OnAlarm(const std::string& extension_id,
                        const Alarm& alarm) {
-    ListValue args;
-    std::string json_args;
-    args.Append(alarm.js_alarm->ToValue().release());
-    base::JSONWriter::Write(&args, &json_args);
+    scoped_ptr<ListValue> args(new ListValue());
+    args->Append(alarm.js_alarm->ToValue().release());
+    scoped_ptr<Event> event(new Event(kOnAlarmEvent, args.Pass()));
     ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
-        extension_id, kOnAlarmEvent, json_args, NULL, GURL());
+        extension_id, event.Pass());
   }
 
  private:
@@ -72,8 +71,7 @@ std::vector<Alarm> AlarmsFromValue(const base::ListValue* list) {
   return alarms;
 }
 
-scoped_ptr<base::ListValue> AlarmsToValue(
-    const std::vector<Alarm>& alarms) {
+scoped_ptr<base::ListValue> AlarmsToValue(const std::vector<Alarm>& alarms) {
   scoped_ptr<base::ListValue> list(new ListValue());
   for (size_t i = 0; i < alarms.size(); ++i) {
     scoped_ptr<base::DictionaryValue> alarm =

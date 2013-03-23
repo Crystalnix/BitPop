@@ -26,18 +26,28 @@ class ShellIntegration {
   // Chrome as the default browser. Returns false if the flow cannot be
   // initialized, if it is not supported (introduced for Windows 8) or if the
   // user cancels the operation. This is a blocking call and requires a FILE
-  // thread.
+  // thread. If Chrome is already default browser, no interactive dialog will be
+  // shown and this method returns true.
   static bool SetAsDefaultBrowserInteractive();
 
   // Sets Chrome as the default client application for the given protocol
   // (only for the current user). Returns false if this operation fails.
   static bool SetAsDefaultProtocolClient(const std::string& protocol);
 
+  // Initiates an OS shell flow which (if followed by the user) should set
+  // Chrome as the default handler for |protocol|. Returns false if the flow
+  // cannot be initialized, if it is not supported (introduced for Windows 8)
+  // or if the user cancels the operation. This is a blocking call and requires
+  // a FILE thread. If Chrome is already default for |protocol|, no interactive
+  // dialog will be shown and this method returns true.
+  static bool SetAsDefaultProtocolClientInteractive(
+      const std::string& protocol);
+
   // In Windows 8 a browser can be made default-in-metro only in an interactive
   // flow. We will distinguish between two types of permissions here to avoid
   // forcing the user into UI interaction when this should not be done.
   enum DefaultWebClientSetPermission {
-    SET_DEFAULT_NOT_ALLOWED = 0,
+    SET_DEFAULT_NOT_ALLOWED,
     SET_DEFAULT_UNATTENDED,
     SET_DEFAULT_INTERACTIVE,
   };
@@ -51,19 +61,19 @@ class ShellIntegration {
 
   // On Linux, it may not be possible to determine or set the default browser
   // on some desktop environments or configurations. So, we use this enum and
-  // not a plain bool. (Note however that if used like a bool, this enum will
-  // have reasonable behavior.)
+  // not a plain bool.
   enum DefaultWebClientState {
-    NOT_DEFAULT_WEB_CLIENT = 0,
-    IS_DEFAULT_WEB_CLIENT,
-    UNKNOWN_DEFAULT_WEB_CLIENT = -1
+    NOT_DEFAULT,
+    IS_DEFAULT,
+    UNKNOWN_DEFAULT,
+    NUM_DEFAULT_STATES
   };
 
   // Attempt to determine if this instance of Chrome is the default browser and
   // return the appropriate state. (Defined as being the handler for HTTP/HTTPS
   // protocols; we don't want to report "no" here if the user has simply chosen
   // to open HTML files in a text editor and FTP links with an FTP client.)
-  static DefaultWebClientState IsDefaultBrowser();
+  static DefaultWebClientState GetDefaultBrowser();
 
   // Returns true if Firefox is likely to be the default browser for the current
   // user. This method is very fast so it can be invoked in the UI thread.
@@ -83,15 +93,13 @@ class ShellIntegration {
     // and the launch url will be detected at start-up. In this case, |url|
     // is still used to generate the app id (windows app id, not chrome app id).
     std::string extension_id;
+    bool is_platform_app;
     string16 title;
     string16 description;
     FilePath extension_path;
     gfx::Image favicon;
     FilePath profile_path;
 
-    // Shortcuts to platform apps are created differently. They start up with
-    // their own user data directory and load the app from |extension_path|.
-    bool is_platform_app;
     bool create_on_desktop;
     bool create_in_applications_menu;
 
@@ -115,12 +123,10 @@ class ShellIntegration {
   // The new command line reuses the current process's user data directory (and
   // login profile, for ChromeOS).
   // If |extension_app_id| is non-empty, the arguments use kAppId=<id>.
-  // Otherwise, kApp=<url> is used. If |is_platform_app| is true the flag
-  // --enable-platform-apps is added to the command line.
+  // Otherwise, kApp=<url> is used.
   static CommandLine CommandLineArgsForLauncher(
       const GURL& url,
       const std::string& extension_app_id,
-      bool is_platform_app,
       const FilePath& profile_path);
 
 #if defined(OS_WIN)
@@ -138,18 +144,17 @@ class ShellIntegration {
   // calling GetAppModelIdForProfile() with ShellUtil::GetAppId() as app_name.
   static string16 GetChromiumModelIdForProfile(const FilePath& profile_path);
 
-  // Returns the path to the Chromium icon. This is used to specify the icon
-  // to use for the taskbar group on Win 7.
-  static string16 GetChromiumIconPath();
+  // Get the AppUserModelId for the App List, for the profile in |profile_path|.
+  static string16 GetAppListAppModelIdForProfile(const FilePath& profile_path);
+
+  // Returns the location (path and index) of the Chromium icon, (e.g.,
+  // "C:\path\to\chrome.exe,0"). This is used to specify the icon to use
+  // for the taskbar group on Win 7.
+  static string16 GetChromiumIconLocation();
 
   // Migrates existing chrome shortcuts by tagging them with correct app id.
   // see http://crbug.com/28104
   static void MigrateChromiumShortcuts();
-
-  // Activates Chrome in metro-mode on Windows 8.  Returns false if called on
-  // earlier versions of Windows, if called from within metro-mode, if Chrome
-  // is not the default browser, or if an actual error occurs.
-  static bool ActivateMetroChrome();
 
   // Returns the path to the Start Menu shortcut for the given Chrome.
   static FilePath GetStartMenuShortcut(const FilePath& chrome_exe);

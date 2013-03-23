@@ -97,17 +97,73 @@ class ThumbnailDatabase {
   // Returns true on success.
   bool RecreateThumbnailTable();
 
+  // Favicon Bitmaps -----------------------------------------------------------
+
+  // Returns true if there are favicon bitmaps for |icon_id|. If
+  // |bitmap_id_sizes| is non NULL, sets it to a list of the favicon bitmap ids
+  // and their associated pixel sizes for the favicon with |icon_id|.
+  // The list contains results for the bitmaps which are cached in the
+  // favicon_bitmaps table. The pixel sizes are a subset of the sizes in the
+  // 'sizes' field of the favicons table for |icon_id|.
+  bool GetFaviconBitmapIDSizes(
+      FaviconID icon_id,
+      std::vector<FaviconBitmapIDSize>* bitmap_id_sizes);
+
+  // Returns true if there are any matched bitmaps for the given |icon_id|. All
+  // matched results are returned if |favicon_bitmaps| is not NULL.
+  bool GetFaviconBitmaps(FaviconID icon_id,
+                         std::vector<FaviconBitmap>* favicon_bitmaps);
+
+  // Gets the last updated time, bitmap data, and pixel size of the favicon
+  // bitmap at |bitmap_id|. Returns true if successful.
+  bool GetFaviconBitmap(FaviconBitmapID bitmap_id,
+                        base::Time* last_updated,
+                        scoped_refptr<base::RefCountedMemory>* png_icon_data,
+                        gfx::Size* pixel_size);
+
+  // Adds a bitmap component at |pixel_size| for the favicon with |icon_id|.
+  // Only favicons representing a .ico file should have multiple favicon bitmaps
+  // per favicon.
+  // |icon_data| is the png encoded data.
+  // The |time| indicates the access time, and is used to detect when the
+  // favicon should be refreshed.
+  // |pixel_size| is the pixel dimensions of |icon_data|.
+  // Returns the id of the added bitmap or 0 if unsuccessful.
+  FaviconBitmapID AddFaviconBitmap(
+      FaviconID icon_id,
+      const scoped_refptr<base::RefCountedMemory>& icon_data,
+      base::Time time,
+      const gfx::Size& pixel_size);
+
+  // Sets the bitmap data and the last updated time for the favicon bitmap at
+  // |bitmap_id|.
+  // Returns true if successful.
+  bool SetFaviconBitmap(FaviconBitmapID bitmap_id,
+                        scoped_refptr<base::RefCountedMemory> bitmap_data,
+                        base::Time time);
+
+  // Sets the last updated time for the favicon bitmap at |bitmap_id|.
+  // Returns true if successful.
+  bool SetFaviconBitmapLastUpdateTime(FaviconBitmapID bitmap_id,
+                                      base::Time time);
+
+  // Deletes the favicon bitmaps for the favicon with with |icon_id|.
+  // Returns true if successful.
+  bool DeleteFaviconBitmapsForFavicon(FaviconID icon_id);
+
+  // Deletes the favicon bitmap with |bitmap_id|.
+  // Returns true if successful.
+  bool DeleteFaviconBitmap(FaviconBitmapID bitmap_id);
+
   // Favicons ------------------------------------------------------------------
 
-  // Sets the bits for a favicon. This should be png encoded data.
-  // The time indicates the access time, and is used to detect when the favicon
-  // should be refreshed.
-  bool SetFavicon(FaviconID icon_id,
-                  scoped_refptr<base::RefCountedMemory> icon_data,
-                  base::Time time);
+  // Updates the favicon sizes associated with a favicon to |favicon_sizes|.
+  // See comment in history_types.h for description of |favicon_sizes|.
+  bool SetFaviconSizes(FaviconID icon_id, const FaviconSizes& favicon_sizes);
 
-  // Sets the time the favicon was last updated.
-  bool SetFaviconLastUpdateTime(FaviconID icon_id, base::Time time);
+  // Sets the the favicon as out of date. This will set |last_updated| for all
+  // of the bitmaps for |icon_id| to be out of date.
+  bool SetFaviconOutOfDate(FaviconID icon_id);
 
   // Returns the id of the entry in the favicon database with the specified url
   // and icon type. If |required_icon_type| contains multiple icon types and
@@ -120,16 +176,26 @@ class ThumbnailDatabase {
                                       int required_icon_type,
                                       IconType* icon_type);
 
-  // Gets the png encoded favicon, last updated time, icon_url and icon_type for
-  // the specified favicon id.
-  bool GetFavicon(FaviconID icon_id,
-                  base::Time* last_updated,
-                  std::vector<unsigned char>* png_icon_data,
-                  GURL* icon_url,
-                  IconType* icon_type);
+  // Gets the icon_url, icon_type and sizes for the specified |icon_id|.
+  bool GetFaviconHeader(FaviconID icon_id,
+                        GURL* icon_url,
+                        IconType* icon_type,
+                        FaviconSizes* favicon_sizes);
 
-  // Adds the favicon URL and icon type to the favicon db, returning its id.
-  FaviconID AddFavicon(const GURL& icon_url, IconType icon_type);
+  // Adds favicon with |icon_url|, |icon_type| and |favicon_sizes| to the
+  // favicon db, returning its id.
+  FaviconID AddFavicon(const GURL& icon_url,
+                       IconType icon_type,
+                       const FaviconSizes& favicon_sizes);
+
+  // Adds a favicon with a single bitmap. This call is equivalent to calling
+  // AddFavicon and AddFaviconBitmap.
+  FaviconID AddFavicon(const GURL& icon_url,
+                       IconType icon_type,
+                       const FaviconSizes& favicon_sizes,
+                       const scoped_refptr<base::RefCountedMemory>& icon_data,
+                       base::Time time,
+                       const gfx::Size& pixel_size);
 
   // Delete the favicon with the provided id. Returns false on failure
   bool DeleteFavicon(FaviconID id);
@@ -140,9 +206,17 @@ class ThumbnailDatabase {
   // icon type.
   // The matched icon mapping is returned in the icon_mapping parameter if it is
   // not NULL.
-  bool GetIconMappingForPageURL(const GURL& page_url,
-                                IconType required_icon_type,
-                                IconMapping* icon_mapping);
+
+  // Returns true if there are icon mappings for the given page and icon types.
+  // If |required_icon_types| contains multiple icon types and there is more
+  // than one matched icon type in the database, icons of only a single type
+  // will be returned in the priority of TOUCH_PRECOMPOSED_ICON, TOUCH_ICON,
+  // and FAVICON.
+  // The matched icon mappings are returned in the |mapping_data| parameter if
+  // it is not NULL.
+  bool GetIconMappingsForPageURL(const GURL& page_url,
+                                 int required_icon_types,
+                                 std::vector<IconMapping>* mapping_data);
 
   // Returns true if there is any matched icon mapping for the given page.
   // All matched icon mappings are returned in descent order of IconType if
@@ -163,12 +237,16 @@ class ThumbnailDatabase {
   // Returns true if the deletion succeeded.
   bool DeleteIconMappings(const GURL& page_url);
 
+  // Deletes the icon mapping with |mapping_id|.
+  // Returns true if the deletion succeeded.
+  bool DeleteIconMapping(IconMappingID mapping_id);
+
   // Checks whether a favicon is used by any URLs in the database.
   bool HasMappingFor(FaviconID id);
 
   // Clones the existing mappings from |old_page_url| if |new_page_url| has no
   // mappings. Otherwise, will leave mappings alone.
-  bool CloneIconMapping(const GURL& old_page_url, const GURL& new_page_url);
+  bool CloneIconMappings(const GURL& old_page_url, const GURL& new_page_url);
 
   // The class to enumerate icon mappings. Use InitIconMappingEnumerator to
   // initialize.
@@ -194,54 +272,36 @@ class ThumbnailDatabase {
   bool InitIconMappingEnumerator(IconType type,
                                  IconMappingEnumerator* enumerator);
 
-  // Temporary IconMapping -----------------------------------------------------
+  // Temporary Tables ---------------------------------------------------------
   //
-  // Creates a temporary table to store icon mapping. Icon mapping will be
-  // copied to this table by AddToTemporaryIconMappingTable() and then the
-  // original table will be dropped, leaving only those copied mapping
-  // remaining. This is used to quickly delete most of the icon mapping when
-  // clearing history.
-  bool InitTemporaryIconMappingTable() {
-    return InitIconMappingTable(&db_, true);
-  }
+  // Creates empty temporary tables for each of the tables in the thumbnail
+  // database. Favicon data which is not copied into the temporary tables will
+  // be deleted when CommitTemporaryTables() is called. This is used to delete
+  // most of the favicons when clearing history.
+  bool InitTemporaryTables();
+
+  // Replaces the main tables in the thumbnail database with the temporary
+  // tables created with InitTemporaryTables(). This means that any data not
+  // copied over will be deleted.
+  bool CommitTemporaryTables();
 
   // Copies the given icon mapping from the "main" icon_mapping table to the
   // temporary one. This is only valid in between calls to
-  // InitTemporaryIconMappingTable()
-  // and CommitTemporaryIconMappingTable().
+  // InitTemporaryTables() and CommitTemporaryTables().
   //
   // The ID of the favicon will change when this copy takes place. The new ID
   // is returned, or 0 on failure.
   IconMappingID AddToTemporaryIconMappingTable(const GURL& page_url,
                                                const FaviconID icon_id);
 
-  // Replaces the main icon mapping table with the temporary table created by
-  // InitTemporaryIconMappingTable(). This will mean all icon mapping not copied
-  // over will be deleted. Returns true on success.
-  bool CommitTemporaryIconMappingTable();
-
-  // Temporary Favicons --------------------------------------------------------
-
-  // Create a temporary table to store favicons. Favicons will be copied to
-  // this table by CopyToTemporaryFaviconTable() and then the original table
-  // will be dropped, leaving only those copied favicons remaining. This is
-  // used to quickly delete most of the favicons when clearing history.
-  bool InitTemporaryFaviconsTable() {
-    return InitFaviconsTable(&db_, true);
-  }
-
-  // Copies the given favicon from the "main" favicon table to the temporary
-  // one. This is only valid in between calls to InitTemporaryFaviconsTable()
-  // and CommitTemporaryFaviconTable().
+  // Copies the given favicon and associated favicon bitmaps from the "main"
+  // favicon and favicon_bitmaps tables to the temporary ones. This is only
+  // valid in between calls to InitTemporaryTables() and
+  // CommitTemporaryTables().
   //
   // The ID of the favicon will change when this copy takes place. The new ID
   // is returned, or 0 on failure.
-  FaviconID CopyToTemporaryFaviconTable(FaviconID source);
-
-  // Replaces the main URL table with the temporary table created by
-  // InitTemporaryFaviconsTable(). This will mean all favicons not copied over
-  // will be deleted. Returns true on success.
-  bool CommitTemporaryFaviconTable();
+  FaviconID CopyFaviconAndFaviconBitmapsToTemporaryTables(FaviconID source);
 
   // Returns true iff the thumbnails table exists.
   // Migrating to TopSites is dropping the thumbnails table.
@@ -257,20 +317,13 @@ class ThumbnailDatabase {
                            GetFaviconAfterMigrationToTopSites);
   FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest, UpgradeToVersion4);
   FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest, UpgradeToVersion5);
+  FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest, UpgradeToVersion6);
+  FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest, FaviconSizesToAndFromString);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, MigrationIconMapping);
 
   // Creates the thumbnail table, returning true if the table already exists
   // or was successfully created.
   bool InitThumbnailTable();
-
-  // Creates the favicon table, returning true if the table already exists,
-  // or was successfully created. |is_temporary| will be false when generating
-  // the "regular" favicons table. The expirer sets this to true to generate the
-  // temporary table, which will have a different name but the same schema.
-  // |db| is the connection to use for initializing the table.
-  // A different connection is used in RenameAndDropThumbnails, when we
-  // need to copy the favicons between two database files.
-  bool InitFaviconsTable(sql::Connection* db, bool is_temporary);
 
   // Helper function to handle cleanup on upgrade failures.
   sql::InitStatus CantUpgradeToVersion(int cur_version);
@@ -284,15 +337,38 @@ class ThumbnailDatabase {
   // Adds support for sizes in favicon table.
   bool UpgradeToVersion5();
 
+  // Adds support for size in favicons table and removes sizes column.
+  bool UpgradeToVersion6();
+
   // Migrates the icon mapping data from URL database to Thumbnail database.
   // Return whether the migration succeeds.
   bool MigrateIconMappingData(URLDatabase* url_db);
+
+  // Creates the favicon table, returning true if the table already exists,
+  // or was successfully created. |is_temporary| will be false when generating
+  // the "regular" favicons table. The expirer sets this to true to generate the
+  // temporary table, which will have a different name but the same schema.
+  // |db| is the connection to use for initializing the table.
+  // A different connection is used in RenameAndDropThumbnails, when we
+  // need to copy the favicons between two database files.
+  bool InitFaviconsTable(sql::Connection* db, bool is_temporary);
 
   // Creates the index over the favicon table. This will be called during
   // initialization after the table is created. This is a separate function
   // because it is used by SwapFaviconTables to create an index over the
   // newly-renamed favicons table (formerly the temporary table with no index).
   bool InitFaviconsIndex();
+
+  // Creates the favicon_bitmaps table, return true if the table already exists
+  // or was successfully created.
+  bool InitFaviconBitmapsTable(sql::Connection* db, bool is_temporary);
+
+  // Creates the index over the favicon_bitmaps table. This will be called
+  // during initialization after the table is created. This is a separate
+  // function because it is used by CommitTemporaryTables to create an
+  // index over the newly-renamed favicon_bitmaps table (formerly the temporary
+  // table with no index).
+  bool InitFaviconBitmapsIndex();
 
   // Creates the icon_map table, return true if the table already exists or was
   // successfully created.
@@ -305,6 +381,14 @@ class ThumbnailDatabase {
   // with no index).
   bool InitIconMappingIndex();
 
+  // For the purpose of determining how widespread crbug.com/151841 is, log in a
+  // UMA histogram if the |favicons| database is missing a column. This is
+  // important because the SQLite error code from running SQL statements against
+  // a database with missing columns is SQLITE_ERROR which is not unique enough
+  // to act upon.
+  // TODO(pkotwicz): remove this function once crbug.com/151841 is resolved.
+  void LogIfFaviconDBStructureIncorrect();
+
   // Adds a mapping between the given page_url and icon_id; The mapping will be
   // added to temp_icon_mapping table if is_temporary is true.
   // Returns the new mapping id if the adding succeeds, otherwise 0 is returned.
@@ -314,6 +398,23 @@ class ThumbnailDatabase {
 
   // Returns True if the current database is latest.
   bool IsLatestVersion();
+
+  // Converts the vector representation of favicon sizes as passed into
+  // SetFaviconSizes to a string to store in the |favicons| database table.
+  // Format:
+  //   Each widthxheight pair is separated by a space.
+  //   Width and height are separated by a space.
+  // For instance, if sizes contains pixel sizes (16x16, 32x32), the
+  // string representation is "16 16 32 32".
+  static void FaviconSizesToDatabaseString(const FaviconSizes& favicon_sizes,
+                                           std::string* favicon_sizes_string);
+
+  // Converts the string representation of favicon sizes as stored in the
+  // |favicons| database table to a vector. Returns an empty vector if there
+  // were parsing errors.
+  static void DatabaseStringToFaviconSizes(
+      const std::string& favicon_sizes_string,
+      FaviconSizes* favicon_sizes);
 
   sql::Connection db_;
   sql::MetaTable meta_table_;

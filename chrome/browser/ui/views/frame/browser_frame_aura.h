@@ -39,6 +39,7 @@ class BrowserFrameAura : public views::ContextMenuController,
 
   // Overridden from views::NativeWidgetAura:
   virtual void OnWindowDestroying() OVERRIDE;
+  virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
 
   // Overridden from NativeBrowserFrame:
   virtual views::NativeWidget* AsNativeWidget() OVERRIDE;
@@ -51,6 +52,9 @@ class BrowserFrameAura : public views::ContextMenuController,
   class WindowPropertyWatcher;
 
   virtual ~BrowserFrameAura();
+
+  // Set the window into the auto managed mode.
+  void SetWindowAutoManaged();
 
   // The BrowserView is our ClientView. This is a pointer to it.
   BrowserView* browser_view_;

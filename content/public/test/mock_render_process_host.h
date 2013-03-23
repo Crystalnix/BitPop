@@ -11,6 +11,7 @@
 #include "content/public/browser/render_process_host_factory.h"
 #include "ipc/ipc_test_sink.h"
 
+class StoragePartition;
 class TransportDIB;
 
 namespace content {
@@ -36,7 +37,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual bool Init() OVERRIDE;
   virtual int GetNextRoutingID() OVERRIDE;
   virtual void CancelResourceRequests(int render_widget_id) OVERRIDE;
-  virtual void CrossSiteSwapOutACK(
+  virtual void SimulateSwapOutACK(
       const ViewMsg_SwapOut_Params& params) OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
@@ -46,6 +47,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void WidgetHidden() OVERRIDE;
   virtual int VisibleWidgetCount() const OVERRIDE;
   virtual bool IsGuest() const OVERRIDE;
+  virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual void AddWord(const string16& word);
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
@@ -66,6 +68,8 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual RenderWidgetHost* GetRenderWidgetHostByID(int routing_id)
         OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
+  virtual bool InSameStoragePartition(
+      StoragePartition* partition) const OVERRIDE;
   virtual IPC::ChannelProxy* GetChannel() OVERRIDE;
   virtual RenderWidgetHostsIterator GetRenderWidgetHostsIterator() OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;

@@ -15,9 +15,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/stop_find_action.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
+#include "ui/gfx/rect_f.h"
 
 using WebKit::WebFindOptions;
 using content::WebContents;
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(FindTabHelper)
 
 // static
 int FindTabHelper::find_request_id_counter_ = -1;
@@ -123,6 +126,20 @@ void FindTabHelper::StopFinding(
   }
   web_contents()->GetRenderViewHost()->StopFinding(action);
 }
+
+#if defined(OS_ANDROID)
+void FindTabHelper::ActivateNearestFindResult(float x, float y) {
+  if (!find_op_aborted_ && !find_text_.empty()) {
+    web_contents()->GetRenderViewHost()->ActivateNearestFindResult(
+        current_find_request_id_, x, y);
+  }
+}
+
+void FindTabHelper::RequestFindMatchRects(int current_version) {
+  if (!find_op_aborted_ && !find_text_.empty())
+    web_contents()->GetRenderViewHost()->RequestFindMatchRects(current_version);
+}
+#endif
 
 void FindTabHelper::HandleFindReply(int request_id,
                                     int number_of_matches,

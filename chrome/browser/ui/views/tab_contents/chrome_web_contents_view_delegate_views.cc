@@ -8,9 +8,9 @@
 #include "chrome/browser/ui/constrained_window_tab_helper.h"
 #include "chrome/browser/ui/sad_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/chrome_web_contents_view_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/tab_contents/render_view_context_menu_views.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -59,26 +59,30 @@ content::WebDragDestDelegate*
 }
 
 bool ChromeWebContentsViewDelegateViews::Focus() {
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents_);
-  if (tab_contents) {
-      views::Widget* sad_tab = tab_contents->sad_tab_helper()->sad_tab();
+  SadTabHelper* sad_tab_helper = SadTabHelper::FromWebContents(web_contents_);
+  if (sad_tab_helper) {
+    views::Widget* sad_tab = sad_tab_helper->sad_tab();
     if (sad_tab) {
       sad_tab->GetContentsView()->RequestFocus();
       return true;
     }
+  }
 
+  ConstrainedWindowTabHelper* constrained_window_tab_helper =
+      ConstrainedWindowTabHelper::FromWebContents(web_contents_);
+  if (constrained_window_tab_helper) {
     // TODO(erg): WebContents used to own constrained windows, which is why
     // this is here. Eventually this should be ported to a containing view
     // specializing in constrained window management.
-    ConstrainedWindowTabHelper* helper =
-        tab_contents->constrained_window_tab_helper();
-    if (helper->constrained_window_count() > 0) {
-      ConstrainedWindow* window = *helper->constrained_window_begin();
+    if (constrained_window_tab_helper->constrained_window_count() > 0) {
+      ConstrainedWindow* window =
+          *constrained_window_tab_helper->constrained_window_begin();
       DCHECK(window);
       window->FocusConstrainedWindow();
       return true;
     }
   }
+
   return false;
 }
 
@@ -123,7 +127,14 @@ void ChromeWebContentsViewDelegateViews::RestoreFocus() {
 }
 
 void ChromeWebContentsViewDelegateViews::ShowContextMenu(
-    const content::ContextMenuParams& params) {
+    const content::ContextMenuParams& params,
+    content::ContextMenuSourceType type) {
+  // Menus need a Widget to work. If we're not the active tab we won't
+  // necessarily be in a widget.
+  views::Widget* top_level_widget = GetTopLevelWidget();
+  if (!top_level_widget)
+    return;
+
   context_menu_.reset(
       RenderViewContextMenuViews::Create(web_contents_, params));
   context_menu_->Init();
@@ -141,8 +152,10 @@ void ChromeWebContentsViewDelegateViews::ShowContextMenu(
   aura::RootWindow* root_window = web_contents_window->GetRootWindow();
   aura::client::ScreenPositionClient* screen_position_client =
       aura::client::GetScreenPositionClient(root_window);
-  screen_position_client->ConvertPointToScreen(web_contents_window,
-                                               &screen_point);
+  if (screen_position_client) {
+    screen_position_client->ConvertPointToScreen(web_contents_window,
+                                                 &screen_point);
+  }
 #else
   POINT temp = screen_point.ToPOINT();
   ClientToScreen(web_contents_->GetView()->GetNativeView(), &temp);
@@ -152,14 +165,14 @@ void ChromeWebContentsViewDelegateViews::ShowContextMenu(
   // Enable recursive tasks on the message loop so we can get updates while
   // the context menu is being displayed.
   MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
-  context_menu_->RunMenuAt(GetTopLevelWidget(), screen_point);
+  context_menu_->RunMenuAt(top_level_widget, screen_point, type);
 }
 
 void ChromeWebContentsViewDelegateViews::SizeChanged(const gfx::Size& size) {
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents_);
-  if (!tab_contents)
+  SadTabHelper* sad_tab_helper = SadTabHelper::FromWebContents(web_contents_);
+  if (!sad_tab_helper)
     return;
-  views::Widget* sad_tab = tab_contents->sad_tab_helper()->sad_tab();
+  views::Widget* sad_tab = sad_tab_helper->sad_tab();
   if (sad_tab)
     sad_tab->SetBounds(gfx::Rect(size));
 }

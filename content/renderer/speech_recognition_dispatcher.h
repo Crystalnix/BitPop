@@ -8,22 +8,21 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "content/public/common/speech_recognition_result.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognitionHandle.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognizer.h"
 
-class RenderViewImpl;
-
 namespace content {
+class RenderViewImpl;
 struct SpeechRecognitionError;
 struct SpeechRecognitionResult;
-}
 
 // SpeechRecognitionDispatcher is a delegate for methods used by WebKit for
 // scripted JS speech APIs. It's the complement of
 // SpeechRecognitionDispatcherHost (owned by RenderViewHost).
-class SpeechRecognitionDispatcher : public content::RenderViewObserver,
+class SpeechRecognitionDispatcher : public RenderViewObserver,
                                     public WebKit::WebSpeechRecognizer {
  public:
   explicit SpeechRecognitionDispatcher(RenderViewImpl* render_view);
@@ -47,11 +46,10 @@ class SpeechRecognitionDispatcher : public content::RenderViewObserver,
   void OnSoundStarted(int request_id);
   void OnSoundEnded(int request_id);
   void OnAudioEnded(int request_id);
-  void OnErrorOccurred(int request_id,
-                       const content::SpeechRecognitionError& error);
+  void OnErrorOccurred(int request_id, const SpeechRecognitionError& error);
   void OnRecognitionEnded(int request_id);
-  void OnResultRetrieved(int request_id,
-                         const content::SpeechRecognitionResult& result);
+  void OnResultsRetrieved(int request_id,
+                          const SpeechRecognitionResults& result);
 
   int GetOrCreateIDForHandle(const WebKit::WebSpeechRecognitionHandle& handle);
   bool HandleExists(const WebKit::WebSpeechRecognitionHandle& handle);
@@ -66,5 +64,7 @@ class SpeechRecognitionDispatcher : public content::RenderViewObserver,
 
   DISALLOW_COPY_AND_ASSIGN(SpeechRecognitionDispatcher);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_SPEECH_RECOGNITION_DISPATCHER_H_

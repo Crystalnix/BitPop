@@ -14,11 +14,7 @@
 #include "content/public/browser/speech_recognition_session_context.h"
 #include "content/public/common/content_switches.h"
 
-using content::SpeechRecognitionManager;
-using content::SpeechRecognitionSessionConfig;
-using content::SpeechRecognitionSessionContext;
-
-namespace speech {
+namespace content {
 SpeechRecognitionManager* SpeechRecognitionDispatcherHost::manager_for_tests_;
 
 void SpeechRecognitionDispatcherHost::SetManagerForTests(
@@ -29,7 +25,7 @@ void SpeechRecognitionDispatcherHost::SetManagerForTests(
 SpeechRecognitionDispatcherHost::SpeechRecognitionDispatcherHost(
     int render_process_id,
     net::URLRequestContextGetter* context_getter,
-    content::SpeechRecognitionPreferences* recognition_preferences)
+    SpeechRecognitionPreferences* recognition_preferences)
     : render_process_id_(render_process_id),
       context_getter_(context_getter),
       recognition_preferences_(recognition_preferences) {
@@ -46,11 +42,7 @@ SpeechRecognitionManager* SpeechRecognitionDispatcherHost::manager() {
   if (manager_for_tests_)
     return manager_for_tests_;
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableScriptedSpeech))
-    return SpeechRecognitionManager::GetInstance();
-
-  return NULL;
+  return SpeechRecognitionManager::GetInstance();
 }
 
 bool SpeechRecognitionDispatcherHost::OnMessageReceived(
@@ -80,7 +72,7 @@ void SpeechRecognitionDispatcherHost::OnStartRequest(
   context.requested_by_page_element = false;
 
   SpeechRecognitionSessionConfig config;
-  config.is_one_shot = params.is_one_shot;
+  config.is_legacy_api = false;
   config.language = params.language;
   config.grammars = params.grammars;
   config.max_hypotheses = params.max_hypotheses;
@@ -92,10 +84,12 @@ void SpeechRecognitionDispatcherHost::OnStartRequest(
   } else {
     config.filter_profanities = false;
   }
+  config.continuous = params.continuous;
+  config.interim_results = params.interim_results;
   config.event_listener = this;
 
   int session_id = manager()->CreateSession(config);
-  DCHECK_NE(session_id, content::SpeechRecognitionManager::kSessionIDInvalid);
+  DCHECK_NE(session_id, SpeechRecognitionManager::kSessionIDInvalid);
   manager()->StartSession(session_id);
 }
 
@@ -107,7 +101,7 @@ void SpeechRecognitionDispatcherHost::OnAbortRequest(int render_view_id,
 
   // The renderer might provide an invalid |request_id| if the session was not
   // started as expected, e.g., due to unsatisfied security requirements.
-  if (session_id != content::SpeechRecognitionManager::kSessionIDInvalid)
+  if (session_id != SpeechRecognitionManager::kSessionIDInvalid)
     manager()->AbortSession(session_id);
 }
 
@@ -119,7 +113,7 @@ void SpeechRecognitionDispatcherHost::OnStopCaptureRequest(
 
   // The renderer might provide an invalid |request_id| if the session was not
   // started as expected, e.g., due to unsatisfied security requirements.
-  if (session_id != content::SpeechRecognitionManager::kSessionIDInvalid)
+  if (session_id != SpeechRecognitionManager::kSessionIDInvalid)
     manager()->StopAudioCaptureForSession(session_id);
 }
 
@@ -167,17 +161,19 @@ void SpeechRecognitionDispatcherHost::OnRecognitionEnd(int session_id) {
                                       context.request_id));
 }
 
-void SpeechRecognitionDispatcherHost::OnRecognitionResult(
-      int session_id, const content::SpeechRecognitionResult& result) {
+void SpeechRecognitionDispatcherHost::OnRecognitionResults(
+    int session_id,
+    const SpeechRecognitionResults& results) {
   const SpeechRecognitionSessionContext& context =
       manager()->GetSessionContext(session_id);
   Send(new SpeechRecognitionMsg_ResultRetrieved(context.render_view_id,
                                                 context.request_id,
-                                                result));
+                                                results));
 }
 
 void SpeechRecognitionDispatcherHost::OnRecognitionError(
-    int session_id, const content::SpeechRecognitionError& error) {
+    int session_id,
+    const SpeechRecognitionError& error) {
   const SpeechRecognitionSessionContext& context =
       manager()->GetSessionContext(session_id);
   Send(new SpeechRecognitionMsg_ErrorOccurred(context.render_view_id,
@@ -186,9 +182,13 @@ void SpeechRecognitionDispatcherHost::OnRecognitionError(
 }
 
 // The events below are currently not used by speech JS APIs implementation.
-void SpeechRecognitionDispatcherHost::OnAudioLevelsChange(
-    int session_id, float volume, float noise_volume) {}
-void SpeechRecognitionDispatcherHost::OnEnvironmentEstimationComplete(
-    int session_id) {}
+void SpeechRecognitionDispatcherHost::OnAudioLevelsChange(int session_id,
+                                                          float volume,
+                                                          float noise_volume) {
+}
 
-}  // namespace speech
+void SpeechRecognitionDispatcherHost::OnEnvironmentEstimationComplete(
+    int session_id) {
+}
+
+}  // namespace content

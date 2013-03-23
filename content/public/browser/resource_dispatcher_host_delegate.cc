@@ -20,6 +20,7 @@ bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
 void ResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     ResourceContext* resource_context,
+    appcache::AppCacheService* appcache_service,
     ResourceType::Type resource_type,
     int child_id,
     int route_id,
@@ -56,9 +57,10 @@ ResourceDispatcherHostLoginDelegate*
   return NULL;
 }
 
-void ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
+bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
                                                             int child_id,
                                                             int route_id) {
+  return true;
 }
 
 bool ResourceDispatcherHostDelegate::ShouldForceDownloadResource(

@@ -8,11 +8,16 @@
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
+
+namespace gfx {
+class RectF;
+}
 
 // Per-tab find manager. Handles dealing with the life cycle of find sessions.
-class FindTabHelper : public content::WebContentsObserver {
+class FindTabHelper : public content::WebContentsObserver,
+                      public content::WebContentsUserData<FindTabHelper> {
  public:
-  explicit FindTabHelper(content::WebContents* web_contents);
   virtual ~FindTabHelper();
 
   // Starts the Find operation by calling StartFinding on the Tab. This function
@@ -57,6 +62,15 @@ class FindTabHelper : public content::WebContentsObserver {
     return last_search_result_;
   }
 
+#if defined(OS_ANDROID)
+  // Selects and zooms to the find result nearest to the point (x,y)
+  // defined in find-in-page coordinates.
+  void ActivateNearestFindResult(float x, float y);
+
+  // Asks the renderer to send the rects of the current find matches.
+  void RequestFindMatchRects(int current_version);
+#endif
+
   void HandleFindReply(int request_id,
                        int number_of_matches,
                        const gfx::Rect& selection_rect,
@@ -64,6 +78,9 @@ class FindTabHelper : public content::WebContentsObserver {
                        bool final_update);
 
  private:
+  explicit FindTabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<FindTabHelper>;
+
   // Each time a search request comes in we assign it an id before passing it
   // over the IPC so that when the results come in we can evaluate whether we
   // still care about the results of the search (in some cases we don't because

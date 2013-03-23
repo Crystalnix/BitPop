@@ -5,9 +5,12 @@
 #include "content/public/app/content_main_delegate.h"
 
 #include "content/public/browser/content_browser_client.h"
+
+#if !defined(OS_IOS)
 #include "content/public/plugin/content_plugin_client.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/utility/content_utility_client.h"
+#endif
 
 namespace content {
 
@@ -21,7 +24,7 @@ int ContentMainDelegate::RunProcess(
   return -1;
 }
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
 
 bool ContentMainDelegate::ProcessRegistersWithSystemProcess(
     const std::string& process_type) {
@@ -37,7 +40,7 @@ bool ContentMainDelegate::DelaySandboxInitialization(
   return false;
 }
 
-#elif defined(OS_POSIX) && !defined(OS_ANDROID)
+#elif defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_IOS)
 
 ZygoteForkDelegate* ContentMainDelegate::ZygoteStarting() {
   return NULL;
@@ -50,15 +53,27 @@ ContentBrowserClient* ContentMainDelegate::CreateContentBrowserClient() {
 }
 
 ContentPluginClient* ContentMainDelegate::CreateContentPluginClient() {
+#if defined(OS_IOS)
+  return NULL;
+#else
   return new ContentPluginClient();
+#endif
 }
 
 ContentRendererClient* ContentMainDelegate::CreateContentRendererClient() {
+#if defined(OS_IOS)
+  return NULL;
+#else
   return new ContentRendererClient();
+#endif
 }
 
 ContentUtilityClient* ContentMainDelegate::CreateContentUtilityClient() {
+#if defined(OS_IOS)
+  return NULL;
+#else
   return new ContentUtilityClient();
+#endif
 }
 
 }  // namespace content

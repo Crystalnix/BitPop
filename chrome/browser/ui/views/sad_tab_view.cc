@@ -41,13 +41,8 @@ const SkColor kKillColor = SkColorSetRGB(57, 48, 88);
 const char kCategoryTagCrash[] = "Crash";
 
 // Font size correction.
-#if defined(CROS_FONTS_USING_BCI)
-const int kTitleFontSizeDelta = 1;
-const int kMessageFontSizeDelta = 0;
-#else
 const int kTitleFontSizeDelta = 2;
 const int kMessageFontSizeDelta = 1;
-#endif
 
 // Name of the experiment to run.
 const char kExperiment[] = "LowMemoryMargin";
@@ -82,7 +77,7 @@ SadTabView::SadTabView(WebContents* web_contents, chrome::SadTabKind kind)
   UMA_HISTOGRAM_COUNTS("SadTab.Created", kind_);
 
   // These stats should use the same counting approach and bucket size used for
-  // tab discard events in chrome/browser/oom_priority_manager.cc so they can be
+  // tab discard events in chromeos::OomPriorityManager so they can be
   // directly compared.
   // TODO(jamescook): Maybe track time between sad tabs?
   switch (kind_) {
@@ -122,16 +117,16 @@ void SadTabView::LinkClicked(views::Link* source, int event_flags) {
     web_contents_->OpenURL(params);
   } else if (source == feedback_link_) {
     chrome::ShowFeedbackPage(
-        browser::FindBrowserWithWebContents(web_contents_),
+        chrome::FindBrowserWithWebContents(web_contents_),
         l10n_util::GetStringUTF8(IDS_KILLED_TAB_FEEDBACK_MESSAGE),
         std::string(kCategoryTagCrash));
   }
 }
 
-void SadTabView::ButtonPressed(views::Button* source,
-                               const views::Event& event) {
+void SadTabView::ButtonPressed(views::Button* sender,
+                               const ui::Event& event) {
   DCHECK(web_contents_);
-  DCHECK(source == reload_button_);
+  DCHECK_EQ(reload_button_, sender);
   web_contents_->GetController().Reload(true);
 }
 
@@ -231,7 +226,7 @@ void SadTabView::OnPaint(gfx::Canvas* canvas) {
     UMA_HISTOGRAM_COUNTS("SadTab.Displayed", kind_);
 
     // These stats should use the same counting approach and bucket size used
-    // for tab discard events in chrome/browser/oom_priority_manager.cc so they
+    // for tab discard events in chromeos::OomPriorityManager so they
     // can be directly compared.
     switch (kind_) {
       case chrome::SAD_TAB_KIND_CRASHED: {

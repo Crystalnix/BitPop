@@ -10,6 +10,7 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_controller.h"
@@ -19,10 +20,10 @@ using extensions::Extension;
 
 namespace constants = tts_extension_api_constants;
 
-namespace events {
+namespace tts_engine_events {
 const char kOnSpeak[] = "ttsEngine.onSpeak";
 const char kOnStop[] = "ttsEngine.onStop";
-};  // namespace events
+};  // namespace tts_engine_events
 
 namespace {
 // Given a language/region code of the form 'fr-FR', returns just the basic
@@ -38,7 +39,8 @@ std::string TrimLanguageCode(std::string lang) {
 void GetExtensionVoices(Profile* profile, ListValue* result_voices) {
   ExtensionService* service = profile->GetExtensionService();
   DCHECK(service);
-  extensions::EventRouter* event_router = profile->GetExtensionEventRouter();
+  extensions::EventRouter* event_router =
+      extensions::ExtensionSystem::Get(profile)->event_router();
   DCHECK(event_router);
 
   const ExtensionSet* extensions = service->extensions();
@@ -47,9 +49,9 @@ void GetExtensionVoices(Profile* profile, ListValue* result_voices) {
     const Extension* extension = *iter;
 
     if (!event_router->ExtensionHasEventListener(
-            extension->id(), events::kOnSpeak) ||
+            extension->id(), tts_engine_events::kOnSpeak) ||
         !event_router->ExtensionHasEventListener(
-            extension->id(), events::kOnStop)) {
+            extension->id(), tts_engine_events::kOnStop)) {
       continue;
     }
 
@@ -106,7 +108,7 @@ bool GetMatchingExtensionVoice(
     return false;
 
   extensions::EventRouter* event_router =
-      utterance->profile()->GetExtensionEventRouter();
+      extensions::ExtensionSystem::Get(utterance->profile())->event_router();
   DCHECK(event_router);
 
   *matching_extension = NULL;
@@ -122,9 +124,9 @@ bool GetMatchingExtensionVoice(
       const Extension* extension = *iter;
 
       if (!event_router->ExtensionHasEventListener(
-              extension->id(), events::kOnSpeak) ||
+              extension->id(), tts_engine_events::kOnSpeak) ||
           !event_router->ExtensionHasEventListener(
-              extension->id(), events::kOnStop)) {
+              extension->id(), tts_engine_events::kOnStop)) {
         continue;
       }
 
@@ -193,8 +195,8 @@ void ExtensionTtsEngineSpeak(Utterance* utterance,
   bool sends_end_event =
       (event_types.find(constants::kEventTypeEnd) != event_types.end());
 
-  ListValue args;
-  args.Set(0, Value::CreateStringValue(utterance->text()));
+  scoped_ptr<ListValue> args(new ListValue());
+  args->Set(0, Value::CreateStringValue(utterance->text()));
 
   // Pass through most options to the speech engine, but remove some
   // that are handled internally.
@@ -213,26 +215,23 @@ void ExtensionTtsEngineSpeak(Utterance* utterance,
   if (options->HasKey(constants::kOnEventKey))
     options->Remove(constants::kOnEventKey, NULL);
 
-  args.Set(1, options);
-  args.Set(2, Value::CreateIntegerValue(utterance->id()));
-  std::string json_args;
-  base::JSONWriter::Write(&args, &json_args);
+  args->Set(1, options);
+  args->Set(2, Value::CreateIntegerValue(utterance->id()));
 
-  utterance->profile()->GetExtensionEventRouter()->DispatchEventToExtension(
-      extension->id(),
-      events::kOnSpeak,
-      json_args,
-      utterance->profile(),
-      GURL());
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      tts_engine_events::kOnSpeak, args.Pass()));
+  event->restrict_to_profile = utterance->profile();
+  extensions::ExtensionSystem::Get(utterance->profile())->event_router()->
+      DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
 
 void ExtensionTtsEngineStop(Utterance* utterance) {
-  utterance->profile()->GetExtensionEventRouter()->DispatchEventToExtension(
-      utterance->extension_id(),
-      events::kOnStop,
-      "[]",
-      utterance->profile(),
-      GURL());
+  scoped_ptr<ListValue> args(new ListValue());
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      tts_engine_events::kOnStop, args.Pass()));
+  event->restrict_to_profile = utterance->profile();
+  extensions::ExtensionSystem::Get(utterance->profile())->event_router()->
+      DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
 
 bool ExtensionTtsEngineSendTtsEventFunction::RunImpl() {

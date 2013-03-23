@@ -21,12 +21,15 @@
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
 
+namespace ui {
+class GtkSignalRegistrar;
+}
+
 class CustomDrawButton;
 class GURL;
-class TabContentsContainerGtk;
-class TabContents;
 class ThrobberGtk;
 class WebIntentPickerDelegate;
+class WaitingDialog;
 
 // GTK implementation of WebIntentPicker.
 class WebIntentPickerGtk : public WebIntentPicker,
@@ -34,7 +37,7 @@ class WebIntentPickerGtk : public WebIntentPicker,
                            public ConstrainedWindowGtkDelegate,
                            public content::NotificationObserver {
  public:
-  WebIntentPickerGtk(TabContents* tab_contents,
+  WebIntentPickerGtk(content::WebContents* web_contents,
                      WebIntentPickerDelegate* delegate,
                      WebIntentPickerModel* model);
   virtual ~WebIntentPickerGtk();
@@ -44,23 +47,26 @@ class WebIntentPickerGtk : public WebIntentPicker,
   virtual void SetActionString(const string16& action) OVERRIDE;
   virtual void OnExtensionInstallSuccess(const std::string& id) OVERRIDE;
   virtual void OnExtensionInstallFailure(const std::string& id) OVERRIDE;
+  virtual void OnInlineDispositionAutoResize(const gfx::Size& size) OVERRIDE;
+  virtual gfx::Size GetMaxInlineDispositionSize() OVERRIDE;
 
   // WebIntentPickerModelObserver implementation.
   virtual void OnModelChanged(WebIntentPickerModel* model) OVERRIDE;
   virtual void OnFaviconChanged(WebIntentPickerModel* model,
                                 size_t index) OVERRIDE;
   virtual void OnExtensionIconChanged(WebIntentPickerModel* model,
-                                      const string16& extension_id) OVERRIDE;
+                                      const std::string& extension_id) OVERRIDE;
   virtual void OnInlineDisposition(const string16& title,
                                    const GURL& url) OVERRIDE;
-  virtual void OnInlineDispositionAutoResize(const gfx::Size& size) OVERRIDE;
 
   virtual void OnPendingAsyncCompleted() OVERRIDE;
+  virtual void InvalidateDelegate() OVERRIDE;
 
   // ConstrainedWindowGtkDelegate implementation.
   virtual GtkWidget* GetWidgetRoot() OVERRIDE;
   virtual GtkWidget* GetFocusWidget() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
+  virtual bool GetBackgroundColor(GdkColor* color) OVERRIDE;
   virtual bool ShouldHaveBorderPadding() const OVERRIDE;
 
   // content::NotificationObserver implementation.
@@ -83,10 +89,19 @@ class WebIntentPickerGtk : public WebIntentPicker,
   CHROMEGTK_CALLBACK_0(WebIntentPickerGtk, void, OnMoreSuggestionsLinkClick);
   // Callback when "or choose another service" link is clicked.
   CHROMEGTK_CALLBACK_0(WebIntentPickerGtk, void, OnChooseAnotherServiceClick);
+  // Callback when the host tab contents size changes.
+  CHROMEGTK_CALLBACK_1(WebIntentPickerGtk, void, OnHostContentsSizeAllocate,
+                       GdkRectangle*);
 
   // Initialize the contents of the picker. After this call, contents_ will be
   // non-NULL.
   void InitContents();
+
+  // Initialize the main picker dialog.
+  void InitMainContents();
+
+  // Clear all contents and reset related variables.
+  void ClearContents();
 
   // Reset contents to the initial picker state.
   void ResetContents();
@@ -120,7 +135,7 @@ class WebIntentPickerGtk : public WebIntentPicker,
   void RemoveThrobber();
 
   // A weak pointer to the tab contents on which to display the picker UI.
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
 
   // A weak pointer to the WebIntentPickerDelegate to notify when the user
   // chooses a service or cancels.
@@ -149,25 +164,31 @@ class WebIntentPickerGtk : public WebIntentPicker,
   // A weak pointer to the suggested extensions vbox.
   GtkWidget* extensions_vbox_;
 
+  // This widget holds the header when showing an inline intent handler.
+  GtkWidget* service_hbox_;
+
   // A button to close the picker.
   scoped_ptr<CustomDrawButton> close_button_;
 
   // The throbber to display when installing an extension.
   scoped_ptr<ThrobberGtk> throbber_;
 
+  scoped_ptr<WaitingDialog> waiting_dialog_;
+
   // A weak pointer to the constrained window.
   ConstrainedWindowGtk* window_;
 
-  // Container for the HTML in the inline disposition case.
-  scoped_ptr<TabContents> inline_disposition_tab_contents_;
-
-  // Widget for displaying the HTML in the inline disposition case.
-  scoped_ptr<TabContentsContainerGtk> tab_contents_container_;
+  // The WebContents being displayed in inline disposition.
+  scoped_ptr<content::WebContents> inline_disposition_web_contents_;
 
   // content::WebContentsDelegate for the inline disposition dialog.
   scoped_ptr<WebIntentInlineDispositionDelegate> inline_disposition_delegate_;
 
   content::NotificationRegistrar registrar_;
+
+  // Used to connect to signals fired on the host tab contents (only used while
+  // showing an inline intent handler).
+  scoped_ptr<ui::GtkSignalRegistrar> host_signals_;
 
   DISALLOW_COPY_AND_ASSIGN(WebIntentPickerGtk);
 };

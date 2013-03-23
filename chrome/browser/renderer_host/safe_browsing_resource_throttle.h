@@ -11,7 +11,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "base/timer.h"
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
+#include "chrome/browser/safe_browsing/database_manager.h"
+#include "chrome/browser/safe_browsing/ui_manager.h"
 #include "content/public/browser/resource_throttle.h"
 
 class ResourceDispatcherHost;
@@ -44,23 +45,22 @@ class URLRequest;
 // resumed.
 class SafeBrowsingResourceThrottle
     : public content::ResourceThrottle,
-      public SafeBrowsingService::Client,
+      public SafeBrowsingDatabaseManager::Client,
       public base::SupportsWeakPtr<SafeBrowsingResourceThrottle> {
  public:
-  static SafeBrowsingResourceThrottle* Create(
-      const net::URLRequest* request,
-      int render_process_host_id,
-      int render_view_id,
-      bool is_subresource,
-      SafeBrowsingService* safe_browsing);
+  SafeBrowsingResourceThrottle(const net::URLRequest* request,
+                               int render_process_host_id,
+                               int render_view_id,
+                               bool is_subresource,
+                               SafeBrowsingService* safe_browsing);
 
   // content::ResourceThrottle implementation (called on IO thread):
   virtual void WillStartRequest(bool* defer) OVERRIDE;
   virtual void WillRedirectRequest(const GURL& new_url, bool* defer) OVERRIDE;
 
-  // SafeBrowsingService::Client implementation (called on IO thread):
-  virtual void OnBrowseUrlCheckResult(
-      const GURL& url, SafeBrowsingService::UrlCheckResult result) OVERRIDE;
+  // SafeBrowsingDabaseManager::Client implementation (called on IO thread):
+  virtual void OnCheckBrowseUrlResult(
+      const GURL& url, SBThreatType result) OVERRIDE;
 
  private:
   // Describes what phase of the check a throttle is in.
@@ -77,12 +77,6 @@ class SafeBrowsingResourceThrottle
     DEFERRED_REDIRECT,
   };
 
-  SafeBrowsingResourceThrottle(const net::URLRequest* request,
-                               int render_process_host_id,
-                               int render_view_id,
-                               bool is_subresource,
-                               SafeBrowsingService* safe_browsing);
-
   virtual ~SafeBrowsingResourceThrottle();
 
   // SafeBrowsingService::UrlCheckCallback implementation.
@@ -90,7 +84,7 @@ class SafeBrowsingResourceThrottle
 
   // Starts running |url| through the safe browsing check. Returns true if the
   // URL is safe to visit. Otherwise returns false and will call
-  // OnUrlCheckResult() when the check has completed.
+  // OnBrowseUrlResult() when the check has completed.
   bool CheckUrl(const GURL& url);
 
   // Callback for when the safe browsing check (which was initiated by
@@ -98,8 +92,7 @@ class SafeBrowsingResourceThrottle
   void OnCheckUrlTimeout();
 
   // Starts displaying the safe browsing interstitial page.
-  void StartDisplayingBlockingPage(const GURL& url,
-                                   SafeBrowsingService::UrlCheckResult result);
+  void StartDisplayingBlockingPage(const GURL& url, SBThreatType threat_type);
 
   // Resumes the request, by continuing the deferred action (either starting the
   // request, or following a redirect).
@@ -110,7 +103,7 @@ class SafeBrowsingResourceThrottle
 
   // The result of the most recent safe browsing check. Only valid to read this
   // when state_ != STATE_CHECKING_URL.
-  SafeBrowsingService::UrlCheckResult safe_browsing_result_;
+  SBThreatType threat_type_;
 
   // The time when the outstanding safe browsing check was started.
   base::TimeTicks url_check_start_time_;
@@ -125,7 +118,8 @@ class SafeBrowsingResourceThrottle
 
   int render_process_host_id_;
   int render_view_id_;
-  scoped_refptr<SafeBrowsingService> safe_browsing_;
+  scoped_refptr<SafeBrowsingDatabaseManager> database_manager_;
+  scoped_refptr<SafeBrowsingUIManager> ui_manager_;
   const net::URLRequest* request_;
   bool is_subresource_;
 

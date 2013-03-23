@@ -7,12 +7,14 @@
 #include <map>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/timer.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
@@ -20,9 +22,9 @@
 #include "chrome/browser/printing/print_view_manager_observer.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -41,6 +43,9 @@
 
 using base::TimeDelta;
 using content::BrowserThread;
+using content::WebContents;
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(printing::PrintViewManager)
 
 namespace {
 
@@ -51,13 +56,15 @@ typedef std::map<content::RenderProcessHost*, base::Closure>
 static base::LazyInstance<ScriptedPrintPreviewClosureMap>
     g_scripted_print_preview_closure_map = LAZY_INSTANCE_INITIALIZER;
 
+// Limits memory usage by raster to 64 MiB.
+const int kMaxRasterSizeInPixels = 16*1024*1024;
+
 }  // namespace
 
 namespace printing {
 
-PrintViewManager::PrintViewManager(TabContents* tab)
-    : content::WebContentsObserver(tab->web_contents()),
-      tab_(tab),
+PrintViewManager::PrintViewManager(content::WebContents* web_contents)
+    : content::WebContentsObserver(web_contents),
       number_pages_(0),
       printing_succeeded_(false),
       inside_inner_message_loop_(false),
@@ -70,10 +77,14 @@ PrintViewManager::PrintViewManager(TabContents* tab)
   expecting_first_page_ = true;
 #endif
   registrar_.Add(this, chrome::NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED,
-                 content::Source<TabContents>(tab));
-  printing_enabled_.Init(prefs::kPrintingEnabled,
-                         tab->profile()->GetPrefs(),
-                         this);
+                 content::Source<content::WebContents>(web_contents));
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  printing_enabled_.Init(
+      prefs::kPrintingEnabled,
+      profile->GetPrefs(),
+      base::Bind(&PrintViewManager::UpdateScriptedPrintingBlocked,
+                 base::Unretained(this)));
 }
 
 PrintViewManager::~PrintViewManager() {
@@ -95,13 +106,14 @@ bool PrintViewManager::AdvancedPrintNow() {
       PrintPreviewTabController::GetInstance();
   if (!tab_controller)
     return false;
-  TabContents* print_preview_tab = tab_controller->GetPrintPreviewForTab(tab_);
+  WebContents* print_preview_tab =
+      tab_controller->GetPrintPreviewForTab(web_contents());
   if (print_preview_tab) {
     // Preview tab exist for current tab or current tab is preview tab.
-    if (!print_preview_tab->web_contents()->GetWebUI())
+    if (!print_preview_tab->GetWebUI())
       return false;
     PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
-        print_preview_tab->web_contents()->GetWebUI()->GetController());
+        print_preview_tab->GetWebUI()->GetController());
     print_preview_ui->OnShowSystemDialog();
     return true;
   } else {
@@ -120,10 +132,12 @@ bool PrintViewManager::PrintToDestination() {
 }
 
 bool PrintViewManager::PrintPreviewNow() {
-  if (print_preview_state_ != NOT_PREVIEWING) {
-    NOTREACHED();
+  // Users can send print commands all they want and it is beyond
+  // PrintViewManager's control. Just ignore the extra commands.
+  // See http://crbug.com/136842 for example.
+  if (print_preview_state_ != NOT_PREVIEWING)
     return false;
-  }
+
   if (!PrintNowInternal(new PrintMsg_InitiatePrintPreview(routing_id())))
     return false;
 
@@ -220,18 +234,6 @@ void PrintViewManager::OnDidPrintPage(
     return;
   }
 
-#if defined(OS_WIN)
-  // http://msdn2.microsoft.com/en-us/library/ms535522.aspx
-  // Windows 2000/XP: When a page in a spooled file exceeds approximately 350
-  // MB, it can fail to print and not send an error message.
-  if (params.data_size && params.data_size >= 350*1024*1024) {
-    NOTREACHED() << "size:" << params.data_size;
-    TerminatePrintJob(true);
-    web_contents()->Stop();
-    return;
-  }
-#endif
-
 #if defined(OS_WIN) || defined(OS_MACOSX)
   const bool metafile_must_be_valid = true;
 #elif defined(OS_POSIX)
@@ -248,7 +250,7 @@ void PrintViewManager::OnDidPrintPage(
     }
   }
 
-  scoped_ptr<Metafile> metafile(new NativeMetafile);
+  scoped_ptr<NativeMetafile> metafile(new NativeMetafile);
   if (metafile_must_be_valid) {
     if (!metafile->InitFromData(shared_buf.memory(), params.data_size)) {
       NOTREACHED() << "Invalid metafile header";
@@ -256,6 +258,26 @@ void PrintViewManager::OnDidPrintPage(
       return;
     }
   }
+
+#if defined(OS_WIN)
+  bool big_emf = (params.data_size && params.data_size >= kMetafileMaxSize);
+  const CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  int raster_size = std::min(params.page_size.GetArea(),
+                             kMaxRasterSizeInPixels);
+  if (big_emf || (cmdline && cmdline->HasSwitch(switches::kPrintRaster))) {
+    scoped_ptr<NativeMetafile> raster_metafile(
+        metafile->RasterizeMetafile(raster_size));
+    if (raster_metafile.get()) {
+      metafile.swap(raster_metafile);
+    } else if (big_emf) {
+      // Don't fall back to emf here.
+      NOTREACHED() << "size:" << params.data_size;
+      TerminatePrintJob(true);
+      web_contents()->Stop();
+      return;
+    }
+  }
+#endif
 
   // Update the rendered document. It will send notifications to the listener.
   document->SetPage(params.page_number,
@@ -274,13 +296,13 @@ void PrintViewManager::OnPrintingFailed(int cookie) {
   }
 
   chrome::ShowPrintErrorDialog(
-      tab_->web_contents()->GetView()->GetTopLevelNativeWindow());
+      web_contents()->GetView()->GetTopLevelNativeWindow());
 
   ReleasePrinterQuery();
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-      content::Source<TabContents>(tab_),
+      content::Source<content::WebContents>(web_contents()),
       content::NotificationService::NoDetails());
 }
 
@@ -320,9 +342,9 @@ void PrintViewManager::OnScriptedPrintPreview(bool source_is_modifiable,
   map[rph] = callback;
   scripted_print_preview_rph_ = rph;
 
-  tab_controller->PrintPreview(tab_);
+  tab_controller->PrintPreview(web_contents());
   PrintPreviewUI::SetSourceIsModifiable(
-      tab_controller->GetPrintPreviewForTab(tab_),
+      tab_controller->GetPrintPreviewForTab(web_contents()),
       source_is_modifiable);
 }
 
@@ -361,10 +383,6 @@ void PrintViewManager::Observe(int type,
       OnNotifyPrintJobEvent(*content::Details<JobEventDetails>(details).ptr());
       break;
     }
-    case chrome::NOTIFICATION_PREF_CHANGED: {
-      UpdateScriptedPrintingBlocked();
-      break;
-    }
     case chrome::NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED: {
       tab_content_blocked_ = *content::Details<const bool>(details).ptr();
       UpdateScriptedPrintingBlocked();
@@ -385,7 +403,7 @@ void PrintViewManager::OnNotifyPrintJobEvent(
 
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-          content::Source<TabContents>(tab_),
+          content::Source<content::WebContents>(web_contents()),
           content::NotificationService::NoDetails());
       break;
     }
@@ -415,7 +433,7 @@ void PrintViewManager::OnNotifyPrintJobEvent(
 
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-          content::Source<TabContents>(tab_),
+          content::Source<content::WebContents>(web_contents()),
           content::NotificationService::NoDetails());
       break;
     }

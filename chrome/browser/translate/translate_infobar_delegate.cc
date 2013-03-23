@@ -10,11 +10,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_infobar_view.h"
 #include "chrome/browser/translate/translate_manager.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/common/chrome_constants.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -72,73 +69,33 @@ TranslateInfoBarDelegate* TranslateInfoBarDelegate::CreateErrorDelegate(
 TranslateInfoBarDelegate::~TranslateInfoBarDelegate() {
 }
 
-std::string TranslateInfoBarDelegate::GetLanguageCodeAt(size_t index) const {
-  DCHECK_LT(index, GetLanguageCount());
-  return languages_[index].first;
-}
-
-string16 TranslateInfoBarDelegate::GetLanguageDisplayableNameAt(
-    size_t index) const {
-  DCHECK_LT(index, GetLanguageCount());
-  return languages_[index].second;
-}
-
-std::string TranslateInfoBarDelegate::GetOriginalLanguageCode() const {
-  return (original_language_index() == kNoIndex) ?
-      chrome::kUnknownLanguageCode :
-      GetLanguageCodeAt(original_language_index());
-}
-
-std::string TranslateInfoBarDelegate::GetTargetLanguageCode() const {
-  return GetLanguageCodeAt(target_language_index());
-}
-
-void TranslateInfoBarDelegate::SetOriginalLanguage(size_t language_index) {
-  DCHECK_LT(language_index, GetLanguageCount());
-  original_language_index_ = language_index;
-  if (infobar_view_)
-    infobar_view_->OriginalLanguageChanged();
-  if (type_ == AFTER_TRANSLATE)
-    Translate();
-}
-
-void TranslateInfoBarDelegate::SetTargetLanguage(size_t language_index) {
-  DCHECK_LT(language_index, GetLanguageCount());
-  DCHECK_GE(language_index, 0U);
-  target_language_index_ = language_index;
-  if (infobar_view_)
-    infobar_view_->TargetLanguageChanged();
-  if (type_ == AFTER_TRANSLATE)
-    Translate();
-}
-
 void TranslateInfoBarDelegate::Translate() {
-  const std::string& original_language_code = GetOriginalLanguageCode();
-  if (!owner()->web_contents()->GetBrowserContext()->IsOffTheRecord()) {
-    prefs_.ResetTranslationDeniedCount(original_language_code);
-    prefs_.IncrementTranslationAcceptedCount(original_language_code);
+  if (!owner()->GetWebContents()->GetBrowserContext()->IsOffTheRecord()) {
+    prefs_.ResetTranslationDeniedCount(original_language_code());
+    prefs_.IncrementTranslationAcceptedCount(original_language_code());
   }
 
-  TranslateManager::GetInstance()->TranslatePage(owner()->web_contents(),
-      GetLanguageCodeAt(original_language_index()),
-      GetLanguageCodeAt(target_language_index()));
+  TranslateManager::GetInstance()->TranslatePage(owner()->GetWebContents(),
+                                                 original_language_code(),
+                                                 target_language_code());
+
+  UMA_HISTOGRAM_COUNTS("Translate.Translate", 1);
 }
 
 void TranslateInfoBarDelegate::RevertTranslation() {
-  TranslateManager::GetInstance()->RevertTranslation(owner()->web_contents());
+  TranslateManager::GetInstance()->RevertTranslation(owner()->GetWebContents());
   RemoveSelf();
 }
 
 void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
   TranslateManager::GetInstance()->
-      ReportLanguageDetectionError(owner()->web_contents());
+      ReportLanguageDetectionError(owner()->GetWebContents());
 }
 
 void TranslateInfoBarDelegate::TranslationDeclined() {
-  const std::string& original_language_code = GetOriginalLanguageCode();
-  if (!owner()->web_contents()->GetBrowserContext()->IsOffTheRecord()) {
-    prefs_.ResetTranslationAcceptedCount(original_language_code);
-    prefs_.IncrementTranslationDeniedCount(original_language_code);
+  if (!owner()->GetWebContents()->GetBrowserContext()->IsOffTheRecord()) {
+    prefs_.ResetTranslationAcceptedCount(original_language_code());
+    prefs_.IncrementTranslationDeniedCount(original_language_code());
   }
 
   // Remember that the user declined the translation so as to prevent showing a
@@ -146,17 +103,19 @@ void TranslateInfoBarDelegate::TranslationDeclined() {
   // translations when getting a LANGUAGE_DETERMINED from the page, which
   // happens when a load stops. That could happen multiple times, including
   // after the user already declined the translation.)
-  TranslateTabHelper* helper = TabContents::FromWebContents(
-      owner()->web_contents())->translate_tab_helper();
-  helper->language_state().set_translation_declined(true);
+  TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(owner()->GetWebContents());
+  translate_tab_helper->language_state().set_translation_declined(true);
+
+  UMA_HISTOGRAM_COUNTS("Translate.DeclineTranslate", 1);
 }
 
 bool TranslateInfoBarDelegate::IsLanguageBlacklisted() {
-  return prefs_.IsLanguageBlacklisted(GetOriginalLanguageCode());
+  return prefs_.IsLanguageBlacklisted(original_language_code());
 }
 
 void TranslateInfoBarDelegate::ToggleLanguageBlacklist() {
-  const std::string& original_lang = GetOriginalLanguageCode();
+  const std::string& original_lang = original_language_code();
   if (prefs_.IsLanguageBlacklisted(original_lang)) {
     prefs_.RemoveLanguageFromBlacklist(original_lang);
   } else {
@@ -184,13 +143,13 @@ void TranslateInfoBarDelegate::ToggleSiteBlacklist() {
 }
 
 bool TranslateInfoBarDelegate::ShouldAlwaysTranslate() {
-  return prefs_.IsLanguagePairWhitelisted(GetOriginalLanguageCode(),
-                                          GetTargetLanguageCode());
+  return prefs_.IsLanguagePairWhitelisted(original_language_code(),
+                                          target_language_code());
 }
 
 void TranslateInfoBarDelegate::ToggleAlwaysTranslate() {
-  const std::string& original_lang = GetOriginalLanguageCode();
-  const std::string& target_lang = GetTargetLanguageCode();
+  const std::string& original_lang = original_language_code();
+  const std::string& target_lang = target_language_code();
   if (prefs_.IsLanguagePairWhitelisted(original_lang, target_lang))
     prefs_.RemoveLanguagePairFromWhitelist(original_lang, target_lang);
   else
@@ -198,15 +157,15 @@ void TranslateInfoBarDelegate::ToggleAlwaysTranslate() {
 }
 
 void TranslateInfoBarDelegate::AlwaysTranslatePageLanguage() {
-  const std::string& original_lang = GetOriginalLanguageCode();
-  const std::string& target_lang = GetTargetLanguageCode();
+  const std::string& original_lang = original_language_code();
+  const std::string& target_lang = target_language_code();
   DCHECK(!prefs_.IsLanguagePairWhitelisted(original_lang, target_lang));
   prefs_.WhitelistLanguagePair(original_lang, target_lang);
   Translate();
 }
 
 void TranslateInfoBarDelegate::NeverTranslatePageLanguage() {
-  std::string original_lang = GetOriginalLanguageCode();
+  std::string original_lang = original_language_code();
   DCHECK(!prefs_.IsLanguageBlacklisted(original_lang));
   prefs_.BlacklistLanguage(original_lang);
   RemoveSelf();
@@ -215,7 +174,7 @@ void TranslateInfoBarDelegate::NeverTranslatePageLanguage() {
 string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
   if (type_ == TRANSLATING) {
     return l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_TRANSLATING_TO,
-        GetLanguageDisplayableNameAt(target_language_index_));
+                                      language_name_at(target_language_index_));
   }
 
   DCHECK_EQ(TRANSLATION_ERROR, type_);
@@ -233,11 +192,11 @@ string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
     case TranslateErrors::UNSUPPORTED_LANGUAGE:
       return l10n_util::GetStringFUTF16(
           IDS_TRANSLATE_INFOBAR_UNSUPPORTED_PAGE_LANGUAGE,
-          GetLanguageDisplayableNameAt(target_language_index_));
+          language_name_at(target_language_index_));
     case TranslateErrors::IDENTICAL_LANGUAGES:
       return l10n_util::GetStringFUTF16(
           IDS_TRANSLATE_INFOBAR_ERROR_SAME_LANGUAGE,
-          GetLanguageDisplayableNameAt(target_language_index_));
+          language_name_at(target_language_index_));
     default:
       NOTREACHED();
       return string16();
@@ -263,8 +222,8 @@ void TranslateInfoBarDelegate::MessageInfoBarButtonPressed() {
     return;
   }
   // This is the "Try again..." case.
-  TranslateManager::GetInstance()->TranslatePage(owner()->web_contents(),
-      GetOriginalLanguageCode(), GetTargetLanguageCode());
+  TranslateManager::GetInstance()->TranslatePage(owner()->GetWebContents(),
+      original_language_code(), target_language_code());
 }
 
 bool TranslateInfoBarDelegate::ShouldShowMessageInfoBarButton() {
@@ -273,14 +232,14 @@ bool TranslateInfoBarDelegate::ShouldShowMessageInfoBarButton() {
 
 bool TranslateInfoBarDelegate::ShouldShowNeverTranslateButton() {
   DCHECK_EQ(BEFORE_TRANSLATE, type_);
-  return !owner()->web_contents()->GetBrowserContext()->IsOffTheRecord() &&
-      (prefs_.GetTranslationDeniedCount(GetOriginalLanguageCode()) >= 3);
+  return !owner()->GetWebContents()->GetBrowserContext()->IsOffTheRecord() &&
+      (prefs_.GetTranslationDeniedCount(original_language_code()) >= 3);
 }
 
 bool TranslateInfoBarDelegate::ShouldShowAlwaysTranslateButton() {
   DCHECK_EQ(BEFORE_TRANSLATE, type_);
-  return !owner()->web_contents()->GetBrowserContext()->IsOffTheRecord() &&
-      (prefs_.GetTranslationAcceptedCount(GetOriginalLanguageCode()) >= 3);
+  return !owner()->GetWebContents()->GetBrowserContext()->IsOffTheRecord() &&
+      (prefs_.GetTranslationAcceptedCount(original_language_code()) >= 3);
 }
 
 void TranslateInfoBarDelegate::UpdateBackgroundAnimation(
@@ -333,7 +292,6 @@ TranslateInfoBarDelegate::TranslateInfoBarDelegate(
       initial_original_language_index_(kNoIndex),
       target_language_index_(kNoIndex),
       error_(error),
-      infobar_view_(NULL),
       prefs_(prefs) {
   DCHECK_NE((type_ == TRANSLATION_ERROR), (error == TranslateErrors::NONE));
 
@@ -402,6 +360,6 @@ TranslateInfoBarDelegate*
 
 std::string TranslateInfoBarDelegate::GetPageHost() {
   NavigationEntry* entry =
-      owner()->web_contents()->GetController().GetActiveEntry();
+      owner()->GetWebContents()->GetController().GetActiveEntry();
   return entry ? entry->GetURL().HostNoBrackets() : std::string();
 }

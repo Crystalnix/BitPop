@@ -36,7 +36,7 @@ void ShellNetworkDelegate::OnSendHeaders(
 int ShellNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
-    net::HttpResponseHeaders* original_response_headers,
+    const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
   return net::OK;
 }
@@ -97,9 +97,9 @@ int ShellNetworkDelegate::OnBeforeSocketStreamConnect(
   return net::OK;
 }
 
-void ShellNetworkDelegate::OnCacheWaitStateChange(
+void ShellNetworkDelegate::OnRequestWaitStateChange(
     const net::URLRequest& request,
-    CacheWaitState waiting) {
+    RequestWaitState waiting) {
 }
 
 }  // namespace content

@@ -4,13 +4,15 @@
 
 #include "chrome/browser/policy/configuration_policy_handler_list.h"
 
+#include "base/prefs/pref_value_map.h"
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "chrome/browser/policy/configuration_policy_handler.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/prefs/pref_value_map.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/network/onc/onc_constants.h"
 #include "grit/generated_resources.h"
 #include "policy/policy_constants.h"
 
@@ -51,6 +53,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kDnsPrefetchingEnabled,
     prefs::kNetworkPredictionEnabled,
     Value::TYPE_BOOLEAN },
+  { key::kBuiltInDnsClientEnabled,
+    prefs::kBuiltInDnsClientEnabled,
+    Value::TYPE_BOOLEAN },
   { key::kDisableSpdy,
     prefs::kDisableSpdy,
     Value::TYPE_BOOLEAN },
@@ -59,6 +64,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     Value::TYPE_LIST },
   { key::kSafeBrowsingEnabled,
     prefs::kSafeBrowsingEnabled,
+    Value::TYPE_BOOLEAN },
+  { key::kForceSafeSearch,
+    prefs::kForceSafeSearch,
     Value::TYPE_BOOLEAN },
   { key::kPasswordManagerEnabled,
     prefs::kPasswordManagerEnabled,
@@ -228,6 +236,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kRemoteAccessHostTalkGadgetPrefix,
     prefs::kRemoteAccessHostTalkGadgetPrefix,
     Value::TYPE_STRING },
+  { key::kRemoteAccessHostRequireCurtain,
+    prefs::kRemoteAccessHostRequireCurtain,
+    Value::TYPE_BOOLEAN },
   { key::kCloudPrintProxyEnabled,
     prefs::kCloudPrintProxyEnabled,
     Value::TYPE_BOOLEAN },
@@ -300,6 +311,12 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kDisableScreenshots,
     prefs::kDisableScreenshots,
     Value::TYPE_BOOLEAN },
+  { key::kAudioCaptureAllowed,
+    prefs::kAudioCaptureAllowed,
+    Value::TYPE_BOOLEAN },
+  { key::kVideoCaptureAllowed,
+    prefs::kVideoCaptureAllowed,
+    Value::TYPE_BOOLEAN },
 
 #if defined(OS_CHROMEOS)
   { key::kChromeOsLockOnIdleSuspend,
@@ -308,15 +325,27 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kChromeOsReleaseChannel,
     prefs::kChromeOsReleaseChannel,
     Value::TYPE_STRING },
-  { key::kGDataDisabled,
-    prefs::kDisableGData,
+  { key::kDriveDisabled,
+    prefs::kDisableDrive,
     Value::TYPE_BOOLEAN },
-  { key::kGDataDisabledOverCellular,
-    prefs::kDisableGDataOverCellular,
+  { key::kDriveDisabledOverCellular,
+    prefs::kDisableDriveOverCellular,
     Value::TYPE_BOOLEAN },
   { key::kExternalStorageDisabled,
     prefs::kExternalStorageDisabled,
     Value::TYPE_BOOLEAN },
+  { key::kAudioOutputAllowed,
+    prefs::kAudioOutputAllowed,
+    Value::TYPE_BOOLEAN },
+  { key::kShowLogoutButtonInTray,
+    prefs::kShowLogoutButtonInTray,
+    Value::TYPE_BOOLEAN },
+  { key::kShelfAutoHideBehavior,
+    prefs::kShelfAutoHideBehaviorLocal,
+    Value::TYPE_STRING },
+  { key::kSessionLengthLimit,
+    prefs::kSessionLengthLimit,
+    Value::TYPE_INTEGER },
 #endif  // defined(OS_CHROMEOS)
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -324,6 +353,16 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kBackgroundModeEnabled,
     Value::TYPE_BOOLEAN },
 #endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+};
+
+// Mapping from extension type names to Extension::Type.
+StringToIntEnumListPolicyHandler::MappingEntry kExtensionAllowedTypesMap[] = {
+  { "extension", extensions::Extension::TYPE_EXTENSION },
+  { "theme", extensions::Extension::TYPE_THEME },
+  { "user_script", extensions::Extension::TYPE_USER_SCRIPT },
+  { "hosted_app", extensions::Extension::TYPE_HOSTED_APP },
+  { "legacy_packaged_app", extensions::Extension::TYPE_LEGACY_PACKAGED_APP },
+  { "platform_app", extensions::Extension::TYPE_PLATFORM_APP },
 };
 
 }  // namespace
@@ -355,10 +394,16 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
       new ExtensionListPolicyHandler(key::kExtensionInstallBlacklist,
                                      prefs::kExtensionInstallDenyList,
                                      true));
+  handlers_.push_back(new ExtensionInstallForcelistPolicyHandler());
   handlers_.push_back(
       new ExtensionURLPatternListPolicyHandler(
           key::kExtensionInstallSources,
           prefs::kExtensionAllowedInstallSites));
+  handlers_.push_back(
+      new StringToIntEnumListPolicyHandler(
+          key::kExtensionAllowedTypes, prefs::kExtensionAllowedTypes,
+          kExtensionAllowedTypesMap,
+          kExtensionAllowedTypesMap + arraysize(kExtensionAllowedTypesMap)));
 
 #if !defined(OS_CHROMEOS)
   handlers_.push_back(new DownloadDirPolicyHandler());
@@ -368,11 +413,11 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
   handlers_.push_back(
       new NetworkConfigurationPolicyHandler(
           key::kDeviceOpenNetworkConfiguration,
-          chromeos::NetworkUIData::ONC_SOURCE_DEVICE_POLICY));
+          chromeos::onc::ONC_SOURCE_DEVICE_POLICY));
   handlers_.push_back(
       new NetworkConfigurationPolicyHandler(
           key::kOpenNetworkConfiguration,
-          chromeos::NetworkUIData::ONC_SOURCE_USER_POLICY));
+          chromeos::onc::ONC_SOURCE_USER_POLICY));
   handlers_.push_back(new PinnedLauncherAppsPolicyHandler());
 #endif  // defined(OS_CHROMEOS)
 }

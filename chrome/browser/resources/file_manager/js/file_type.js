@@ -66,9 +66,9 @@ FileType.types = [
   {type: 'archive', name: 'TAR_ARCHIVE_FILE_TYPE', subtype: 'TAR',
    pattern: /\.tar$/i},
   {type: 'archive', name: 'TAR_BZIP2_ARCHIVE_FILE_TYPE', subtype: 'TBZ2',
-   pattern: /\.(tar.bz2|tbz|tbz2)$/i},
+   pattern: /\.(tar\.bz2|tbz|tbz2)$/i},
   {type: 'archive', name: 'TAR_GZIP_ARCHIVE_FILE_TYPE', subtype: 'TGZ',
-   pattern: /\.(tar.|t)gz$/i},
+   pattern: /\.(tar\.|t)gz$/i},
 
   // Hosted docs.
   {type: 'hosted', icon: 'gdoc', name: 'GDOC_DOCUMENT_FILE_TYPE',
@@ -103,9 +103,10 @@ FileType.types = [
 FileType.DIRECTORY = {name: 'FOLDER', type: '.folder', icon: 'folder'};
 
 /**
- * Get the file type object that matches a given url.
+ * Get the file type object for a given file.
  *
  * @param {string|Entry} file Reference to the file.
+ *     Can be a name, a path, a url or a File API Entry.
  * @return {Object} The matching file type object or an empty object.
  */
 FileType.getType = function(file) {
@@ -133,66 +134,84 @@ FileType.getType = function(file) {
 };
 
 /**
+ * @param {string|Entry} file Reference to the file.
+ *     Can be a name, a path, a url or a File API Entry.
+ * @return {string} Localized string representation of file type.
+ */
+FileType.getTypeString = function(file) {
+  var fileType = FileType.getType(file);
+  if (fileType.subtype)
+    return strf(fileType.name, fileType.subtype);
+  else
+    return str(fileType.name);
+};
+
+/**
  * Pattern for urls pointing to Google Drive files.
  */
 FileType.GDRIVE_URL_PATTERN =
     new RegExp('^filesystem:[^/]*://[^/]*/[^/]*/drive/(.*)');
 
 /**
- * @param {string} url The url.
+ * Pattern for file paths pointing to Google Drive files.
+ */
+FileType.GDRIVE_PATH_PATTERN =
+    new RegExp('^/drive/');
+
+/**
+ * @param {string|Entry} file The url string or entry.
  * @return {boolean} Whether this provider supports the url.
  */
-FileType.isOnGDrive = function(url) {
-  return FileType.GDRIVE_URL_PATTERN.test(url);
+FileType.isOnGDrive = function(file) {
+  return typeof file == 'string' ?
+      FileType.GDRIVE_URL_PATTERN.test(file) :
+      FileType.GDRIVE_PATH_PATTERN.test(file.fullPath);
 };
 
 
 /**
- * Get the media type for a given url.
+ * Get the media type for a given file.
  *
- * @param {string} url Reference to the file.
+ * @param {string|Entry} file Reference to the file.
  * @return {string} The value of 'type' property from one of the elements in
  *   FileType.types or undefined.
  */
-FileType.getMediaType = function(url) {
-  return FileType.getType(url).type;
+FileType.getMediaType = function(file) {
+  return FileType.getType(file).type;
 };
 
 /**
- * True if the url refers an audio file.
- * @param {string} url Reference to the file.
- * @return {boolean} True if audio.
+ * @param {string|Entry} file Reference to the file.
+ * @return {boolean} True if audio file.
  */
-FileType.isAudio = function(url) {
-  return FileType.getMediaType(url) == 'audio';
+FileType.isAudio = function(file) {
+  return FileType.getMediaType(file) == 'audio';
 };
 
 /**
- * True if the url refers an image file.
- * @param {string} url Reference to the file.
- * @return {boolean} True if image.
+ * @param {string|Entry} file Reference to the file.
+ * @return {boolean} True if image file.
  */
-FileType.isImage = function(url) {
-  return FileType.getMediaType(url) == 'image';
+FileType.isImage = function(file) {
+  return FileType.getMediaType(file) == 'image';
 };
 
 /**
- * True if the url refers a video file.
- * @param {string} url Reference to the file.
- * @return {boolean} True if video.
+ * @param {string|Entry} file Reference to the file.
+ * @return {boolean} True if video file.
  */
-FileType.isVideo = function(url) {
-  return FileType.getMediaType(url) == 'video';
+FileType.isVideo = function(file) {
+  return FileType.getMediaType(file) == 'video';
 };
 
 
 /**
  * Files with more pixels won't have preview.
- * @param {string} url Reference to the file.
+ * @param {string|Entry} file Reference to the file.
  * @return {boolean} True if image or video.
  */
-FileType.isImageOrVideo = function(url) {
-  var type = FileType.getMediaType(url);
+FileType.isImageOrVideo = function(file) {
+  var type = FileType.getMediaType(file);
   return type == 'image' || type == 'video';
 };
 
@@ -202,6 +221,30 @@ FileType.isImageOrVideo = function(url) {
  */
 FileType.isHosted = function(file) {
   return FileType.getType(file).type === 'hosted';
+};
+
+/**
+ * @param {string|Entry} file Reference to the file.
+ * @return {boolean} Returns true if the file is not hidden, and we should
+ *     display it.
+ */
+FileType.isVisible = function(file) {
+  if (typeof file == 'object') {
+    file = file.name;
+  }
+
+  var path = util.extractFilePath(file);
+  if (path) file = path;
+
+  file = file.split('/').pop();
+  return file.indexOf('.') != 0 && !(file in FileType.HIDDEN_NAMES);
+};
+
+/**
+ * File/directory names that we know are usually hidden.
+ */
+FileType.HIDDEN_NAMES = {
+  'RECYCLED': true
 };
 
 /**

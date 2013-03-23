@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/login/helper.h"
 
+#include "ash/shell.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/utf_string_conversions.h"
@@ -13,6 +14,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/screen.h"
@@ -56,7 +58,7 @@ views::Throbber* CreateDefaultThrobber() {
 }
 
 gfx::Rect CalculateScreenBounds(const gfx::Size& size) {
-  gfx::Rect bounds(gfx::Screen::GetPrimaryDisplay().bounds());
+  gfx::Rect bounds(ash::Shell::GetScreen()->GetPrimaryDisplay().bounds());
   if (!size.IsEmpty()) {
     int horizontal_diff = bounds.width() - size.width();
     int vertical_diff = bounds.height() - size.height();
@@ -111,9 +113,8 @@ int GetCurrentUserImageSize() {
   float scale_factor = gfx::Display::GetForcedDeviceScaleFactor();
   if (scale_factor > 1.0f)
     return static_cast<int>(scale_factor * kBaseUserImageSize);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoad2xResources))
-    return 2 * kBaseUserImageSize;
-  return kBaseUserImageSize;
+  return kBaseUserImageSize *
+      ui::GetScaleFactorScale(ui::GetMaxScaleFactor());
 }
 
 }  // namespace chromeos

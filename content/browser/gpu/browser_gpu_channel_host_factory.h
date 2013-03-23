@@ -27,12 +27,24 @@ class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
-      uint32 size) OVERRIDE;
+      size_t size) OVERRIDE;
   virtual int32 CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params) OVERRIDE;
+  virtual void CreateImage(
+      gfx::PluginWindowHandle window,
+      int32 image_id,
+      const CreateImageCallback& callback) OVERRIDE;
+  virtual void DeleteImage(int32 image_idu, int32 sync_point) OVERRIDE;
   virtual GpuChannelHost* EstablishGpuChannelSync(
       CauseForGpuLaunch cause_for_gpu_launch) OVERRIDE;
+
+  // Specify a task runner and callback to be used for a set of messages.
+  virtual void SetHandlerForControlMessages(
+      const uint32* message_ids,
+      size_t num_messages,
+      const base::Callback<void(const IPC::Message&)>& handler,
+      base::TaskRunner* target_task_runner);
 
  private:
   struct CreateRequest {
@@ -62,11 +74,23 @@ class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params);
   static void CommandBufferCreatedOnIO(CreateRequest* request, int32 route_id);
+  void CreateImageOnIO(
+      gfx::PluginWindowHandle window,
+      int32 image_id,
+      const CreateImageCallback& callback);
+  static void ImageCreatedOnIO(
+      const CreateImageCallback& callback, const gfx::Size size);
+  static void OnImageCreated(
+      const CreateImageCallback& callback, const gfx::Size size);
+  void DeleteImageOnIO(int32 image_id, int32 sync_point);
   void EstablishGpuChannelOnIO(EstablishRequest* request);
   void GpuChannelEstablishedOnIO(
       EstablishRequest* request,
       const IPC::ChannelHandle& channel_handle,
       const GPUInfo& gpu_info);
+  static void AddFilterOnIO(
+      int gpu_host_id,
+      scoped_refptr<IPC::ChannelProxy::MessageFilter> filter);
 
   int gpu_client_id_;
   scoped_ptr<base::WaitableEvent> shutdown_event_;

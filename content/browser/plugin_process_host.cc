@@ -4,7 +4,7 @@
 
 #include "content/browser/plugin_process_host.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 #include <windows.h>
 #elif defined(OS_POSIX)
 #include <utility>  // for pair<>
@@ -39,10 +39,6 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_switches.h"
 
-using content::BrowserThread;
-using content::ChildProcessData;
-using content::ChildProcessHost;
-
 #if defined(USE_X11)
 #include "ui/gfx/gtk_native_view_id_manager.h"
 #endif
@@ -53,29 +49,15 @@ using content::ChildProcessHost;
 #include "ui/gfx/rect.h"
 #endif
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
+#endif
 
-namespace {
+namespace content {
 
-void ReparentPluginWindowHelper(HWND window, HWND parent) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  int window_style = WS_CHILD;
-  if (!webkit::npapi::WebPluginDelegateImpl::IsDummyActivationWindow(window))
-    window_style |= WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-
-  ::SetWindowLongPtr(window, GWL_STYLE, window_style);
-  ::SetParent(window, parent);
-  // Allow the Flash plugin to forward some messages back to Chrome.
-  if (base::win::GetVersion() >= base::win::VERSION_WIN7)
-    ::SetPropW(parent, webkit::npapi::kNativeWindowClassFilterProp, HANDLE(-1));
-}
-
-}  // namespace
-
+#if defined(OS_WIN)
 void PluginProcessHost::OnPluginWindowDestroyed(HWND window, HWND parent) {
   // The window is destroyed at this point, we just care about its parent, which
   // is the intermediate window we created.
@@ -92,25 +74,6 @@ void PluginProcessHost::AddWindow(HWND window) {
   plugin_parent_windows_set_.insert(window);
 }
 
-void PluginProcessHost::OnReparentPluginWindow(HWND window, HWND parent) {
-  // Reparent only from the plugin process to our process.
-  DWORD process_id = 0;
-  ::GetWindowThreadProcessId(window, &process_id);
-  if (process_id != ::GetProcessId(process_->GetHandle()))
-    return;
-  ::GetWindowThreadProcessId(parent, &process_id);
-  if (process_id != ::GetCurrentProcessId())
-    return;
-
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(ReparentPluginWindowHelper, window, parent));
-}
-
-void PluginProcessHost::OnReportExecutableMemory(size_t size) {
-  // TODO(jschuh): move this into the plugin process once it supports UMA.
-  UMA_HISTOGRAM_MEMORY_KB("Plugin.ExecPageSizeKB", size / 1024);
-}
 #endif  // defined(OS_WIN)
 
 #if defined(TOOLKIT_GTK)
@@ -128,12 +91,11 @@ PluginProcessHost::PluginProcessHost()
     : plugin_cursor_visible_(true)
 #endif
 {
-  process_.reset(
-      new BrowserChildProcessHostImpl(content::PROCESS_TYPE_PLUGIN, this));
+  process_.reset(new BrowserChildProcessHostImpl(PROCESS_TYPE_PLUGIN, this));
 }
 
 PluginProcessHost::~PluginProcessHost() {
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // We erase HWNDs from the plugin_parent_windows_set_ when we receive a
   // notification that the window is being destroyed. If we don't receive this
   // notification and the PluginProcessHost instance is being destroyed, it
@@ -222,10 +184,8 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
 #if defined(OS_MACOSX)
     switches::kDisableCompositedCoreAnimationPlugins,
     switches::kDisableCoreAnimationPlugins,
+    switches::kEnableSandboxLogging,
 #endif
-    switches::kDisableLogging,
-    switches::kEnableDCHECK,
-    switches::kEnableLogging,
     switches::kEnableStatsTable,
     switches::kFullMemoryCrashReport,
     switches::kLoggingLevel,
@@ -236,7 +196,6 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
     switches::kTraceStartup,
     switches::kUseGL,
     switches::kUserAgent,
-    switches::kV,
   };
 
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -248,8 +207,7 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   if (!plugin_launcher.empty())
     cmd_line->PrependWrapper(plugin_launcher);
 
-  std::string locale =
-      content::GetContentClient()->browser()->GetApplicationLocale();
+  std::string locale = GetContentClient()->browser()->GetApplicationLocale();
   if (!locale.empty()) {
     // Pass on the locale so the null plugin will use the right language in the
     // prompt to install the desired plugin.
@@ -261,21 +219,20 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
 #if defined(OS_POSIX)
   base::EnvironmentVector env;
 #if defined(OS_MACOSX) && !defined(__LP64__)
-  std::string interpose_list =
-      content::GetContentClient()->GetCarbonInterposePath();
-  if (!interpose_list.empty()) {
-    // Add our interposing library for Carbon. This is stripped back out in
-    // plugin_main.cc, so changes here should be reflected there.
-    const char* existing_list =
-        getenv(plugin_interpose_strings::kDYLDInsertLibrariesKey);
-    if (existing_list) {
-      interpose_list.insert(0, ":");
-      interpose_list.insert(0, existing_list);
+  if (!browser_command_line.HasSwitch(switches::kDisableCarbonInterposing)) {
+    std::string interpose_list = GetContentClient()->GetCarbonInterposePath();
+    if (!interpose_list.empty()) {
+      // Add our interposing library for Carbon. This is stripped back out in
+      // plugin_main.cc, so changes here should be reflected there.
+      const char* existing_list = getenv(kDYLDInsertLibrariesKey);
+      if (existing_list) {
+        interpose_list.insert(0, ":");
+        interpose_list.insert(0, existing_list);
+      }
     }
+    env.push_back(std::pair<std::string, std::string>(
+        kDYLDInsertLibrariesKey, interpose_list));
   }
-  env.push_back(std::pair<std::string, std::string>(
-      plugin_interpose_strings::kDYLDInsertLibrariesKey,
-      interpose_list));
 #endif
 #endif
 
@@ -311,13 +268,9 @@ bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PluginProcessHost, msg)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ChannelCreated, OnChannelCreated)
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginWindowDestroyed,
                         OnPluginWindowDestroyed)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ReparentPluginWindow,
-                        OnReparentPluginWindow)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ReportExecutableMemory,
-                        OnReportExecutableMemory)
 #endif
 #if defined(TOOLKIT_GTK)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_MapNativeViewId,
@@ -375,7 +328,7 @@ void PluginProcessHost::CancelRequests() {
 
 // static
 void PluginProcessHost::CancelPendingRequestsForResourceContext(
-    content::ResourceContext* context) {
+    ResourceContext* context) {
   for (PluginProcessHostIterator host_it; !host_it.Done(); ++host_it) {
     PluginProcessHost* host = *host_it;
     for (size_t i = 0; i < host->pending_requests_.size(); ++i) {
@@ -389,7 +342,7 @@ void PluginProcessHost::CancelPendingRequestsForResourceContext(
 }
 
 void PluginProcessHost::OpenChannelToPlugin(Client* client) {
-  process_->Notify(content::NOTIFICATION_CHILD_INSTANCE_CREATED);
+  process_->Notify(NOTIFICATION_CHILD_INSTANCE_CREATED);
   client->SetPluginInfo(info_);
   if (process_->GetHost()->IsChannelOpening()) {
     // The channel is already in the process of being opened.  Put
@@ -454,3 +407,5 @@ void PluginProcessHost::OnChannelCreated(
     client->OnChannelOpened(channel_handle);
   sent_requests_.pop_front();
 }
+
+}  // namespace content

@@ -63,12 +63,9 @@ class WebDialogWebContentsDelegateTest : public BrowserWithTestWindowTest {
 TEST_F(WebDialogWebContentsDelegateTest, DoNothingMethodsTest) {
   // None of the following calls should do anything.
   EXPECT_TRUE(test_web_contents_delegate_->IsPopupOrPanel(NULL));
-  scoped_refptr<history::HistoryAddPageArgs> should_add_args(
-      new history::HistoryAddPageArgs(
+  history::HistoryAddPageArgs should_add_args(
           GURL(), base::Time::Now(), 0, 0, GURL(), history::RedirectList(),
-          content::PAGE_TRANSITION_TYPED, history::SOURCE_SYNCED, false));
-  EXPECT_FALSE(test_web_contents_delegate_->ShouldAddNavigationToHistory(
-                   *should_add_args, content::NAVIGATION_TYPE_NEW_PAGE));
+          content::PAGE_TRANSITION_TYPED, history::SOURCE_SYNCED, false);
   test_web_contents_delegate_->NavigationStateChanged(NULL, 0);
   test_web_contents_delegate_->ActivateContents(NULL);
   test_web_contents_delegate_->LoadingStateChanged(NULL);
@@ -92,7 +89,7 @@ TEST_F(WebDialogWebContentsDelegateTest, AddNewContentsForegroundTabTest) {
   WebContents* contents =
       WebContentsTester::CreateTestWebContents(profile(), NULL);
   test_web_contents_delegate_->AddNewContents(
-      NULL, contents, NEW_FOREGROUND_TAB, gfx::Rect(), false);
+      NULL, contents, NEW_FOREGROUND_TAB, gfx::Rect(), false, NULL);
   // This should create a new foreground tab in the existing browser.
   EXPECT_EQ(1, browser()->tab_count());
   EXPECT_EQ(1U, BrowserList::size());
@@ -107,7 +104,7 @@ TEST_F(WebDialogWebContentsDelegateTest, DetachTest) {
       NULL, OpenURLParams(GURL(chrome::kAboutBlankURL), Referrer(),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false));
   test_web_contents_delegate_->AddNewContents(NULL, NULL, NEW_FOREGROUND_TAB,
-                                              gfx::Rect(), false);
+                                              gfx::Rect(), false, NULL);
   EXPECT_EQ(0, browser()->tab_count());
   EXPECT_EQ(1U, BrowserList::size());
 }

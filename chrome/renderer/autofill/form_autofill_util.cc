@@ -10,6 +10,8 @@
 #include "base/memory/scoped_vector.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/form_data.h"
+#include "chrome/common/form_field_data.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFormControlElement.h"
@@ -23,8 +25,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSelectElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
-#include "webkit/forms/form_data.h"
-#include "webkit/forms/form_field.h"
 
 using WebKit::WebElement;
 using WebKit::WebFormControlElement;
@@ -38,8 +38,6 @@ using WebKit::WebOptionElement;
 using WebKit::WebSelectElement;
 using WebKit::WebString;
 using WebKit::WebVector;
-using webkit::forms::FormData;
-using webkit::forms::FormField;
 
 namespace {
 
@@ -415,15 +413,16 @@ void GetOptionStringsFromElement(const WebSelectElement& select_element,
 }
 
 // The callback type used by |ForEachMatchingFormField()|.
-typedef void (*Callback)(WebKit::WebFormControlElement*,
-                         const webkit::forms::FormField*,
-                         bool);
+typedef void (*Callback)(const FormFieldData&,
+                         bool, /* is_initiating_element */
+                         WebKit::WebFormControlElement*);
 
 // For each autofillable field in |data| that matches a field in the |form|,
 // the |callback| is invoked with the corresponding |form| field data.
 void ForEachMatchingFormField(const WebFormElement& form_element,
                               const WebElement& initiating_element,
                               const FormData& data,
+                              bool only_focusable_elements,
                               Callback callback) {
   std::vector<WebFormControlElement> control_elements;
   ExtractAutofillableElements(form_element, autofill::REQUIRE_AUTOCOMPLETE,
@@ -468,20 +467,20 @@ void ForEachMatchingFormField(const WebFormElement& form_element,
     }
 
     if (!element->isEnabled() || element->isReadOnly() ||
-        !element->isFocusable())
+        (only_focusable_elements && !element->isFocusable()))
       continue;
 
-    callback(element, &data.fields[i], is_initiating_element);
+    callback(data.fields[i], is_initiating_element, element);
   }
 }
 
 // Sets the |field|'s value to the value in |data|.
 // Also sets the "autofilled" attribute, causing the background to be yellow.
-void FillFormField(WebKit::WebFormControlElement* field,
-                   const webkit::forms::FormField* data,
-                   bool is_initiating_node) {
+void FillFormField(const FormFieldData& data,
+                   bool is_initiating_node,
+                   WebKit::WebFormControlElement* field) {
   // Nothing to fill.
-  if (data->value.empty())
+  if (data.value.empty())
     return;
 
   WebInputElement* input_element = toWebInputElement(field);
@@ -489,17 +488,19 @@ void FillFormField(WebKit::WebFormControlElement* field,
     // If the maxlength attribute contains a negative value, maxLength()
     // returns the default maxlength value.
     input_element->setValue(
-        data->value.substr(0, input_element->maxLength()), true);
+        data.value.substr(0, input_element->maxLength()), true);
     input_element->setAutofilled(true);
     if (is_initiating_node) {
       int length = input_element->value().length();
       input_element->setSelectionRange(length, length);
+      // Clear the current IME composition (the underline), if there is one.
+      input_element->document().frame()->unmarkText();
     }
   } else {
     DCHECK(IsSelectElement(*field));
     WebSelectElement select_element = field->to<WebSelectElement>();
-    if (select_element.value() != data->value) {
-      select_element.setValue(data->value);
+    if (select_element.value() != data.value) {
+      select_element.setValue(data.value);
       select_element.dispatchFormControlChangeEvent();
     }
   }
@@ -507,11 +508,11 @@ void FillFormField(WebKit::WebFormControlElement* field,
 
 // Sets the |field|'s "suggested" (non JS visible) value to the value in |data|.
 // Also sets the "autofilled" attribute, causing the background to be yellow.
-void PreviewFormField(WebKit::WebFormControlElement* field,
-                      const webkit::forms::FormField* data,
-                      bool is_initiating_node) {
+void PreviewFormField(const FormFieldData& data,
+                      bool is_initiating_node,
+                      WebKit::WebFormControlElement* field) {
   // Nothing to preview.
-  if (data->value.empty())
+  if (data.value.empty())
     return;
 
   // Only preview input fields.
@@ -522,7 +523,7 @@ void PreviewFormField(WebKit::WebFormControlElement* field,
   // If the maxlength attribute contains a negative value, maxLength()
   // returns the default maxlength value.
   input_element->setSuggestedValue(
-      data->value.substr(0, input_element->maxLength()));
+      data.value.substr(0, input_element->maxLength()));
   input_element->setAutofilled(true);
   if (is_initiating_node) {
     // Select the part of the text that the user didn't type.
@@ -587,7 +588,7 @@ void ExtractAutofillableElements(
 
 void WebFormControlElementToFormField(const WebFormControlElement& element,
                                       ExtractMask extract_mask,
-                                      FormField* field) {
+                                      FormFieldData* field) {
   DCHECK(field);
   DCHECK(!element.isNull());
 
@@ -595,14 +596,14 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
   // labels for all form control elements are scraped from the DOM and set in
   // WebFormElementToFormData.
   field->name = element.nameForAutofill();
-  field->form_control_type = element.formControlType();
-  field->autocomplete_type = element.getAttribute("x-autocompletetype");
-  TrimWhitespace(field->autocomplete_type, TRIM_ALL, &field->autocomplete_type);
-  if (field->autocomplete_type.size() > kMaxDataLength) {
+  field->form_control_type = UTF16ToUTF8(element.formControlType());
+  field->autocomplete_attribute =
+      UTF16ToUTF8(element.getAttribute("autocomplete"));
+  if (field->autocomplete_attribute.size() > kMaxDataLength) {
     // Discard overly long attribute values to avoid DOS-ing the browser
     // process.  However, send over a default string to indicate that the
     // attribute was present.
-    field->autocomplete_type = ASCIIToUTF16("x-max-data-length-exceeded");
+    field->autocomplete_attribute = "x-max-data-length-exceeded";
   }
 
   if (!IsAutofillableElement(element))
@@ -663,8 +664,8 @@ bool WebFormElementToFormData(
     const WebKit::WebFormControlElement& form_control_element,
     RequirementsMask requirements,
     ExtractMask extract_mask,
-    webkit::forms::FormData* form,
-    webkit::forms::FormField* field) {
+    FormData* form,
+    FormFieldData* field) {
   const WebFrame* frame = form_element.document().frame();
   if (!frame)
     return false;
@@ -683,12 +684,12 @@ bool WebFormElementToFormData(
   if (!form->action.is_valid())
     form->action = GURL(form_element.action());
 
-  // A map from a FormField's name to the FormField itself.
-  std::map<string16, FormField*> name_map;
+  // A map from a FormFieldData's name to the FormFieldData itself.
+  std::map<string16, FormFieldData*> name_map;
 
   // The extracted FormFields.  We use pointers so we can store them in
   // |name_map|.
-  ScopedVector<FormField> form_fields;
+  ScopedVector<FormFieldData> form_fields;
 
   WebVector<WebFormControlElement> control_elements;
   form_element.getFormControlElements(control_elements);
@@ -708,8 +709,8 @@ bool WebFormElementToFormData(
         !input_element->autoComplete())
       continue;
 
-    // Create a new FormField, fill it out and map it to the field's name.
-    FormField* form_field = new FormField;
+    // Create a new FormFieldData, fill it out and map it to the field's name.
+    FormFieldData* form_field = new FormFieldData;
     WebFormControlElementToFormField(control_element, extract_mask, form_field);
     form_fields.push_back(form_field);
     // TODO(jhawkins): A label element is mapped to a form control element's id.
@@ -726,8 +727,8 @@ bool WebFormElementToFormData(
 
   // Loop through the label elements inside the form element.  For each label
   // element, get the corresponding form control element, use the form control
-  // element's name as a key into the <name, FormField> map to find the
-  // previously created FormField and set the FormField's label to the
+  // element's name as a key into the <name, FormFieldData> map to find the
+  // previously created FormFieldData and set the FormFieldData's label to the
   // label.firstChild().nodeValue() of the label element.
   WebNodeList labels = form_element.getElementsByTagName("label");
   for (unsigned i = 0; i < labels.length(); ++i) {
@@ -748,7 +749,8 @@ bool WebFormElementToFormData(
       element_name = field_element.nameForAutofill();
     }
 
-    std::map<string16, FormField*>::iterator iter = name_map.find(element_name);
+    std::map<string16, FormFieldData*>::iterator iter =
+        name_map.find(element_name);
     if (iter != name_map.end()) {
       string16 label_text = FindChildText(label);
 
@@ -782,7 +784,7 @@ bool WebFormElementToFormData(
   }
 
   // Copy the created FormFields into the resulting FormData object.
-  for (ScopedVector<FormField>::const_iterator iter = form_fields.begin();
+  for (ScopedVector<FormFieldData>::const_iterator iter = form_fields.begin();
        iter != form_fields.end(); ++iter) {
     form->fields.push_back(**iter);
   }
@@ -792,7 +794,7 @@ bool WebFormElementToFormData(
 
 bool FindFormAndFieldForInputElement(const WebInputElement& element,
                                      FormData* form,
-                                     webkit::forms::FormField* field,
+                                     FormFieldData* field,
                                      RequirementsMask requirements) {
   if (!IsAutofillableElement(element))
     return false;
@@ -819,6 +821,19 @@ void FillForm(const FormData& form, const WebInputElement& element) {
   ForEachMatchingFormField(form_element,
                            element,
                            form,
+                           true, /* only_focusable_elements */
+                           &FillFormField);
+}
+
+void FillFormIncludingNonFocusableElements(const FormData& form_data,
+                                     const WebFormElement& form_element) {
+  if (form_element.isNull())
+    return;
+
+  ForEachMatchingFormField(form_element,
+                           WebInputElement(),
+                           form_data,
+                           false, /* only_focusable_elements */
                            &FillFormField);
 }
 
@@ -830,6 +845,7 @@ void PreviewForm(const FormData& form, const WebInputElement& element) {
   ForEachMatchingFormField(form_element,
                            element,
                            form,
+                           true, /* only_focusable_elements */
                            &PreviewFormField);
 }
 

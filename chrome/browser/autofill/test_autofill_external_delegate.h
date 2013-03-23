@@ -8,14 +8,20 @@
 #include "chrome/browser/autofill/autofill_external_delegate.h"
 
 class AutofillManager;
-class TabContents;
+
+namespace autofill {
+
+// Calls the required functions on the given external delegate to cause the
+// delegate to display a popup.
+void GenerateTestAutofillPopup(
+    AutofillExternalDelegate* autofill_external_delegate);
 
 // This test class is meant to give tests a base AutofillExternalDelegate
 // class that requires no additional work to compile with (i.e. all the
 // pure virtual functions have been giving empty methods).
 class TestAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
-  TestAutofillExternalDelegate(TabContents* tab_contents,
+  TestAutofillExternalDelegate(content::WebContents* web_contents,
                                AutofillManager* autofill_manager);
   virtual ~TestAutofillExternalDelegate();
 
@@ -25,18 +31,16 @@ class TestAutofillExternalDelegate : public AutofillExternalDelegate {
       const std::vector<string16>& autofill_icons,
       const std::vector<int>& autofill_unique_ids) OVERRIDE;
 
-  virtual void OnQueryPlatformSpecific(int query_id,
-                                       const webkit::forms::FormData& form,
-                                       const webkit::forms::FormField& field,
-                                       const gfx::Rect& bounds) OVERRIDE;
+  virtual void HideAutofillPopup() OVERRIDE;
 
+  virtual void EnsurePopupForElement(const gfx::Rect& element_bounds) OVERRIDE;
 
-  virtual void HideAutofillPopupInternal() OVERRIDE;
-
-  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
+  virtual void ControllerDestroyed() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestAutofillExternalDelegate);
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_AUTOFILL_TEST_AUTOFILL_EXTERNAL_DELEGATE_H_

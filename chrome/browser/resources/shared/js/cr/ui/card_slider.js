@@ -185,9 +185,30 @@ cr.define('cr.ui', function() {
       this.cards_ = cards;
 
       this.updateCardWidths_();
+      this.updateSelectedCardAttributes_();
 
       // Jump to the given card index.
-      this.selectCard(index);
+      this.selectCard(index, false, false, true);
+    },
+
+    /**
+     * Ensures that for all cards:
+     * - if the card is the current card, then it has 'selected-card' in its
+     *   classList, and is visible for accessibility
+     * - if the card is not the selected card, then it does not have
+     *   'selected-card' in its classList, and is invisible for accessibility.
+     * @private
+     */
+    updateSelectedCardAttributes_: function() {
+      for (var i = 0; i < this.cards_.length; i++) {
+        if (i == this.currentCard_) {
+          this.cards_[i].classList.add('selected-card');
+          this.cards_[i].removeAttribute('aria-hidden');
+        } else {
+          this.cards_[i].classList.remove('selected-card');
+          this.cards_[i].setAttribute('aria-hidden', true);
+        }
+      }
     },
 
     /**
@@ -350,6 +371,8 @@ cr.define('cr.ui', function() {
       this.cards_ = Array.prototype.concat.call(
           this.cards_.slice(0, index), card, this.cards_.slice(index));
 
+      this.updateSelectedCardAttributes_();
+
       if (this.currentCard_ == -1)
         this.currentCard_ = 0;
       else if (index <= this.currentCard_)
@@ -382,6 +405,16 @@ cr.define('cr.ui', function() {
       e.addedIndex = index;
       e.addedCard = card;
       this.container_.dispatchEvent(e);
+    },
+
+    /**
+     * Returns the card at a particular index.
+     * @param {number} index The index of the card to return.
+     * @return {!Element} The card at the given index.
+     */
+    getCardAtIndex: function(index) {
+      this.assertValidIndex_(index);
+      return this.cards_[index];
     },
 
     /**
@@ -471,10 +504,8 @@ cr.define('cr.ui', function() {
         isChangingCard = true;
 
       if (isChangingCard) {
-        if (previousCard)
-          previousCard.classList.remove('selected-card');
         this.currentCard_ = newCardIndex;
-        this.currentCardValue.classList.add('selected-card');
+        this.updateSelectedCardAttributes_();
       }
 
       var willTransitionHappen = this.transformToCurrentCard_(opt_animate);

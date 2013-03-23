@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/common/favicon_url.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/ref_counted_util.h"
+#include "content/public/common/favicon_url.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
@@ -91,35 +91,28 @@ class FaviconHandler {
   // Initiates loading the favicon for the specified url.
   void FetchFavicon(const GURL& url);
 
-  // Initiates loading an image from given |image_url|. Returns a download id
-  // for caller to track the request. When download completes, |callback| is
-  // called with the three params: the download_id, a boolean flag to indicate
-  // whether the download succeeds and a SkBitmap as the downloaded image.
-  // Note that |image_size| is a hint for images with multiple sizes. The
-  // downloaded image is not resized to the given image_size. If 0 is passed,
-  // the first frame of the image is returned.
-  int DownloadImage(const GURL& image_url,
-                    int image_size,
-                    history::IconType icon_type,
-                    const FaviconTabHelper::ImageDownloadCallback& callback);
-
   // Message Handler.  Must be public, because also called from
   // PrerenderContents. Collects the |image_urls| list.
   void OnUpdateFaviconURL(int32 page_id,
-                          const std::vector<FaviconURL>& candidates);
+                          const std::vector<content::FaviconURL>& candidates);
 
   // Processes the current image_irls_ entry, requesting the image from the
   // history / download service.
   void ProcessCurrentUrl();
 
+  // Message handler for IconHostMsg_DidDownloadFavicon. Called when the icon
+  // at |image_url| has been downloaded.
+  // |bitmaps| is a list of all the frames of the icon at |image_url|.
   void OnDidDownloadFavicon(int id,
                             const GURL& image_url,
                             bool errored,
-                            const gfx::Image& image,
-                            float score);
+                            int requested_size,
+                            const std::vector<SkBitmap>& bitmaps);
 
   // For testing.
-  const std::deque<FaviconURL>& image_urls() const { return image_urls_; }
+  const std::deque<content::FaviconURL>& image_urls() const {
+    return image_urls_;
+  }
 
  protected:
   // These virtual methods make FaviconHandler testable and are overridden by
@@ -137,25 +130,26 @@ class FaviconHandler {
       const GURL& page_url,
       const GURL& icon_url,
       history::IconType icon_type,
-      CancelableRequestConsumerBase* consumer,
-      const FaviconService::FaviconDataCallback& callback);
+      const FaviconService::FaviconResultsCallback& callback,
+      CancelableTaskTracker* tracker);
 
   virtual void GetFavicon(
       const GURL& icon_url,
       history::IconType icon_type,
-      CancelableRequestConsumerBase* consumer,
-      const FaviconService::FaviconDataCallback& callback);
+      const FaviconService::FaviconResultsCallback& callback,
+      CancelableTaskTracker* tracker);
 
   virtual void GetFaviconForURL(
       const GURL& page_url,
       int icon_types,
-      CancelableRequestConsumerBase* consumer,
-      const FaviconService::FaviconDataCallback& callback);
+      const FaviconService::FaviconResultsCallback& callback,
+      CancelableTaskTracker* tracker);
 
-  virtual void SetHistoryFavicon(const GURL& page_url,
-                                 const GURL& icon_url,
-                                 const std::vector<unsigned char>& image_data,
-                                 history::IconType icon_type);
+  virtual void SetHistoryFavicons(
+      const GURL& page_url,
+      const GURL& icon_url,
+      history::IconType icon_type,
+      const gfx::Image& image);
 
   virtual FaviconService* GetFaviconService();
 
@@ -171,12 +165,10 @@ class FaviconHandler {
 
     DownloadRequest(const GURL& url,
                     const GURL& image_url,
-                    const FaviconTabHelper::ImageDownloadCallback& callback,
                     history::IconType icon_type);
 
     GURL url;
     GURL image_url;
-    FaviconTabHelper::ImageDownloadCallback callback;
     history::IconType icon_type;
   };
 
@@ -198,8 +190,9 @@ class FaviconHandler {
   };
 
   // See description above class for details.
-  void OnFaviconDataForInitialURL(FaviconService::Handle handle,
-                                  history::FaviconData favicon);
+  void OnFaviconDataForInitialURL(
+      const std::vector<history::FaviconBitmapResult>& favicon_bitmap_results,
+      const history::IconURLSizesMap& icon_url_sizes);
 
   // If the favicon has expired, asks the renderer to download the favicon.
   // Otherwise asks history to update the mapping between page url and icon
@@ -209,16 +202,16 @@ class FaviconHandler {
                                    history::IconType icon_type);
 
   // See description above class for details.
-  void OnFaviconData(FaviconService::Handle handle,
-                     history::FaviconData favicon);
+  void OnFaviconData(
+      const std::vector<history::FaviconBitmapResult>& favicon_bitmap_results,
+      const history::IconURLSizesMap& icon_url_sizes);
 
   // Schedules a download for the specified entry. This adds the request to
   // download_requests_.
   int ScheduleDownload(const GURL& url,
                        const GURL& image_url,
                        int image_size,
-                       history::IconType icon_type,
-                       const FaviconTabHelper::ImageDownloadCallback& callback);
+                       history::IconType icon_type);
 
   // Updates |favicon_candidate_| and returns true if it is an exact match.
   bool UpdateFaviconCandidate(const GURL& url,
@@ -238,18 +231,13 @@ class FaviconHandler {
   // If the WebContents has a delegate, it is notified of the new favicon
   // (INVALIDATE_FAVICON).
   void UpdateFavicon(content::NavigationEntry* entry,
-                     scoped_refptr<base::RefCountedMemory> data);
+      const std::vector<history::FaviconBitmapResult>& favicon_bitmap_results);
   void UpdateFavicon(content::NavigationEntry* entry, const gfx::Image* image);
-
-  // If the image is not already at its preferred size, scales the image such
-  // that either the width and/or height == gfx::kFaviconSize. Does nothing if
-  // the image is empty.
-  gfx::Image ResizeFaviconIfNeeded(const gfx::Image& image);
 
   void FetchFaviconInternal();
 
   // Return the current candidate if any.
-  FaviconURL* current_candidate() {
+  content::FaviconURL* current_candidate() {
     return (image_urls_.size() > 0) ? &image_urls_[0] : NULL;
   }
 
@@ -259,21 +247,20 @@ class FaviconHandler {
     return icon_types_ == history::FAVICON ? gfx::kFaviconSize : 0;
   }
 
-  // Used for history requests.
-  CancelableRequestConsumer cancelable_consumer_;
+  // Used for FaviconService requests.
+  CancelableTaskTracker cancelable_task_tracker_;
 
   // URL of the page we're requesting the favicon for.
   GURL url_;
 
   // Whether we got the initial response for the favicon back from the renderer.
-  // See "Favicon Details" in tab_contents.cc for more details.
   bool got_favicon_from_history_;
 
-  // Whether the favicon is out of date. If true, it means history knows about
-  // the favicon, but we need to download the favicon because the icon has
-  // expired.
-  // See "Favicon Details" in tab_contents.cc for more details.
-  bool favicon_expired_;
+  // Whether the favicon is out of date or the favicon data in
+  // |history_results_| is known to be incomplete. If true, it means history
+  // knows about the favicon, but we need to download the favicon because the
+  // icon has expired or the data in the database is incomplete.
+  bool favicon_expired_or_incomplete_;
 
   // Requests to the renderer to download favicons.
   typedef std::map<int, DownloadRequest> DownloadRequests;
@@ -283,10 +270,10 @@ class FaviconHandler {
   const int icon_types_;
 
   // The prioritized favicon candidates from the page back from the renderer.
-  std::deque<FaviconURL> image_urls_;
+  std::deque<content::FaviconURL> image_urls_;
 
-  // The FaviconData from history.
-  history::FaviconData history_icon_;
+  // The FaviconBitmapResults from history.
+  std::vector<history::FaviconBitmapResult> history_results_;
 
   // The Profile associated with this handler.
   Profile* profile_;

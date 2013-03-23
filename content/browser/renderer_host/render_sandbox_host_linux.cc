@@ -17,11 +17,11 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/linux_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/pickle.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket.h"
 #include "base/process_util.h"
 #include "base/shared_memory.h"
@@ -36,10 +36,11 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebFontInfo.h"
 #include "ui/gfx/font_render_params_linux.h"
 
-using content::LinuxSandbox;
 using WebKit::WebCString;
 using WebKit::WebFontInfo;
 using WebKit::WebUChar;
+
+namespace content {
 
 // http://code.google.com/p/chromium/wiki/LinuxSandboxIPC
 
@@ -76,7 +77,7 @@ class SandboxIPCProcess  {
         // positioning, so just pass false here to avoid the issue.
         false
 #else
-        gfx::GetDefaultFontRenderParams().subpixel_positioning
+        gfx::GetDefaultWebKitFontRenderParams().subpixel_positioning
 #endif
         );
   }
@@ -390,8 +391,10 @@ class SandboxIPCProcess  {
                                      PickleIterator iter,
                                      std::vector<int>& fds) {
     base::SharedMemoryCreateOptions options;
-    if (!pickle.ReadUInt32(&iter, &options.size))
+    uint32_t size;
+    if (!pickle.ReadUInt32(&iter, &size))
       return;
+    options.size = size;
     if (!pickle.ReadBool(&iter, &options.executable))
       return;
     int shm_fd = -1;
@@ -668,7 +671,7 @@ class SandboxIPCProcess  {
   const int browser_socket_;
   scoped_ptr<FontConfigDirect> font_config_;
   std::vector<std::string> sandbox_cmd_;
-  scoped_ptr<content::WebKitPlatformSupportImpl> webkit_platform_support_;
+  scoped_ptr<WebKitPlatformSupportImpl> webkit_platform_support_;
 };
 
 SandboxIPCProcess::~SandboxIPCProcess() {
@@ -679,7 +682,7 @@ SandboxIPCProcess::~SandboxIPCProcess() {
 void SandboxIPCProcess::EnsureWebKitInitialized() {
   if (webkit_platform_support_.get())
     return;
-  webkit_platform_support_.reset(new content::WebKitPlatformSupportImpl);
+  webkit_platform_support_.reset(new WebKitPlatformSupportImpl);
   WebKit::initializeWithoutV8(webkit_platform_support_.get());
 }
 
@@ -747,3 +750,5 @@ RenderSandboxHostLinux::~RenderSandboxHostLinux() {
       PLOG(ERROR) << "close";
   }
 }
+
+}  // namespace content

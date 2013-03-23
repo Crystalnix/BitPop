@@ -5,6 +5,7 @@
 #ifndef CHROME_NACL_NACL_IPC_ADAPTER_H_
 #define CHROME_NACL_NACL_IPC_ADAPTER_H_
 
+#include <map>
 #include <queue>
 #include <string>
 
@@ -12,19 +13,20 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/pickle.h"
 #include "base/shared_memory.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
-#include "ipc/ipc_channel.h"
-#include "ipc/ipc_message.h"
+#include "ipc/ipc_listener.h"
 
 struct NaClDesc;
 struct NaClImcTypedMsgHdr;
 struct PP_Size;
 
 namespace IPC {
-class Message;
+class Channel;
+struct ChannelHandle;
 }
 
 namespace nacl {
@@ -71,11 +73,20 @@ class NaClIPCAdapter : public base::RefCountedThreadSafe<NaClIPCAdapter>,
   // Creates an adapter, using the thread associated with the given task
   // runner for posting messages. In normal use, the task runner will post to
   // the I/O thread of the process.
+  //
+  // If you use this constructor, you MUST call ConnectChannel after the
+  // NaClIPCAdapter is constructed, or the NaClIPCAdapter's channel will not be
+  // connected.
   NaClIPCAdapter(const IPC::ChannelHandle& handle, base::TaskRunner* runner);
 
   // Initializes with a given channel that's already created for testing
   // purposes. This function will take ownership of the given channel.
   NaClIPCAdapter(scoped_ptr<IPC::Channel> channel, base::TaskRunner* runner);
+
+  // Connect the channel. This must be called after the constructor that accepts
+  // an IPC::ChannelHandle, and causes the Channel to be connected on the IO
+  // thread.
+  void ConnectChannel();
 
   // Implementation of sendmsg. Returns the number of bytes written or -1 on
   // failure.
@@ -116,6 +127,12 @@ class NaClIPCAdapter : public base::RefCountedThreadSafe<NaClIPCAdapter>,
     // Messages that we have read off of the Chrome IPC channel that are waiting
     // to be received by the plugin.
     std::queue< scoped_refptr<RewrittenMessage> > to_be_received_;
+
+    // When we send a synchronous message (from untrusted to trusted), we store
+    // its type here, so that later we can associate the reply with its type
+    // and potentially translate handles in the message.
+    typedef std::map<int, uint32> PendingSyncMsgMap;
+    PendingSyncMsgMap pending_sync_msgs_;
 
     // Data that we've queued from the plugin to send, but doesn't consist of a
     // full message yet. The calling code can break apart the message into

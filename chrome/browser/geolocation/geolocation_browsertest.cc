@@ -8,17 +8,16 @@
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/geolocation/geolocation_settings_state.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/content_settings_pattern.h"
@@ -290,9 +289,9 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
   }
 
   void SetInfobarResponse(const GURL& requesting_url, bool allowed) {
-    TabContents* tab_contents = chrome::GetActiveTabContents(current_browser_);
+    WebContents* web_contents = chrome::GetActiveWebContents(current_browser_);
     TabSpecificContentSettings* content_settings =
-        tab_contents->content_settings();
+        TabSpecificContentSettings::FromWebContents(web_contents);
     const GeolocationSettingsState& settings_state =
         content_settings->geolocation_settings_state();
     size_t state_map_size = settings_state.state_map().size();
@@ -302,7 +301,7 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
       content::WindowedNotificationObserver observer(
           content::NOTIFICATION_LOAD_STOP,
           content::Source<NavigationController>(
-              &tab_contents->web_contents()->GetController()));
+              &web_contents->GetController()));
       if (allowed)
         infobar_->AsConfirmInfoBarDelegate()->Accept();
       else
@@ -310,7 +309,7 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
       observer.Wait();
     }
 
-    tab_contents->infobar_tab_helper()->RemoveInfoBar(infobar_);
+    InfoBarTabHelper::FromWebContents(web_contents)->RemoveInfoBar(infobar_);
     LOG(WARNING) << "infobar response set";
     infobar_ = NULL;
     EXPECT_GT(settings_state.state_map().size(), state_map_size);
@@ -377,9 +376,8 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, Geoposition) {
   CheckGeoposition(fake_latitude_, fake_longitude_);
 }
 
-// Crashy, http://crbug.com/70585.
 IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
-                       DISABLED_ErrorOnPermissionDenied) {
+                       ErrorOnPermissionDenied) {
   ASSERT_TRUE(Initialize(INITIALIZATION_NONE));
   AddGeolocationWatch(true);
   // Infobar was displayed, deny access and check for error code.
@@ -429,13 +427,7 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, MAYBE_NoInfobarForDeniedOrigin) {
   CheckStringValueFromJavascript("1", "geoGetLastError()");
 }
 
-// http://crbug.com/100763. Crashes occasionally on XP.
-#if defined(OS_WIN)
-#define MAYBE_NoInfobarForAllowedOrigin DISABLED_NoInfobarForAllowedOrigin
-#else
-#define MAYBE_NoInfobarForAllowedOrigin NoInfobarForAllowedOrigin
-#endif
-IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, MAYBE_NoInfobarForAllowedOrigin) {
+IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, NoInfobarForAllowedOrigin) {
   ASSERT_TRUE(Initialize(INITIALIZATION_NONE));
   current_browser_->profile()->GetHostContentSettingsMap()->
       SetContentSetting(ContentSettingsPattern::FromURLNoWildcard(current_url_),
@@ -463,9 +455,8 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, NoInfobarForOffTheRecord) {
   CheckGeoposition(fake_latitude_, fake_longitude_);
 }
 
-// Test fails: http://crbug.com/90927
 IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
-                       DISABLED_IFramesWithFreshPosition) {
+                       IFramesWithFreshPosition) {
   html_for_tests_ = "files/geolocation/iframes_different_origin.html";
   ASSERT_TRUE(Initialize(INITIALIZATION_IFRAMES));
   LoadIFrames(2);
@@ -508,9 +499,8 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
   LOG(WARNING) << "...done.";
 }
 
-// Test fails: http://crbug.com/90927
 IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
-                       DISABLED_IFramesWithCachedPosition) {
+                       IFramesWithCachedPosition) {
   html_for_tests_ = "files/geolocation/iframes_different_origin.html";
   ASSERT_TRUE(Initialize(INITIALIZATION_IFRAMES));
   LoadIFrames(2);
@@ -546,9 +536,7 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
   CheckGeoposition(cached_position_latitude, cached_position_lognitude);
 }
 
-// See http://crbug.com/56033
-IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
-                       DISABLED_CancelPermissionForFrame) {
+IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, CancelPermissionForFrame) {
   html_for_tests_ = "files/geolocation/iframes_different_origin.html";
   ASSERT_TRUE(Initialize(INITIALIZATION_IFRAMES));
   LoadIFrames(2);
@@ -566,17 +554,16 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
   iframe_xpath_ = L"//iframe[@id='iframe_1']";
   AddGeolocationWatch(true);
 
-  InfoBarTabHelper* infobar_helper =
-      chrome::GetActiveTabContents(current_browser_)->infobar_tab_helper();
-  size_t num_infobars_before_cancel = infobar_helper->infobar_count();
+  InfoBarTabHelper* infobar_helper = InfoBarTabHelper::FromWebContents(
+      chrome::GetActiveWebContents(current_browser_));
+  size_t num_infobars_before_cancel = infobar_helper->GetInfoBarCount();
   // Change the iframe, and ensure the infobar is gone.
   IFrameLoader change_iframe_1(current_browser_, 1, current_url_);
-  size_t num_infobars_after_cancel = infobar_helper->infobar_count();
+  size_t num_infobars_after_cancel = infobar_helper->GetInfoBarCount();
   EXPECT_EQ(num_infobars_before_cancel, num_infobars_after_cancel + 1);
 }
 
-// Disabled, http://crbug.com/66959.
-IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, DISABLED_InvalidUrlRequest) {
+IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, InvalidUrlRequest) {
   // Tests that an invalid URL (e.g. from a popup window) is rejected
   // correctly. Also acts as a regression test for http://crbug.com/40478
   html_for_tests_ = "files/geolocation/invalid_request_url.html";

@@ -25,6 +25,7 @@
 #include "third_party/openmax/il/OMX_Core.h"
 #include "third_party/openmax/il/OMX_Video.h"
 
+namespace content {
 class Gles2TextureToEglImageTranslator;
 
 // Class to wrap OpenMAX IL accelerator behind VideoDecodeAccelerator interface.
@@ -38,8 +39,10 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
     public media::VideoDecodeAccelerator {
  public:
   // Does not take ownership of |client| which must outlive |*this|.
-  OmxVideoDecodeAccelerator(EGLDisplay egl_display, EGLContext egl_context,
-                            media::VideoDecodeAccelerator::Client* client);
+  OmxVideoDecodeAccelerator(
+      EGLDisplay egl_display, EGLContext egl_context,
+      media::VideoDecodeAccelerator::Client* client,
+      const base::Callback<bool(void)>& make_context_current);
   virtual ~OmxVideoDecodeAccelerator();
 
   // media::VideoDecodeAccelerator implementation.
@@ -101,8 +104,7 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
   bool AllocateInputBuffers();
   bool AllocateFakeOutputBuffers();
   bool AllocateOutputBuffers();
-  void FreeInputBuffers();
-  void FreeOutputBuffers();
+  void FreeOMXBuffers();
 
   // Methods to handle OMX state transitions.  See section 3.1.1.2 of the spec.
   // Request transitioning OMX component to some other state.
@@ -181,6 +183,7 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
   // TODO(fischman,vrk): handle lost contexts?
   EGLDisplay egl_display_;
   EGLContext egl_context_;
+  base::Callback<bool(void)> make_context_current_;
 
   // Free input OpenMAX buffers that can be used to take bitstream from demuxer.
   std::queue<OMX_BUFFERHEADERTYPE*> free_input_buffers_;
@@ -212,7 +215,7 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
   // These members are only used during Initialization.
   Codec codec_;
   uint32 h264_profile_;  // OMX_AVCProfile requested during Initialization.
-  bool component_name_is_nvidia_h264ext_;
+  bool component_name_is_nvidia_;
 
   // Has static initialization of pre-sandbox components completed successfully?
   static bool pre_sandbox_init_done_;
@@ -246,6 +249,30 @@ class CONTENT_EXPORT OmxVideoDecodeAccelerator :
   static OMX_ERRORTYPE FillBufferCallback(OMX_HANDLETYPE component,
                                           OMX_PTR priv_data,
                                           OMX_BUFFERHEADERTYPE* buffer);
+
+  // When we get a texture back via ReusePictureBuffer(), we want to ensure
+  // that its contents have been read out by rendering layer, before we start
+  // overwriting it with the decoder. This class is used to wait for a sync
+  // object inserted into the GPU command stream at the time of
+  // ReusePictureBuffer. This guarantees that the object gets into the stream
+  // after the corresponding texture commands have been inserted into it. Once
+  // the sync object is signalled, we are sure that the stream reached the sync
+  // object, which ensures that all commands related to the texture we are
+  // getting back have been finished as well.
+  class PictureSyncObject;
+
+  // Check if the client is done reading out from the texture. If yes, queue
+  // it for reuse by the decoder. Otherwise post self as a delayed task
+  // to check later.
+  void CheckPictureStatus(int32 picture_buffer_id,
+                          scoped_ptr<PictureSyncObject> egl_sync_obj);
+
+  // Queue a picture for use by the decoder, either by sending it directly to it
+  // via OMX_FillThisBuffer, or by queueing it for later if we are RESETTING.
+  void QueuePictureBuffer(int32 picture_buffer_id);
+
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_OMX_VIDEO_DECODE_ACCELERATOR_H_

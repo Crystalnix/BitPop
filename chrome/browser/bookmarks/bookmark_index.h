@@ -13,12 +13,15 @@
 #include "base/string16.h"
 
 class BookmarkNode;
-class Profile;
 class QueryNode;
 class QueryParser;
 
 namespace bookmark_utils {
 struct TitleMatch;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace history {
@@ -32,10 +35,9 @@ class URLDatabase;
 // BookmarkIndex maintains the index (index_) as a map of sets. The map (type
 // Index) maps from a lower case string to the set (type NodeSet) of
 // BookmarkNodes that contain that string in their title.
-
 class BookmarkIndex {
  public:
-  explicit BookmarkIndex(Profile* profile);
+  explicit BookmarkIndex(content::BrowserContext* browser_context);
   ~BookmarkIndex();
 
   // Invoked when a bookmark has been added to the model.
@@ -62,8 +64,8 @@ class BookmarkIndex {
   typedef std::pair<const BookmarkNode*, int> NodeTypedCountPair;
   typedef std::vector<NodeTypedCountPair> NodeTypedCountPairs;
 
-  // Extracts |matches.nodes| into NodeTypedCountPairs and sorts the pairs in
-  // decreasing order of typed count.
+  // Extracts |matches.nodes| into NodeTypedCountPairs, sorts the pairs in
+  // decreasing order of typed count, and then de-dupes the matches.
   void SortMatches(const Matches& matches,
                    NodeTypedCountPairs* node_typed_counts) const;
 
@@ -127,7 +129,7 @@ class BookmarkIndex {
 
   Index index_;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkIndex);
 };

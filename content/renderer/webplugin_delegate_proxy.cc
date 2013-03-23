@@ -48,8 +48,8 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/skia_util.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/sad_plugin.h"
@@ -72,6 +72,30 @@ using WebKit::WebDragData;
 using WebKit::WebInputEvent;
 using WebKit::WebString;
 using WebKit::WebView;
+
+namespace content {
+
+namespace {
+
+class ScopedLogLevel {
+ public:
+  explicit ScopedLogLevel(int level);
+  ~ScopedLogLevel();
+
+ private:
+  int old_level_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedLogLevel);
+};
+
+ScopedLogLevel::ScopedLogLevel(int level)
+    : old_level_(logging::GetMinLogLevel()) {
+  logging::SetMinLogLevel(level);
+}
+
+ScopedLogLevel::~ScopedLogLevel() {
+  logging::SetMinLogLevel(old_level_);
+}
 
 // Proxy for WebPluginResourceClient.  The object owns itself after creation,
 // deleting itself after its callback has been called.
@@ -169,6 +193,8 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
   bool multibyte_response_expected_;
 };
 
+}  // namespace
+
 WebPluginDelegateProxy::WebPluginDelegateProxy(
     const std::string& mime_type,
     const base::WeakPtr<RenderViewImpl>& render_view)
@@ -177,6 +203,8 @@ WebPluginDelegateProxy::WebPluginDelegateProxy(
       uses_shared_bitmaps_(false),
 #if defined(OS_MACOSX)
       uses_compositor_(false),
+#elif defined(OS_WIN)
+      dummy_activation_window_(NULL),
 #endif
       window_(gfx::kNullPluginWindow),
       mime_type_(mime_type),
@@ -184,7 +212,6 @@ WebPluginDelegateProxy::WebPluginDelegateProxy(
       npobject_(NULL),
       sad_plugin_(NULL),
       invalidate_pending_(false),
-      transparent_(false),
       front_buffer_index_(0),
       page_url_(render_view_->webview()->mainFrame()->document().url()) {
 }
@@ -203,6 +230,14 @@ void WebPluginDelegateProxy::PluginDestroyed() {
   // Ensure that the renderer doesn't think the plugin still has focus.
   if (render_view_)
     render_view_->PluginFocusChanged(false, instance_id_);
+#endif
+
+#if defined(OS_WIN)
+  if (dummy_activation_window_ && render_view_) {
+    render_view_->Send(new ViewHostMsg_WindowlessPluginDummyWindowDestroyed(
+        render_view_->routing_id(), dummy_activation_window_));
+  }
+  dummy_activation_window_ = NULL;
 #endif
 
   if (window_)
@@ -244,33 +279,6 @@ void WebPluginDelegateProxy::PluginDestroyed() {
   MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-// Returns true if the given Silverlight 'background' value corresponds to
-// one that should make the plugin transparent. See:
-// http://msdn.microsoft.com/en-us/library/cc838148(VS.95).aspx
-// for possible values.
-static bool SilverlightColorIsTransparent(const std::string& color) {
-  if (StartsWithASCII(color, "#", false)) {
-    // If it's #ARGB or #AARRGGBB check the alpha; if not it's an RGB form and
-    // it's not transparent.
-    if ((color.length() == 5 && !StartsWithASCII(color, "#F", false)) ||
-        (color.length() == 9 && !StartsWithASCII(color, "#FF", false)))
-      return true;
-  } else if (StartsWithASCII(color, "sc#", false)) {
-    // It's either sc#A,R,G,B or sc#R,G,B; if the former, check the alpha.
-    if (color.length() < 4)
-      return false;
-    std::string value_string = color.substr(3, std::string::npos);
-    std::vector<std::string> components;
-    base::SplitString(value_string, ',', &components);
-    if (components.size() == 4 && !StartsWithASCII(components[0], "1", false))
-      return true;
-  } else if (LowerCaseEqualsASCII(color, "transparent")) {
-    return true;
-  }
-  // Anything else is a named, opaque color or an RGB form with no alpha.
-  return false;
-}
-
 bool WebPluginDelegateProxy::Initialize(
     const GURL& url,
     const std::vector<std::string>& arg_names,
@@ -291,8 +299,9 @@ bool WebPluginDelegateProxy::Initialize(
 #if defined(OS_MACOSX)
     // TODO(shess): Debugging for http://crbug.com/97285 .  See comment
     // in plugin_channel_host.cc.
-    scoped_ptr<AutoReset<bool> > track_nested_removes(new AutoReset<bool>(
-        PluginChannelHost::GetRemoveTrackingFlag(), true));
+    scoped_ptr<base::AutoReset<bool> > track_nested_removes(
+        new base::AutoReset<bool>(PluginChannelHost::GetRemoveTrackingFlag(),
+                                  true));
 #endif
 
     IPC::ChannelHandle channel_handle;
@@ -329,11 +338,15 @@ bool WebPluginDelegateProxy::Initialize(
     track_nested_removes.reset();
 #endif
 
-    result = channel_host->Send(new PluginMsg_CreateInstance(
-        mime_type_, &instance_id));
-    if (!result) {
-      LOG(ERROR) << "Couldn't send PluginMsg_CreateInstance";
-      continue;
+    {
+      // TODO(bauerb): Debugging for http://crbug.com/141055.
+      ScopedLogLevel log_level(-2);  // Equivalent to --v=2
+      result = channel_host->Send(new PluginMsg_CreateInstance(
+          mime_type_, &instance_id));
+      if (!result) {
+        LOG(ERROR) << "Couldn't send PluginMsg_CreateInstance";
+        continue;
+      }
     }
   }
 
@@ -348,32 +361,17 @@ bool WebPluginDelegateProxy::Initialize(
 
   // Now tell the PluginInstance in the plugin process to initialize.
   PluginMsg_Init_Params params;
-  params.containing_window = render_view_->host_window();
   params.url = url;
   params.page_url = page_url_;
   params.arg_names = arg_names;
   params.arg_values = arg_values;
   params.host_render_view_routing_id = render_view_->routing_id();
-
-  bool flash =
-      LowerCaseEqualsASCII(mime_type_, "application/x-shockwave-flash");
-  bool silverlight =
-      StartsWithASCII(mime_type_, "application/x-silverlight", false);
-  for (size_t i = 0; i < arg_names.size(); ++i) {
-    if ((flash && LowerCaseEqualsASCII(arg_names[i], "wmode") &&
-        LowerCaseEqualsASCII(arg_values[i], "transparent")) ||
-        (silverlight && LowerCaseEqualsASCII(arg_names[i], "background") &&
-         SilverlightColorIsTransparent(arg_values[i]))) {
-      transparent_ = true;
-    }
-  }
   params.load_manually = load_manually;
 
   plugin_ = plugin;
 
   result = false;
-  IPC::Message* msg = new PluginMsg_Init(instance_id_, params, &result);
-  Send(msg);
+  Send(new PluginMsg_Init(instance_id_, params, &result));
 
   if (!result)
     LOG(ERROR) << "PluginMsg_Init returned false";
@@ -432,23 +430,20 @@ void WebPluginDelegateProxy::DidManualLoadFail() {
 }
 
 bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
-  content::GetContentClient()->SetActiveURL(page_url_);
+  GetContentClient()->SetActiveURL(page_url_);
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebPluginDelegateProxy, msg)
     IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindow, OnSetWindow)
 #if defined(OS_WIN)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindowlessPumpEvent,
-                        OnSetWindowlessPumpEvent)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_NotifyIMEStatus,
-                        OnNotifyIMEStatus)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindowlessData, OnSetWindowlessData)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_NotifyIMEStatus, OnNotifyIMEStatus)
 #endif
     IPC_MESSAGE_HANDLER(PluginHostMsg_CancelResource, OnCancelResource)
     IPC_MESSAGE_HANDLER(PluginHostMsg_InvalidateRect, OnInvalidateRect)
     IPC_MESSAGE_HANDLER(PluginHostMsg_GetWindowScriptNPObject,
                         OnGetWindowScriptNPObject)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_GetPluginElement,
-                        OnGetPluginElement)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_GetPluginElement, OnGetPluginElement)
     IPC_MESSAGE_HANDLER(PluginHostMsg_ResolveProxy, OnResolveProxy)
     IPC_MESSAGE_HANDLER(PluginHostMsg_SetCookie, OnSetCookie)
     IPC_MESSAGE_HANDLER(PluginHostMsg_GetCookies, OnGetCookies)
@@ -529,8 +524,8 @@ static void CopyTransportDIBHandleForMessage(
 #elif defined(OS_WIN)
   // On Windows we need to duplicate the handle for the plugin process.
   *handle_out = NULL;
-  content::BrokerDuplicateHandle(handle_in, peer_pid, handle_out,
-                                 FILE_MAP_READ | FILE_MAP_WRITE, 0);
+  BrokerDuplicateHandle(handle_in, peer_pid, handle_out,
+                        FILE_MAP_READ | FILE_MAP_WRITE, 0);
   DCHECK(*handle_out != NULL);
 #else
   // Don't need to do anything special for other platforms.
@@ -546,8 +541,6 @@ void WebPluginDelegateProxy::SendUpdateGeometry(
   param.windowless_buffer0 = TransportDIB::DefaultHandleValue();
   param.windowless_buffer1 = TransportDIB::DefaultHandleValue();
   param.windowless_buffer_index = back_buffer_index();
-  param.background_buffer = TransportDIB::DefaultHandleValue();
-  param.transparent = transparent_;
 
 #if defined(OS_POSIX)
   // If we're using POSIX mmap'd TransportDIBs, sending the handle across
@@ -564,11 +557,6 @@ void WebPluginDelegateProxy::SendUpdateGeometry(
     if (transport_stores_[1].dib.get())
       CopyTransportDIBHandleForMessage(transport_stores_[1].dib->handle(),
                                        &param.windowless_buffer1,
-                                       channel_host_->peer_pid());
-
-    if (background_store_.dib.get())
-      CopyTransportDIBHandleForMessage(background_store_.dib->handle(),
-                                       &param.background_buffer,
                                        channel_host_->peer_pid());
   }
 
@@ -611,14 +599,6 @@ void WebPluginDelegateProxy::UpdateGeometry(const gfx::Rect& window_rect,
     {
       bitmaps_changed = true;
 
-      bool needs_background_store = transparent_;
-#if defined(OS_MACOSX)
-      // We don't support transparency under QuickDraw, and CoreGraphics
-      // preserves transparency information (and does the compositing itself)
-      // so plugins don't need access to the page background.
-      needs_background_store = false;
-#endif
-
       // Create a shared memory section that the plugin paints into
       // asynchronously.
       ResetWindowlessBitmaps();
@@ -626,10 +606,7 @@ void WebPluginDelegateProxy::UpdateGeometry(const gfx::Rect& window_rect,
         if (!CreateSharedBitmap(&transport_stores_[0].dib,
                                 &transport_stores_[0].canvas) ||
             !CreateSharedBitmap(&transport_stores_[1].dib,
-                                &transport_stores_[1].canvas) ||
-            (needs_background_store &&
-             !CreateSharedBitmap(&background_store_.dib,
-                                 &background_store_.canvas))) {
+                                &transport_stores_[1].canvas)) {
           DCHECK(false);
           ResetWindowlessBitmaps();
           return;
@@ -644,18 +621,16 @@ void WebPluginDelegateProxy::UpdateGeometry(const gfx::Rect& window_rect,
 void WebPluginDelegateProxy::ResetWindowlessBitmaps() {
   transport_stores_[0].dib.reset();
   transport_stores_[1].dib.reset();
-  background_store_.dib.reset();
 
   transport_stores_[0].canvas.reset();
   transport_stores_[1].canvas.reset();
-  background_store_.canvas.reset();
   transport_store_painted_ = gfx::Rect();
   front_buffer_diff_ = gfx::Rect();
 }
 
 static size_t BitmapSizeForPluginRect(const gfx::Rect& plugin_rect) {
   const size_t stride =
-      skia::PlatformCanvas::StrideForWidth(plugin_rect.width());
+      skia::PlatformCanvasStrideForWidth(plugin_rect.width());
   return stride * plugin_rect.height();
 }
 
@@ -667,8 +642,9 @@ bool WebPluginDelegateProxy::CreateLocalBitmap(
   memory->resize(size);
   if (memory->size() != size)
     return false;
-  canvas->reset(new skia::PlatformCanvas(
-      plugin_rect_.width(), plugin_rect_.height(), true, &((*memory)[0])));
+  canvas->reset(skia::CreatePlatformCanvas(
+      plugin_rect_.width(), plugin_rect_.height(), true, &((*memory)[0]),
+      skia::CRASH_ON_FAILURE));
   return true;
 }
 #endif
@@ -711,7 +687,7 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
                                    const gfx::Rect& damaged_rect) {
   // Limit the damaged rectangle to whatever is contained inside the plugin
   // rectangle, as that's the rectangle that we'll actually draw.
-  gfx::Rect rect = damaged_rect.Intersect(plugin_rect_);
+  gfx::Rect rect = gfx::IntersectRects(damaged_rect, plugin_rect_);
 
   // If the plugin is no longer connected (channel crashed) draw a crashed
   // plugin bitmap
@@ -728,40 +704,13 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
   if (!front_buffer_canvas())
     return;
 
-  // We're using the native OS APIs from here on out.
-  if (!skia::SupportsPlatformPaint(canvas)) {
-    // TODO(alokp): Implement this path.
-    // This block will only get hit with --enable-accelerated-drawing flag.
-    // With accelerated canvas, we do not have a bitmap that can be provided
-    // to the plugin for compositing. We may have to implement a solution
-    // described in crbug.com/12586.
-    DLOG(WARNING) << "Could not paint plugin";
-    return;
-  }
-  skia::ScopedPlatformPaint scoped_platform_paint(canvas);
-  gfx::NativeDrawingContext context =
-      scoped_platform_paint.GetPlatformSurface();
-
   gfx::Rect offset_rect = rect;
   offset_rect.Offset(-plugin_rect_.x(), -plugin_rect_.y());
-  gfx::Rect canvas_rect = offset_rect;
-#if defined(OS_MACOSX)
-  // The canvases are flipped relative to the context, so flip the rect too.
-  FlipRectVerticallyWithHeight(&canvas_rect, plugin_rect_.height());
-#endif
-
-  bool background_changed = false;
-  if (background_store_.canvas.get() && BackgroundChanged(context, rect)) {
-    background_changed = true;
-    BlitContextToCanvas(background_store_.canvas.get(), canvas_rect,
-                        context, rect.origin());
-  }
 
   // transport_store_painted_ is really a bounding box, so in principle this
   // check could falsely indicate that we don't need to paint offset_rect, but
   // in practice it works fine.
-  if (background_changed ||
-      !transport_store_painted_.Contains(offset_rect)) {
+  if (!transport_store_painted_.Contains(offset_rect)) {
     Send(new PluginMsg_Paint(instance_id_, offset_rect));
     // Since the plugin is not blocked on the renderer in this context, there is
     // a chance that it will begin repainting the back-buffer before we complete
@@ -771,20 +720,15 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
     UpdateFrontBuffer(offset_rect, false);
   }
 
-#if defined(OS_MACOSX)
-  // The canvases are flipped relative to the context, so flip the context's
-  // coordinate space so that the blit unflips the content.
-  CGContextSaveGState(context);
-  CGContextScaleCTM(context, 1, -1);
-  rect.set_y(-rect.bottom());
-#endif
-  BlitCanvasToContext(context,
-                      rect,
-                      front_buffer_canvas(),
-                      offset_rect.origin());
-#if defined(OS_MACOSX)
-  CGContextRestoreGState(context);
-#endif
+  const SkBitmap& bitmap =
+      front_buffer_canvas()->getDevice()->accessBitmap(false);
+  SkPaint paint;
+  paint.setXfermodeMode(SkXfermode::kSrcATop_Mode);
+  SkIRect src_rect = gfx::RectToSkIRect(offset_rect);
+  canvas->drawBitmapRect(bitmap,
+                         &src_rect,
+                         gfx::RectToSkRect(rect),
+                         &paint);
 
   if (invalidate_pending_) {
     // Only send the PaintAck message if this paint is in response to an
@@ -793,157 +737,6 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
     invalidate_pending_ = false;
     Send(new PluginMsg_DidPaint(instance_id_));
   }
-}
-
-bool WebPluginDelegateProxy::BackgroundChanged(
-    gfx::NativeDrawingContext context,
-    const gfx::Rect& rect) {
-#if defined(OS_ANDROID)
-  NOTIMPLEMENTED();
-#else
-#if defined(OS_WIN)
-  HBITMAP hbitmap = static_cast<HBITMAP>(GetCurrentObject(context, OBJ_BITMAP));
-  if (hbitmap == NULL) {
-    NOTREACHED();
-    return true;
-  }
-
-  BITMAP bitmap = { 0 };
-  int result = GetObject(hbitmap, sizeof(bitmap), &bitmap);
-  if (!result) {
-    NOTREACHED();
-    return true;
-  }
-
-  XFORM xf;
-  if (!GetWorldTransform(context, &xf)) {
-    NOTREACHED();
-    return true;
-  }
-
-  // The damaged rect that we're given can be larger than the bitmap, so
-  // intersect their rects first.
-  gfx::Rect bitmap_rect(static_cast<int>(-xf.eDx), static_cast<int>(-xf.eDy),
-                        bitmap.bmWidth, bitmap.bmHeight);
-  gfx::Rect check_rect = rect.Intersect(bitmap_rect);
-  int row_byte_size = check_rect.width() * (bitmap.bmBitsPixel / 8);
-  for (int y = check_rect.y(); y < check_rect.bottom(); y++) {
-    char* hdc_row_start = static_cast<char*>(bitmap.bmBits) +
-        (y + static_cast<int>(xf.eDy)) * bitmap.bmWidthBytes +
-        (check_rect.x() + static_cast<int>(xf.eDx)) * (bitmap.bmBitsPixel / 8);
-
-    // getAddr32 doesn't use the translation units, so we have to subtract
-    // the plugin origin from the coordinates.
-    uint32_t* canvas_row_start =
-        background_store_.canvas->getDevice()->accessBitmap(true).getAddr32(
-            check_rect.x() - plugin_rect_.x(), y - plugin_rect_.y());
-    if (memcmp(hdc_row_start, canvas_row_start, row_byte_size) != 0)
-      return true;
-  }
-#else
-#if defined(OS_MACOSX)
-  // If there is a translation on the content area context, we need to account
-  // for it; the context may be a subset of the full content area with a
-  // transform that makes the coordinates work out.
-  CGAffineTransform transform = CGContextGetCTM(context);
-  bool flipped = fabs(transform.d + 1) < 0.0001;
-  CGFloat context_offset_x = -transform.tx;
-  CGFloat context_offset_y = flipped ? transform.ty -
-                                           CGBitmapContextGetHeight(context)
-                                     : -transform.ty;
-  gfx::Rect full_content_rect(context_offset_x, context_offset_y,
-                              CGBitmapContextGetWidth(context),
-                              CGBitmapContextGetHeight(context));
-#else
-  cairo_surface_t* page_surface = cairo_get_target(context);
-  DCHECK_EQ(cairo_surface_get_type(page_surface), CAIRO_SURFACE_TYPE_IMAGE);
-  DCHECK_EQ(cairo_image_surface_get_format(page_surface), CAIRO_FORMAT_ARGB32);
-
-  // Transform context coordinates into surface coordinates.
-  double page_x_double = 0;
-  double page_y_double = 0;
-  cairo_device_to_user(context, &page_x_double, &page_y_double);
-  gfx::Rect full_content_rect(static_cast<int>(page_x_double),
-                              static_cast<int>(page_y_double),
-                              cairo_image_surface_get_width(page_surface),
-                              cairo_image_surface_get_height(page_surface));
-#endif
-  // According to comments in the Windows code, the damage rect that we're given
-  // may project outside the image, so intersect their rects.
-  gfx::Rect content_rect = rect.Intersect(full_content_rect);
-
-#if defined(OS_MACOSX)
-  const unsigned char* page_bytes = static_cast<const unsigned char*>(
-      CGBitmapContextGetData(context));
-  int page_stride = CGBitmapContextGetBytesPerRow(context);
-  int page_start_x = content_rect.x() - context_offset_x;
-  int page_start_y = content_rect.y() - context_offset_y;
-
-  skia::ScopedPlatformPaint scoped_platform_paint(
-      background_store_.canvas.get());
-  CGContextRef bg_context = scoped_platform_paint.GetPlatformSurface();
-
-  DCHECK_EQ(CGBitmapContextGetBitsPerPixel(context),
-            CGBitmapContextGetBitsPerPixel(bg_context));
-  const unsigned char* bg_bytes = static_cast<const unsigned char*>(
-      CGBitmapContextGetData(bg_context));
-  int full_bg_width = CGBitmapContextGetWidth(bg_context);
-  int full_bg_height = CGBitmapContextGetHeight(bg_context);
-  int bg_stride = CGBitmapContextGetBytesPerRow(bg_context);
-  int bg_last_row = CGBitmapContextGetHeight(bg_context) - 1;
-
-  int bytes_per_pixel = CGBitmapContextGetBitsPerPixel(context) / 8;
-#else
-  cairo_surface_flush(page_surface);
-  const unsigned char* page_bytes = cairo_image_surface_get_data(page_surface);
-  int page_stride = cairo_image_surface_get_stride(page_surface);
-  int page_start_x = content_rect.x() - static_cast<int>(page_x_double);
-  int page_start_y = content_rect.y() - static_cast<int>(page_y_double);
-
-  skia::ScopedPlatformPaint scoped_platform_paint(
-      background_store_.canvas.get());
-  cairo_surface_t* bg_surface =cairo_get_target(
-      scoped_platform_paint.GetPlatformSurface());
-  DCHECK_EQ(cairo_surface_get_type(bg_surface), CAIRO_SURFACE_TYPE_IMAGE);
-  DCHECK_EQ(cairo_image_surface_get_format(bg_surface), CAIRO_FORMAT_ARGB32);
-  cairo_surface_flush(bg_surface);
-  const unsigned char* bg_bytes = cairo_image_surface_get_data(bg_surface);
-  int full_bg_width = cairo_image_surface_get_width(bg_surface);
-  int full_bg_height = cairo_image_surface_get_height(bg_surface);
-  int bg_stride = cairo_image_surface_get_stride(bg_surface);
-
-  int bytes_per_pixel = 4;  // ARGB32 = 4 bytes per pixel.
-#endif
-
-  int damage_width = content_rect.width();
-  int damage_height = content_rect.height();
-
-  int bg_start_x = rect.x() - plugin_rect_.x();
-  int bg_start_y = rect.y() - plugin_rect_.y();
-  // The damage rect is supposed to have been intersected with the plugin rect;
-  // double-check, since if it hasn't we'll walk off the end of the buffer.
-  DCHECK_LE(bg_start_x + damage_width, full_bg_width);
-  DCHECK_LE(bg_start_y + damage_height, full_bg_height);
-
-  int bg_x_byte_offset = bg_start_x * bytes_per_pixel;
-  int page_x_byte_offset = page_start_x * bytes_per_pixel;
-  for (int row = 0; row < damage_height; ++row) {
-    int page_offset = page_stride * (page_start_y + row) + page_x_byte_offset;
-    int bg_y = bg_start_y + row;
-#if defined(OS_MACOSX)
-    // The background buffer is upside down relative to the content.
-    bg_y = bg_last_row - bg_y;
-#endif
-    int bg_offset = bg_stride * bg_y + bg_x_byte_offset;
-    if (memcmp(page_bytes + page_offset,
-               bg_bytes + bg_offset,
-               damage_width * bytes_per_pixel) != 0)
-      return true;
-  }
-#endif
-#endif  // OS_ANDROID
-
-  return false;
 }
 
 NPObject* WebPluginDelegateProxy::GetPluginScriptableObject() {
@@ -1117,9 +910,15 @@ void WebPluginDelegateProxy::WillDestroyWindow() {
 }
 
 #if defined(OS_WIN)
-void WebPluginDelegateProxy::OnSetWindowlessPumpEvent(
-      HANDLE modal_loop_pump_messages_event) {
+void WebPluginDelegateProxy::OnSetWindowlessData(
+      HANDLE modal_loop_pump_messages_event,
+      gfx::NativeViewId dummy_activation_window) {
   DCHECK(modal_loop_pump_messages_event_ == NULL);
+  DCHECK(dummy_activation_window_ == NULL);
+
+  dummy_activation_window_ = dummy_activation_window;
+  render_view_->Send(new ViewHostMsg_WindowlessPluginDummyWindowCreated(
+      render_view_->routing_id(), dummy_activation_window_));
 
   // Bug 25583: this can be null because some "virus scanners" block the
   // DuplicateHandle call in the plugin process.
@@ -1135,13 +934,17 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   if (!render_view_)
     return;
 
+  ViewHostMsg_TextInputState_Params params;
+  params.type = static_cast<ui::TextInputType>(input_type);
+  params.can_compose_inline = true;
   render_view_->Send(new ViewHostMsg_TextInputStateChanged(
       render_view_->routing_id(),
-      static_cast<ui::TextInputType>(input_type),
-      true));
+      params));
 
   render_view_->Send(new ViewHostMsg_SelectionBoundsChanged(
-      render_view_->routing_id(), caret_rect, caret_rect));
+      render_view_->routing_id(),
+      caret_rect, WebKit::WebTextDirectionLeftToRight,
+      caret_rect, WebKit::WebTextDirectionLeftToRight));
 }
 #endif
 
@@ -1150,20 +953,20 @@ void WebPluginDelegateProxy::OnCancelResource(int id) {
     plugin_->CancelResource(id);
 }
 
-void WebPluginDelegateProxy::OnInvalidateRect(const gfx::Rect& rect,
-                                              bool allow_buffer_flipping) {
+void WebPluginDelegateProxy::OnInvalidateRect(const gfx::Rect& rect) {
   if (!plugin_)
     return;
 
   // Clip the invalidation rect to the plugin bounds; the plugin may have been
   // resized since the invalidate message was sent.
-  const gfx::Rect clipped_rect(rect.Intersect(gfx::Rect(plugin_rect_.size())));
+  gfx::Rect clipped_rect =
+      gfx::IntersectRects(rect, gfx::Rect(plugin_rect_.size()));
 
   invalidate_pending_ = true;
   // The plugin is blocked on the renderer because the invalidate message it has
   // sent us is synchronous, so we can use buffer flipping here if the caller
   // allows it.
-  UpdateFrontBuffer(clipped_rect, allow_buffer_flipping);
+  UpdateFrontBuffer(clipped_rect, true);
   plugin_->InvalidateRect(clipped_rect);
 }
 
@@ -1226,7 +1029,7 @@ void WebPluginDelegateProxy::PaintSadPlugin(WebKit::WebCanvas* native_context,
                                             const gfx::Rect& rect) {
   // Lazily load the sad plugin image.
   if (!sad_plugin_)
-    sad_plugin_ = content::GetContentClient()->renderer()->GetSadPluginBitmap();
+    sad_plugin_ = GetContentClient()->renderer()->GetSadPluginBitmap();
   if (sad_plugin_)
     webkit::PaintSadPlugin(native_context, plugin_rect_, *sad_plugin_);
 }
@@ -1238,7 +1041,7 @@ void WebPluginDelegateProxy::CopyFromBackBufferToFrontBuffer(
   // the goal is just to move the raw pixels between two bitmaps with the same
   // pixel format (no compositing, color correction, etc.), it's safe.
   const size_t stride =
-      skia::PlatformCanvas::StrideForWidth(plugin_rect_.width());
+      skia::PlatformCanvasStrideForWidth(plugin_rect_.width());
   const size_t chunk_size = 4 * rect.width();
   DCHECK(back_buffer_dib() != NULL);
   uint8* source_data = static_cast<uint8*>(back_buffer_dib()->memory()) +
@@ -1278,7 +1081,7 @@ void WebPluginDelegateProxy::UpdateFrontBuffer(
 
   // Plugin has just painted "rect" into the back-buffer, so the front-buffer
   // no longer holds the latest content for that rectangle.
-  front_buffer_diff_ = front_buffer_diff_.Subtract(rect);
+  front_buffer_diff_.Subtract(rect);
   if (allow_buffer_flipping && front_buffer_diff_.IsEmpty()) {
     // Back-buffer contains the latest content for all areas; simply flip
     // the buffers.
@@ -1293,7 +1096,7 @@ void WebPluginDelegateProxy::UpdateFrontBuffer(
     // allowed); fall back to copying the data.
     CopyFromBackBufferToFrontBuffer(rect);
   }
-  transport_store_painted_ = transport_store_painted_.Union(rect);
+  transport_store_painted_.Union(rect);
 }
 
 void WebPluginDelegateProxy::OnHandleURLRequest(
@@ -1503,3 +1306,5 @@ void WebPluginDelegateProxy::OnURLRedirectResponse(bool allow,
 
   plugin_->URLRedirectResponse(allow, resource_id);
 }
+
+}  // namespace content

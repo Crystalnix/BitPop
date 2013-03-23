@@ -5,7 +5,6 @@
 #include "chrome/browser/extensions/lazy_background_task_queue.h"
 
 #include "base/callback.h"
-#include "base/message_loop.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -14,7 +13,6 @@
 #include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -43,9 +41,9 @@ LazyBackgroundTaskQueue::~LazyBackgroundTaskQueue() {
 bool LazyBackgroundTaskQueue::ShouldEnqueueTask(
     Profile* profile, const Extension* extension) {
   DCHECK(extension);
-  if (extension->has_lazy_background_page()) {
-    ExtensionProcessManager* pm =
-         ExtensionSystem::Get(profile)->process_manager();
+  if (extension->has_background_page()) {
+    ExtensionProcessManager* pm = extensions::ExtensionSystem::Get(profile)->
+        process_manager();
     ExtensionHost* background_host =
         pm->GetBackgroundHostForExtension(extension->id());
     if (!background_host || !background_host->did_stop_loading())
@@ -68,10 +66,17 @@ void LazyBackgroundTaskQueue::AddPendingTask(
     tasks_list = new PendingTasksList();
     pending_tasks_[key] = linked_ptr<PendingTasksList>(tasks_list);
 
-    // If this is the first enqueued task, and we're not waiting for the
-    // background page to unload, ensure the background page is loaded.
-    if (pending_page_loads_.count(key) == 0)
-      StartLazyBackgroundPage(profile, extension_id);
+    const Extension* extension =
+        ExtensionSystem::Get(profile)->extension_service()->
+            extensions()->GetByID(extension_id);
+    if (extension && extension->has_lazy_background_page()) {
+      // If this is the first enqueued task, and we're not waiting for the
+      // background page to unload, ensure the background page is loaded.
+      ExtensionProcessManager* pm =
+          ExtensionSystem::Get(profile)->process_manager();
+      pm->IncrementLazyKeepaliveCount(extension);
+      pm->CreateBackgroundHost(extension, extension->GetBackgroundURL());
+    }
   } else {
     tasks_list = it->second.get();
   }
@@ -79,40 +84,18 @@ void LazyBackgroundTaskQueue::AddPendingTask(
   tasks_list->push_back(task);
 }
 
-void LazyBackgroundTaskQueue::StartLazyBackgroundPage(
-    Profile* profile, const std::string& extension_id) {
-  ExtensionProcessManager* pm =
-       ExtensionSystem::Get(profile)->process_manager();
-  if (pm->IsBackgroundHostClosing(extension_id)) {
-    // When the background host finishes closing, we will reload it.
-    pending_page_loads_.insert(PendingTasksKey(profile, extension_id));
-    return;
-  }
-
-  const Extension* extension =
-      ExtensionSystem::Get(profile)->extension_service()->
-          extensions()->GetByID(extension_id);
-  if (extension) {
-    DCHECK(extension->has_lazy_background_page());
-    pm->IncrementLazyKeepaliveCount(extension);
-    pm->CreateBackgroundHost(extension, extension->GetBackgroundURL());
-  }
-
-  pending_page_loads_.erase(PendingTasksKey(profile, extension_id));
-}
-
 void LazyBackgroundTaskQueue::ProcessPendingTasks(
     ExtensionHost* host,
     Profile* profile,
     const Extension* extension) {
-  if (!profile->IsSameProfile(profile_) ||
-      !extension->has_lazy_background_page())
+  if (!profile->IsSameProfile(profile_))
     return;
 
   PendingTasksKey key(profile, extension->id());
   PendingTasksMap::iterator map_it = pending_tasks_.find(key);
   if (map_it == pending_tasks_.end()) {
-    CHECK(!host);  // lazy page should not load without any pending tasks
+    if (extension->has_lazy_background_page())
+      CHECK(!host);  // lazy page should not load without any pending tasks
     return;
   }
 
@@ -129,7 +112,7 @@ void LazyBackgroundTaskQueue::ProcessPendingTasks(
 
   // Balance the keepalive in AddPendingTask. Note we don't do this on a
   // failure to load, because the keepalive count is reset in that case.
-  if (host) {
+  if (host && extension->has_lazy_background_page()) {
     ExtensionSystem::Get(profile)->process_manager()->
         DecrementLazyKeepaliveCount(extension);
   }
@@ -153,25 +136,16 @@ void LazyBackgroundTaskQueue::Observe(
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED: {
+      // Notify consumers about the load failure when the background host dies.
+      // This can happen if the extension crashes. This is not strictly
+      // necessary, since we also unload the extension in that case (which
+      // dispatches the tasks below), but is a good extra precaution.
       Profile* profile = content::Source<Profile>(source).ptr();
       ExtensionHost* host =
            content::Details<ExtensionHost>(details).ptr();
       if (host->extension_host_type() ==
               chrome::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE) {
-        PendingTasksKey key(profile,  host->extension()->id());
-        if (pending_page_loads_.count(key) > 0) {
-          // We were waiting for the background page to unload. We can start it
-          // up again and dispatch any queued events.
-          MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-              &LazyBackgroundTaskQueue::StartLazyBackgroundPage,
-              AsWeakPtr(), profile, host->extension()->id()));
-        } else {
-          // This may be a load failure (e.g. a crash). In that case, notify
-          // consumers about the load failure. This is not strictly necessary,
-          // since we also unload the extension in that case (which dispatches
-          // the tasks below), but is a good extra precaution.
-          ProcessPendingTasks(NULL, profile, host->extension());
-        }
+        ProcessPendingTasks(NULL, profile, host->extension());
       }
       break;
     }

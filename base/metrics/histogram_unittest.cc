@@ -4,6 +4,7 @@
 
 // Test of Histogram class
 
+#include <climits>
 #include <algorithm>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/bucket_ranges.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sample_vector.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,8 +21,32 @@ using std::vector;
 
 namespace base {
 
+class HistogramTest : public testing::Test {
+ protected:
+  virtual void SetUp() {
+    // Each test will have a clean state (no Histogram / BucketRanges
+    // registered).
+    InitializeStatisticsRecorder();
+  }
+
+  virtual void TearDown() {
+    UninitializeStatisticsRecorder();
+  }
+
+  void InitializeStatisticsRecorder() {
+    statistics_recorder_ = new StatisticsRecorder();
+  }
+
+  void UninitializeStatisticsRecorder() {
+    delete statistics_recorder_;
+    statistics_recorder_ = NULL;
+  }
+
+  StatisticsRecorder* statistics_recorder_;
+};
+
 // Check for basic syntax and use.
-TEST(HistogramTest, BasicTest) {
+TEST_F(HistogramTest, BasicTest) {
   // Try basic construction
   Histogram* histogram(Histogram::FactoryGet(
       "TestHistogram", 1, 1000, 10, Histogram::kNoFlags));
@@ -47,7 +73,19 @@ TEST(HistogramTest, BasicTest) {
   HISTOGRAM_ENUMERATION("Test6Histogram", 129, 130);
 }
 
-TEST(HistogramTest, ExponentialRangesTest) {
+// Check that the macro correctly matches histograms by name and records their
+// data together.
+TEST_F(HistogramTest, NameMatchTest) {
+  HISTOGRAM_PERCENTAGE("DuplicatedHistogram", 10);
+  HISTOGRAM_PERCENTAGE("DuplicatedHistogram", 10);
+  Histogram* histogram(LinearHistogram::FactoryGet(
+      "DuplicatedHistogram", 1, 101, 102, Histogram::kNoFlags));
+  scoped_ptr<SampleVector> samples = histogram->SnapshotSampleVector();
+  EXPECT_EQ(2, samples->TotalCount());
+  EXPECT_EQ(2, samples->GetCountAtIndex(10));
+}
+
+TEST_F(HistogramTest, ExponentialRangesTest) {
   // Check that we got a nice exponential when there was enough rooom.
   BucketRanges ranges(9);
   Histogram::InitializeBucketRanges(1, 64, 8, &ranges);
@@ -92,7 +130,7 @@ TEST(HistogramTest, ExponentialRangesTest) {
   EXPECT_TRUE(ranges2.Equals(histogram2->bucket_ranges()));
 }
 
-TEST(HistogramTest, LinearRangesTest) {
+TEST_F(HistogramTest, LinearRangesTest) {
   BucketRanges ranges(9);
   LinearHistogram::InitializeBucketRanges(1, 7, 8, &ranges);
   // Gets a nice linear set of bucket ranges.
@@ -119,8 +157,8 @@ TEST(HistogramTest, LinearRangesTest) {
   EXPECT_TRUE(ranges2.Equals(histogram2->bucket_ranges()));
 }
 
-TEST(HistogramTest, ArrayToCustomRangesTest) {
-  const HistogramBase::Sample ranges[3] = {5, 10 ,20};
+TEST_F(HistogramTest, ArrayToCustomRangesTest) {
+  const HistogramBase::Sample ranges[3] = {5, 10, 20};
   vector<HistogramBase::Sample> ranges_vec =
       CustomHistogram::ArrayToCustomRanges(ranges, 3);
   ASSERT_EQ(6u, ranges_vec.size());
@@ -132,7 +170,7 @@ TEST(HistogramTest, ArrayToCustomRangesTest) {
   EXPECT_EQ(21, ranges_vec[5]);
 }
 
-TEST(HistogramTest, CustomHistogramTest) {
+TEST_F(HistogramTest, CustomHistogramTest) {
   // A well prepared custom ranges.
   vector<HistogramBase::Sample> custom_ranges;
   custom_ranges.push_back(1);
@@ -174,7 +212,7 @@ TEST(HistogramTest, CustomHistogramTest) {
   EXPECT_EQ(HistogramBase::kSampleType_MAX, ranges->range(3));
 }
 
-TEST(HistogramTest, CustomHistogramWithOnly2Buckets) {
+TEST_F(HistogramTest, CustomHistogramWithOnly2Buckets) {
   // This test exploits the fact that the CustomHistogram can have 2 buckets,
   // while the base class Histogram is *supposed* to have at least 3 buckets.
   // We should probably change the restriction on the base class (or not inherit
@@ -193,7 +231,7 @@ TEST(HistogramTest, CustomHistogramWithOnly2Buckets) {
 }
 
 // Make sure histogram handles out-of-bounds data gracefully.
-TEST(HistogramTest, BoundsTest) {
+TEST_F(HistogramTest, BoundsTest) {
   const size_t kBucketCount = 50;
   Histogram* histogram(Histogram::FactoryGet(
       "Bounded", 10, 100, kBucketCount, Histogram::kNoFlags));
@@ -206,14 +244,13 @@ TEST(HistogramTest, BoundsTest) {
   histogram->Add(10000);
 
   // Verify they landed in the underflow, and overflow buckets.
-  Histogram::SampleSet sample;
-  histogram->SnapshotSample(&sample);
-  EXPECT_EQ(2, sample.counts(0));
-  EXPECT_EQ(0, sample.counts(1));
+  scoped_ptr<SampleVector> samples = histogram->SnapshotSampleVector();
+  EXPECT_EQ(2, samples->GetCountAtIndex(0));
+  EXPECT_EQ(0, samples->GetCountAtIndex(1));
   size_t array_size = histogram->bucket_count();
   EXPECT_EQ(kBucketCount, array_size);
-  EXPECT_EQ(0, sample.counts(array_size - 2));
-  EXPECT_EQ(2, sample.counts(array_size - 1));
+  EXPECT_EQ(0, samples->GetCountAtIndex(array_size - 2));
+  EXPECT_EQ(2, samples->GetCountAtIndex(array_size - 1));
 
   vector<int> custom_ranges;
   custom_ranges.push_back(10);
@@ -227,19 +264,20 @@ TEST(HistogramTest, BoundsTest) {
   test_custom_histogram->Add(-50);
   test_custom_histogram->Add(100);
   test_custom_histogram->Add(1000);
+  test_custom_histogram->Add(INT_MAX);
 
   // Verify they landed in the underflow, and overflow buckets.
-  Histogram::SampleSet custom_sample;
-  test_custom_histogram->SnapshotSample(&custom_sample);
-  EXPECT_EQ(2, custom_sample.counts(0));
-  EXPECT_EQ(0, custom_sample.counts(1));
-  size_t custom_array_size = test_custom_histogram->bucket_count();
-  EXPECT_EQ(0, custom_sample.counts(custom_array_size - 2));
-  EXPECT_EQ(2, custom_sample.counts(custom_array_size - 1));
+  scoped_ptr<SampleVector> custom_samples =
+      test_custom_histogram->SnapshotSampleVector();
+  EXPECT_EQ(2, custom_samples->GetCountAtIndex(0));
+  EXPECT_EQ(0, custom_samples->GetCountAtIndex(1));
+  size_t bucket_count = test_custom_histogram->bucket_count();
+  EXPECT_EQ(0, custom_samples->GetCountAtIndex(bucket_count - 2));
+  EXPECT_EQ(3, custom_samples->GetCountAtIndex(bucket_count - 1));
 }
 
 // Check to be sure samples land as expected is "correct" buckets.
-TEST(HistogramTest, BucketPlacementTest) {
+TEST_F(HistogramTest, BucketPlacementTest) {
   Histogram* histogram(Histogram::FactoryGet(
       "Histogram", 1, 64, 8, Histogram::kNoFlags));
 
@@ -253,45 +291,45 @@ TEST(HistogramTest, BucketPlacementTest) {
   }
 
   // Check to see that the bucket counts reflect our additions.
-  Histogram::SampleSet sample;
-  histogram->SnapshotSample(&sample);
+  scoped_ptr<SampleVector> samples = histogram->SnapshotSampleVector();
   for (int i = 0; i < 8; i++)
-    EXPECT_EQ(i + 1, sample.counts(i));
+    EXPECT_EQ(i + 1, samples->GetCountAtIndex(i));
 }
 
-TEST(HistogramTest, CorruptSampleCounts) {
+TEST_F(HistogramTest, CorruptSampleCounts) {
   Histogram* histogram(Histogram::FactoryGet(
       "Histogram", 1, 64, 8, Histogram::kNoFlags));  // As per header file.
 
-  EXPECT_EQ(0, histogram->sample_.redundant_count());
-  histogram->Add(20);  // Add some samples.
+  // Add some samples.
+  histogram->Add(20);
   histogram->Add(40);
-  EXPECT_EQ(2, histogram->sample_.redundant_count());
 
-  Histogram::SampleSet snapshot;
-  histogram->SnapshotSample(&snapshot);
-  EXPECT_EQ(Histogram::NO_INCONSISTENCIES, 0);
-  EXPECT_EQ(0, histogram->FindCorruption(snapshot));  // No default corruption.
-  EXPECT_EQ(2, snapshot.redundant_count());
+  scoped_ptr<SampleVector> snapshot = histogram->SnapshotSampleVector();
+  EXPECT_EQ(Histogram::NO_INCONSISTENCIES,
+            histogram->FindCorruption(*snapshot));
+  EXPECT_EQ(2, snapshot->redundant_count());
+  EXPECT_EQ(2, snapshot->TotalCount());
 
-  snapshot.counts_[3] += 100;  // Sample count won't match redundant count.
-  EXPECT_EQ(Histogram::COUNT_LOW_ERROR, histogram->FindCorruption(snapshot));
-  snapshot.counts_[2] -= 200;
-  EXPECT_EQ(Histogram::COUNT_HIGH_ERROR, histogram->FindCorruption(snapshot));
+  snapshot->counts_[3] += 100;  // Sample count won't match redundant count.
+  EXPECT_EQ(Histogram::COUNT_LOW_ERROR,
+            histogram->FindCorruption(*snapshot));
+  snapshot->counts_[2] -= 200;
+  EXPECT_EQ(Histogram::COUNT_HIGH_ERROR,
+            histogram->FindCorruption(*snapshot));
 
   // But we can't spot a corruption if it is compensated for.
-  snapshot.counts_[1] += 100;
-  EXPECT_EQ(0, histogram->FindCorruption(snapshot));
+  snapshot->counts_[1] += 100;
+  EXPECT_EQ(Histogram::NO_INCONSISTENCIES,
+            histogram->FindCorruption(*snapshot));
 }
 
-TEST(HistogramTest, CorruptBucketBounds) {
+TEST_F(HistogramTest, CorruptBucketBounds) {
   Histogram* histogram(Histogram::FactoryGet(
       "Histogram", 1, 64, 8, Histogram::kNoFlags));  // As per header file.
 
-  Histogram::SampleSet snapshot;
-  histogram->SnapshotSample(&snapshot);
-  EXPECT_EQ(Histogram::NO_INCONSISTENCIES, 0);
-  EXPECT_EQ(0, histogram->FindCorruption(snapshot));  // No default corruption.
+  scoped_ptr<SampleVector> snapshot = histogram->SnapshotSampleVector();
+  EXPECT_EQ(Histogram::NO_INCONSISTENCIES,
+            histogram->FindCorruption(*snapshot));
 
   BucketRanges* bucket_ranges =
       const_cast<BucketRanges*>(histogram->bucket_ranges());
@@ -299,20 +337,20 @@ TEST(HistogramTest, CorruptBucketBounds) {
   bucket_ranges->set_range(1, bucket_ranges->range(2));
   bucket_ranges->set_range(2, tmp);
   EXPECT_EQ(Histogram::BUCKET_ORDER_ERROR | Histogram::RANGE_CHECKSUM_ERROR,
-            histogram->FindCorruption(snapshot));
+            histogram->FindCorruption(*snapshot));
 
   bucket_ranges->set_range(2, bucket_ranges->range(1));
   bucket_ranges->set_range(1, tmp);
-  EXPECT_EQ(0, histogram->FindCorruption(snapshot));
-
-  bucket_ranges->set_range(3, bucket_ranges->range(3) + 1);
-  EXPECT_EQ(Histogram::RANGE_CHECKSUM_ERROR,
-            histogram->FindCorruption(snapshot));
+  EXPECT_EQ(0, histogram->FindCorruption(*snapshot));
 
   // Show that two simple changes don't offset each other
+  bucket_ranges->set_range(3, bucket_ranges->range(3) + 1);
+  EXPECT_EQ(Histogram::RANGE_CHECKSUM_ERROR,
+            histogram->FindCorruption(*snapshot));
+
   bucket_ranges->set_range(4, bucket_ranges->range(4) - 1);
   EXPECT_EQ(Histogram::RANGE_CHECKSUM_ERROR,
-            histogram->FindCorruption(snapshot));
+            histogram->FindCorruption(*snapshot));
 
   // Repair histogram so that destructor won't DCHECK().
   bucket_ranges->set_range(3, bucket_ranges->range(3) - 1);

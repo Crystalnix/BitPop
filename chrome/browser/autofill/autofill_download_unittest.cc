@@ -13,6 +13,7 @@
 #include "chrome/browser/autofill/autofill_metrics.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/autofill/form_structure.h"
+#include "chrome/common/form_data.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -21,11 +22,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "webkit/forms/form_data.h"
 
 using content::BrowserThread;
-using webkit::forms::FormData;
-using webkit::forms::FormField;
 using WebKit::WebInputElement;
 
 namespace {
@@ -145,40 +143,40 @@ TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
   FormData form;
   form.method = ASCIIToUTF16("post");
 
-  FormField field;
+  FormFieldData field;
   field.label = ASCIIToUTF16("username");
   field.name = ASCIIToUTF16("username");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("First Name");
   field.name = ASCIIToUTF16("firstname");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("Last Name");
   field.name = ASCIIToUTF16("lastname");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("email");
   field.name = ASCIIToUTF16("email");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("email2");
   field.name = ASCIIToUTF16("email2");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("password");
   field.name = ASCIIToUTF16("password");
-  field.form_control_type = ASCIIToUTF16("password");
+  field.form_control_type = "password";
   form.fields.push_back(field);
 
   field.label = string16();
   field.name = ASCIIToUTF16("Submit");
-  field.form_control_type = ASCIIToUTF16("submit");
+  field.form_control_type = "submit";
   form.fields.push_back(field);
 
   FormStructure *form_structure = new FormStructure(form);
@@ -189,22 +187,22 @@ TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
 
   field.label = ASCIIToUTF16("address");
   field.name = ASCIIToUTF16("address");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("address2");
   field.name = ASCIIToUTF16("address2");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = ASCIIToUTF16("city");
   field.name = ASCIIToUTF16("city");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
 
   field.label = string16();
   field.name = ASCIIToUTF16("Submit");
-  field.form_control_type = ASCIIToUTF16("submit");
+  field.form_control_type = "submit";
   form.fields.push_back(field);
 
   form_structure = new FormStructure(form);
@@ -298,7 +296,7 @@ TEST_F(AutofillDownloadTest, QueryAndUploadTest) {
   // Modify form structures to miss the cache.
   field.label = ASCIIToUTF16("Address line 2");
   field.name = ASCIIToUTF16("address2");
-  field.form_control_type = ASCIIToUTF16("text");
+  field.form_control_type = "text";
   form.fields.push_back(field);
   form_structure = new FormStructure(form);
   form_structures.push_back(form_structure);
@@ -357,8 +355,8 @@ TEST_F(AutofillDownloadTest, CacheQueryTest) {
   FormData form;
   form.method = ASCIIToUTF16("post");
 
-  FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("username");
   field.name = ASCIIToUTF16("username");

@@ -10,8 +10,9 @@
 namespace extensions {
 
 ValueStore* LeveldbSettingsStorageFactory::Create(
-    const FilePath& base_path, const std::string& extension_id) {
-  return LeveldbValueStore::Create(base_path.AppendASCII(extension_id));
+    const FilePath& base_path,
+    const std::string& extension_id) {
+  return new LeveldbValueStore(base_path.AppendASCII(extension_id));
 }
 
 }  // namespace extensions

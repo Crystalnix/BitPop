@@ -24,6 +24,7 @@ const CommandLinePrefStore::StringSwitchToPreferenceMapEntry
       { switches::kAuthNegotiateDelegateWhitelist,
           prefs::kAuthNegotiateDelegateWhitelist },
       { switches::kGSSAPILibraryName, prefs::kGSSAPILibraryName },
+      { switches::kSpdyProxyOrigin, prefs::kSpdyProxyOrigin },
       { switches::kDiskCacheDir, prefs::kDiskCacheDir },
       { switches::kSSLVersionMin, prefs::kSSLVersionMin },
       { switches::kSSLVersionMax, prefs::kSSLVersionMax },
@@ -49,8 +50,7 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
         prefs::kWebKitAllowDisplayingInsecureContent, false },
       { switches::kAllowCrossOriginAuthPrompt,
         prefs::kAllowCrossOriginAuthPrompt, true },
-      { switches::kEnableOriginBoundCerts, prefs::kEnableOriginBoundCerts,
-          true },
+      { switches::kDisableTLSChannelID, prefs::kEnableOriginBoundCerts, false },
       { switches::kDisableSSLFalseStart, prefs::kDisableSSLRecordSplitting,
           true },
       { switches::kEnableMemoryInfo, prefs::kEnableMemoryInfo, true },
@@ -60,10 +60,16 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
       { switches::kEnablePrintPreview, prefs::kPrintPreviewDisabled, false },
 #endif
 #if defined(OS_CHROMEOS)
-      { switches::kDisableGData, prefs::kDisableGData, true },
+      { switches::kDisableDrive, prefs::kDisableDrive, true },
       { switches::kEnableTouchpadThreeFingerClick,
           prefs::kEnableTouchpadThreeFingerClick, true },
+      { switches::kEnableTouchpadThreeFingerSwipe,
+          prefs::kEnableTouchpadThreeFingerSwipe, true },
 #endif
+      { switches::kLoadCloudPolicyOnSignin, prefs::kLoadCloudPolicyOnSignin,
+        true },
+      { switches::kDisableAsyncDns, prefs::kBuiltInDnsClientEnabled, false },
+      { switches::kEnableAsyncDns, prefs::kBuiltInDnsClientEnabled, true },
 };
 
 const CommandLinePrefStore::IntegerSwitchToPreferenceMapEntry

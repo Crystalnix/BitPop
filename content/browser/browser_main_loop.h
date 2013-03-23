@@ -9,15 +9,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/browser_process_sub_thread.h"
 
-#if defined(OS_WIN)
-#include "ui/base/win/scoped_ole_initializer.h"
-#endif
-
-class BrowserOnlineStateObserver;
 class CommandLine;
 class HighResolutionTimerManager;
 class MessageLoop;
-class SystemMessageWindowWin;
 
 namespace base {
 class SystemMonitor;
@@ -27,29 +21,26 @@ namespace media {
 class AudioManager;
 }
 
-namespace media_stream {
-class MediaStreamManager;
-}
-
 namespace net {
 class NetworkChangeNotifier;
 }
 
-namespace speech {
-class SpeechRecognitionManagerImpl;
-}
-
 namespace content {
-
 class BrowserMainParts;
+class BrowserOnlineStateObserver;
 class BrowserShutdownImpl;
 class BrowserThreadImpl;
+class MediaStreamManager;
 class ResourceDispatcherHostImpl;
+class SpeechRecognitionManagerImpl;
+class SystemMessageWindowWin;
 class WebKitThread;
 struct MainFunctionParams;
 
 #if defined(OS_LINUX)
 class DeviceMonitorLinux;
+#elif defined(OS_MACOSX)
+class DeviceMonitorMac;
 #endif
 
 // Implements the main browser loop stages called from BrowserMainRunner.
@@ -57,7 +48,7 @@ class DeviceMonitorLinux;
 // All functions are to be called only on the UI thread unless otherwise noted.
 class BrowserMainLoop {
  public:
-  explicit BrowserMainLoop(const content::MainFunctionParams& parameters);
+  explicit BrowserMainLoop(const MainFunctionParams& parameters);
   virtual ~BrowserMainLoop();
 
   void Init();
@@ -80,7 +71,7 @@ class BrowserMainLoop {
 
   // Can be called on any thread.
   static media::AudioManager* GetAudioManager();
-  static media_stream::MediaStreamManager* GetMediaStreamManager();
+  static MediaStreamManager* GetMediaStreamManager();
 
  private:
   // For ShutdownThreadsAndCleanUp.
@@ -94,7 +85,7 @@ class BrowserMainLoop {
   void MainMessageLoopRun();
 
   // Members initialized on construction ---------------------------------------
-  const content::MainFunctionParams& parameters_;
+  const MainFunctionParams& parameters_;
   const CommandLine& parsed_command_line_;
   int result_code_;
 
@@ -104,13 +95,15 @@ class BrowserMainLoop {
   scoped_ptr<HighResolutionTimerManager> hi_res_timer_manager_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   scoped_ptr<media::AudioManager> audio_manager_;
-  scoped_ptr<media_stream::MediaStreamManager> media_stream_manager_;
+  scoped_ptr<MediaStreamManager> media_stream_manager_;
   // Per-process listener for online state changes.
   scoped_ptr<BrowserOnlineStateObserver> online_state_observer_;
 #if defined(OS_WIN)
   scoped_ptr<SystemMessageWindowWin> system_message_window_;
 #elif defined(OS_LINUX)
   scoped_ptr<DeviceMonitorLinux> device_monitor_linux_;
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+  scoped_ptr<DeviceMonitorMac> device_monitor_mac_;
 #endif
 
   // Destroy parts_ before main_message_loop_ (required) and before other
@@ -123,20 +116,18 @@ class BrowserMainLoop {
 
   // Members initialized in |BrowserThreadsStarted()| --------------------------
   scoped_ptr<ResourceDispatcherHostImpl> resource_dispatcher_host_;
-  scoped_ptr<speech::SpeechRecognitionManagerImpl> speech_recognition_manager_;
+  scoped_ptr<SpeechRecognitionManagerImpl> speech_recognition_manager_;
 
   // Members initialized in |RunMainMessageLoopParts()| ------------------------
   scoped_ptr<BrowserProcessSubThread> db_thread_;
+#if !defined(OS_IOS)
   scoped_ptr<WebKitThread> webkit_thread_;
+#endif
   scoped_ptr<BrowserProcessSubThread> file_user_blocking_thread_;
   scoped_ptr<BrowserProcessSubThread> file_thread_;
   scoped_ptr<BrowserProcessSubThread> process_launcher_thread_;
   scoped_ptr<BrowserProcessSubThread> cache_thread_;
   scoped_ptr<BrowserProcessSubThread> io_thread_;
-
-#if defined(OS_WIN)
-  ui::ScopedOleInitializer ole_initializer_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMainLoop);
 };

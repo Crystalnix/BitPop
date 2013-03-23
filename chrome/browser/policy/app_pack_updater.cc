@@ -19,9 +19,10 @@
 #include "chrome/browser/extensions/external_loader.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
 #include "chrome/browser/extensions/updater/extension_downloader.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/enterprise_install_attributes.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -79,30 +80,28 @@ class AppPackExternalLoader
 };
 
 AppPackUpdater::AppPackUpdater(net::URLRequestContextGetter* request_context,
-                               BrowserPolicyConnector* connector)
+                               EnterpriseInstallAttributes* install_attributes)
     : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      initialized_(false),
       created_extension_loader_(false),
-      request_context_(request_context) {
-  if (connector->GetDeviceMode() == DEVICE_MODE_KIOSK) {
+      request_context_(request_context),
+      install_attributes_(install_attributes) {
+  chromeos::CrosSettings::Get()->AddSettingsObserver(chromeos::kAppPack, this);
+
+  if (install_attributes_->GetMode() == DEVICE_MODE_KIOSK) {
     // Already in Kiosk mode, start loading.
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                             base::Bind(&AppPackUpdater::Init,
                                        weak_ptr_factory_.GetWeakPtr()));
-  } else if ((connector->GetDeviceMode() == DEVICE_MODE_NOT_SET ||
-              connector->GetDeviceMode() == DEVICE_MODE_PENDING) &&
-             connector->device_cloud_policy_subsystem()) {
-    // Not enrolled yet, listen for enrollment.
-    policy_registrar_.reset(new CloudPolicySubsystem::ObserverRegistrar(
-        connector->device_cloud_policy_subsystem(), this));
   } else {
-    // Linger as a stub.
+    // Linger until the device switches to DEVICE_MODE_KIOSK and the app pack
+    // device setting appears.
   }
 }
 
 AppPackUpdater::~AppPackUpdater() {
   chromeos::CrosSettings::Get()->RemoveSettingsObserver(
       chromeos::kAppPack, this);
-  net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
 }
 
 extensions::ExternalLoader* AppPackUpdater::CreateExternalLoader() {
@@ -132,23 +131,16 @@ void AppPackUpdater::SetScreenSaverUpdateCallback(
 }
 
 void AppPackUpdater::Init() {
+  if (initialized_)
+    return;
+
+  initialized_ = true;
   worker_pool_token_ = BrowserThread::GetBlockingPool()->GetSequenceToken();
-  chromeos::CrosSettings::Get()->AddSettingsObserver(chromeos::kAppPack, this);
   notification_registrar_.Add(
       this,
       chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
       content::NotificationService::AllBrowserContextsAndSources());
-  net::NetworkChangeNotifier::AddIPAddressObserver(this);
   LoadPolicy();
-}
-
-void AppPackUpdater::OnPolicyStateChanged(
-    CloudPolicySubsystem::PolicySubsystemState state,
-    CloudPolicySubsystem::ErrorDetails error_details) {
-  if (state == CloudPolicySubsystem::SUCCESS) {
-    policy_registrar_.reset();
-    Init();
-  }
 }
 
 void AppPackUpdater::Observe(int type,
@@ -158,38 +150,23 @@ void AppPackUpdater::Observe(int type,
     case chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED:
       DCHECK_EQ(chromeos::kAppPack,
                 *content::Details<const std::string>(details).ptr());
-      LoadPolicy();
+      if (install_attributes_->GetMode() == DEVICE_MODE_KIOSK) {
+        if (!initialized_)
+          Init();
+        else
+          LoadPolicy();
+      }
       break;
 
-    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR:
-      OnCrxInstallFailed(
-          content::Source<extensions::CrxInstaller>(source).ptr());
+    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
+      extensions::CrxInstaller* installer =
+          content::Source<extensions::CrxInstaller>(source).ptr();
+      OnDamagedFileDetected(installer->source_file());
       break;
+    }
 
     default:
       NOTREACHED();
-  }
-}
-
-void AppPackUpdater::OnIPAddressChanged() {
-  // Check if the AppPack has been fully downloaded whenever the network
-  // changes. This allows the AppPack to recover in case the network wasn't
-  // ready early during startup.
-  // To avoid performing too many update checks in case the network conditions
-  // change too often, an update is only triggered now if there are extensions
-  // configured via policy that haven't been checked for updates yet.
-  for (PolicyEntryMap::iterator it = app_pack_extensions_.begin();
-       it != app_pack_extensions_.end(); ++it) {
-    if (!it->second.update_checked) {
-      // |id| is configured via policy, but hasn't been updated before.
-      // Drop any pending requests and start a full check now.
-      VLOG(1) << "Extension " << it->first << " hasn't been checked yet, "
-              << "new update triggered now by network change notification.";
-      downloader_.reset();
-      weak_ptr_factory_.InvalidateWeakPtrs();
-      LoadPolicy();
-      break;
-    }
   }
 }
 
@@ -216,8 +193,7 @@ void AppPackUpdater::LoadPolicy() {
       std::string update_url;
       if (dict->GetString(kExtensionId, &id) &&
           dict->GetString(kUpdateUrl, &update_url)) {
-        app_pack_extensions_[id].update_url = update_url;
-        app_pack_extensions_[id].update_checked = false;
+        app_pack_extensions_[id] = update_url;
       } else {
         LOG(WARNING) << "Failed to read required fields for an AppPack entry, "
                      << "ignoring.";
@@ -277,9 +253,8 @@ void AppPackUpdater::BlockingCheckCacheInternal(
 
   // Enumerate all the files in the cache |dir|, including directories
   // and symlinks. Each unrecognized file will be erased.
-  FileEnumerator::FileType types = static_cast<FileEnumerator::FileType>(
-      FileEnumerator::FILES | FileEnumerator::DIRECTORIES |
-      FileEnumerator::SHOW_SYM_LINKS);
+  int types = FileEnumerator::FILES | FileEnumerator::DIRECTORIES |
+      FileEnumerator::SHOW_SYM_LINKS;
   FileEnumerator enumerator(dir, false /* recursive */, types);
 
   for (FilePath path = enumerator.Next();
@@ -288,7 +263,8 @@ void AppPackUpdater::BlockingCheckCacheInternal(
     enumerator.GetFindInfo(&info);
     std::string basename = path.BaseName().value();
 
-    if (FileEnumerator::IsDirectory(info) || FileEnumerator::IsLink(info)) {
+    if (FileEnumerator::IsDirectory(info) ||
+        file_util::IsLink(FileEnumerator::GetFilename(info))) {
       LOG(ERROR) << "Erasing bad file in AppPack directory: " << basename;
       file_util::Delete(path, true /* recursive */);
       continue;
@@ -389,8 +365,9 @@ void AppPackUpdater::UpdateExtensionLoader() {
   scoped_ptr<base::DictionaryValue> prefs(new base::DictionaryValue());
   for (CacheEntryMap::iterator it = cached_extensions_.begin();
        it != cached_extensions_.end(); ++it) {
+    const std::string& id = it->first;
     // The screensaver isn't installed into the Profile.
-    if (it->first == screen_saver_id_)
+    if (id == screen_saver_id_)
       continue;
 
     base::DictionaryValue* dict = new base::DictionaryValue();
@@ -398,6 +375,15 @@ void AppPackUpdater::UpdateExtensionLoader() {
                     it->second.path);
     dict->SetString(extensions::ExternalProviderImpl::kExternalVersion,
                     it->second.cached_version);
+
+    // Include this optional flag if the extension's update url is the Webstore.
+    PolicyEntryMap::iterator policy_entry = app_pack_extensions_.find(id);
+    if (policy_entry != app_pack_extensions_.end() &&
+        extension_urls::IsWebstoreUpdateUrl(
+            GURL(policy_entry->second))) {
+      dict->SetBoolean(extensions::ExternalProviderImpl::kIsFromWebstore, true);
+    }
+
     prefs->Set(it->first, dict);
 
     VLOG(1) << "Updating AppPack extension loader, added " << it->second.path;
@@ -416,7 +402,7 @@ void AppPackUpdater::DownloadMissingExtensions() {
   }
   for (PolicyEntryMap::iterator it = app_pack_extensions_.begin();
        it != app_pack_extensions_.end(); ++it) {
-    downloader_->AddPendingExtension(it->first, GURL(it->second.update_url));
+    downloader_->AddPendingExtension(it->first, GURL(it->second), 0);
   }
   VLOG(1) << "Downloading AppPack update manifest now";
   downloader_->StartAllPending();
@@ -425,11 +411,11 @@ void AppPackUpdater::DownloadMissingExtensions() {
 void AppPackUpdater::OnExtensionDownloadFailed(
     const std::string& id,
     extensions::ExtensionDownloaderDelegate::Error error,
-    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result) {
+    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result,
+    const std::set<int>& request_ids) {
   if (error == NO_UPDATE_AVAILABLE) {
     if (!ContainsKey(cached_extensions_, id))
       LOG(ERROR) << "AppPack extension " << id << " not found on update server";
-    SetUpdateChecked(id);
   } else {
     LOG(ERROR) << "AppPack failed to download extension " << id
                << ", error " << error;
@@ -441,11 +427,8 @@ void AppPackUpdater::OnExtensionDownloadFinished(
     const FilePath& path,
     const GURL& download_url,
     const std::string& version,
-    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result) {
-  // Just downloaded the latest version, no need to do further update checks
-  // for this extension.
-  SetUpdateChecked(id);
-
+    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result,
+    const std::set<int>& request_ids) {
   // The explicit copy ctors are to make sure that Bind() binds a copy and not
   // a reference to the arguments.
   PostBlockingTask(FROM_HERE,
@@ -460,7 +443,8 @@ void AppPackUpdater::OnBlacklistDownloadFinished(
     const std::string& data,
     const std::string& package_hash,
     const std::string& version,
-    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result) {
+    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result,
+    const std::set<int>& request_ids) {
   NOTREACHED();
 }
 
@@ -547,9 +531,7 @@ void AppPackUpdater::OnCacheEntryInstalled(const std::string& id,
   }
 }
 
-void AppPackUpdater::OnCrxInstallFailed(extensions::CrxInstaller* installer) {
-  FilePath path = installer->source_file();
-
+void AppPackUpdater::OnDamagedFileDetected(const FilePath& path) {
   // Search for |path| in |cached_extensions_|, and delete it if found.
   for (CacheEntryMap::iterator it = cached_extensions_.begin();
        it != cached_extensions_.end(); ++it) {
@@ -585,12 +567,6 @@ void AppPackUpdater::SetScreenSaverPath(const FilePath& path) {
     if (!screen_saver_update_callback_.is_null())
       screen_saver_update_callback_.Run(screen_saver_path_);
   }
-}
-
-void AppPackUpdater::SetUpdateChecked(const std::string& id) {
-  PolicyEntryMap::iterator entry = app_pack_extensions_.find(id);
-  if (entry != app_pack_extensions_.end())
-    entry->second.update_checked = true;
 }
 
 }  // namespace policy

@@ -10,7 +10,7 @@
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/common/accessibility_messages.h"
 
-using content::AccessibilityNodeData;
+namespace content {
 
 typedef AccessibilityNodeData::BoolAttribute BoolAttribute;
 typedef AccessibilityNodeData::FloatAttribute FloatAttribute;
@@ -151,8 +151,7 @@ gfx::Rect BrowserAccessibility::GetGlobalBoundsRect() {
 
   // Adjust the bounds by the top left corner of the containing view's bounds
   // in screen coordinates.
-  gfx::Point top_left = manager_->GetViewBounds().origin();
-  bounds.Offset(top_left);
+  bounds.Offset(manager_->GetViewBounds().OffsetFromOrigin());
 
   return bounds;
 }
@@ -321,3 +320,5 @@ string16 BrowserAccessibility::GetTextRecursive() const {
 void BrowserAccessibility::PreInitialize() {
   instance_active_ = true;
 }
+
+}  // namespace content

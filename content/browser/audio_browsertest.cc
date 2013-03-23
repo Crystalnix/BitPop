@@ -4,21 +4,12 @@
 
 #include "content/test/layout_browsertest.h"
 
+namespace content {
+
 class AudioLayoutTest : public InProcessBrowserLayoutTest {
  protected:
   AudioLayoutTest() : InProcessBrowserLayoutTest(
       FilePath(), FilePath().AppendASCII("media")) {
-  }
-  virtual ~AudioLayoutTest() {}
-
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    InProcessBrowserLayoutTest::SetUpInProcessBrowserTestFixture();
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("content"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("media-file.js"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("video-test.js"));
   }
 };
 
@@ -70,3 +61,5 @@ IN_PROC_BROWSER_TEST_F(AudioLayoutTest, MediaCanPlayWavAudio) {
 IN_PROC_BROWSER_TEST_F(AudioLayoutTest, MediaDocumentAudioSize) {
   RunLayoutTest("media-document-audio-size.html");
 }
+
+}  // namespace content

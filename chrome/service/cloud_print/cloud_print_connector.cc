@@ -13,39 +13,33 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
-#include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-CloudPrintConnector::CloudPrintConnector(
-    Client* client,
-    const std::string& proxy_id,
-    const GURL& cloud_print_server_url,
-    const DictionaryValue* print_system_settings)
+namespace cloud_print {
+
+CloudPrintConnector::CloudPrintConnector(Client* client,
+                                         const ConnectorSettings& settings)
   : client_(client),
-    proxy_id_(proxy_id),
-    cloud_print_server_url_(cloud_print_server_url),
     next_response_handler_(NULL) {
-  if (print_system_settings) {
-    // It is possible to have no print settings specified.
-    print_system_settings_.reset(print_system_settings->DeepCopy());
-  }
+  settings_.CopyFrom(settings);
 }
 
 bool CloudPrintConnector::InitPrintSystem() {
   if (print_system_.get())
     return true;
-  print_system_ = cloud_print::PrintSystem::CreateInstance(
-      print_system_settings_.get());
+  print_system_ = PrintSystem::CreateInstance(
+      settings_.print_system_settings());
   if (!print_system_.get()) {
     NOTREACHED();
     return false;  // No memory.
   }
-  cloud_print::PrintSystem::PrintSystemResult result = print_system_->Init();
+  PrintSystem::PrintSystemResult result = print_system_->Init();
   if (!result.succeeded()) {
-    print_system_.release();
+    print_system_ = NULL;
     // We could not initialize the print system. We need to notify the server.
     ReportUserMessage(kPrintSystemFailedMessageId, result.message());
     return false;
@@ -55,7 +49,7 @@ bool CloudPrintConnector::InitPrintSystem() {
 
 bool CloudPrintConnector::Start() {
   VLOG(1) << "CP_CONNECTOR: Starting connector"
-          << ", proxy id: " << proxy_id_;
+          << ", proxy id: " << settings_.proxy_id();
 
   pending_tasks_.clear();
 
@@ -73,11 +67,11 @@ bool CloudPrintConnector::Start() {
 
 void CloudPrintConnector::Stop() {
   VLOG(1) << "CP_CONNECTOR: Stopping connector"
-          << ", proxy id: " << proxy_id_;
+          << ", proxy id: " << settings_.proxy_id();
   DCHECK(IsRunning());
   // Do uninitialization here.
   pending_tasks_.clear();
-  print_server_watcher_.release();
+  print_server_watcher_ = NULL;
   request_ = NULL;
 }
 
@@ -96,11 +90,12 @@ void CloudPrintConnector::GetPrinterIds(std::list<std::string>* printer_ids) {
 
 void CloudPrintConnector::RegisterPrinters(
     const printing::PrinterList& printers) {
-  if (!IsRunning())
+  if (!settings_.connect_new_printers() || !IsRunning())
     return;
   printing::PrinterList::const_iterator it;
   for (it = printers.begin(); it != printers.end(); ++it) {
-    AddPendingRegisterTask(*it);
+    if (!settings_.IsPrinterBlacklisted(it->printer_name))
+      AddPendingRegisterTask(*it);
   }
 }
 
@@ -111,8 +106,15 @@ void CloudPrintConnector::CheckForJobs(const std::string& reason,
     return;
   if (!printer_id.empty()) {
     JobHandlerMap::iterator index = job_handler_map_.find(printer_id);
-    if (index != job_handler_map_.end())
+    if (index != job_handler_map_.end()) {
       index->second->CheckForJobs(reason);
+    } else {
+      std::string status_message = l10n_util::GetStringUTF8(
+          IDS_CLOUD_PRINT_ZOMBIE_PRINTER);
+      LOG(ERROR) << "CP_CONNECTOR: " << status_message <<
+          " Printer_id: " << printer_id;
+      ReportUserMessage(kZombiePrinterMessageId, status_message);
+    }
   } else {
     for (JobHandlerMap::iterator index = job_handler_map_.begin();
          index != job_handler_map_.end(); index++) {
@@ -164,7 +166,7 @@ CloudPrintURLFetcher::ResponseAction CloudPrintConnector::OnRequestAuthError() {
 }
 
 std::string CloudPrintConnector::GetAuthHeader() {
-  return CloudPrintHelpers::GetCloudPrintAuthHeaderFromStore();
+  return GetCloudPrintAuthHeaderFromStore();
 }
 
 CloudPrintConnector::~CloudPrintConnector() {}
@@ -187,10 +189,10 @@ CloudPrintConnector::HandlePrinterListResponse(
 
   // Get list of the printers from the print system.
   printing::PrinterList local_printers;
-  cloud_print::PrintSystem::PrintSystemResult result =
+  PrintSystem::PrintSystemResult result =
       print_system_->EnumeratePrinters(&local_printers);
   bool full_list = result.succeeded();
-  if (!result.succeeded()) {
+  if (!full_list) {
     std::string message = result.message();
     if (message.empty())
       message = l10n_util::GetStringFUTF8(IDS_CLOUD_PRINT_ENUM_FAILED,
@@ -202,21 +204,36 @@ CloudPrintConnector::HandlePrinterListResponse(
   // Go through the list of the cloud printers and init print job handlers.
   ListValue* printer_list = NULL;
   // There may be no "printers" value in the JSON
-  if (json_data->GetList(cloud_print::kPrinterListValue, &printer_list)
-      && printer_list) {
+  if (json_data->GetList(kPrinterListValue, &printer_list) && printer_list) {
     for (size_t index = 0; index < printer_list->GetSize(); index++) {
       DictionaryValue* printer_data = NULL;
       if (printer_list->GetDictionary(index, &printer_data)) {
         std::string printer_name;
         printer_data->GetString(kNameValue, &printer_name);
-        if (RemovePrinterFromList(printer_name, &local_printers)) {
+        std::string printer_id;
+        printer_data->GetString(kIdValue, &printer_id);
+        if (settings_.IsPrinterBlacklisted(printer_name)) {
+          VLOG(1) << "CP_CONNECTOR: Deleting " << printer_name <<
+              " id: " << printer_id << " as blacklisted";
+          AddPendingDeleteTask(printer_id);
+        } else if (RemovePrinterFromList(printer_name, &local_printers)) {
           InitJobHandlerForPrinter(printer_data);
         } else {
           // Cloud printer is not found on the local system.
-          if (full_list) {  // Delete only if we get the full list of printer.
-            std::string printer_id;
-            printer_data->GetString(kIdValue, &printer_id);
+          if (full_list || settings_.delete_on_enum_fail()) {
+            // Delete if we get the full list of printers or
+            // |delete_on_enum_fail_| is set.
+            VLOG(1) << "CP_CONNECTOR: Deleting " << printer_name <<
+                " id: " << printer_id <<
+                " full_list: " << full_list <<
+                " delete_on_enum_fail: " << settings_.delete_on_enum_fail();
             AddPendingDeleteTask(printer_id);
+          } else {
+            LOG(ERROR) << "CP_CONNECTOR: Printer: " << printer_name <<
+                " id: " << printer_id <<
+                " not found in print system and full printer list was" <<
+                " not received.  Printer will not be able to process" <<
+                " jobs.";
           }
         }
       } else {
@@ -226,12 +243,8 @@ CloudPrintConnector::HandlePrinterListResponse(
   }
 
   request_ = NULL;
-  if (!local_printers.empty()) {
-    // In the future we might want to notify frontend about available printers
-    // and let user choose which printers to register.
-    // Here is a good place to notify client about available printers.
-    RegisterPrinters(local_printers);
-  }
+
+  RegisterPrinters(local_printers);
   ContinuePendingTaskProcessing();  // Continue processing background tasks.
   return CloudPrintURLFetcher::STOP_PROCESSING;
 }
@@ -261,7 +274,7 @@ CloudPrintConnector::HandleRegisterPrinterResponse(
   if (succeeded) {
     ListValue* printer_list = NULL;
     // There should be a "printers" value in the JSON
-    if (json_data->GetList(cloud_print::kPrinterListValue, &printer_list)) {
+    if (json_data->GetList(kPrinterListValue, &printer_list)) {
       DictionaryValue* printer_data = NULL;
       if (printer_list->GetDictionary(0, &printer_data))
         InitJobHandlerForPrinter(printer_data);
@@ -296,12 +309,11 @@ void CloudPrintConnector::ReportUserMessage(const std::string& message_id,
   // This is a fire and forget type of function.
   // Result of this request will be ignored.
   std::string mime_boundary;
-  cloud_print::CreateMimeBoundaryForUpload(&mime_boundary);
-  GURL url = CloudPrintHelpers::GetUrlForUserMessage(cloud_print_server_url_,
-                                                     message_id);
+  CreateMimeBoundaryForUpload(&mime_boundary);
+  GURL url = GetUrlForUserMessage(settings_.server_url(), message_id);
   std::string post_data;
-  cloud_print::AddMultipartValueForUpload(kMessageTextValue, failure_msg,
-      mime_boundary, std::string(), &post_data);
+  AddMultipartValueForUpload(kMessageTextValue, failure_msg, mime_boundary,
+                             std::string(), &post_data);
   // Terminate the request body
   post_data.append("--" + mime_boundary + "--\r\n");
   std::string mime_type("multipart/form-data; boundary=");
@@ -354,7 +366,7 @@ void CloudPrintConnector::InitJobHandlerForPrinter(
     for (size_t index = 0; index < tags_list->GetSize(); index++) {
       std::string tag;
       if (tags_list->GetString(index, &tag) &&
-          StartsWithASCII(tag, kTagsHashTagName, false)) {
+          StartsWithASCII(tag, kCloudPrintServiceTagsHashTagName, false)) {
         std::vector<std::string> tag_parts;
         base::SplitStringDontTrim(tag, '=', &tag_parts);
         DCHECK_EQ(tag_parts.size(), 2U);
@@ -366,7 +378,7 @@ void CloudPrintConnector::InitJobHandlerForPrinter(
   scoped_refptr<PrinterJobHandler> job_handler;
   job_handler = new PrinterJobHandler(printer_info,
                                       printer_info_cloud,
-                                      cloud_print_server_url_,
+                                      settings_.server_url(),
                                       print_system_.get(),
                                       this);
   job_handler_map_[printer_info_cloud.printer_id] = job_handler;
@@ -439,9 +451,8 @@ void CloudPrintConnector::ContinuePendingTaskProcessing() {
 }
 
 void CloudPrintConnector::OnPrintersAvailable() {
-  GURL printer_list_url =
-      CloudPrintHelpers::GetUrlForPrinterList(cloud_print_server_url_,
-                                              proxy_id_);
+  GURL printer_list_url = GetUrlForPrinterList(
+      settings_.server_url(), settings_.proxy_id());
   StartGetRequest(printer_list_url,
                   kCloudPrintRegisterMaxRetryCount,
                   &CloudPrintConnector::HandlePrinterListResponse);
@@ -477,9 +488,8 @@ void CloudPrintConnector::OnPrinterDelete(const std::string& printer_id) {
   // TODO(gene): We probably should not try indefinitely here. Just once or
   // twice should be enough.
   // Bug: http://code.google.com/p/chromium/issues/detail?id=101850
-  GURL url = CloudPrintHelpers::GetUrlForPrinterDelete(cloud_print_server_url_,
-                                                       printer_id,
-                                                       "printer_deleted");
+  GURL url = GetUrlForPrinterDelete(
+      settings_.server_url(), printer_id, "printer_deleted");
   StartGetRequest(url,
                   kCloudPrintAPIMaxRetryCount,
                   &CloudPrintConnector::HandlePrinterDeleteResponse);
@@ -513,32 +523,28 @@ void CloudPrintConnector::OnReceivePrinterCaps(
   DCHECK(IsSamePrinter(info.printer_name, printer_name));
 
   std::string mime_boundary;
-  cloud_print::CreateMimeBoundaryForUpload(&mime_boundary);
+  CreateMimeBoundaryForUpload(&mime_boundary);
   std::string post_data;
 
-  cloud_print::AddMultipartValueForUpload(kProxyIdValue, proxy_id_,
-      mime_boundary, std::string(), &post_data);
-  cloud_print::AddMultipartValueForUpload(kPrinterNameValue, info.printer_name,
-      mime_boundary, std::string(), &post_data);
-  cloud_print::AddMultipartValueForUpload(kPrinterDescValue,
-      info.printer_description, mime_boundary, std::string() , &post_data);
-  cloud_print::AddMultipartValueForUpload(kPrinterStatusValue,
+  AddMultipartValueForUpload(kProxyIdValue,
+      settings_.proxy_id(), mime_boundary, std::string(), &post_data);
+  AddMultipartValueForUpload(kPrinterNameValue,
+      info.printer_name, mime_boundary, std::string(), &post_data);
+  AddMultipartValueForUpload(kPrinterDescValue,
+      info.printer_description, mime_boundary, std::string(), &post_data);
+  AddMultipartValueForUpload(kPrinterStatusValue,
       base::StringPrintf("%d", info.printer_status),
       mime_boundary, std::string(), &post_data);
-  // Add printer options as tags.
-  CloudPrintHelpers::GenerateMultipartPostDataForPrinterTags(info.options,
-                                                             mime_boundary,
-                                                             &post_data);
-
-  cloud_print::AddMultipartValueForUpload(kPrinterCapsValue,
+  post_data += GetPostDataForPrinterInfo(info, mime_boundary);
+  AddMultipartValueForUpload(kPrinterCapsValue,
       caps_and_defaults.printer_capabilities, mime_boundary,
       caps_and_defaults.caps_mime_type, &post_data);
-  cloud_print::AddMultipartValueForUpload(kPrinterDefaultsValue,
+  AddMultipartValueForUpload(kPrinterDefaultsValue,
       caps_and_defaults.printer_defaults, mime_boundary,
       caps_and_defaults.defaults_mime_type, &post_data);
   // Send a hash of the printer capabilities to the server. We will use this
   // later to check if the capabilities have changed
-  cloud_print::AddMultipartValueForUpload(kPrinterCapsHashValue,
+  AddMultipartValueForUpload(kPrinterCapsHashValue,
       base::MD5String(caps_and_defaults.printer_capabilities),
       mime_boundary, std::string(), &post_data);
 
@@ -547,8 +553,7 @@ void CloudPrintConnector::OnReceivePrinterCaps(
   std::string mime_type("multipart/form-data; boundary=");
   mime_type += mime_boundary;
 
-  GURL post_url = CloudPrintHelpers::GetUrlForPrinterRegistration(
-      cloud_print_server_url_);
+  GURL post_url = GetUrlForPrinterRegistration(settings_.server_url());
   StartPostRequest(post_url,
                    kCloudPrintAPIMaxRetryCount,
                    mime_type,
@@ -561,3 +566,4 @@ bool CloudPrintConnector::IsSamePrinter(const std::string& name1,
   return (0 == base::strcasecmp(name1.c_str(), name2.c_str()));
 }
 
+}  // namespace cloud_print

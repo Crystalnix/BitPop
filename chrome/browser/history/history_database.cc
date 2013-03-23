@@ -13,8 +13,6 @@
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/string_util.h"
-#include "chrome/browser/diagnostics/sqlite_diagnostics.h"
-#include "chrome/browser/history/starred_url_database.h"
 #include "sql/transaction.h"
 
 #if defined(OS_MACOSX)
@@ -28,7 +26,7 @@ namespace {
 // Current version number. We write databases at the "current" version number,
 // but any previous version that can read the "compatible" one can make do with
 // or database without *too* many bad effects.
-static const int kCurrentVersionNumber = 22;
+static const int kCurrentVersionNumber = 23;
 static const int kCompatibleVersionNumber = 16;
 static const char kEarlyExpirationThresholdKey[] = "early_expiration_threshold";
 
@@ -69,9 +67,9 @@ HistoryDatabase::~HistoryDatabase() {
 }
 
 sql::InitStatus HistoryDatabase::Init(const FilePath& history_name,
-                                      const FilePath& bookmarks_path) {
+                                      sql::ErrorDelegate* error_delegate) {
   // Set the exceptional sqlite error handler.
-  db_.set_error_delegate(GetErrorHandlerForHistoryDb());
+  db_.set_error_delegate(error_delegate);
 
   // Set the database page size to something a little larger to give us
   // better performance (we're typically seek rather than bandwidth limited).
@@ -119,7 +117,7 @@ sql::InitStatus HistoryDatabase::Init(const FilePath& history_name,
   CreateKeywordSearchTermsIndices();
 
   // Version check.
-  sql::InitStatus version_status = EnsureCurrentVersion(bookmarks_path);
+  sql::InitStatus version_status = EnsureCurrentVersion();
   if (version_status != sql::INIT_OK)
     return version_status;
 
@@ -177,6 +175,10 @@ void HistoryDatabase::Vacuum() {
   DCHECK_EQ(0, db_.transaction_nesting()) <<
       "Can not have a transaction when vacuuming.";
   ignore_result(db_.Execute("VACUUM"));
+}
+
+bool HistoryDatabase::Raze() {
+  return db_.Raze();
 }
 
 void HistoryDatabase::ThumbnailMigrationDone() {
@@ -244,8 +246,7 @@ sql::MetaTable& HistoryDatabase::GetMetaTable() {
 
 // Migration -------------------------------------------------------------------
 
-sql::InitStatus HistoryDatabase::EnsureCurrentVersion(
-    const FilePath& tmp_bookmarks_path) {
+sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
   // We can't read databases newer than we were designed for.
   if (meta_table_.GetCompatibleVersionNumber() > kCurrentVersionNumber) {
     LOG(WARNING) << "History database is too new.";
@@ -263,9 +264,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion(
   // Put migration code here
 
   if (cur_version == 15) {
-    StarredURLDatabase starred_url_database(&db_);
-    if (!starred_url_database.MigrateBookmarksToFile(tmp_bookmarks_path) ||
-        !DropStarredIDFromURLs()) {
+    if (!db_.Execute("DROP TABLE starred") || !DropStarredIDFromURLs()) {
       LOG(WARNING) << "Unable to update history database to version 16.";
       return sql::INIT_FAILURE;
     }
@@ -332,6 +331,17 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion(
     ++cur_version;
     meta_table_.SetVersionNumber(cur_version);
   }
+
+  if (cur_version == 22) {
+    if (!MigrateDownloadsState()) {
+      LOG(WARNING) << "Unable to fix invalid downloads state values";
+      // Invalid state values may cause crashes.
+      return sql::INIT_FAILURE;
+    }
+    cur_version++;
+    meta_table_.SetVersionNumber(cur_version);
+  }
+
   // When the version is too old, we just try to continue anyway, there should
   // not be a released product that makes a database too old for us to handle.
   LOG_IF(WARNING, cur_version < GetCurrentVersion()) <<

@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "base/threading/platform_thread.h"
+#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate.h"
@@ -20,10 +21,14 @@
 
 using content::UserMetricsAction;
 using content::WebContents;
-using webkit::forms::PasswordForm;
-using webkit::forms::PasswordFormMap;
+using content::PasswordForm;
+using content::PasswordFormMap;
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordManager)
 
 namespace {
+
+const char kSpdyProxyRealm[] = "/SpdyProxy";
 
 // This routine is called when PasswordManagers are constructed.
 //
@@ -61,6 +66,19 @@ void PasswordManager::RegisterUserPrefs(PrefService* prefs) {
                              PrefService::UNSYNCABLE_PREF);
 }
 
+// static
+void PasswordManager::CreateForWebContentsAndDelegate(
+    content::WebContents* contents,
+    PasswordManagerDelegate* delegate) {
+  if (FromWebContents(contents)) {
+    DCHECK_EQ(delegate, FromWebContents(contents)->delegate_);
+    return;
+  }
+
+  contents->SetUserData(UserDataKey(),
+                        new PasswordManager(contents, delegate));
+}
+
 PasswordManager::PasswordManager(WebContents* web_contents,
                                  PasswordManagerDelegate* delegate)
     : content::WebContentsObserver(web_contents),
@@ -68,7 +86,7 @@ PasswordManager::PasswordManager(WebContents* web_contents,
       observer_(NULL) {
   DCHECK(delegate_);
   password_manager_enabled_.Init(prefs::kPasswordManagerEnabled,
-                                 delegate_->GetProfile()->GetPrefs(), NULL);
+                                 delegate_->GetProfile()->GetPrefs());
 
   ReportMetrics(*password_manager_enabled_);
 }
@@ -80,7 +98,8 @@ void PasswordManager::SetFormHasGeneratedPassword(const PasswordForm& form) {
   for (ScopedVector<PasswordFormManager>::iterator iter =
            pending_login_managers_.begin();
        iter != pending_login_managers_.end(); ++iter) {
-    if ((*iter)->DoesManage(form)) {
+    if ((*iter)->DoesManage(
+        form, PasswordFormManager::ACTION_MATCH_REQUIRED)) {
       (*iter)->SetHasGeneratedPassword();
       return;
     }
@@ -102,7 +121,8 @@ void PasswordManager::SetFormHasGeneratedPassword(const PasswordForm& form) {
 }
 
 bool PasswordManager::IsSavingEnabled() const {
-  return IsFillingEnabled() && !delegate_->GetProfile()->IsOffTheRecord();
+  return *password_manager_enabled_ &&
+         !delegate_->GetProfile()->IsOffTheRecord();
 }
 
 void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
@@ -114,22 +134,36 @@ void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
     return;
 
   scoped_ptr<PasswordFormManager> manager;
+  ScopedVector<PasswordFormManager>::iterator matched_manager_it =
+      pending_login_managers_.end();
   for (ScopedVector<PasswordFormManager>::iterator iter =
            pending_login_managers_.begin();
        iter != pending_login_managers_.end(); ++iter) {
-    if ((*iter)->DoesManage(form)) {
-      // Transfer ownership of the manager from |pending_login_managers_| to
-      // |manager|.
-      manager.reset(*iter);
-      pending_login_managers_.weak_erase(iter);
+    // If we find a manager that exactly matches the submitted form including
+    // the action URL, exit the loop.
+    if ((*iter)->DoesManage(
+        form, PasswordFormManager::ACTION_MATCH_REQUIRED)) {
+      matched_manager_it = iter;
       break;
+    // If the current manager matches the submitted form excluding the action
+    // URL, remember it as a candidate and continue searching for an exact
+    // match.
+    } else if ((*iter)->DoesManage(
+        form, PasswordFormManager::ACTION_MATCH_NOT_REQUIRED)) {
+      matched_manager_it = iter;
     }
   }
   // If we didn't find a manager, this means a form was submitted without
   // first loading the page containing the form. Don't offer to save
   // passwords in this case.
-  if (!manager.get())
+  if (matched_manager_it != pending_login_managers_.end()) {
+    // Transfer ownership of the manager from |pending_login_managers_| to
+    // |manager|.
+    manager.reset(*matched_manager_it);
+    pending_login_managers_.weak_erase(matched_manager_it);
+  } else {
     return;
+  }
 
   // If we found a manager but it didn't finish matching yet, the user has
   // tried to submit credentials before we had time to even find matching
@@ -145,6 +179,12 @@ void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
 
   // Bail if we're missing any of the necessary form components.
   if (!manager->HasValidPasswordForm())
+    return;
+
+  // Always save generated passwords, as the user expresses explicit intent for
+  // Chrome to manage such passwords. For other passwords, respect the
+  // autocomplete attribute.
+  if (!manager->HasGeneratedPassword() && !form.password_autocomplete_set)
     return;
 
   PasswordForm provisionally_saved_form(form);
@@ -189,14 +229,16 @@ bool PasswordManager::OnMessageReceived(const IPC::Message& message) {
 
 void PasswordManager::OnPasswordFormsParsed(
     const std::vector<PasswordForm>& forms) {
-  if (!IsFillingEnabled())
-    return;
-
   // Ask the SSLManager for current security.
   bool had_ssl_error = delegate_->DidLastPageLoadEncounterSSLErrors();
 
   for (std::vector<PasswordForm>::const_iterator iter = forms.begin();
        iter != forms.end(); ++iter) {
+    // Don't involve the password manager if this form corresponds to
+    // SpdyProxy authentication, as indicated by the realm.
+    if (EndsWith(iter->signon_realm, kSpdyProxyRealm, true))
+      continue;
+
     bool ssl_valid = iter->origin.SchemeIsSecure() && !had_ssl_error;
     PasswordFormManager* manager =
         new PasswordFormManager(delegate_->GetProfile(),
@@ -219,7 +261,8 @@ void PasswordManager::OnPasswordFormsRendered(
   // First, check for a failed login attempt.
   for (std::vector<PasswordForm>::const_iterator iter = visible_forms.begin();
        iter != visible_forms.end(); ++iter) {
-    if (provisional_save_manager_->DoesManage(*iter)) {
+    if (provisional_save_manager_->DoesManage(
+        *iter, PasswordFormManager::ACTION_MATCH_REQUIRED)) {
       // The form trying to be saved has immediately re-appeared. Assume login
       // failure and abort this save, by clearing provisional_save_manager_.
       provisional_save_manager_->SubmitFailed();
@@ -261,12 +304,12 @@ void PasswordManager::Autofill(
     case PasswordForm::SCHEME_HTML: {
       // Note the check above is required because the observer_ for a non-HTML
       // schemed password form may have been freed, so we need to distinguish.
-      webkit::forms::PasswordFormFillData fill_data;
-      webkit::forms::PasswordFormDomManager::InitFillData(form_for_autofill,
-                                                          best_matches,
-                                                          &preferred_match,
-                                                          wait_for_username,
-                                                          &fill_data);
+      PasswordFormFillData fill_data;
+      InitPasswordFormFillData(form_for_autofill,
+                               best_matches,
+                               &preferred_match,
+                               wait_for_username,
+                               &fill_data);
       delegate_->FillPasswordForm(fill_data);
       return;
     }
@@ -276,8 +319,4 @@ void PasswordManager::Autofill(
                                            preferred_match.password_value);
       }
   }
-}
-
-bool PasswordManager::IsFillingEnabled() const {
-  return delegate_->GetProfile() && *password_manager_enabled_;
 }

@@ -13,13 +13,13 @@
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
-#include "chrome/browser/plugin_data_remover_helper.h"
-#include "chrome/browser/plugin_prefs.h"
+#include "chrome/browser/plugins/plugin_data_remover_helper.h"
+#include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/error_utils.h"
 
 using content::BrowserThread;
 
@@ -35,14 +35,14 @@ const char kFormDataKey[] = "formData";
 const char kHistoryKey[] = "history";
 const char kIndexedDBKey[] = "indexedDB";
 const char kLocalStorageKey[] = "localStorage";
-const char kServerBoundCertsKey[] = "serverBoundCerts";
+const char kServerBoundCertsKey[] = "serverBoundCertificates";
 const char kPasswordsKey[] = "passwords";
 const char kPluginDataKey[] = "pluginData";
 const char kWebSQLKey[] = "webSQL";
 
 // Option Keys.
 const char kExtensionsKey[] = "extension";
-const char kOriginTypesKey[] = "originType";
+const char kOriginTypesKey[] = "originTypes";
 const char kProtectedWebKey[] = "protectedWeb";
 const char kSinceKey[] = "since";
 const char kUnprotectedWebKey[] = "unprotectedWeb";
@@ -54,12 +54,6 @@ const char kOneAtATimeError[] = "Only one 'browsingData' API call can run at "
 }  // namespace extension_browsing_data_api_constants
 
 namespace {
-// Converts the JavaScript API's numeric input (miliseconds since epoch) into an
-// appropriate base::Time that we can pass into the BrowsingDataRemove.
-bool ParseTimeFromValue(const double& ms_since_epoch, base::Time* time) {
-  return true;
-}
-
 // Given a DictionaryValue |dict|, returns either the value stored as |key|, or
 // false, if the given key doesn't exist in the dictionary.
 bool RemoveType(base::DictionaryValue* dict, const std::string& key) {
@@ -119,11 +113,6 @@ bool BrowsingDataExtensionFunction::RunImpl() {
   // If we don't have a profile, something's pretty wrong.
   DCHECK(profile());
 
-  if (BrowsingDataRemover::is_removing()) {
-    error_ = extension_browsing_data_api_constants::kOneAtATimeError;
-    return false;
-  }
-
   // Grab the initial |options| parameter, and parse out the arguments.
   DictionaryValue* options;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &options));
@@ -175,6 +164,12 @@ void BrowsingDataExtensionFunction::CheckRemovingPluginDataSupported(
 }
 
 void BrowsingDataExtensionFunction::StartRemoving() {
+  if (BrowsingDataRemover::is_removing()) {
+    error_ = extension_browsing_data_api_constants::kOneAtATimeError;
+    SendResponse(false);
+    return;
+  }
+
   // If we're good to go, add a ref (Balanced in OnBrowsingDataRemoverDone)
   AddRef();
 
@@ -182,8 +177,8 @@ void BrowsingDataExtensionFunction::StartRemoving() {
   // that we're notified after removal) and call remove() with the arguments
   // we've generated above. We can use a raw pointer here, as the browsing data
   // remover is responsible for deleting itself once data removal is complete.
-  BrowsingDataRemover* remover = new BrowsingDataRemover(profile(),
-      remove_since_, base::Time::Now());
+  BrowsingDataRemover* remover = BrowsingDataRemover::CreateForRange(profile(),
+      remove_since_, base::Time::Max());
   remover->AddObserver(this);
   remover->Remove(removal_mask_, origin_set_mask_);
 }
@@ -246,7 +241,8 @@ int RemoveCacheFunction::GetRemovalMask() const {
 }
 
 int RemoveCookiesFunction::GetRemovalMask() const {
-  return BrowsingDataRemover::REMOVE_COOKIES;
+  return BrowsingDataRemover::REMOVE_COOKIES |
+         BrowsingDataRemover::REMOVE_SERVER_BOUND_CERTS;
 }
 
 int RemoveDownloadsFunction::GetRemovalMask() const {
@@ -271,10 +267,6 @@ int RemoveIndexedDBFunction::GetRemovalMask() const {
 
 int RemoveLocalStorageFunction::GetRemovalMask() const {
   return BrowsingDataRemover::REMOVE_LOCAL_STORAGE;
-}
-
-int RemoveServerBoundCertsFunction::GetRemovalMask() const {
-  return BrowsingDataRemover::REMOVE_SERVER_BOUND_CERTS;
 }
 
 int RemovePluginDataFunction::GetRemovalMask() const {

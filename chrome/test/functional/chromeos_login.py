@@ -23,6 +23,9 @@ class ChromeosLogin(pyauto.PyUITest):
 
   assert os.geteuid() == 0, 'Need to run this test as root'
 
+  def ShouldAutoLogin(self):
+    return False
+
   def setUp(self):
     # We want a clean session_manager instance for every run,
     # so restart ui now.
@@ -128,15 +131,6 @@ class ChromeosLogin(pyauto.PyUITest):
     login_info = self.GetLoginInfo()
     self.assertTrue(login_info['is_logged_in'], msg='Login failed.')
 
-  def testCachedCredentials(self):
-    """Test that we can login without connectivity if we have so before."""
-    self.testGoodLogin()
-    self.Logout()
-    self.SetProxySettingsOnChromeOS('singlehttp', '10.10.10.10')
-    self.testGoodLogin()
-    # Reset back to direct proxy
-    self.SetProxySettingsOnChromeOS('type', self.PROXY_TYPE_DIRECT)
-
   def testNavigateAfterLogin(self):
     """Test that page navigation is successful after logging in."""
     self.testGoodLogin()
@@ -204,6 +198,9 @@ class ChromeosLogin(pyauto.PyUITest):
     # Build up some history and setup state in "Local State".
     url = self.GetHttpURLForDataPath('title2.html')
     self.NavigateToURL(url)
+    # chromeos often takes a while to register URLs into history.
+    self.assertTrue(self.WaitUntil(lambda: self.GetHistoryInfo().History()),
+                    msg='Could not open %s successfully' % url)
     open('/home/chronos/__magic__', 'w').close()
     open('/home/chronos/user/__magic__', 'w').close()
 
@@ -248,6 +245,120 @@ class ChromeosLogin(pyauto.PyUITest):
     self.SendKeysToHterm('exit\\n')
     self.WaitForHtermText(text='command crosh completed with exit code 0',
         msg='Could not exit crosh.')
+
+  def testCroshPreservedBetweenLogins(self):
+    """Verify user can continue after re-login."""
+    self.testGoodLogin()
+    self.CloseBrowserWindow(0)
+    test_utils.OpenCroshVerification(self)
+
+    # Verify crosh prompt.
+    self.WaitForHtermText(text='crosh> ',
+        msg='Could not find "crosh> " prompt')
+    self.assertTrue(
+        self.GetHtermRowsText(start=0, end=2).endswith('crosh> '),
+        msg='Could not find "crosh> " prompt')
+
+    # Open 2 other tabs.
+    self.AppendTab(self.GetHttpURLForDataPath('title2.html'))
+    self.assertEqual('Title Of Awesomeness', self.GetActiveTabTitle(),
+                     msg='Unable to naviage to title2.html and '
+                         'verify tab title.')
+    self.AppendTab(self.GetHttpURLForDataPath('settings', 'image_page.html'))
+    self.assertEqual('Show an image', self.GetActiveTabTitle(),
+                     msg='Unable to navigate to image_page and '
+                         'verify tab title.')
+    self.Logout()
+    self.testGoodLogin()  # Re-Login with same account.
+
+    # Verify 3 tabs are still open after re-login.
+    self.assertEqual(3, len(self.GetBrowserInfo()['windows'][0]['tabs']))
+
+
+class ChromeosLoginCachedCredentialsAddUser(pyauto.PyUITest):
+  """TestCase for failing to add a user  with invalid proxy settings."""
+  assert os.geteuid() == 0, 'Need to run this test as root'
+
+  def ShouldAutoLogin(self):
+    return False
+
+  def setUp(self):
+    # We want a clean session_manager instance for every run,
+    # so restart ui now.
+    cros_ui.stop(allow_fail=True)
+    cryptohome.remove_all_vaults()
+    cros_ui.start(wait_for_login_prompt=False)
+    pyauto.PyUITest.setUp(self)
+
+  def tearDown(self):
+    self.ResetProxySettingsOnChromeOS()
+    pyauto.PyUITest.tearDown(self)
+
+  def _ValidCredentials(self, account_type='test_google_account'):
+    """Obtains a valid username and password from a data file.
+
+    Returns:
+      A dictionary with the keys 'username' and 'password'
+    """
+    return self.GetPrivateInfo()[account_type]
+
+  def testCachedCredentialsAddUser(self):
+    proxy_dict = {
+      'url_path': 'singlehttp',
+      'proxy_url': '127.0.0.1',
+    }
+    self.SetProxySettingOnChromeOS(proxy_dict)
+
+    """Test that login fails."""
+    credentials = self._ValidCredentials()
+    self.assertRaises(
+        pyauto_errors.JSONInterfaceError,
+        lambda: self.Login(credentials['username'],
+                           credentials['password'])
+    )
+
+class ChromeosLoginCachedCredentialsUserPod(pyauto.PyUITest):
+  """TestCase for Logging into ChromeOS with cached credentials and
+  invalid proxy settings.
+  """
+  assert os.geteuid() == 0, 'Need to run this test as root'
+
+  def ShouldAutoLogin(self):
+    return False
+
+  def setUp(self):
+    # We want a clean session_manager instance for every run,
+    # so restart ui now.
+    cros_ui.stop(allow_fail=True)
+    cryptohome.remove_all_vaults()
+    cros_ui.start(wait_for_login_prompt=False)
+    pyauto.PyUITest.setUp(self)
+
+  def tearDown(self):
+    self.ResetProxySettingsOnChromeOS()
+    pyauto.PyUITest.tearDown(self)
+
+  def _ValidCredentials(self, account_type='test_google_account'):
+    """Obtains a valid username and password from a data file.
+
+    Returns:
+      A dictionary with the keys 'username' and 'password'
+    """
+    return self.GetPrivateInfo()[account_type]
+
+  def testCachedCredentialsUserPod(self):
+    """Test that we can login without connectivity if we have so before.
+
+    This test is currently disabled because testGoodLogin tries to
+    add a user after setting proxies, which is supposed to fail. To
+    make it pass we need a hook that simply calls Login on the delegate
+    in webui_login_display.cc ::ShowSigninScreenForCreds.
+    """
+    self.testGoodLogin()
+    self.Logout()
+    self.SetProxySettingOnChromeOS('singlehttp', '127.0.0.1')
+    self.testGoodLogin()
+    self.ResetProxySettingsOnChromeOS()
 
 
 if __name__ == '__main__':

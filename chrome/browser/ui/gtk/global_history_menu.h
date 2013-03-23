@@ -8,7 +8,7 @@
 #include <map>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/cancelable_request.h"
+#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
@@ -19,6 +19,7 @@
 #include "ui/base/gtk/owned_widget_gtk.h"
 
 class Browser;
+class Profile;
 
 namespace history {
 class TopSites;
@@ -109,7 +110,9 @@ class GlobalHistoryMenu : public GlobalMenuOwner,
   ui::OwnedWidgetGtk history_menu_;
 
   history::TopSites* top_sites_;
-  CancelableRequestConsumer top_sites_consumer_;
+
+  // For callbacks may be run after destruction.
+  base::WeakPtrFactory<GlobalHistoryMenu> weak_ptr_factory_;
 
   TabRestoreService* tab_restore_service_;  // weak
 

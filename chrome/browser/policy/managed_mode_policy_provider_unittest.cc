@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/prefs/testing_pref_store.h"
 #include "chrome/browser/policy/configuration_policy_provider_test.h"
 #include "chrome/browser/policy/managed_mode_policy_provider.h"
 #include "chrome/browser/policy/policy_bundle.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/prefs/testing_pref_store.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace policy {
@@ -50,7 +50,9 @@ class TestHarness : public PolicyProviderTestHarness {
 
 TestHarness::TestHarness()
     : PolicyProviderTestHarness(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER),
-      pref_store_(new TestingPrefStore) {}
+      pref_store_(new TestingPrefStore) {
+  pref_store_->SetInitializationCompleted();
+}
 
 TestHarness::~TestHarness() {}
 
@@ -99,22 +101,15 @@ void TestHarness::InstallPolicy(const std::string& policy_name,
                                 base::Value* policy_value) {
   base::DictionaryValue* cached_policy = NULL;
   base::Value* value = NULL;
-  PrefStore::ReadResult result =
-      pref_store_->GetMutableValue(ManagedModePolicyProvider::kPolicies,
-                                   &value);
-  switch (result) {
-    case PrefStore::READ_NO_VALUE:
-      cached_policy = new base::DictionaryValue;
-      pref_store_->SetValue(ManagedModePolicyProvider::kPolicies,
-                            cached_policy);
-      break;
-    case PrefStore::READ_OK:
-      ASSERT_TRUE(value->GetAsDictionary(&cached_policy));
-      break;
-    default:
-      FAIL() << "Invalid result reading policy: " << result;
-      return;
+  if (pref_store_->GetMutableValue(ManagedModePolicyProvider::kPolicies,
+                                   &value)) {
+    ASSERT_TRUE(value->GetAsDictionary(&cached_policy));
+  } else {
+    cached_policy = new base::DictionaryValue;
+    pref_store_->SetValue(ManagedModePolicyProvider::kPolicies,
+                          cached_policy);
   }
+
   cached_policy->SetWithoutPathExpansion(policy_name, policy_value);
 }
 
@@ -130,8 +125,20 @@ class ManagedModePolicyProviderAPITest : public PolicyTestBase {
  protected:
   ManagedModePolicyProviderAPITest()
       : pref_store_(new TestingPrefStore),
-        provider_(pref_store_) {}
+        provider_(pref_store_) {
+    pref_store_->SetInitializationCompleted();
+  }
   virtual ~ManagedModePolicyProviderAPITest() {}
+
+  virtual void SetUp() OVERRIDE {
+    PolicyTestBase::SetUp();
+    provider_.Init();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    provider_.Shutdown();
+    PolicyTestBase::TearDown();
+  }
 
   scoped_refptr<TestingPrefStore> pref_store_;
   ManagedModePolicyProvider provider_;
@@ -162,7 +169,11 @@ TEST_F(ManagedModePolicyProviderAPITest, SetPolicy) {
 
   // A newly-created provider should have the same policies.
   ManagedModePolicyProvider new_provider(pref_store_);
+  new_provider.Init();
   EXPECT_TRUE(new_provider.policies().Equals(expected_bundle));
+
+  // Cleanup.
+  new_provider.Shutdown();
 }
 
 }  // namespace policy

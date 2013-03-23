@@ -1,7 +1,6 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 tree {
   display: block;
@@ -16,16 +15,10 @@ tree {
   border-radius: 2px;
   color: black;
   cursor: default;
-  line-height: 20px;
+  line-height: 28px;
   padding: 0 3px;
   position: relative;
   white-space: nowrap;
-}
-
-@media (pointer:coarse) {
-  .tree-item > .tree-row {
-    line-height: 40px;
-  }
 }
 
 .expand-icon {
@@ -38,15 +31,9 @@ tree {
   height: 16px;
   opacity: .6;
   position: relative;
-  top: 2px;
+  top: 6px;
   vertical-align: top;
   width: 16px;
-}
-
-@media (pointer:coarse) {
-  .expand-icon {
-    vertical-align: text-top;
-  }
 }
 
 html[dir=rtl] .expand-icon {
@@ -127,13 +114,15 @@ html[dir=rtl] .tree-label {
 
 html[dir=rtl] .tree-label,
 html[dir=rtl] .tree-row[may-have-children] > .tree-label {
-  background-image:
-   url('../../../../../ui/resources/default_100_percent/folder_closed_rtl.png');
+  background-image: -webkit-image-set(
+      url('../../../../../ui/resources/default_100_percent/common/folder_closed_rtl.png') 1x,
+      url('../../../../../ui/resources/default_200_percent/common/folder_closed_rtl.png') 2x);
 }
 
 html[dir=rtl] .tree-item[expanded] > .tree-row > .tree-label {
-  background-image:
-     url('../../../../../ui/resources/default_100_percent/folder_open_rtl.png');
+  background-image: -webkit-image-set(
+     url('../../../../../ui/resources/default_100_percent/common/folder_open_rtl.png') 1x,
+     url('../../../../../ui/resources/default_200_percent/common/folder_open_rtl.png') 2x);
 }
 
 tree[icon-visibility=hidden] .tree-label {
@@ -148,17 +137,19 @@ tree[icon-visibility=parent] .tree-row[has-children=false] > .tree-label {
 
 .tree-label,
 .tree-row[may-have-children] > .tree-label {
-  background-image:
-      url('../../../../../ui/resources/default_100_percent/folder_closed.png');
+  background-image: -webkit-image-set(
+      url('../../../../../ui/resources/default_100_percent/common/folder_closed.png') 1x,
+      url('../../../../../ui/resources/default_200_percent/common/folder_closed.png') 2x);
 }
 
 .tree-item[expanded] > .tree-row > .tree-label {
-  background-image:
-      url('../../../../../ui/resources/default_100_percent/folder_open.png');
+  background-image: -webkit-image-set(
+      url('../../../../../ui/resources/default_100_percent/common/folder_open.png') 1x,
+      url('../../../../../ui/resources/default_200_percent/common/folder_open.png') 2x);
 }
 
 /* We need to ensure that even empty labels take up space */
-.tree-label:empty:after {
+.tree-label:empty::after {
   content: ' ';
   white-space: pre;
 }

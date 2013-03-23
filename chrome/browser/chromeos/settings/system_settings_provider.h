@@ -14,7 +14,7 @@
 #include "third_party/icu/public/i18n/unicode/timezone.h"
 
 namespace base {
-class Value;
+class StringValue;
 }
 
 namespace chromeos {
@@ -30,7 +30,6 @@ class SystemSettingsProvider : public CrosSettingsProvider,
   virtual TrustedStatus PrepareTrustedValues(
       const base::Closure& callback) OVERRIDE;
   virtual bool HandlesSetting(const std::string& path) const OVERRIDE;
-  virtual void Reload() OVERRIDE;
 
   // TimezoneSettings::Observer implementation.
   virtual void TimezoneChanged(const icu::TimeZone& timezone) OVERRIDE;
@@ -40,7 +39,7 @@ class SystemSettingsProvider : public CrosSettingsProvider,
   virtual void DoSet(const std::string& path,
                      const base::Value& in_value) OVERRIDE;
 
-  scoped_ptr<base::Value> timezone_value_;
+  scoped_ptr<base::StringValue> timezone_value_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemSettingsProvider);
 };

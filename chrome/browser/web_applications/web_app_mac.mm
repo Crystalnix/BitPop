@@ -7,11 +7,11 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
-#include "base/scoped_temp_dir.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/web_applications/web_app.h"
@@ -98,7 +98,7 @@ WebAppShortcutCreator::~WebAppShortcutCreator() {
 bool WebAppShortcutCreator::CreateShortcut() {
   FilePath app_name = internals::GetSanitizedFileName(info_.title);
   FilePath app_file_name = app_name.ReplaceExtension("app");
-  ScopedTempDir scoped_temp_dir;
+  base::ScopedTempDir scoped_temp_dir;
   if (!scoped_temp_dir.CreateUniqueTempDir())
     return false;
   FilePath staging_path = scoped_temp_dir.path().Append(app_file_name);
@@ -198,8 +198,9 @@ bool WebAppShortcutCreator::UpdateIcon(const FilePath& app_path) const {
 
   scoped_nsobject<IconFamily> icon_family([[IconFamily alloc] init]);
   bool image_added = false;
+  info_.favicon.ToImageSkia()->EnsureRepsForSupportedScaleFactors();
   std::vector<gfx::ImageSkiaRep> image_reps =
-      info_.favicon.ToImageSkia()->GetRepresentations();
+      info_.favicon.ToImageSkia()->image_reps();
   for (size_t i = 0; i < image_reps.size(); ++i) {
     NSBitmapImageRep* image_rep = SkBitmapToImageRep(
         image_reps[i].sk_bitmap());
@@ -249,11 +250,11 @@ void WebAppShortcutCreator::RevealGeneratedBundleInFinder(
 }  // namespace
 
 namespace web_app {
+
 namespace internals {
 
-bool CreatePlatformShortcut(
+bool CreatePlatformShortcuts(
     const FilePath& web_app_path,
-    const FilePath& profile_path,
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   string16 bundle_id = UTF8ToUTF16(base::mac::BaseBundleID());
@@ -262,11 +263,20 @@ bool CreatePlatformShortcut(
   return shortcut_creator.CreateShortcut();
 }
 
-void DeletePlatformShortcuts(const FilePath& profile_path,
-                             const std::string& extension_id) {
+void DeletePlatformShortcuts(
+    const FilePath& web_app_path,
+    const ShellIntegration::ShortcutInfo& shortcut_info) {
+  // TODO(benwells): Implement this when shortcuts / weblings are enabled on
+  // mac.
+}
+
+void UpdatePlatformShortcuts(
+    const FilePath& web_app_path,
+    const ShellIntegration::ShortcutInfo& shortcut_info) {
   // TODO(benwells): Implement this when shortcuts / weblings are enabled on
   // mac.
 }
 
 }  // namespace internals
+
 }  // namespace web_app

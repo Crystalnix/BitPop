@@ -60,7 +60,8 @@ function filtersForPage(pageName, isRTL) {
       "RTL" : [
         // BUG: http://crbug.com/93339
         bidichecker.FilterFactory.atText("Chrome Web Store"),
-        bidichecker.FilterFactory.atText("File Manager")
+        bidichecker.FilterFactory.atText("File Manager"),
+        bidichecker.FilterFactory.atText("Chrome Apps Debugger")
       ]
     },
     "chrome://feedback#0?description=%D7%91%D7%93%D7%99%D7%A7%D7%94" :
@@ -84,35 +85,6 @@ function filtersForPage(pageName, isRTL) {
             "חדשות תוכן ועדכונים - ידיעות אחרונות")
       ]
     },
-    "chrome://settings/clearBrowserData" : {
-      "RTL" : [
-        // BUG: http://crbug.com/94070
-        bidichecker.FilterFactory.atText("Google Cloud Print")
-      ]
-    },
-    "chrome://settings/content" : {
-      "RTL" : [
-        // BUG: http://crbug.com/94070
-        bidichecker.FilterFactory.atText("Google Cloud Print")
-      ]
-    },
-    "chrome://settings/languages" : {
-      "RTL" : [
-        // BUG: http://crbug.com/94070
-        bidichecker.FilterFactory.atText("Google Cloud Print"),
-        bidichecker.FilterFactory.atText("Hebrew"),
-        bidichecker.FilterFactory.atText("English (United States"),
-        bidichecker.FilterFactory.atText("English"),
-        // Items in timezone dropdown:
-        bidichecker.FilterFactory.precededByText("(")
-      ]
-    },
-    "chrome://settings/contentExceptions" : {
-      "RTL" : [
-        // BUG: http://crbug.com/94070
-        bidichecker.FilterFactory.atText("Google Cloud Print")
-      ]
-    },
     "chrome://history-frame" : {
       "LTR" : [
         // BUG: http://crbug.com/119595
@@ -125,6 +97,12 @@ function filtersForPage(pageName, isRTL) {
       ],
     },
   };
+  var globalFilters = {
+    "RTL" : [
+      // BUG: http://crbug/158750
+      bidichecker.FilterFactory.locationId("timezone-select")
+    ]
+  };
 
   var dir = isRTL ? "RTL" : "LTR";
   if (!filters.hasOwnProperty(pageName))
@@ -133,13 +111,13 @@ function filtersForPage(pageName, isRTL) {
     if (pageName.charAt(pageName.length - 2) == '/')
       pageName = pageName.substr(0, pageName.length - 2);
     else
-      return [];
+      return globalFilters[dir];
   }
   if (filters.hasOwnProperty(pageName) &&
       filters[pageName].hasOwnProperty(dir)) {
-    return filters[pageName][dir];
+    return filters[pageName][dir].concat(globalFilters[dir]);
   } else {
-    return [];
+    return globalFilters[dir];
   }
 }
 

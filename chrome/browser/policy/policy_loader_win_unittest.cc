@@ -7,17 +7,22 @@
 #include <windows.h>
 
 #include "base/json/json_writer.h"
+#include "base/process.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "chrome/browser/policy/async_policy_provider.h"
 #include "chrome/browser/policy/configuration_policy_provider_test.h"
 #include "chrome/browser/policy/policy_bundle.h"
 #include "chrome/browser/policy/policy_map.h"
+#include "chrome/common/json_schema_constants.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace schema = json_schema_constants;
 
 using base::win::RegKey;
 using namespace policy::registry_constants;
@@ -25,12 +30,6 @@ using namespace policy::registry_constants;
 namespace policy {
 
 namespace {
-
-const wchar_t kUnitTestRegistrySubKey[] = L"SOFTWARE\\Chromium Unit Tests";
-const wchar_t kUnitTestMachineOverrideSubKey[] =
-    L"SOFTWARE\\Chromium Unit Tests\\HKLM Override";
-const wchar_t kUnitTestUserOverrideSubKey[] =
-    L"SOFTWARE\\Chromium Unit Tests\\HKCU Override";
 
 // Installs |value| in the given registry |path| and |hive|, under the key
 // |name|. Returns false on errors.
@@ -43,6 +42,7 @@ bool InstallValue(const base::Value& value,
                   const string16& name) {
   // KEY_ALL_ACCESS causes the ctor to create the key if it does not exist yet.
   RegKey key(hive, path.c_str(), KEY_ALL_ACCESS);
+  EXPECT_TRUE(key.Valid());
   switch (value.GetType()) {
     case base::Value::TYPE_NULL:
       return key.WriteValue(name.c_str(), L"") == ERROR_SUCCESS;
@@ -119,27 +119,27 @@ base::DictionaryValue* BuildSchema(const base::Value& value) {
   base::DictionaryValue* schema = new base::DictionaryValue();
   switch (value.GetType()) {
     case base::Value::TYPE_NULL:
-      schema->SetString(kType, "null");
+      schema->SetString(schema::kType, "null");
       break;
     case base::Value::TYPE_BOOLEAN:
-      schema->SetString(kType, "boolean");
+      schema->SetString(schema::kType, "boolean");
       break;
     case base::Value::TYPE_INTEGER:
-      schema->SetString(kType, "integer");
+      schema->SetString(schema::kType, "integer");
       break;
     case base::Value::TYPE_DOUBLE:
-      schema->SetString(kType, "number");
+      schema->SetString(schema::kType, "number");
       break;
     case base::Value::TYPE_STRING:
-      schema->SetString(kType, "string");
+      schema->SetString(schema::kType, "string");
       break;
 
     case base::Value::TYPE_LIST: {
       // Assumes every list element has the same type.
       const base::ListValue* list = NULL;
       if (value.GetAsList(&list) && !list->empty()) {
-        schema->SetString(kType, "array");
-        schema->Set(kItems, BuildSchema(**list->begin()));
+        schema->SetString(schema::kType, "array");
+        schema->Set(schema::kItems, BuildSchema(**list->begin()));
       }
       break;
     }
@@ -152,8 +152,8 @@ base::DictionaryValue* BuildSchema(const base::Value& value) {
              it.HasNext(); it.Advance()) {
           properties->Set(it.key(), BuildSchema(it.value()));
         }
-        schema->SetString(kType, "object");
-        schema->Set(kProperties, properties);
+        schema->SetString(schema::kType, "object");
+        schema->Set(schema::kProperties, properties);
       }
       break;
     }
@@ -177,6 +177,7 @@ bool WriteSchema(const base::DictionaryValue& schema,
   string16 encoded16 = UTF8ToUTF16(encoded);
   // KEY_ALL_ACCESS causes the ctor to create the key if it does not exist yet.
   RegKey key(hive, path.c_str(), KEY_ALL_ACCESS);
+  EXPECT_TRUE(key.Valid());
   return key.WriteValue(name.c_str(), encoded16.c_str()) == ERROR_SUCCESS;
 }
 
@@ -191,12 +192,11 @@ bool InstallSchema(const base::Value& value,
 }
 
 // This class provides sandboxing and mocking for the parts of the Windows
-// Registry implementing Group Policy. It prepares two temporary sandbox keys
-// in |kUnitTestRegistrySubKey|, one for HKLM and one for HKCU. A test's calls
-// to the registry are redirected by Windows to these sandboxes, allowing the
-// tests to manipulate and access policy as if it were active, but without
-// actually changing the parts of the Registry that are managed by Group
-// Policy.
+// Registry implementing Group Policy. It prepares two temporary sandbox keys,
+// one for HKLM and one for HKCU. A test's calls to the registry are redirected
+// by Windows to these sandboxes, allowing the tests to manipulate and access
+// policy as if it were active, but without actually changing the parts of the
+// Registry that are managed by Group Policy.
 class ScopedGroupPolicyRegistrySandbox {
  public:
   ScopedGroupPolicyRegistrySandbox();
@@ -208,6 +208,8 @@ class ScopedGroupPolicyRegistrySandbox {
 
   // Deletes the sandbox keys.
   void DeleteKeys();
+
+  std::wstring key_name_;
 
   // Keys are created for the lifetime of a test to contain
   // the sandboxed HKCU and HKLM hives, respectively.
@@ -257,16 +259,22 @@ class TestHarness : public PolicyProviderTestHarness {
 };
 
 ScopedGroupPolicyRegistrySandbox::ScopedGroupPolicyRegistrySandbox() {
-  // Cleanup any remnants of previous tests.
-  DeleteKeys();
+  // Generate a unique registry key for the override for each test. This
+  // makes sure that tests executing in parallel won't delete each other's
+  // key, at DeleteKeys().
+  key_name_ = ASCIIToWide(base::StringPrintf(
+        "SOFTWARE\\chromium unittest %d",
+        base::Process::Current().pid()));
+  std::wstring hklm_key_name = key_name_ + L"\\HKLM";
+  std::wstring hkcu_key_name = key_name_ + L"\\HKCU";
 
   // Create the subkeys to hold the overridden HKLM and HKCU
   // policy settings.
   temp_hklm_hive_key_.Create(HKEY_CURRENT_USER,
-                             kUnitTestMachineOverrideSubKey,
+                             hklm_key_name.c_str(),
                              KEY_ALL_ACCESS);
   temp_hkcu_hive_key_.Create(HKEY_CURRENT_USER,
-                             kUnitTestUserOverrideSubKey,
+                             hkcu_key_name.c_str(),
                              KEY_ALL_ACCESS);
 
   ActivateOverrides();
@@ -290,7 +298,8 @@ void ScopedGroupPolicyRegistrySandbox::RemoveOverrides() {
 }
 
 void ScopedGroupPolicyRegistrySandbox::DeleteKeys() {
-  RegKey key(HKEY_CURRENT_USER, kUnitTestRegistrySubKey, KEY_ALL_ACCESS);
+  RegKey key(HKEY_CURRENT_USER, key_name_.c_str(), KEY_ALL_ACCESS);
+  ASSERT_TRUE(key.Valid());
   key.DeleteKey(L"");
 }
 
@@ -312,13 +321,15 @@ void TestHarness::InstallEmptyPolicy() {}
 void TestHarness::InstallStringPolicy(const std::string& policy_name,
                                       const std::string& policy_value) {
   RegKey key(hive_, kRegistryMandatorySubKey, KEY_ALL_ACCESS);
-  key.WriteValue(UTF8ToUTF16(policy_name).c_str(),
-                 UTF8ToUTF16(policy_value).c_str());
+  ASSERT_TRUE(key.Valid());
+  ASSERT_HRESULT_SUCCEEDED(key.WriteValue(UTF8ToUTF16(policy_name).c_str(),
+                                          UTF8ToUTF16(policy_value).c_str()));
 }
 
 void TestHarness::InstallIntegerPolicy(const std::string& policy_name,
                                        int policy_value) {
   RegKey key(hive_, kRegistryMandatorySubKey, KEY_ALL_ACCESS);
+  ASSERT_TRUE(key.Valid());
   key.WriteValue(UTF8ToUTF16(policy_name).c_str(),
                  static_cast<DWORD>(policy_value));
 }
@@ -326,6 +337,7 @@ void TestHarness::InstallIntegerPolicy(const std::string& policy_name,
 void TestHarness::InstallBooleanPolicy(const std::string& policy_name,
                                        bool policy_value) {
   RegKey key(hive_, kRegistryMandatorySubKey, KEY_ALL_ACCESS);
+  ASSERT_TRUE(key.Valid());
   key.WriteValue(UTF8ToUTF16(policy_name).c_str(),
                  static_cast<DWORD>(policy_value));
 }
@@ -336,6 +348,7 @@ void TestHarness::InstallStringListPolicy(const std::string& policy_name,
              (string16(kRegistryMandatorySubKey) + ASCIIToUTF16("\\") +
               UTF8ToUTF16(policy_name)).c_str(),
              KEY_ALL_ACCESS);
+  ASSERT_TRUE(key.Valid());
   int index = 1;
   for (base::ListValue::const_iterator element(policy_value->begin());
        element != policy_value->end();
@@ -355,6 +368,7 @@ void TestHarness::InstallDictionaryPolicy(
   std::string json;
   base::JSONWriter::Write(policy_value, &json);
   RegKey key(hive_, kRegistryMandatorySubKey, KEY_ALL_ACCESS);
+  ASSERT_TRUE(key.Valid());
   key.WriteValue(UTF8ToUTF16(policy_name).c_str(),
                  UTF8ToUTF16(json).c_str());
 }
@@ -424,9 +438,11 @@ class PolicyLoaderWinTest : public PolicyTestBase {
 
 TEST_F(PolicyLoaderWinTest, HKLMOverHKCU) {
   RegKey hklm_key(HKEY_LOCAL_MACHINE, kRegistryMandatorySubKey, KEY_ALL_ACCESS);
+  ASSERT_TRUE(hklm_key.Valid());
   hklm_key.WriteValue(UTF8ToUTF16(test_policy_definitions::kKeyString).c_str(),
                       UTF8ToUTF16("hklm").c_str());
   RegKey hkcu_key(HKEY_CURRENT_USER, kRegistryMandatorySubKey, KEY_ALL_ACCESS);
+  ASSERT_TRUE(hkcu_key.Valid());
   hkcu_key.WriteValue(UTF8ToUTF16(test_policy_definitions::kKeyString).c_str(),
                       UTF8ToUTF16("hkcu").c_str());
 
@@ -576,16 +592,16 @@ TEST_F(PolicyLoaderWinTest, LoadIntegerEncodedValues) {
 TEST_F(PolicyLoaderWinTest, DefaultPropertySchemaType) {
   // Build a schema for an "object" with a default schema for its properties.
   base::DictionaryValue default_schema;
-  default_schema.SetString(kType, "number");
+  default_schema.SetString(schema::kType, "number");
   base::DictionaryValue integer_schema;
-  integer_schema.SetString(kType, "integer");
+  integer_schema.SetString(schema::kType, "integer");
   base::DictionaryValue properties;
   properties.Set("special-int1", integer_schema.DeepCopy());
   properties.Set("special-int2", integer_schema.DeepCopy());
   base::DictionaryValue schema;
-  schema.SetString(kType, "object");
-  schema.Set(kProperties, properties.DeepCopy());
-  schema.Set(kAdditionalProperties, default_schema.DeepCopy());
+  schema.SetString(schema::kType, "object");
+  schema.Set(schema::kProperties, properties.DeepCopy());
+  schema.Set(schema::kAdditionalProperties, default_schema.DeepCopy());
 
   const string16 kPathSuffix =
       kRegistryMandatorySubKey + ASCIIToUTF16("\\3rdparty\\extensions\\test");

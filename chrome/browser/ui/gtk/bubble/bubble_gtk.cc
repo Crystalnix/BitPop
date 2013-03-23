@@ -35,12 +35,6 @@ const int kArrowToContentPadding = -4;
 // We draw flat diagonal corners, each corner is an NxN square.
 const int kCornerSize = 3;
 
-// Margins around the content.
-const int kTopMargin = kArrowSize + kCornerSize - 1;
-const int kBottomMargin = kCornerSize - 1;
-const int kLeftMargin = kCornerSize - 1;
-const int kRightMargin = kCornerSize - 1;
-
 const GdkColor kBackgroundColor = GDK_COLOR_RGB(0xff, 0xff, 0xff);
 const GdkColor kFrameColor = GDK_COLOR_RGB(0x63, 0x63, 0x63);
 
@@ -161,9 +155,7 @@ void BubbleGtk::Init(GtkWidget* anchor_widget,
   gtk_window_add_accel_group(GTK_WINDOW(window_), accel_group_);
 
   GtkWidget* alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
-  gtk_alignment_set_padding(GTK_ALIGNMENT(alignment),
-                            kTopMargin, kBottomMargin,
-                            kLeftMargin, kRightMargin);
+  gtk_alignment_set_padding(GTK_ALIGNMENT(alignment), kArrowSize, 0, 0, 0);
 
   gtk_container_add(GTK_CONTAINER(alignment), content);
   gtk_container_add(GTK_CONTAINER(window_), alignment);
@@ -178,13 +170,19 @@ void BubbleGtk::Init(GtkWidget* anchor_widget,
 
   gtk_widget_add_events(window_, GDK_BUTTON_PRESS_MASK);
 
-  signals_.Connect(window_, "expose-event", G_CALLBACK(OnExposeThunk), this);
+  // Connect during the bubbling phase so the border is always on top.
+  signals_.ConnectAfter(window_, "expose-event",
+                        G_CALLBACK(OnExposeThunk), this);
   signals_.Connect(window_, "size-allocate", G_CALLBACK(OnSizeAllocateThunk),
                    this);
   signals_.Connect(window_, "button-press-event",
                    G_CALLBACK(OnButtonPressThunk), this);
   signals_.Connect(window_, "destroy", G_CALLBACK(OnDestroyThunk), this);
   signals_.Connect(window_, "hide", G_CALLBACK(OnHideThunk), this);
+  if (grab_input_) {
+    signals_.Connect(window_, "grab-broken-event",
+                     G_CALLBACK(OnGrabBrokenThunk), this);
+  }
 
   // If the toplevel window is being used as the anchor, then the signals below
   // are enough to keep us positioned correctly.
@@ -192,16 +190,15 @@ void BubbleGtk::Init(GtkWidget* anchor_widget,
     signals_.Connect(anchor_widget_, "size-allocate",
                      G_CALLBACK(OnAnchorAllocateThunk), this);
     signals_.Connect(anchor_widget_, "destroy",
-                     G_CALLBACK(gtk_widget_destroyed), &anchor_widget_);
+                     G_CALLBACK(OnAnchorDestroyThunk), this);
   }
 
   signals_.Connect(toplevel_window_, "configure-event",
                    G_CALLBACK(OnToplevelConfigureThunk), this);
   signals_.Connect(toplevel_window_, "unmap-event",
                    G_CALLBACK(OnToplevelUnmapThunk), this);
-  // Set |toplevel_window_| to NULL if it gets destroyed.
-  signals_.Connect(toplevel_window_, "destroy",
-                   G_CALLBACK(gtk_widget_destroyed), &toplevel_window_);
+  signals_.Connect(window_, "destroy",
+                   G_CALLBACK(OnToplevelDestroyThunk), this);
 
   gtk_widget_show_all(window_);
 
@@ -313,26 +310,23 @@ BubbleGtk::ArrowLocationGtk BubbleGtk::GetArrowLocation(
     int arrow_y,
     int width,
     int height) {
-  int screen_width = gdk_screen_get_width(gdk_screen_get_default());
-  int screen_height = gdk_screen_get_height(gdk_screen_get_default());
+  const int screen_width = gdk_screen_get_width(gdk_screen_get_default());
+  const int screen_height = gdk_screen_get_height(gdk_screen_get_default());
 
-  // Choose whether we should show this bubble above the specified location or
-  // below it.
-  bool wants_top = IsArrowTop(preferred_location) ||
+  // Choose whether to show the bubble above or below the specified location.
+  const bool prefer_top_arrow = IsArrowTop(preferred_location) ||
       preferred_location == ARROW_LOCATION_NONE;
-  bool top_is_onscreen = (arrow_y + height < screen_height);
-  bool bottom_is_onscreen = (arrow_y - height >= 0);
+  // The bleed measures the amount of bubble that would be shown offscreen.
+  const int top_arrow_bleed =
+      std::max(height + kArrowSize + arrow_y - screen_height, 0);
+  const int bottom_arrow_bleed = std::max(height + kArrowSize - arrow_y, 0);
 
-  ArrowLocationGtk arrow_location_none;
-  ArrowLocationGtk arrow_location_left;
-  ArrowLocationGtk arrow_location_middle;
-  ArrowLocationGtk arrow_location_right;
-  if (top_is_onscreen && (wants_top || !bottom_is_onscreen)) {
-    arrow_location_none = ARROW_LOCATION_NONE;
-    arrow_location_left = ARROW_LOCATION_TOP_LEFT;
-    arrow_location_middle = ARROW_LOCATION_TOP_MIDDLE;
-    arrow_location_right =ARROW_LOCATION_TOP_RIGHT;
-  } else {
+  ArrowLocationGtk arrow_location_none = ARROW_LOCATION_NONE;
+  ArrowLocationGtk arrow_location_left = ARROW_LOCATION_TOP_LEFT;
+  ArrowLocationGtk arrow_location_middle = ARROW_LOCATION_TOP_MIDDLE;
+  ArrowLocationGtk arrow_location_right = ARROW_LOCATION_TOP_RIGHT;
+  if ((prefer_top_arrow && (top_arrow_bleed > bottom_arrow_bleed)) ||
+      (!prefer_top_arrow && (top_arrow_bleed >= bottom_arrow_bleed))) {
     arrow_location_none = ARROW_LOCATION_FLOAT;
     arrow_location_left = ARROW_LOCATION_BOTTOM_LEFT;
     arrow_location_middle = ARROW_LOCATION_BOTTOM_MIDDLE;
@@ -345,17 +339,17 @@ BubbleGtk::ArrowLocationGtk BubbleGtk::GetArrowLocation(
   if (IsArrowMiddle(preferred_location))
     return arrow_location_middle;
 
-  bool wants_left = IsArrowLeft(preferred_location);
-  bool left_is_onscreen = (arrow_x - kArrowX + width < screen_width);
-  bool right_is_onscreen = (arrow_x + kArrowX - width >= 0);
+  // Choose whether to show the bubble left or right of the specified location.
+  const bool prefer_left_arrow = IsArrowLeft(preferred_location);
+  // The bleed measures the amount of bubble that would be shown offscreen.
+  const int left_arrow_bleed =
+      std::max(width + arrow_x - kArrowX - screen_width, 0);
+  const int right_arrow_bleed = std::max(width - arrow_x - kArrowX, 0);
 
-  // Use the requested location if it fits onscreen, use whatever fits
-  // otherwise, and use the requested location if neither fits.
-  if (left_is_onscreen && (wants_left || !right_is_onscreen))
-    return arrow_location_left;
-  if (right_is_onscreen && (!wants_left || !left_is_onscreen))
-    return arrow_location_right;
-  return (wants_left ? arrow_location_left : arrow_location_right);
+  // Use the preferred location if it doesn't bleed more than the opposite side.
+  return ((prefer_left_arrow && (left_arrow_bleed <= right_arrow_bleed)) ||
+          (!prefer_left_arrow && (left_arrow_bleed < right_arrow_bleed))) ?
+      arrow_location_left : arrow_location_right;
 }
 
 bool BubbleGtk::UpdateArrowLocation(bool force_move_and_reshape) {
@@ -466,11 +460,6 @@ void BubbleGtk::Observe(int type,
     // Set the background color, so we don't need to paint it manually.
     gtk_widget_modify_bg(window_, GTK_STATE_NORMAL, &kBackgroundColor);
   }
-}
-
-void BubbleGtk::HandlePointerAndKeyboardUngrabbedByContent() {
-  if (grab_input_)
-    GrabPointerAndKeyboard();
 }
 
 void BubbleGtk::StopGrabbingInput() {
@@ -656,6 +645,30 @@ void BubbleGtk::OnHide(GtkWidget* widget) {
   gtk_widget_destroy(widget);
 }
 
+gboolean BubbleGtk::OnGrabBroken(GtkWidget* widget,
+                                 GdkEventGrabBroken* grab_broken) {
+  // |grab_input_| may have been changed to false.
+  if (!grab_input_)
+    return false;
+
+  gpointer user_data;
+  gdk_window_get_user_data(grab_broken->grab_window, &user_data);
+
+  if (GTK_IS_WIDGET(user_data)) {
+    signals_.Connect(GTK_WIDGET(user_data), "hide",
+                     G_CALLBACK(OnForeshadowWidgetHideThunk), this);
+  }
+
+  return FALSE;
+}
+
+void BubbleGtk::OnForeshadowWidgetHide(GtkWidget* widget) {
+  if (grab_input_)
+    GrabPointerAndKeyboard();
+
+  signals_.DisconnectAll(widget);
+}
+
 gboolean BubbleGtk::OnToplevelConfigure(GtkWidget* widget,
                                         GdkEventConfigure* event) {
   if (!UpdateArrowLocation(false))
@@ -673,4 +686,16 @@ void BubbleGtk::OnAnchorAllocate(GtkWidget* widget,
                                  GtkAllocation* allocation) {
   if (!UpdateArrowLocation(false))
     MoveWindow();
+}
+
+void BubbleGtk::OnAnchorDestroy(GtkWidget* widget) {
+  anchor_widget_ = NULL;
+  Close();
+  // |this| is deleted.
+}
+
+void BubbleGtk::OnToplevelDestroy(GtkWidget* widget) {
+  toplevel_window_ = NULL;
+  Close();
+  // |this| is deleted.
 }

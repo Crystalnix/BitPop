@@ -8,10 +8,13 @@
 #include "base/file_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_job.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
+
+namespace extensions {
 
 // This is a specialized version of net::URLRequestTestJob that lets us specify
 // response data and make sure the response code is 200, which the autoupdate
@@ -19,8 +22,10 @@ using content::BrowserThread;
 class AutoUpdateTestRequestJob : public net::URLRequestTestJob {
  public:
   AutoUpdateTestRequestJob(net::URLRequest* request,
+                           net::NetworkDelegate* network_delegate,
                            const std::string& response_data)
       : net::URLRequestTestJob(request,
+                               network_delegate,
                                net::URLRequestTestJob::test_headers(),
                                response_data,
                                true) {
@@ -42,7 +47,7 @@ AutoUpdateInterceptor::~AutoUpdateInterceptor() {
 }
 
 net::URLRequestJob* AutoUpdateInterceptor::MaybeIntercept(
-    net::URLRequest* request) {
+    net::URLRequest* request, net::NetworkDelegate* network_delegate) {
   EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (request->url().scheme() != "http" ||
       request->url().host() != "localhost") {
@@ -67,7 +72,7 @@ net::URLRequestJob* AutoUpdateInterceptor::MaybeIntercept(
   std::string contents;
   EXPECT_TRUE(file_util::ReadFileToString(i->second, &contents));
 
-  return new AutoUpdateTestRequestJob(request, contents);
+  return new AutoUpdateTestRequestJob(request, network_delegate, contents);
 }
 
 
@@ -91,3 +96,5 @@ void AutoUpdateInterceptor::SetResponseOnIOThread(const std::string url,
       BrowserThread::IO, FROM_HERE,
       base::Bind(&AutoUpdateInterceptor::SetResponse, this, url, path));
 }
+
+}  // namespace extensions

@@ -16,8 +16,7 @@
 #include "base/time.h"
 #include "chrome/browser/performance_monitor/constants.h"
 #include "chrome/browser/performance_monitor/event.h"
-#include "chrome/browser/performance_monitor/metric_info.h"
-#include "chrome/browser/performance_monitor/metric_details.h"
+#include "chrome/browser/performance_monitor/metric.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 
 namespace performance_monitor {
@@ -30,6 +29,9 @@ struct TimeRange {
   base::Time start;
   base::Time end;
 };
+
+class KeyBuilder;
+class DatabaseTestHelper;
 
 // The class supporting all performance monitor storage. This class wraps
 // multiple leveldb::DB objects. All methods must be called from a background
@@ -71,13 +73,21 @@ struct TimeRange {
 // Recent DB:
 // Stores the most recent metric statistics to go into the database. There is
 // only ever one entry per (metric, activity) pair. |recent_map_| keeps an
-// in-memory version of this table with a mapping from a concatenation of metric
-// and activity to the key used in the recent db. |recent_map_| allows us to
-// quickly find the key that must be replaced in the recent db. This
+// in-memory version of this database with a mapping from a concatenation of
+// metric and activity to the key used in the recent db. |recent_map_| allows us
+// to quickly find the key that must be replaced in the recent db. This
 // database becomes useful when it is necessary to find all the active metrics
 // within a timerange. Without it, all the metric databases would need to be
 // searched to see if that metric is active.
 // Key: Time - Metric - Activity
+// Value: Statistic
+//
+// Max Value DB:
+// Stores the max metric statistics that have been inserted into the database.
+// There is only ever one entry per (metric, activity) pair. |max_value_map_|
+// keeps an in-memory version of this database with a mapping from a
+// concatenation of metric and activity to the max metric.
+// Key: Metric - Activity
 // Value: Statistic
 //
 // Metric DB:
@@ -88,10 +98,11 @@ struct TimeRange {
 // Value: Statistic
 class Database {
  public:
-  typedef std::vector<linked_ptr<Event> > EventList;
   typedef std::set<EventType> EventTypeSet;
-  typedef std::vector<MetricInfo> MetricInfoVector;
-  typedef std::map<std::string, linked_ptr<MetricInfoVector> > MetricVectorMap;
+  typedef std::vector<linked_ptr<Event> > EventVector;
+  typedef std::set<MetricType> MetricTypeSet;
+  typedef std::vector<Metric> MetricVector;
+  typedef std::map<std::string, linked_ptr<MetricVector> > MetricVectorMap;
 
   static const char kDatabaseSequenceToken[];
 
@@ -119,18 +130,19 @@ class Database {
 
   // Retrieve the events from the database. These methods populate the provided
   // vector, and will search on the given criteria.
-  EventList GetEvents(EventType type, const base::Time& start,
-                      const base::Time& end);
+  EventVector GetEvents(EventType type,
+                        const base::Time& start,
+                        const base::Time& end);
 
-  EventList GetEvents(const base::Time& start, const base::Time& end) {
+  EventVector GetEvents(const base::Time& start, const base::Time& end) {
     return GetEvents(EVENT_UNDEFINED, start, end);
   }
 
-  EventList GetEvents(EventType type) {
+  EventVector GetEvents(EventType type) {
     return GetEvents(type, base::Time(), clock_->GetTime());
   }
 
-  EventList GetEvents() {
+  EventVector GetEvents() {
     return GetEvents(EVENT_UNDEFINED, base::Time(), clock_->GetTime());
   }
 
@@ -141,55 +153,63 @@ class Database {
   }
 
   // Add a metric instance to the database.
-  bool AddMetric(const std::string& activity,
-                 MetricType metric_type,
-                 const std::string& value);
+  bool AddMetric(const std::string& activity, const Metric& metric);
 
-  bool AddMetric(MetricType metric_type, const std::string& value) {
-    return AddMetric(kProcessChromeAggregate, metric_type, value);
+  bool AddMetric(const Metric& metric) {
+    return AddMetric(kProcessChromeAggregate, metric);
   }
 
   // Get the metrics that are active for the given process between |start|
   // (inclusive) and |end| (exclusive).
-  std::vector<const MetricDetails*> GetActiveMetrics(const base::Time& start,
-                                                     const base::Time& end);
+  MetricTypeSet GetActiveMetrics(const base::Time& start,
+                                 const base::Time& end);
 
   // Get the activities that are active for the given metric after |start|.
-  std::vector<std::string> GetActiveActivities(MetricType metric_type,
-                                               const base::Time& start);
+  std::set<std::string> GetActiveActivities(MetricType metric_type,
+                                            const base::Time& start);
+
+  // Get the max value for the given metric in the db.
+  double GetMaxStatsForActivityAndMetric(const std::string& activity,
+                                         MetricType metric_type);
+  double GetMaxStatsForActivityAndMetric(MetricType metric_type) {
+    return GetMaxStatsForActivityAndMetric(kProcessChromeAggregate,
+                                           metric_type);
+  }
 
   // Populate info with the most recent activity. Return false if populate
   // was unsuccessful.
   bool GetRecentStatsForActivityAndMetric(const std::string& activity,
-                                          MetricType metric,
-                                          MetricInfo* info);
+                                          MetricType metric_type,
+                                          Metric* metric);
 
-  bool GetRecentStatsForActivityAndMetric(MetricType metric, MetricInfo* info) {
+  bool GetRecentStatsForActivityAndMetric(MetricType metric_type,
+                                           Metric* metric) {
     return GetRecentStatsForActivityAndMetric(kProcessChromeAggregate,
-                                              metric,
-                                              info);
+                                              metric_type,
+                                              metric);
   }
 
   // Query given |metric_type| and |activity|.
-  MetricInfoVector GetStatsForActivityAndMetric(const std::string& activity,
-                                                MetricType metric_type,
-                                                const base::Time& start,
-                                                const base::Time& end);
+  scoped_ptr<MetricVector> GetStatsForActivityAndMetric(
+      const std::string& activity,
+      MetricType metric_type,
+      const base::Time& start,
+      const base::Time& end);
 
-  MetricInfoVector GetStatsForActivityAndMetric(MetricType metric_type,
-                                                const base::Time& start,
-                                                const base::Time& end) {
+  scoped_ptr<MetricVector> GetStatsForActivityAndMetric(
+      MetricType metric_type, const base::Time& start, const base::Time& end) {
     return GetStatsForActivityAndMetric(kProcessChromeAggregate, metric_type,
                                         start, end);
   }
 
-  MetricInfoVector GetStatsForActivityAndMetric(const std::string& activity,
-                                                MetricType metric_type) {
+  scoped_ptr<MetricVector> GetStatsForActivityAndMetric(
+      const std::string& activity, MetricType metric_type) {
     return GetStatsForActivityAndMetric(activity, metric_type, base::Time(),
                                         clock_->GetTime());
   }
 
-  MetricInfoVector GetStatsForActivityAndMetric(MetricType metric_type) {
+  scoped_ptr<MetricVector> GetStatsForActivityAndMetric(
+      MetricType metric_type) {
     return GetStatsForActivityAndMetric(kProcessChromeAggregate, metric_type,
                                         base::Time(), clock_->GetTime());
   }
@@ -216,10 +236,10 @@ class Database {
   }
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(PerformanceMonitorDatabaseSetupTest, OpenClose);
-  FRIEND_TEST_ALL_PREFIXES(PerformanceMonitorDatabaseSetupTest, ActiveInterval);
+  friend class DatabaseTestHelper;
 
   typedef std::map<std::string, std::string> RecentMap;
+  typedef std::map<std::string, double> MaxValueMap;
 
   // By default, the database uses a clock that simply returns the current time.
   class SystemClock : public Clock {
@@ -237,14 +257,25 @@ class Database {
 
   // Load recent info from the db into recent_map_.
   void LoadRecents();
+  // Load max values from the db into the max_value_map_.
+  void LoadMaxValues();
 
   // Mark the database as being active for the current time.
   void UpdateActiveInterval();
+  // Updates the max_value_map_ and max_value_db_ if the value is greater than
+  // the current max value for the given activity and metric.
+  bool UpdateMaxValue(const std::string& activity,
+                      MetricType metric,
+                      const std::string& value);
+
+  scoped_ptr<KeyBuilder> key_builder_;
 
   // A mapping of id,metric to the last inserted key for those parameters
   // is maintained to prevent having to search through the recent db every
   // insert.
   RecentMap recent_map_;
+
+  MaxValueMap max_value_map_;
 
   // The directory where all the databases will reside.
   FilePath path_;
@@ -258,6 +289,8 @@ class Database {
   scoped_ptr<Clock> clock_;
 
   scoped_ptr<leveldb::DB> recent_db_;
+
+  scoped_ptr<leveldb::DB> max_value_db_;
 
   scoped_ptr<leveldb::DB> state_db_;
 

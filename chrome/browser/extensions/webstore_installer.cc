@@ -20,7 +20,6 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -35,16 +34,18 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/gdata/gdata_util.h"
+#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
 #endif
 
 using content::BrowserContext;
 using content::BrowserThread;
-using content::DownloadId;
 using content::DownloadItem;
 using content::DownloadManager;
 using content::NavigationController;
@@ -100,7 +101,7 @@ void GetDownloadFilePath(
 
 #if defined (OS_CHROMEOS)
   // Do not use drive for extension downloads.
-  if (gdata::util::IsUnderGDataMountPoint(directory))
+  if (drive::util::IsUnderDriveMountPoint(directory))
     directory = download_util::GetDefaultDownloadDirectory();
 #endif
 
@@ -135,6 +136,16 @@ void GetDownloadFilePath(
 
 namespace extensions {
 
+void WebstoreInstaller::Delegate::OnExtensionDownloadStarted(
+    const std::string& id,
+    content::DownloadItem* item) {
+}
+
+void WebstoreInstaller::Delegate::OnExtensionDownloadProgress(
+    const std::string& id,
+    content::DownloadItem* item) {
+}
+
 WebstoreInstaller::Approval::Approval()
     : profile(NULL),
       use_app_installed_bubble(false),
@@ -167,7 +178,7 @@ WebstoreInstaller::Approval::~Approval() {}
 
 const WebstoreInstaller::Approval* WebstoreInstaller::GetAssociatedApproval(
     const DownloadItem& download) {
-  return static_cast<const Approval*>(download.GetExternalData(kApprovalKey));
+  return static_cast<const Approval*>(download.GetUserData(kApprovalKey));
 }
 
 WebstoreInstaller::WebstoreInstaller(Profile* profile,
@@ -181,14 +192,12 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
       controller_(controller),
       id_(id),
       download_item_(NULL),
-      flags_(flags),
       approval_(approval.release()) {
-  // TODO(benjhayden): Change this CHECK to DCHECK after http://crbug.com/126013
-  CHECK(controller_);
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(controller_);
   download_url_ = GetWebstoreInstallURL(id, flags & FLAG_INLINE_INSTALL ?
       kInlineInstallSource : kDefaultInstallSource);
 
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   registrar_.Add(this, chrome::NOTIFICATION_CRX_INSTALLER_DONE,
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
@@ -202,7 +211,7 @@ void WebstoreInstaller::Start() {
   AddRef();  // Balanced in ReportSuccess and ReportFailure.
 
   if (!Extension::IdIsValid(id_)) {
-    ReportFailure(kInvalidIdError);
+    ReportFailure(kInvalidIdError, FAILURE_REASON_OTHER);
     return;
   }
 
@@ -225,7 +234,7 @@ void WebstoreInstaller::Observe(int type,
       if (extension == NULL && download_item_ != NULL &&
           installer->download_url() == download_item_->GetURL() &&
           installer->profile()->IsSameProfile(profile_)) {
-        ReportFailure(kInstallCanceledError);
+        ReportFailure(kInstallCanceledError, FAILURE_REASON_CANCELLED);
       }
       break;
     }
@@ -250,7 +259,7 @@ void WebstoreInstaller::Observe(int type,
       const string16* error = content::Details<const string16>(details).ptr();
       const std::string utf8_error = UTF16ToUTF8(*error);
       if (download_url_ == crx_installer->original_download_url())
-        ReportFailure(utf8_error);
+        ReportFailure(utf8_error, FAILURE_REASON_OTHER);
       break;
     }
 
@@ -259,31 +268,37 @@ void WebstoreInstaller::Observe(int type,
   }
 }
 
+void WebstoreInstaller::InvalidateDelegate() {
+  delegate_ = NULL;
+}
+
 void WebstoreInstaller::SetDownloadDirectoryForTests(FilePath* directory) {
   g_download_directory_for_tests = directory;
 }
 
 WebstoreInstaller::~WebstoreInstaller() {
+  controller_ = NULL;
   if (download_item_) {
     download_item_->RemoveObserver(this);
     download_item_ = NULL;
   }
 }
 
-void WebstoreInstaller::OnDownloadStarted(DownloadId id, net::Error error) {
-  if (error != net::OK) {
-    ReportFailure(net::ErrorToString(error));
+void WebstoreInstaller::OnDownloadStarted(
+    DownloadItem* item, net::Error error) {
+  if (!item) {
+    DCHECK_NE(net::OK, error);
+    ReportFailure(net::ErrorToString(error), FAILURE_REASON_OTHER);
     return;
   }
 
-  CHECK(id.IsValid());
-
-  DownloadManager* download_manager =
-      BrowserContext::GetDownloadManager(profile_);
-  download_item_ = download_manager->GetActiveDownloadItem(id.local());
+  DCHECK_EQ(net::OK, error);
+  download_item_ = item;
   download_item_->AddObserver(this);
   if (approval_.get())
-    download_item_->SetExternalData(kApprovalKey, approval_.release());
+    download_item_->SetUserData(kApprovalKey, approval_.release());
+  if (delegate_)
+    delegate_->OnExtensionDownloadStarted(id_, download_item_);
 }
 
 void WebstoreInstaller::OnDownloadUpdated(DownloadItem* download) {
@@ -291,19 +306,21 @@ void WebstoreInstaller::OnDownloadUpdated(DownloadItem* download) {
 
   switch (download->GetState()) {
     case DownloadItem::CANCELLED:
-      ReportFailure(kDownloadCanceledError);
+      ReportFailure(kDownloadCanceledError, FAILURE_REASON_CANCELLED);
       break;
     case DownloadItem::INTERRUPTED:
-      ReportFailure(kDownloadInterruptedError);
-      break;
-    case DownloadItem::REMOVING:
-      download_item_->RemoveObserver(this);
-      download_item_ = NULL;
+      ReportFailure(kDownloadInterruptedError, FAILURE_REASON_OTHER);
       break;
     case DownloadItem::COMPLETE:
       // Wait for other notifications if the download is really an extension.
       if (!download_crx_util::IsExtensionDownload(*download))
-        ReportFailure(kInvalidDownloadError);
+        ReportFailure(kInvalidDownloadError, FAILURE_REASON_OTHER);
+      else if (delegate_)
+        delegate_->OnExtensionDownloadProgress(id_, download);
+      break;
+    case DownloadItem::IN_PROGRESS:
+      if (delegate_)
+        delegate_->OnExtensionDownloadProgress(id_, download);
       break;
     default:
       // Continue listening if the download is not in one of the above states.
@@ -311,40 +328,87 @@ void WebstoreInstaller::OnDownloadUpdated(DownloadItem* download) {
   }
 }
 
-void WebstoreInstaller::OnDownloadOpened(DownloadItem* download) {
+void WebstoreInstaller::OnDownloadDestroyed(DownloadItem* download) {
   CHECK_EQ(download_item_, download);
+  download_item_->RemoveObserver(this);
+  download_item_ = NULL;
 }
 
+// http://crbug.com/165634
+// http://crbug.com/126013
+// The current working theory is that one of the many pointers dereferenced in
+// here is occasionally deleted before all of its referers are nullified,
+// probably in a callback race. After this comment is released, the crash
+// reports should narrow down exactly which pointer it is.  Collapsing all the
+// early-returns into a single branch makes it hard to see exactly which pointer
+// it is.
 void WebstoreInstaller::StartDownload(const FilePath& file) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (file.empty() || !controller_->GetWebContents()) {
-    ReportFailure(kDownloadDirectoryError);
+  DownloadManager* download_manager =
+    BrowserContext::GetDownloadManager(profile_);
+  if (file.empty()) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
     return;
   }
-
-  content::DownloadSaveInfo save_info;
-  save_info.file_path = file;
+  if (!download_manager) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
+  if (!controller_) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
+  if (!controller_->GetWebContents()) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
+  if (!controller_->GetWebContents()->GetRenderProcessHost()) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
+  if (!controller_->GetWebContents()->GetRenderViewHost()) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
+  if (!controller_->GetBrowserContext()) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
+  if (!controller_->GetBrowserContext()->GetResourceContext()) {
+    ReportFailure(kDownloadDirectoryError, FAILURE_REASON_OTHER);
+    return;
+  }
 
   // The download url for the given extension is contained in |download_url_|.
   // We will navigate the current tab to this url to start the download. The
   // download system will then pass the crx to the CrxInstaller.
   download_util::RecordDownloadSource(
       download_util::INITIATED_BY_WEBSTORE_INSTALLER);
-  scoped_ptr<DownloadUrlParameters> params(
-      DownloadUrlParameters::FromWebContents(
-          controller_->GetWebContents(), download_url_, save_info));
+  int render_process_host_id =
+    controller_->GetWebContents()->GetRenderProcessHost()->GetID();
+  int render_view_host_routing_id =
+    controller_->GetWebContents()->GetRenderViewHost()->GetRoutingID();
+  content::ResourceContext* resource_context =
+    controller_->GetBrowserContext()->GetResourceContext();
+  scoped_ptr<DownloadUrlParameters> params(new DownloadUrlParameters(
+      download_url_,
+      render_process_host_id,
+      render_view_host_routing_id ,
+      resource_context));
+  params->set_file_path(file);
   if (controller_->GetActiveEntry())
     params->set_referrer(
         content::Referrer(controller_->GetActiveEntry()->GetURL(),
                           WebKit::WebReferrerPolicyDefault));
   params->set_callback(base::Bind(&WebstoreInstaller::OnDownloadStarted, this));
-  BrowserContext::GetDownloadManager(profile_)->DownloadUrl(params.Pass());
+  download_manager->DownloadUrl(params.Pass());
 }
 
-void WebstoreInstaller::ReportFailure(const std::string& error) {
+void WebstoreInstaller::ReportFailure(const std::string& error,
+                                      FailureReason reason) {
   if (delegate_) {
-    delegate_->OnExtensionInstallFailure(id_, error);
+    delegate_->OnExtensionInstallFailure(id_, error, reason);
     delegate_ = NULL;
   }
 

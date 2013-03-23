@@ -5,14 +5,13 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 
 #include "chrome/browser/favicon/favicon_handler.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/favicon/favicon_util.h"
-#include "chrome/browser/favicon/select_favicon_frames.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/icon_messages.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
@@ -32,6 +31,8 @@ using content::FaviconStatus;
 using content::NavigationController;
 using content::NavigationEntry;
 using content::WebContents;
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(FaviconTabHelper)
 
 FaviconTabHelper::FaviconTabHelper(WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -104,8 +105,8 @@ void FaviconTabHelper::SaveFavicon() {
     return;
   history->AddPageNoVisitForBookmark(entry->GetURL(), entry->GetTitle());
 
-  FaviconService* service = profile_->
-      GetOriginalProfile()->GetFaviconService(Profile::IMPLICIT_ACCESS);
+  FaviconService* service = FaviconServiceFactory::GetForProfile(
+      profile_->GetOriginalProfile(), Profile::IMPLICIT_ACCESS);
   if (!service)
     return;
   const FaviconStatus& favicon(entry->GetFavicon());
@@ -113,33 +114,8 @@ void FaviconTabHelper::SaveFavicon() {
       favicon.image.IsEmpty()) {
     return;
   }
-  std::vector<unsigned char> image_data;
-  // TODO: Save all representations.
-  gfx::PNGCodec::EncodeBGRASkBitmap(
-      favicon.image.AsBitmap(), false, &image_data);
-  service->SetFavicon(
-      entry->GetURL(), favicon.url, image_data, history::FAVICON);
-}
-
-int FaviconTabHelper::DownloadImage(const GURL& image_url,
-                                 int image_size,
-                                 history::IconType icon_type,
-                                 const ImageDownloadCallback& callback) {
-  if (icon_type == history::FAVICON)
-    return favicon_handler_->DownloadImage(image_url, image_size, icon_type,
-                                           callback);
-  else if (touch_icon_handler_.get())
-    return touch_icon_handler_->DownloadImage(image_url, image_size, icon_type,
-                                              callback);
-  return 0;
-}
-
-void FaviconTabHelper::OnUpdateFaviconURL(
-    int32 page_id,
-    const std::vector<FaviconURL>& candidates) {
-  favicon_handler_->OnUpdateFaviconURL(page_id, candidates);
-  if (touch_icon_handler_.get())
-    touch_icon_handler_->OnUpdateFaviconURL(page_id, candidates);
+  service->SetFavicons(entry->GetURL(), favicon.url, history::FAVICON,
+                       favicon.image);
 }
 
 NavigationEntry* FaviconTabHelper::GetActiveEntry() {
@@ -147,9 +123,9 @@ NavigationEntry* FaviconTabHelper::GetActiveEntry() {
 }
 
 int FaviconTabHelper::StartDownload(const GURL& url, int image_size) {
-  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
-  int id = FaviconUtil::DownloadFavicon(host, url, image_size);
-  return id;
+  return web_contents()->DownloadFavicon(url, image_size,
+      base::Bind(&FaviconTabHelper::DidDownloadFavicon,
+                 base::Unretained(this)));
 }
 
 void FaviconTabHelper::NotifyFaviconUpdated() {
@@ -165,8 +141,8 @@ void FaviconTabHelper::NavigateToPendingEntry(
     NavigationController::ReloadType reload_type) {
   if (reload_type != NavigationController::NO_RELOAD &&
       !profile_->IsOffTheRecord()) {
-    FaviconService* favicon_service =
-        profile_->GetFaviconService(Profile::IMPLICIT_ACCESS);
+    FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
+        profile_, Profile::IMPLICIT_ACCESS);
     if (favicon_service)
       favicon_service->SetFaviconOutOfDateForPage(url);
   }
@@ -179,37 +155,24 @@ void FaviconTabHelper::DidNavigateMainFrame(
   FetchFavicon(details.entry->GetURL());
 }
 
-bool FaviconTabHelper::OnMessageReceived(const IPC::Message& message) {
-  bool message_handled = false;   // Allow other handlers to receive these.
-  IPC_BEGIN_MESSAGE_MAP(FaviconTabHelper, message)
-    IPC_MESSAGE_HANDLER(IconHostMsg_DidDownloadFavicon, OnDidDownloadFavicon)
-    IPC_MESSAGE_HANDLER(IconHostMsg_UpdateFaviconURL, OnUpdateFaviconURL)
-    IPC_MESSAGE_UNHANDLED(message_handled = false)
-  IPC_END_MESSAGE_MAP()
-  return message_handled;
+void FaviconTabHelper::DidUpdateFaviconURL(
+    int32 page_id,
+    const std::vector<content::FaviconURL>& candidates) {
+  favicon_handler_->OnUpdateFaviconURL(page_id, candidates);
+  if (touch_icon_handler_.get())
+    touch_icon_handler_->OnUpdateFaviconURL(page_id, candidates);
 }
 
-void FaviconTabHelper::OnDidDownloadFavicon(
+void FaviconTabHelper::DidDownloadFavicon(
     int id,
     const GURL& image_url,
     bool errored,
     int requested_size,
     const std::vector<SkBitmap>& bitmaps) {
-  float score = 0;
-  // TODO: Possibly do bitmap selection in FaviconHandler, so that it can score
-  // favicons better.
-  std::vector<ui::ScaleFactor> scale_factors;
-#if defined(OS_MACOSX)
-  scale_factors = ui::GetSupportedScaleFactors();
-#else
-  scale_factors.push_back(ui::SCALE_FACTOR_100P);  // TODO: Aura?
-#endif
-  gfx::Image favicon(SelectFaviconFrames(
-      bitmaps, scale_factors, requested_size, &score));
   favicon_handler_->OnDidDownloadFavicon(
-      id, image_url, errored, favicon, score);
+      id, image_url, errored, requested_size, bitmaps);
   if (touch_icon_handler_.get()) {
     touch_icon_handler_->OnDidDownloadFavicon(
-        id, image_url, errored, favicon, score);
+        id, image_url, errored, requested_size, bitmaps);
   }
 }

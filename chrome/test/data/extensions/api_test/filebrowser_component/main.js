@@ -13,6 +13,7 @@ This component extension test does the following:
 */
 
 var cleanupError = 'Got unexpected error while cleaning up test directory.';
+var kFileManagerExtensionId = 'hhaomjibdihmijegdhdafkllkbggdgoj';
 
 // Class specified by the client running the TestRunner.
 // |expectedTasks| should contain list of actions defined for abc files defined
@@ -28,6 +29,8 @@ var TestExpectations = function(fileExtension, expectedTasks,
     fileVerifierFunction) {
   this.fileText_ = undefined;
   this.file_ = undefined;
+
+  // TODO(tbarzic): Get rid of this.expectedTasks_, since it's not used anymore.
   this.expectedTasks_ = expectedTasks;
   this.fileExtension_ = fileExtension;
   this.fileVerifierFunction_ = fileVerifierFunction;
@@ -64,42 +67,6 @@ TestExpectations.prototype.verifyHandlerRequest = function(request, callback) {
                              callback);
 };
 
-// Verifies that list of tasks |tasks| contains tasks specified in
-// expectedTasks_. |successCallback| expects to be passed |tasks|.
-// |errorCallback| expects error object.
-TestExpectations.prototype.verifyTasks = function(tasks,
-                                                  successCallback,
-                                                  errorCallback) {
-  if (tasks.length != Object.keys(this.expectedTasks_).length) {
-    errorCallback({message: 'Wrong number of tasks found.'});
-    return;
-  }
-
-  for (var i = 0; i < tasks.length; ++i) {
-    var taskName = /^.*[|](\w+)$/.exec(tasks[i].taskId)[1];
-    var patterns = tasks[i].patterns;
-    var expectedPatterns = this.expectedTasks_[taskName];
-    if (!expectedPatterns) {
-      errorCallback({message: 'Wrong task from getFileTasks(): ' + task_name});
-      return;
-    }
-    patterns = patterns.sort();
-    expectedPatterns = expectedPatterns.sort();
-    for (var j = 0; j < patterns.length; ++j) {
-      var translatedPattern = expectedPatterns[j].replace(
-          /^filesystem:/, "chrome-extension://*/");
-      if (patterns[j] != translatedPattern) {
-        errorCallback({message: 'Wrong patterns set for task ' +
-                                taskName + '. ' +
-                                'Got: ' + patterns +
-                                ' expected: ' + expectedPatterns});
-        return;
-      }
-    }
-  }
-  successCallback(tasks);
-};
-
 // Class that is in charge for running the test.
 var TestRunner = function(expectations) {
   this.expectations_ = expectations;
@@ -111,7 +78,7 @@ var TestRunner = function(expectations) {
 TestRunner.prototype.runTest = function() {
   // Get local FS, create dir with a file in it.
   console.log('Requesting local file system...');
-  chrome.extension.onRequestExternal.addListener(this.listener_);
+  chrome.extension.onMessageExternal.addListener(this.listener_);
   chrome.fileBrowserPrivate.requestLocalFileSystem(
       this.onFileSystemFetched_.bind(this));
 };
@@ -132,7 +99,7 @@ TestRunner.prototype.onFileCreatorInit_ = function() {
     this.errorCallback_({message: "Test file extension not set."});
     return;
   }
-console.log(this.fileExtension);
+  console.log(this.fileExtension);
   var self = this;
   this.fileCreator_.createFile('.log',
       function(file, text) {
@@ -149,7 +116,7 @@ TestRunner.prototype.onFileCreated_ = function(file, text) {
   this.expectations_.setFileAndFileText(file, text);
   var fileUrl = file.toURL();
 
-  chrome.fileBrowserPrivate.getFileTasks([fileUrl],
+  chrome.fileBrowserPrivate.getFileTasks([fileUrl], [],
                                          this.onGetTasks_.bind(this, fileUrl));
 };
 
@@ -163,13 +130,18 @@ TestRunner.prototype.onGetTasks_ = function(fileUrl, tasks) {
 
   console.log('DONE fetching ' + tasks.length + ' tasks');
 
-  this.expectations_.verifyTasks(tasks,
-                                 this.onTasksVerified_.bind(this, fileUrl),
-                                 this.errorCallback_.bind(this));
-}
-
-TestRunner.prototype.onTasksVerified_ = function(fileUrl, tasks) {
+  tasks = this.filterTasks_(tasks);
   chrome.fileBrowserPrivate.executeTask(tasks[0].taskId, [fileUrl]);
+};
+
+TestRunner.prototype.filterTasks_ = function(tasks) {
+  var result = [];
+  for (var i = 0; i < tasks.length; i++) {
+    if (tasks[i].taskId.split('|')[0] != kFileManagerExtensionId) {
+      result.push(tasks[i]);
+    }
+  }
+  return result;
 };
 
 TestRunner.prototype.errorCallback_ = function(error) {
@@ -219,7 +191,7 @@ TestRunner.prototype.onHandlerRequest_ =
   this.expectations_.verifyHandlerRequest(
       request,
       this.verifyRequestCallback_.bind(this, sendResponse));
-  chrome.extension.onRequestExternal.removeListener(this.listener_);
+  chrome.extension.onMessageExternal.removeListener(this.listener_);
 };
 
 TestRunner.prototype.verifyRequestCallback_ = function(sendResponse, error) {

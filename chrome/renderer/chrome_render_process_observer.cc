@@ -4,6 +4,9 @@
 
 #include "chrome/renderer/chrome_render_process_observer.h"
 
+#include <limits>
+#include <vector>
+
 #include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -21,7 +24,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_localization_peer.h"
-#include "chrome/common/metrics/experiments_helper.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/net/net_resource_provider.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
@@ -44,10 +47,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
-
-#if defined(OS_ANDROID)
-#include "webkit/media/android/webmediaplayer_android.h"
-#endif
 
 #if defined(OS_WIN)
 #include "base/win/iat_patch_function.h"
@@ -76,7 +75,7 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
   virtual webkit_glue::ResourceLoaderBridge::Peer* OnRequestComplete(
       webkit_glue::ResourceLoaderBridge::Peer* current_peer,
       ResourceType::Type resource_type,
-      const net::URLRequestStatus& status) {
+      int error_code) {
     // Update the browser about our cache.
     // Rate limit informing the host of our cache stats.
     if (!weak_factory_.HasWeakPtrs()) {
@@ -87,14 +86,13 @@ class RendererResourceDelegate : public content::ResourceDispatcherDelegate {
          base::TimeDelta::FromMilliseconds(kCacheStatsDelayMS));
     }
 
-    if (status.status() != net::URLRequestStatus::CANCELED ||
-        status.error() == net::ERR_ABORTED) {
+    if (error_code == net::ERR_ABORTED) {
       return NULL;
     }
 
     // Resource canceled with a specific error are filtered.
     return SecurityFilterPeer::CreateSecurityFilterPeerForDeniedRequest(
-        resource_type, current_peer, status.error());
+        resource_type, current_peer, error_code);
   }
 
   virtual webkit_glue::ResourceLoaderBridge::Peer* OnReceivedResponse(
@@ -171,6 +169,12 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
     base::StatisticsRecorder::set_dump_on_exit(true);
   }
 
+#if defined(TOOLKIT_VIEWS)
+  WebRuntimeFeatures::enableRequestAutocomplete(
+      command_line.HasSwitch(switches::kEnableInteractiveAutocomplete) ||
+      command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures));
+#endif
+
   RenderThread* thread = RenderThread::Get();
   resource_delegate_.reset(new RendererResourceDelegate());
   thread->SetResourceDispatcherDelegate(resource_delegate_.get());
@@ -191,14 +195,11 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(USE_NSS)
-  // On platforms where we use system NSS libraries, the .so's must be loaded.
-  if (!command_line.HasSwitch(switches::kSingleProcess)) {
-    // We are going to fork to engage the sandbox and we have not loaded
-    // any security modules so it is safe to disable the fork check in NSS.
-    crypto::DisableNSSForkCheck();
-    crypto::ForceNSSNoDBInit();
-    crypto::EnsureNSSInit();
-  }
+  // On platforms where we use system NSS shared libraries,
+  // initialize NSS now because it won't be able to load the .so's
+  // after we engage the sandbox.
+  if (!command_line.HasSwitch(switches::kSingleProcess))
+    crypto::InitNSSSafely();
 #elif defined(OS_WIN)
   // crypt32.dll is used to decode X509 certificates for Chromoting.
   // Only load this library when the feature is enabled.
@@ -206,7 +207,7 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
   base::LoadNativeLibrary(FilePath(L"crypt32.dll"), &error);
 #endif
   // Setup initial set of crash dump data for Field Trials in this renderer.
-  experiments_helper::SetChildProcessLoggingExperimentList();
+  chrome_variations::SetChildProcessLoggingVariationList();
 }
 
 ChromeRenderProcessObserver::~ChromeRenderProcessObserver() {
@@ -237,9 +238,6 @@ bool ChromeRenderProcessObserver::OnControlMessageReceived(
 void ChromeRenderProcessObserver::OnSetIsIncognitoProcess(
     bool is_incognito_process) {
   is_incognito_process_ = is_incognito_process;
-#if defined(OS_ANDROID)
-  webkit_media::WebMediaPlayerAndroid::InitIncognito(is_incognito_process_);
-#endif
 }
 
 void ChromeRenderProcessObserver::OnSetContentSettingRules(
@@ -271,8 +269,12 @@ void ChromeRenderProcessObserver::OnGetCacheResourceStats() {
 void ChromeRenderProcessObserver::OnSetFieldTrialGroup(
     const std::string& field_trial_name,
     const std::string& group_name) {
-  base::FieldTrialList::CreateFieldTrial(field_trial_name, group_name);
-  experiments_helper::SetChildProcessLoggingExperimentList();
+  base::FieldTrial* trial =
+      base::FieldTrialList::CreateFieldTrial(field_trial_name, group_name);
+  // Ensure the trial is marked as "used" by calling group() on it. This is
+  // needed to ensure the trial is properly reported in renderer crash reports.
+  trial->group();
+  chrome_variations::SetChildProcessLoggingVariationList();
 }
 
 void ChromeRenderProcessObserver::OnGetV8HeapStats() {

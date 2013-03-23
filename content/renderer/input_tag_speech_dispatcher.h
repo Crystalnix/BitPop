@@ -6,22 +6,21 @@
 #define CONTENT_RENDERER_INPUT_TAG_SPEECH_DISPATCHER_H_
 
 #include "base/basictypes.h"
+#include "content/public/common/speech_recognition_result.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputController.h"
-
-class RenderViewImpl;
-
-namespace content {
-struct SpeechRecognitionResult;
-}
 
 namespace WebKit {
 class WebSpeechInputListener;
 }
 
+namespace content {
+class RenderViewImpl;
+struct SpeechRecognitionResult;
+
 // InputTagSpeechDispatcher is a delegate for messages used by WebKit. It's
 // the complement of InputTagSpeechDispatcherHost (owned by RenderViewHost).
-class InputTagSpeechDispatcher : public content::RenderViewObserver,
+class InputTagSpeechDispatcher : public RenderViewObserver,
                                  public WebKit::WebSpeechInputController {
  public:
   InputTagSpeechDispatcher(RenderViewImpl* render_view,
@@ -41,8 +40,8 @@ class InputTagSpeechDispatcher : public content::RenderViewObserver,
   virtual void cancelRecognition(int request_id);
   virtual void stopRecording(int request_id);
 
-  void OnSpeechRecognitionResult(
-      int request_id, const content::SpeechRecognitionResult& result);
+  void OnSpeechRecognitionResults(
+      int request_id, const SpeechRecognitionResults& results);
   void OnSpeechRecordingComplete(int request_id);
   void OnSpeechRecognitionComplete(int request_id);
   void OnSpeechRecognitionToggleSpeechInput();
@@ -51,5 +50,7 @@ class InputTagSpeechDispatcher : public content::RenderViewObserver,
 
   DISALLOW_COPY_AND_ASSIGN(InputTagSpeechDispatcher);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_INPUT_TAG_SPEECH_DISPATCHER_H_

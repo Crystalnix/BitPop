@@ -16,6 +16,10 @@
 
 class Profile;
 
+namespace base {
+class ListValue;
+}
+
 namespace content {
 class NotificationRegistrar;
 struct SpeechRecognitionError;
@@ -121,8 +125,8 @@ class SpeechInputExtensionManager
   virtual void OnSoundStart(int session_id) OVERRIDE;
   virtual void OnSoundEnd(int session_id) OVERRIDE;
   virtual void OnAudioEnd(int session_id) OVERRIDE;
-  virtual void OnRecognitionResult(
-      int session_id, const content::SpeechRecognitionResult& result) OVERRIDE;
+  virtual void OnRecognitionResults(
+      int session_id, const content::SpeechRecognitionResults& result) OVERRIDE;
   virtual void OnRecognitionError(
       int session_id, const content::SpeechRecognitionError& error) OVERRIDE;
   virtual void OnAudioLevelsChange(int session_id, float volume,
@@ -162,8 +166,8 @@ class SpeechInputExtensionManager
   void ForceStopOnIOThread();
   void IsRecordingOnIOThread(const IsRecordingCallback& callback);
 
-  void SetRecognitionResultOnUIThread(
-      const content::SpeechRecognitionResult& result,
+  void SetRecognitionResultsOnUIThread(
+      const content::SpeechRecognitionResults& result,
       const std::string& extension_id);
   void DidStartReceivingAudioOnUIThread();
   void StopSucceededOnUIThread();
@@ -172,7 +176,7 @@ class SpeechInputExtensionManager
   void DispatchError(const std::string& error, bool dispatch_event);
   void DispatchEventToExtension(const std::string& extension_id,
                                 const std::string& event,
-                                const std::string& json_args);
+                                scoped_ptr<base::ListValue> event_args);
   void ExtensionUnloaded(const std::string& extension_id);
 
   void ResetToIdleState();

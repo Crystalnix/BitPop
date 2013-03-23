@@ -14,11 +14,10 @@
 using base::android::AttachCurrentThread;
 using base::android::CheckException;
 using base::android::GetClass;
-using base::android::GetMethodID;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
 
-namespace device_orientation {
+namespace content {
 
 namespace {
 
@@ -99,4 +98,4 @@ void DataFetcherImplAndroid::Stop() {
   Java_DeviceOrientation_stop(AttachCurrentThread(), g_jni_obj.Get().obj());
 }
 
-}  // namespace device_orientation
+}  // namespace content

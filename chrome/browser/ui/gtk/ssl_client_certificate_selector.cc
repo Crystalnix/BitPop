@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ssl_client_certificate_selector.h"
+#include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 
 #include <gtk/gtk.h>
 
@@ -18,7 +18,6 @@
 #include "chrome/browser/ui/crypto_module_password_dialog.h"
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/net/x509_certificate_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
@@ -32,6 +31,7 @@
 #include "ui/gfx/native_widget_types.h"
 
 using content::BrowserThread;
+using content::WebContents;
 
 namespace {
 
@@ -46,7 +46,7 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public ConstrainedWindowGtkDelegate {
  public:
   explicit SSLClientCertificateSelector(
-      TabContents* parent,
+      WebContents* parent,
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback);
@@ -92,19 +92,19 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
   // Hold on to the select button to focus it.
   GtkWidget* select_button_;
 
-  TabContents* tab_contents_;
+  WebContents* web_contents_;
   ConstrainedWindow* window_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientCertificateSelector);
 };
 
 SSLClientCertificateSelector::SSLClientCertificateSelector(
-    TabContents* tab_contents,
+    WebContents* web_contents,
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
     const base::Callback<void(net::X509Certificate*)>& callback)
     : SSLClientAuthObserver(network_session, cert_request_info, callback),
-      tab_contents_(tab_contents),
+      web_contents_(web_contents),
       window_(NULL) {
   root_widget_.Own(gtk_vbox_new(FALSE, ui::kControlSpacing));
 
@@ -197,7 +197,7 @@ SSLClientCertificateSelector::~SSLClientCertificateSelector() {
 
 void SSLClientCertificateSelector::Show() {
   DCHECK(!window_);
-  window_ = new ConstrainedWindowGtk(tab_contents_, this);
+  window_ = new ConstrainedWindowGtk(web_contents_, this);
 }
 
 void SSLClientCertificateSelector::OnCertSelectedByNotification() {
@@ -345,8 +345,7 @@ void SSLClientCertificateSelector::OnViewClicked(GtkWidget* button) {
   net::X509Certificate* cert = GetSelectedCert();
   if (cert) {
     GtkWidget* toplevel = gtk_widget_get_toplevel(root_widget_.get());
-    ShowCertificateViewer(
-        tab_contents_->web_contents(), GTK_WINDOW(toplevel), cert);
+    ShowCertificateViewer(web_contents_, GTK_WINDOW(toplevel), cert);
   }
 }
 
@@ -364,9 +363,9 @@ void SSLClientCertificateSelector::OnOkClicked(GtkWidget* button) {
   // ourself before the Unlocked callback gets called.
   StopObserving();
 
-  browser::UnlockCertSlotIfNecessary(
+  chrome::UnlockCertSlotIfNecessary(
       cert,
-      browser::kCryptoModulePasswordClientAuth,
+      chrome::kCryptoModulePasswordClientAuth,
       cert_request_info()->host_and_port,
       base::Bind(&SSLClientCertificateSelector::Unlocked,
                  base::Unretained(this)));
@@ -386,13 +385,13 @@ void SSLClientCertificateSelector::OnPromptShown(GtkWidget* widget,
 namespace chrome {
 
 void ShowSSLClientCertificateSelector(
-    TabContents* tab_contents,
+    content::WebContents* contents,
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
     const base::Callback<void(net::X509Certificate*)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   (new SSLClientCertificateSelector(
-      tab_contents, network_session, cert_request_info, callback))->Show();
+      contents, network_session, cert_request_info, callback))->Show();
 }
 
 }  // namespace chrome

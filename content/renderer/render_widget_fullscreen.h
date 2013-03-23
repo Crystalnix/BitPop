@@ -9,13 +9,11 @@
 
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 
+namespace content {
+
 // TODO(boliu): Override non-supported methods with no-op? eg setWindowRect().
 class RenderWidgetFullscreen : public RenderWidget {
  public:
-  // Creates a new RenderWidget.  The opener_id is the routing ID of the
-  // RenderView that this widget lives inside.
-  static RenderWidgetFullscreen* Create(int32 opener_id);
-
   virtual void show(WebKit::WebNavigationPolicy);
 
  protected:
@@ -24,7 +22,9 @@ class RenderWidgetFullscreen : public RenderWidget {
 
   virtual WebKit::WebWidget* CreateWebWidget();
 
-  void Init(int32 opener_id);
+  bool Init(int32 opener_id);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_RENDER_WIDGET_FULLSCREEN_H_

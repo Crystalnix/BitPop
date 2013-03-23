@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/stl_util.h"
-#include "policy/policy_constants.h"
 
 namespace policy {
 
@@ -71,6 +70,12 @@ void PolicyMap::CopyFrom(const PolicyMap& other) {
     const Entry& entry = it->second;
     Set(it->first, entry.level, entry.scope, entry.value->DeepCopy());
   }
+}
+
+scoped_ptr<PolicyMap> PolicyMap::DeepCopy() const {
+  PolicyMap* copy = new PolicyMap();
+  copy->CopyFrom(*this);
+  return make_scoped_ptr(copy);
 }
 
 void PolicyMap::MergeFrom(const PolicyMap& other) {

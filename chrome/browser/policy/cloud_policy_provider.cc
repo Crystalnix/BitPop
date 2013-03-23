@@ -11,22 +11,14 @@
 
 namespace policy {
 
-CloudPolicyProvider::CloudPolicyProvider(
-    BrowserPolicyConnector* browser_policy_connector,
-    PolicyLevel level)
-    : browser_policy_connector_(browser_policy_connector),
-      level_(level),
+CloudPolicyProvider::CloudPolicyProvider(BrowserPolicyConnector* connector)
+    : browser_policy_connector_(connector),
       initialization_complete_(false) {
   for (size_t i = 0; i < CACHE_SIZE; ++i)
     caches_[i] = NULL;
 }
 
-CloudPolicyProvider::~CloudPolicyProvider() {
-  for (size_t i = 0; i < CACHE_SIZE; ++i) {
-    if (caches_[i])
-      caches_[i]->RemoveObserver(this);
-  }
-}
+CloudPolicyProvider::~CloudPolicyProvider() {}
 
 void CloudPolicyProvider::SetUserPolicyCache(CloudPolicyCacheBase* cache) {
   DCHECK(!caches_[CACHE_USER]);
@@ -43,6 +35,16 @@ void CloudPolicyProvider::SetDevicePolicyCache(CloudPolicyCacheBase* cache) {
   Merge();
 }
 #endif
+
+void CloudPolicyProvider::Shutdown() {
+  for (size_t i = 0; i < CACHE_SIZE; ++i) {
+    if (caches_[i]) {
+      caches_[i]->RemoveObserver(this);
+      caches_[i] = NULL;
+    }
+  }
+  ConfigurationPolicyProvider::Shutdown();
+}
 
 bool CloudPolicyProvider::IsInitializationComplete() const {
   return initialization_complete_;
@@ -65,19 +67,6 @@ void CloudPolicyProvider::OnCacheUpdate(CloudPolicyCacheBase* cache) {
     Merge();
 }
 
-void CloudPolicyProvider::OnCacheGoingAway(CloudPolicyCacheBase* cache) {
-  for (size_t i = 0; i < CACHE_SIZE; ++i) {
-    if (caches_[i] == cache) {
-      caches_[i] = NULL;
-      cache->RemoveObserver(this);
-      pending_updates_.erase(cache);
-      Merge();
-      return;
-    }
-  }
-  NOTREACHED();
-}
-
 void CloudPolicyProvider::Merge() {
   // Re-check whether all caches are ready.
   if (!initialization_complete_) {
@@ -95,7 +84,6 @@ void CloudPolicyProvider::Merge() {
     if (caches_[i] && caches_[i]->IsReady())
       combined.MergeFrom(*caches_[i]->policy());
   }
-  combined.FilterLevel(level_);
 
   scoped_ptr<PolicyBundle> bundle(new PolicyBundle());
   bundle->Get(POLICY_DOMAIN_CHROME, std::string()).Swap(&combined);

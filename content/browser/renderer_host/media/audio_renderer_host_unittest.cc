@@ -27,9 +27,8 @@ using ::testing::InvokeWithoutArgs;
 using ::testing::Return;
 using ::testing::SaveArg;
 using ::testing::SetArgumentPointee;
-using content::BrowserThread;
 
-using content::BrowserThreadImpl;
+namespace content {
 
 static const int kStreamId = 50;
 
@@ -44,7 +43,7 @@ class MockAudioRendererHost : public AudioRendererHost {
  public:
   explicit MockAudioRendererHost(
       media::AudioManager* audio_manager,
-      content::MediaObserver* media_observer)
+      MediaObserver* media_observer)
       : AudioRendererHost(audio_manager, media_observer),
         shared_memory_length_(0) {
   }
@@ -161,6 +160,9 @@ class AudioRendererHostTest : public testing::Test {
     observer_.reset(new MockMediaObserver());
     host_ = new MockAudioRendererHost(audio_manager_.get(), observer_.get());
 
+    // Expect the audio stream will be deleted.
+    EXPECT_CALL(*observer_, OnDeleteAudioStream(_, kStreamId));
+
     // Simulate IPC channel connected.
     host_->OnChannelConnected(base::GetCurrentProcId());
   }
@@ -193,18 +195,18 @@ class AudioRendererHostTest : public testing::Test {
 
     media::AudioParameters::Format format;
     if (mock_stream_)
-      format = media::AudioParameters::AUDIO_MOCK;
+      format = media::AudioParameters::AUDIO_FAKE;
     else
       format = media::AudioParameters::AUDIO_PCM_LINEAR;
 
     media::AudioParameters params(
-        format, CHANNEL_LAYOUT_STEREO,
+        format, media::CHANNEL_LAYOUT_STEREO,
         media::AudioParameters::kAudioCDSampleRate, 16,
         media::AudioParameters::kAudioCDSampleRate / 10);
 
     // Send a create stream message to the audio output stream and wait until
     // we receive the created message.
-    host_->OnCreateStream(kStreamId, params);
+    host_->OnCreateStream(kStreamId, params, 0);
     message_loop_->Run();
   }
 
@@ -215,7 +217,7 @@ class AudioRendererHostTest : public testing::Test {
     // Send a message to AudioRendererHost to tell it we want to close the
     // stream.
     host_->OnCloseStream(kStreamId);
-    message_loop_->RunAllPending();
+    message_loop_->RunUntilIdle();
   }
 
   void Play() {
@@ -243,7 +245,7 @@ class AudioRendererHostTest : public testing::Test {
                 OnSetAudioStreamVolume(_, kStreamId, volume));
 
     host_->OnSetVolume(kStreamId, volume);
-    message_loop_->RunAllPending();
+    message_loop_->RunUntilIdle();
   }
 
   void SimulateError() {
@@ -253,14 +255,11 @@ class AudioRendererHostTest : public testing::Test {
     CHECK(host_->audio_entries_.size())
         << "Calls Create() before calling this method";
     media::AudioOutputController* controller =
-        host_->audio_entries_.begin()->second->controller;
+        host_->LookupControllerByIdForTesting(kStreamId);
     CHECK(controller) << "AudioOutputController not found";
 
     // Expect an error signal sent through IPC.
     EXPECT_CALL(*host_, OnStreamError(kStreamId));
-
-    // Expect the audio stream will be deleted.
-    EXPECT_CALL(*observer_, OnDeleteAudioStream(_, kStreamId));
 
     // Simulate an error sent from the audio device.
     host_->OnError(controller, 0);
@@ -397,5 +396,6 @@ TEST_F(AudioRendererHostTest, SimulateErrorAndClose) {
   Close();
 }
 
-
 // TODO(hclam): Add tests for data conversation in low latency mode.
+
+}  // namespace content

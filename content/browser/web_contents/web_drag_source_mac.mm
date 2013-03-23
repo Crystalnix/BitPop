@@ -36,6 +36,8 @@ using base::SysNSStringToUTF8;
 using base::SysUTF8ToNSString;
 using base::SysUTF16ToNSString;
 using content::BrowserThread;
+using content::DragDownloadFile;
+using content::PromiseFileFinalizer;
 using content::RenderViewHostImpl;
 using net::FileStream;
 
@@ -80,13 +82,10 @@ FilePath GetFileNameFromDragData(const WebDropData& drop_data) {
 // is responsible for opening the file. It takes the drop data and an open file
 // stream.
 void PromiseWriterHelper(const WebDropData& drop_data,
-                         FileStream* file_stream) {
+                         scoped_ptr<FileStream> file_stream) {
   DCHECK(file_stream);
   file_stream->WriteSync(drop_data.file_contents.data(),
                          drop_data.file_contents.length());
-
-  if (file_stream)
-    file_stream->CloseSync();
 }
 
 }  // namespace
@@ -102,7 +101,7 @@ void PromiseWriterHelper(const WebDropData& drop_data,
 
 @implementation WebDragSource
 
-- (id)initWithContents:(WebContentsImpl*)contents
+- (id)initWithContents:(content::WebContentsImpl*)contents
                   view:(NSView*)contentsView
               dropData:(const WebDropData*)dropData
                  image:(NSImage*)image
@@ -133,6 +132,11 @@ void PromiseWriterHelper(const WebDropData& drop_data,
   }
 
   return self;
+}
+
+- (void)clearWebContentsView {
+  contents_ = nil;
+  contentsView_ = nil;
 }
 
 - (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
@@ -268,6 +272,8 @@ void PromiseWriterHelper(const WebDropData& drop_data,
 
 - (void)endDragAt:(NSPoint)screenPoint
         operation:(NSDragOperation)operation {
+  if (!contents_)
+    return;
   contents_->SystemDragEnded();
 
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
@@ -299,6 +305,8 @@ void PromiseWriterHelper(const WebDropData& drop_data,
 }
 
 - (void)moveDragTo:(NSPoint)screenPoint {
+  if (!contents_)
+    return;
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       contents_->GetRenderViewHost());
   if (rvh) {
@@ -333,31 +341,29 @@ void PromiseWriterHelper(const WebDropData& drop_data,
   // which is blocking.  Since this operation is already blocking the
   // UI thread on OSX, it should be reasonable to let it happen.
   base::ThreadRestrictions::ScopedAllowIO allowIO;
-  FileStream* fileStream =
-      drag_download_util::CreateFileStreamForDrop(
-          &filePath, content::GetContentClient()->browser()->GetNetLog());
-  if (!fileStream)
+  scoped_ptr<FileStream> fileStream(content::CreateFileStreamForDrop(
+      &filePath, content::GetContentClient()->browser()->GetNetLog()));
+  if (!fileStream.get())
     return nil;
 
   if (downloadURL_.is_valid()) {
     scoped_refptr<DragDownloadFile> dragFileDownloader(new DragDownloadFile(
         filePath,
-        linked_ptr<net::FileStream>(fileStream),
+        fileStream.Pass(),
         downloadURL_,
         content::Referrer(contents_->GetURL(), dropData_->referrer_policy),
         contents_->GetEncoding(),
         contents_));
 
     // The finalizer will take care of closing and deletion.
-    dragFileDownloader->Start(
-        new drag_download_util::PromiseFileFinalizer(dragFileDownloader));
+    dragFileDownloader->Start(new PromiseFileFinalizer(dragFileDownloader));
   } else {
     // The writer will take care of closing and deletion.
     BrowserThread::PostTask(BrowserThread::FILE,
                             FROM_HERE,
                             base::Bind(&PromiseWriterHelper,
                                        *dropData_,
-                                       base::Owned(fileStream)));
+                                       base::Passed(fileStream.Pass())));
   }
 
   // Once we've created the file, we should return the file name.
@@ -397,7 +403,7 @@ void PromiseWriterHelper(const WebDropData& drop_data,
     } else {
       string16 mimeType;
       FilePath fileName;
-      if (drag_download_util::ParseDownloadMetadata(
+      if (content::ParseDownloadMetadata(
               dropData_->download_metadata,
               &mimeType,
               &fileName,
@@ -457,7 +463,8 @@ void PromiseWriterHelper(const WebDropData& drop_data,
     return dragImage_;
 
   // Default to returning a generic image.
-  return content::GetContentClient()->GetNativeImageNamed(IDR_DEFAULT_FAVICON);
+  return content::GetContentClient()->GetNativeImageNamed(
+      IDR_DEFAULT_FAVICON).ToNSImage();
 }
 
 @end  // @implementation WebDragSource (Private)

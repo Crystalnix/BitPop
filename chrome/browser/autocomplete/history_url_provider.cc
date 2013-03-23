@@ -13,6 +13,7 @@
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autocomplete/autocomplete_field_trial.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/history/history.h"
@@ -35,18 +36,23 @@
 
 namespace {
 
-// Ensures that |matches| contains an entry for |info|, which may mean adding a
-// new such entry (using |input_location| and |match_in_scheme|).
+// If |create_if_necessary| is true, ensures that |matches| contains an
+// entry for |info|, creating a new such entry if necessary (using
+// |input_location| and |match_in_scheme|).
 //
 // If |promote| is true, this also ensures the entry is the first element in
 // |matches|, moving or adding it to the front as appropriate.  When |promote|
 // is false, existing matches are left in place, and newly added matches are
 // placed at the back.
-void EnsureMatchPresent(const history::URLRow& info,
-                        size_t input_location,
-                        bool match_in_scheme,
-                        history::HistoryMatches* matches,
-                        bool promote) {
+//
+// It's OK to call this function with both |create_if_necessary| and
+// |promote| false, in which case we'll do nothing.
+void CreateOrPromoteMatch(const history::URLRow& info,
+                          size_t input_location,
+                          bool match_in_scheme,
+                          history::HistoryMatches* matches,
+                          bool create_if_necessary,
+                          bool promote) {
   // |matches| may already have an entry for this.
   for (history::HistoryMatches::iterator i(matches->begin());
        i != matches->end(); ++i) {
@@ -57,6 +63,9 @@ void EnsureMatchPresent(const history::URLRow& info,
       return;
     }
   }
+
+  if (!create_if_necessary)
+    return;
 
   // No entry, so create one.
   history::HistoryMatch match(info, input_location, match_in_scheme, true);
@@ -92,14 +101,6 @@ GURL ConvertToHostOnly(const history::HistoryMatch& match,
   return host;
 }
 
-// Returns true if |url| is just a host (e.g. "http://www.google.com/") and not
-// some other subpage (e.g. "http://www.google.com/foo.html").
-bool IsHostOnly(const GURL& url) {
-  DCHECK(url.is_valid());
-  return (!url.has_path() || (url.path() == "/")) && !url.has_query() &&
-      !url.has_ref();
-}
-
 // Acts like the > operator for URLInfo classes.
 bool CompareHistoryMatch(const history::HistoryMatch& a,
                          const history::HistoryMatch& b) {
@@ -119,11 +120,8 @@ bool CompareHistoryMatch(const history::HistoryMatch& a,
 
   // For URLs that have each been typed once, a host (alone) is better than a
   // page inside.
-  if (a.url_info.typed_count() == 1) {
-    const bool a_is_host_only = IsHostOnly(a.url_info.url());
-    if (a_is_host_only != IsHostOnly(b.url_info.url()))
-      return a_is_host_only;
-  }
+  if ((a.url_info.typed_count() == 1) && (a.IsHostOnly() != b.IsHostOnly()))
+    return a.IsHostOnly();
 
   // URLs that have been visited more often are better.
   if (a.url_info.visit_count() != b.url_info.visit_count())
@@ -134,6 +132,16 @@ bool CompareHistoryMatch(const history::HistoryMatch& a,
 }
 
 }  // namespace
+
+// -----------------------------------------------------------------
+// HistoryURLProvider
+
+// These ugly magic numbers will go away once we switch all scoring
+// behavior (including URL-what-you-typed) to HistoryQuick provider.
+const int HistoryURLProvider::kScoreForBestInlineableResult = 1413;
+const int HistoryURLProvider::kScoreForUnvisitedIntranetResult = 1403;
+const int HistoryURLProvider::kScoreForWhatYouTypedResult = 1203;
+const int HistoryURLProvider::kBaseScoreForNonInlineableResult = 900;
 
 // VisitClassifier is used to classify the type of visit to a particular url.
 class HistoryURLProvider::VisitClassifier {
@@ -240,8 +248,21 @@ HistoryURLProviderParams::~HistoryURLProviderParams() {
 
 HistoryURLProvider::HistoryURLProvider(AutocompleteProviderListener* listener,
                                        Profile* profile)
-    : HistoryProvider(listener, profile, "HistoryURL"),
-      params_(NULL) {
+    : HistoryProvider(listener, profile,
+          AutocompleteProvider::TYPE_HISTORY_URL),
+      params_(NULL),
+      cull_redirects_(
+          !AutocompleteFieldTrial::InHUPCullRedirectsFieldTrial() ||
+          !AutocompleteFieldTrial::
+              InHUPCullRedirectsFieldTrialExperimentGroup()),
+      create_shorter_match_(
+          !AutocompleteFieldTrial::InHUPCreateShorterMatchFieldTrial() ||
+          !AutocompleteFieldTrial::
+              InHUPCreateShorterMatchFieldTrialExperimentGroup()),
+      search_url_database_(
+          !AutocompleteFieldTrial::InHQPReplaceHUPScoringFieldTrial() ||
+          !AutocompleteFieldTrial::
+              InHQPReplaceHUPScoringFieldTrialExperimentGroup()) {
 }
 
 // static
@@ -370,27 +391,33 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   history::URLRows url_matches;
   history::HistoryMatches history_matches;
 
-  const URLPrefixes& prefixes = URLPrefix::GetURLPrefixes();
-  for (URLPrefixes::const_iterator i(prefixes.begin()); i != prefixes.end();
-       ++i) {
-    if (params->cancel_flag.IsSet())
-      return;  // Canceled in the middle of a query, give up.
-    // We only need kMaxMatches results in the end, but before we get there we
-    // need to promote lower-quality matches that are prefixes of
-    // higher-quality matches, and remove lower-quality redirects.  So we ask
-    // for more results than we need, of every prefix type, in hopes this will
-    // give us far more than enough to work with.  CullRedirects() will then
-    // reduce the list to the best kMaxMatches results.
-    db->AutocompleteForPrefix(UTF16ToUTF8(i->prefix + params->input.text()),
-                              kMaxMatches * 2, (backend == NULL), &url_matches);
-    for (history::URLRows::const_iterator j(url_matches.begin());
-         j != url_matches.end(); ++j) {
-      const URLPrefix* best_prefix =
-          URLPrefix::BestURLPrefix(UTF8ToUTF16(j->url().spec()), string16());
-      DCHECK(best_prefix != NULL);
-      history_matches.push_back(history::HistoryMatch(*j, i->prefix.length(),
-          i->num_components == 0,
-          i->num_components >= best_prefix->num_components));
+  if (search_url_database_) {
+    const URLPrefixes& prefixes = URLPrefix::GetURLPrefixes();
+    for (URLPrefixes::const_iterator i(prefixes.begin()); i != prefixes.end();
+         ++i) {
+      if (params->cancel_flag.IsSet())
+        return;  // Canceled in the middle of a query, give up.
+      // We only need kMaxMatches results in the end, but before we
+      // get there we need to promote lower-quality matches that are
+      // prefixes of higher-quality matches, and remove lower-quality
+      // redirects.  So we ask for more results than we need, of every
+      // prefix type, in hopes this will give us far more than enough
+      // to work with.  CullRedirects() will then reduce the list to
+      // the best kMaxMatches results.
+      db->AutocompleteForPrefix(
+          UTF16ToUTF8(i->prefix + params->input.text()),
+          kMaxMatches * 2,
+          (backend == NULL),
+          &url_matches);
+      for (history::URLRows::const_iterator j(url_matches.begin());
+           j != url_matches.end(); ++j) {
+        const URLPrefix* best_prefix =
+            URLPrefix::BestURLPrefix(UTF8ToUTF16(j->url().spec()), string16());
+        DCHECK(best_prefix != NULL);
+        history_matches.push_back(history::HistoryMatch(*j, i->prefix.length(),
+            i->num_components == 0,
+            i->num_components >= best_prefix->num_components));
+      }
     }
   }
 
@@ -428,6 +455,9 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   // This is the end of the synchronous pass.
   if (!backend)
     return;
+  // If search_url_database_ is false, we shouldn't have scheduled a second
+  // pass.
+  DCHECK(search_url_database_);
 
   // Determine relevancy of highest scoring match, if any.
   int relevance = -1;
@@ -436,10 +466,16 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
     relevance = std::max(relevance, it->relevance);
   }
 
-  // Remove redirects and trim list to size.  We want to provide up to
-  // kMaxMatches results plus the What You Typed result, if it was added to
-  // |history_matches| above.
-  CullRedirects(backend, &history_matches, kMaxMatches + exact_suggestion);
+  if (cull_redirects_) {
+    // Remove redirects and trim list to size.  We want to provide up to
+    // kMaxMatches results plus the What You Typed result, if it was added to
+    // |history_matches| above.
+    CullRedirects(backend, &history_matches, kMaxMatches + exact_suggestion);
+  } else {
+    // Simply trim the list to size.
+    if (history_matches.size() > kMaxMatches + exact_suggestion)
+      history_matches.resize(kMaxMatches + exact_suggestion);
+  }
 
   // Convert the history matches to autocomplete matches.
   for (size_t i = first_match; i < history_matches.size(); ++i) {
@@ -497,16 +533,17 @@ int HistoryURLProvider::CalculateRelevance(MatchType match_type,
                                            size_t match_number) const {
   switch (match_type) {
     case INLINE_AUTOCOMPLETE:
-      return 1410 + kMaxMatches;
+      return kScoreForBestInlineableResult;
 
     case UNVISITED_INTRANET:
-      return 1400 + kMaxMatches;
+      return kScoreForUnvisitedIntranetResult;
 
     case WHAT_YOU_TYPED:
-      return 1200 + kMaxMatches;
+      return kScoreForWhatYouTypedResult;
 
     default:  // NORMAL
-      return 900 + static_cast<int>(match_number);
+      return kBaseScoreForNonInlineableResult +
+          static_cast<int>(match_number);
   }
 }
 
@@ -582,7 +619,8 @@ void HistoryURLProvider::RunAutocompletePasses(
 
   // Pass 2: Ask the history service to call us back on the history thread,
   // where we can read the full on-disk DB.
-  if (input.matches_requested() == AutocompleteInput::ALL_MATCHES) {
+  if (search_url_database_ &&
+      (input.matches_requested() == AutocompleteInput::ALL_MATCHES)) {
     done_ = false;
     params_ = params.release();  // This object will be destroyed in
                                  // QueryComplete() once we're done with it.
@@ -641,8 +679,8 @@ bool HistoryURLProvider::FixupExactSuggestion(
   }
 
   // Put it on the front of the HistoryMatches for redirect culling.
-  EnsureMatchPresent(classifier.url_row(), string16::npos, false, matches,
-                     true);
+  CreateOrPromoteMatch(classifier.url_row(), string16::npos, false, matches,
+                       true, true);
   return true;
 }
 
@@ -674,7 +712,7 @@ bool HistoryURLProvider::PromoteMatchForInlineAutocomplete(
   // hand, we wouldn't want to immediately start autocompleting it.
   if (!match.url_info.typed_count() ||
       ((match.url_info.typed_count() == 1) &&
-       !IsHostOnly(match.url_info.url())))
+       !match.IsHostOnly()))
     return false;
 
   // In the case where the user has typed "foo.com" and visited (but not typed)
@@ -763,8 +801,8 @@ void HistoryURLProvider::PromoteOrCreateShorterSuggestion(
   // Promote or add the desired URL to the list of matches.
   bool ensure_can_inline =
       promote && PromoteMatchForInlineAutocomplete(NULL, match);
-  EnsureMatchPresent(info, match.input_location, match.match_in_scheme,
-                     matches, promote);
+  CreateOrPromoteMatch(info, match.input_location, match.match_in_scheme,
+                       matches, create_shorter_match_, promote);
   if (ensure_can_inline) {
     // If |match| was inline-autocompletable and we're promoting something to
     // replace it, make sure the promoted item is also inline-autocompletable.

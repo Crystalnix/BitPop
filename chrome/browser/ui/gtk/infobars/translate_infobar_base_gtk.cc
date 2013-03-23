@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/gtk/infobars/translate_infobar_base_gtk.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/translate/options_menu_model.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -33,7 +34,8 @@ enum {
 
 TranslateInfoBarBase::TranslateInfoBarBase(InfoBarTabHelper* owner,
                                            TranslateInfoBarDelegate* delegate)
-    : InfoBarGtk(owner, delegate) {
+    : InfoBarGtk(owner, delegate),
+      background_error_percent_(0) {
   DCHECK(delegate);
   TranslateInfoBarDelegate::BackgroundAnimationType animation =
       delegate->background_animation_type();
@@ -138,16 +140,18 @@ bool TranslateInfoBarBase::ShowOptionsMenuButton() const {
 GtkWidget* TranslateInfoBarBase::CreateLanguageCombobox(
     size_t selected_language,
     size_t exclude_language) {
+  DCHECK(selected_language != exclude_language);
+
   GtkListStore* model = gtk_list_store_new(LANGUAGE_COMBO_COLUMN_COUNT,
                                            G_TYPE_INT, G_TYPE_STRING);
   bool set_selection = false;
   GtkTreeIter selected_iter;
   TranslateInfoBarDelegate* delegate = GetDelegate();
-  for (size_t i = 0; i < delegate->GetLanguageCount(); ++i) {
+  for (size_t i = 0; i < delegate->num_languages(); ++i) {
     if (i == exclude_language)
       continue;
     GtkTreeIter tree_iter;
-    const string16& name = delegate->GetLanguageDisplayableNameAt(i);
+    const string16& name = delegate->language_name_at(i);
 
     gtk_list_store_append(model, &tree_iter);
     gtk_list_store_set(model, &tree_iter,
@@ -194,18 +198,19 @@ void TranslateInfoBarBase::OnOptionsClicked(GtkWidget* sender) {
 }
 
 // TranslateInfoBarDelegate specific method:
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
+InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
+  InfoBarTabHelper* helper = static_cast<InfoBarTabHelper*>(owner);
   TranslateInfoBarBase* infobar = NULL;
   switch (type_) {
     case BEFORE_TRANSLATE:
-      infobar = new BeforeTranslateInfoBar(owner, this);
+      infobar = new BeforeTranslateInfoBar(helper, this);
       break;
     case AFTER_TRANSLATE:
-      infobar = new AfterTranslateInfoBar(owner, this);
+      infobar = new AfterTranslateInfoBar(helper, this);
       break;
     case TRANSLATING:
     case TRANSLATION_ERROR:
-      infobar = new TranslateMessageInfoBar(owner, this);
+      infobar = new TranslateMessageInfoBar(helper, this);
       break;
     default:
       NOTREACHED();

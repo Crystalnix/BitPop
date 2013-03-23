@@ -12,10 +12,34 @@
 #include "content/browser/renderer_host/media/audio_sync_reader.h"
 #include "content/common/media/audio_messages.h"
 #include "content/public/browser/media_observer.h"
-#include "media/audio/audio_util.h"
+#include "media/audio/shared_memory_util.h"
+#include "media/base/audio_bus.h"
+#include "media/base/limits.h"
 
-using content::BrowserMessageFilter;
-using content::BrowserThread;
+using media::AudioBus;
+
+namespace content {
+
+struct AudioRendererHost::AudioEntry {
+  AudioEntry();
+  ~AudioEntry();
+
+  // The AudioOutputController that manages the audio stream.
+  scoped_refptr<media::AudioOutputController> controller;
+
+  // The audio stream ID.
+  int stream_id;
+
+  // Shared memory for transmission of the audio data.
+  base::SharedMemory shared_memory;
+
+  // The synchronous reader to be used by the controller. We have the
+  // ownership of the reader.
+  scoped_ptr<media::AudioOutputController::SyncReader> reader;
+
+  // Set to true after we called Close() for the controller.
+  bool pending_close;
+};
 
 AudioRendererHost::AudioEntry::AudioEntry()
     : stream_id(0),
@@ -27,8 +51,7 @@ AudioRendererHost::AudioEntry::~AudioEntry() {}
 ///////////////////////////////////////////////////////////////////////////////
 // AudioRendererHost implementations.
 AudioRendererHost::AudioRendererHost(
-    media::AudioManager* audio_manager,
-    content::MediaObserver* media_observer)
+    media::AudioManager* audio_manager, MediaObserver* media_observer)
     : audio_manager_(audio_manager),
       media_observer_(media_observer) {
 }
@@ -135,7 +158,7 @@ void AudioRendererHost::DoCompleteCreation(
       entry->stream_id,
       foreign_memory_handle,
       foreign_socket_handle,
-      media::PacketSizeSizeInBytes(entry->shared_memory.created_size())));
+      media::PacketSizeInBytes(entry->shared_memory.created_size())));
 }
 
 void AudioRendererHost::DoSendPlayingMessage(
@@ -180,6 +203,8 @@ bool AudioRendererHost::OnMessageReceived(const IPC::Message& message,
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(AudioRendererHost, message, *message_was_ok)
     IPC_MESSAGE_HANDLER(AudioHostMsg_CreateStream, OnCreateStream)
+    IPC_MESSAGE_HANDLER(AudioHostMsg_AssociateStreamWithProducer,
+                        OnAssociateStreamWithProducer)
     IPC_MESSAGE_HANDLER(AudioHostMsg_PlayStream, OnPlayStream)
     IPC_MESSAGE_HANDLER(AudioHostMsg_PauseStream, OnPauseStream)
     IPC_MESSAGE_HANDLER(AudioHostMsg_FlushStream, OnFlushStream)
@@ -192,20 +217,34 @@ bool AudioRendererHost::OnMessageReceived(const IPC::Message& message,
 }
 
 void AudioRendererHost::OnCreateStream(
-    int stream_id, const media::AudioParameters& params) {
+    int stream_id, const media::AudioParameters& params, int input_channels) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(LookupById(stream_id) == NULL);
+  // media::AudioParameters is validated in the deserializer.
+  if (input_channels < 0 ||
+      input_channels > media::limits::kMaxChannels ||
+      LookupById(stream_id) != NULL) {
+    SendErrorMessage(stream_id);
+    return;
+  }
 
   media::AudioParameters audio_params(params);
-  DCHECK_GT(audio_params.frames_per_buffer(), 0);
 
-  uint32 buffer_size = audio_params.GetBytesPerBuffer();
+  // Calculate output and input memory size.
+  int output_memory_size = AudioBus::CalculateMemorySize(audio_params);
+
+  int frames = audio_params.frames_per_buffer();
+  int input_memory_size =
+      AudioBus::CalculateMemorySize(input_channels, frames);
 
   scoped_ptr<AudioEntry> entry(new AudioEntry());
 
   // Create the shared memory and share with the renderer process.
+  // For synchronized I/O (if input_channels > 0) then we allocate
+  // extra memory after the output data for the input data.
+  uint32 io_buffer_size = output_memory_size + input_memory_size;
+
   uint32 shared_memory_size =
-      media::TotalSharedMemorySizeInBytes(buffer_size);
+      media::TotalSharedMemorySizeInBytes(io_buffer_size);
   if (!entry->shared_memory.CreateAndMapAnonymous(shared_memory_size)) {
     // If creation of shared memory failed then send an error message.
     SendErrorMessage(stream_id);
@@ -214,7 +253,7 @@ void AudioRendererHost::OnCreateStream(
 
   // Create sync reader and try to initialize it.
   scoped_ptr<AudioSyncReader> reader(
-      new AudioSyncReader(&entry->shared_memory));
+      new AudioSyncReader(&entry->shared_memory, params, input_channels));
 
   if (!reader->Init()) {
     SendErrorMessage(stream_id);
@@ -238,6 +277,14 @@ void AudioRendererHost::OnCreateStream(
   audio_entries_.insert(std::make_pair(stream_id, entry.release()));
   if (media_observer_)
     media_observer_->OnSetAudioStreamStatus(this, stream_id, "created");
+}
+
+void AudioRendererHost::OnAssociateStreamWithProducer(int stream_id,
+                                                      int render_view_id) {
+  // TODO(miu): Will use render_view_id in upcoming change.
+  DVLOG(1) << "AudioRendererHost@" << this
+           << "::OnAssociateStreamWithProducer(stream_id=" << stream_id
+           << ", render_view_id=" << render_view_id << ")";
 }
 
 void AudioRendererHost::OnPlayStream(int stream_id) {
@@ -383,3 +430,11 @@ AudioRendererHost::AudioEntry* AudioRendererHost::LookupByController(
   }
   return NULL;
 }
+
+media::AudioOutputController* AudioRendererHost::LookupControllerByIdForTesting(
+    int stream_id) {
+  AudioEntry* const entry = LookupById(stream_id);
+  return entry ? entry->controller : NULL;
+}
+
+}  // namespace content

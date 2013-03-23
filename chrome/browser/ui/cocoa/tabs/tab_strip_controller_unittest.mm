@@ -4,9 +4,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include <vector>
-
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/new_tab_button.h"
@@ -14,11 +11,9 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -32,8 +27,6 @@ using content::WebContents;
 
 @implementation TestTabStripControllerDelegate
 - (void)onActivateTabWithContents:(WebContents*)contents {
-}
-- (void)onReplaceTabWithContents:(WebContents*)contents {
 }
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
         withContents:(WebContents*)contents {
@@ -50,7 +43,7 @@ using content::WebContents;
 
 @implementation TabView (Test)
 
-- (TabController*)getController {
+- (TabController*)controller {
   return controller_;
 }
 
@@ -106,6 +99,15 @@ class TabStripControllerTest : public CocoaProfileTest {
     CocoaProfileTest::TearDown();
   }
 
+  TabView* CreateTab() {
+    SiteInstance* instance = SiteInstance::Create(profile());
+    WebContents* web_contents = WebContents::Create(
+        content::WebContents::CreateParams(profile(), instance));
+    model_->AppendWebContents(web_contents, true);
+    const NSUInteger tab_count = [controller_.get() viewsCount];
+    return static_cast<TabView*>([controller_.get() viewAtIndex:tab_count - 1]);
+  }
+
   scoped_ptr<TestTabStripModelDelegate> delegate_;
   TabStripModel* model_;
   scoped_nsobject<TestTabStripControllerDelegate> controller_delegate_;
@@ -117,10 +119,7 @@ class TabStripControllerTest : public CocoaProfileTest {
 // the tab strip.
 TEST_F(TabStripControllerTest, AddRemoveTabs) {
   EXPECT_TRUE(model_->empty());
-  SiteInstance* instance = SiteInstance::Create(profile());
-  TabContents* tab_contents = chrome::TabContentsFactory(
-      profile(), instance, MSG_ROUTING_NONE, NULL, NULL);
-  model_->AppendTabContents(tab_contents, true);
+  CreateTab();
   EXPECT_EQ(model_->count(), 1);
 }
 
@@ -133,28 +132,16 @@ TEST_F(TabStripControllerTest, RearrangeTabs) {
 }
 
 TEST_F(TabStripControllerTest, CorrectToolTipText) {
-  // Create tab 1.
-  SiteInstance* instance = SiteInstance::Create(profile());
-  TabContents* tab_contents = chrome::TabContentsFactory(
-      profile(), instance, MSG_ROUTING_NONE, NULL, NULL);
-  model_->AppendTabContents(tab_contents, true);
-
-  // Create tab 2.
-  SiteInstance* instance2 = SiteInstance::Create(profile());
-  TabContents* tab_contents2 = chrome::TabContentsFactory(
-      profile(), instance2, MSG_ROUTING_NONE, NULL, NULL);
-  model_->AppendTabContents(tab_contents2, true);
-
   // Set tab 1 tooltip.
-  TabView* tab1 = (TabView*)[controller_.get() viewAtIndex:0];
+  TabView* tab1 = CreateTab();
   [tab1 setToolTip:@"Tab1"];
 
   // Set tab 2 tooltip.
-  TabView* tab2 = (TabView*)[controller_.get() viewAtIndex:1];
+  TabView* tab2 = CreateTab();
   [tab2 setToolTip:@"Tab2"];
 
-  EXPECT_FALSE([tab1 getController].selected);
-  EXPECT_TRUE([tab2 getController].selected);
+  EXPECT_FALSE([tab1 controller].selected);
+  EXPECT_TRUE([tab2 controller].selected);
 
   // Check that there's no tooltip yet.
   EXPECT_FALSE([controller_ view:nil
@@ -170,8 +157,8 @@ TEST_F(TabStripControllerTest, CorrectToolTipText) {
 
   // Hover over overlap between tab 1 and 2.
   NSEvent* event = [NSEvent mouseEventWithType:NSMouseMoved
-                                    location:NSMakePoint(
-                                        275, NSMinY(tab_strip_frame) + 1)
+                                    location:NSMakePoint(280,
+                                        NSMinY(tab_strip_frame) + 1)
                                modifierFlags:0
                                    timestamp:[current timestamp]
                                 windowNumber:[window windowNumber]
@@ -225,6 +212,42 @@ TEST_F(TabStripControllerTest, CorrectToolTipText) {
         stringForToolTip:nil
                    point:NSMakePoint(0,0)
                 userData:nil] cStringUsingEncoding:NSASCIIStringEncoding]);
+}
+
+TEST_F(TabStripControllerTest, ViewAccessibility_Contents) {
+  NSArray* attrs = [tab_strip_ accessibilityAttributeNames];
+  ASSERT_TRUE([attrs containsObject:NSAccessibilityContentsAttribute]);
+
+  // Create two tabs and ensure they exist in the contents array.
+  TabView* tab1 = CreateTab();
+  TabView* tab2 = CreateTab();
+  NSObject* contents =
+      [tab_strip_ accessibilityAttributeValue:NSAccessibilityContentsAttribute];
+  DCHECK([contents isKindOfClass:[NSArray class]]);
+  NSArray* contentsArray = static_cast<NSArray*>(contents);
+  ASSERT_TRUE([contentsArray containsObject:tab1]);
+  ASSERT_TRUE([contentsArray containsObject:tab2]);
+}
+
+TEST_F(TabStripControllerTest, ViewAccessibility_Value) {
+  NSArray* attrs = [tab_strip_ accessibilityAttributeNames];
+  ASSERT_TRUE([attrs containsObject:NSAccessibilityValueAttribute]);
+
+  // Create two tabs and ensure the active one gets returned.
+  TabView* tab1 = CreateTab();
+  TabView* tab2 = CreateTab();
+  EXPECT_FALSE([tab1 controller].selected);
+  EXPECT_TRUE([tab2 controller].selected);
+  NSObject* value =
+      [tab_strip_ accessibilityAttributeValue:NSAccessibilityValueAttribute];
+  EXPECT_EQ(tab2, value);
+
+  model_->ActivateTabAt(0, false);
+  EXPECT_TRUE([tab1 controller].selected);
+  EXPECT_FALSE([tab2 controller].selected);
+  value =
+      [tab_strip_ accessibilityAttributeValue:NSAccessibilityValueAttribute];
+  EXPECT_EQ(tab1, value);
 }
 
 }  // namespace

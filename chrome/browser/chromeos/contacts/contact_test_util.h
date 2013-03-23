@@ -12,9 +12,11 @@
 #include "ui/gfx/size.h"
 
 namespace contacts {
-namespace test {
 
 typedef std::vector<const Contact*> ContactPointers;
+class ContactMap;
+
+namespace test {
 
 // Returns a string containing the information stored in |contact|.  The same
 // string will be returned for functionally-equivalent contacts (e.g. ones
@@ -30,6 +32,9 @@ std::string ContactsToString(const ScopedVector<Contact>& contacts);
 // const Contact* arguments.
 std::string VarContactsToString(int num_contacts, ...);
 
+// Like ContactsToStrings(), but takes a ContactMap as input.
+std::string ContactMapToString(const ContactMap& contact_map);
+
 // Saves copies of all contacts in |source| to |dest|.
 void CopyContacts(const ContactPointers& source,
                   ScopedVector<Contact>* dest);
@@ -37,11 +42,11 @@ void CopyContacts(const ScopedVector<Contact>& source,
                   ScopedVector<Contact>* dest);
 
 // Initializes |contact| with the passed-in data.  The photo and all address
-// fields are cleared.  |provider_id| corresponds to Contact::provider_id,
+// fields are cleared.  |contact_id| corresponds to Contact::contact_id,
 // |deleted| to Contact::deleted, and a unique string should be passed to
 // |name_suffix| to make the name-related fields be distinct from those in other
 // contacts.
-void InitContact(const std::string& provider_id,
+void InitContact(const std::string& contact_id,
                  const std::string& name_suffix,
                  bool deleted,
                  Contact* contact);

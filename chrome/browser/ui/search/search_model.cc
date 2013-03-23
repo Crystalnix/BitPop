@@ -4,44 +4,39 @@
 
 #include "chrome/browser/ui/search/search_model.h"
 
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/search/search.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
 
 namespace chrome {
 namespace search {
 
-SearchModel::SearchModel(TabContents* contents)
-    : contents_(contents) {
+SearchModel::SearchModel(content::WebContents* web_contents)
+    : web_contents_(web_contents) {
 }
 
 SearchModel::~SearchModel() {
 }
 
-void SearchModel::SetMode(const Mode& mode) {
-  if (!contents_)
+void SearchModel::SetMode(const Mode& new_mode) {
+  if (!web_contents_)
     return;
 
-  DCHECK(IsInstantExtendedAPIEnabled(contents_->profile()))
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
+  DCHECK(IsInstantExtendedAPIEnabled(profile))
       << "Please do not try to set the SearchModel mode without first "
       << "checking if Search is enabled.";
 
-  if (mode_ == mode)
+  if (mode_ == new_mode)
     return;
 
-  mode_ = mode;
+  const Mode old_mode = mode_;
+  mode_ = new_mode;
 
-  FOR_EACH_OBSERVER(SearchModelObserver, observers_, ModeChanged(mode_));
-
-  // Animation is transient, it is cleared after observers are notified.
-  mode_.animate = false;
-}
-
-void SearchModel::MaybeChangeMode(Mode::Type from_mode, Mode::Type to_mode) {
-  if (mode_.mode == from_mode) {
-    Mode mode(to_mode, true);
-    SetMode(mode);
-  }
+  FOR_EACH_OBSERVER(SearchModelObserver, observers_,
+                    ModeChanged(old_mode, mode_));
 }
 
 void SearchModel::AddObserver(SearchModelObserver* observer) {

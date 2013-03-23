@@ -1,4 +1,4 @@
 cpu@chromium.org
 
-# generated_resources.grd
-*
+per-file chromeos_strings.grdp=*
+per-file generated_resources.grd=*

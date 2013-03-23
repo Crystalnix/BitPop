@@ -85,6 +85,8 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
   Profile* profile() { return profile_; }
 
   views::Widget* parent() { return parent_; }
+  const views::Widget* parent() const { return parent_; }
+
 
   // Returns true if we're in the process of mutating the model. This happens
   // when the user deletes menu items using the context menu.
@@ -93,8 +95,9 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
   // MenuDelegate like methods (see class description for details).
   string16 GetTooltipText(int id, const gfx::Point& p) const;
   bool IsTriggerableEvent(views::MenuItemView* menu,
-                          const views::Event& e);
+                          const ui::Event& e);
   void ExecuteCommand(int id, int mouse_event_flags);
+  bool ShouldExecuteCommandWithoutClosingMenu(int id, const ui::Event& e);
   bool GetDropFormats(
       views::MenuItemView* menu,
       int* formats,
@@ -102,11 +105,11 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
   bool AreDropTypesRequired(views::MenuItemView* menu);
   bool CanDrop(views::MenuItemView* menu, const ui::OSExchangeData& data);
   int GetDropOperation(views::MenuItemView* item,
-                       const views::DropTargetEvent& event,
+                       const ui::DropTargetEvent& event,
                        views::MenuDelegate::DropPosition* position);
   int OnPerformDrop(views::MenuItemView* menu,
                     views::MenuDelegate::DropPosition position,
-                    const views::DropTargetEvent& event);
+                    const ui::DropTargetEvent& event);
   bool ShowContextMenu(views::MenuItemView* source,
                        int id,
                        const gfx::Point& p,

@@ -47,14 +47,16 @@ class ChromeFrameDistribution : public BrowserDistribution {
 
   virtual string16 GetVersionKey() OVERRIDE;
 
+  virtual string16 GetIconFilename() OVERRIDE;
+
+  virtual int GetIconIndex() OVERRIDE;
+
   virtual bool CanSetAsDefault() OVERRIDE;
 
   virtual bool CanCreateDesktopShortcuts() OVERRIDE;
 
-  virtual bool GetDelegateExecuteHandlerData(string16* handler_class_uuid,
-                                             string16* type_lib_uuid,
-                                             string16* type_lib_version,
-                                             string16* interface_uuid) OVERRIDE;
+  virtual bool GetCommandExecuteImplClsid(
+      string16* handler_class_uuid) OVERRIDE;
 
   virtual void UpdateInstallStatus(bool system_install,
       installer::ArchiveType archive_type,

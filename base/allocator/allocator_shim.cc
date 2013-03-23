@@ -8,6 +8,7 @@
 #include "base/allocator/allocator_extension_thunks.h"
 #include "base/profiler/alternate_timer.h"
 #include "base/sysinfo.h"
+#include "jemalloc.h"
 
 // When defined, different heap allocators can be used via an environment
 // variable set before running the program.  This may reduce the amount
@@ -55,7 +56,7 @@ static const char secondary_name[] = "CHROME_ALLOCATOR_2";
 
 // We include tcmalloc and the win_allocator to get as much inlining as
 // possible.
-#include "tcmalloc.cc"
+#include "debugallocation_shim.cc"
 #include "win_allocator.cc"
 
 // Forward declarations from jemalloc.
@@ -231,6 +232,29 @@ extern "C" intptr_t _get_heap_handle() {
   return 0;
 }
 
+static bool get_allocator_waste_size_thunk(size_t* size) {
+#ifdef ENABLE_DYNAMIC_ALLOCATOR_SWITCHING
+  switch (allocator) {
+    case JEMALLOC:
+    case WINHEAP:
+    case WINLFH:
+      // TODO(alexeif): Implement for allocators other than tcmalloc.
+      return false;
+  }
+#endif
+  size_t heap_size, allocated_bytes, unmapped_bytes;
+  MallocExtension* ext = MallocExtension::instance();
+  if (ext->GetNumericProperty("generic.heap_size", &heap_size) &&
+      ext->GetNumericProperty("generic.current_allocated_bytes",
+                              &allocated_bytes) &&
+      ext->GetNumericProperty("tcmalloc.pageheap_unmapped_bytes",
+                              &unmapped_bytes)) {
+    *size = heap_size - allocated_bytes - unmapped_bytes;
+    return true;
+  }
+  return false;
+}
+
 static void get_stats_thunk(char* buffer, int buffer_length) {
   MallocExtension::instance()->GetStats(buffer, buffer_length);
 }
@@ -284,6 +308,8 @@ extern "C" int _heap_init() {
         tracked_objects::TIME_SOURCE_TYPE_TCMALLOC);
   }
 
+  base::allocator::thunks::SetGetAllocatorWasteSizeFunction(
+      get_allocator_waste_size_thunk);
   base::allocator::thunks::SetGetStatsFunction(get_stats_thunk);
   base::allocator::thunks::SetReleaseFreeMemoryFunction(
       release_free_memory_thunk);

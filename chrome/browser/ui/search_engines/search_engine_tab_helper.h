@@ -9,14 +9,16 @@
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/common/search_provider.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 
 class SearchEngineTabHelperDelegate;
 
 // Per-tab search engine manager. Handles dealing search engine processing
 // functionality.
-class SearchEngineTabHelper : public content::WebContentsObserver {
+class SearchEngineTabHelper
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<SearchEngineTabHelper> {
  public:
-  explicit SearchEngineTabHelper(content::WebContents* web_contents);
   virtual ~SearchEngineTabHelper();
 
   SearchEngineTabHelperDelegate* delegate() const { return delegate_; }
@@ -29,6 +31,9 @@ class SearchEngineTabHelper : public content::WebContentsObserver {
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
+  explicit SearchEngineTabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<SearchEngineTabHelper>;
+
   // Handles when a page specifies an OSDD (OpenSearch Description Document).
   void OnPageHasOSDD(int32 page_id,
                      const GURL& doc_url,

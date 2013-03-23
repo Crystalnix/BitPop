@@ -6,6 +6,9 @@
 
 #include "content/common/gpu/image_transport_surface.h"
 
+// Out of order because it has conflicts with other includes on Windows.
+#include "third_party/angle/include/EGL/egl.h"
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -14,13 +17,14 @@
 #include "base/win/windows_version.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/common/content_switches.h"
-#include "third_party/angle/include/EGL/egl.h"
+#include "content/common/gpu/texture_image_transport_surface.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_egl.h"
 
+namespace content {
 namespace {
 
 // We are backed by an Pbuffer offscreen surface through which ANGLE provides
@@ -46,7 +50,8 @@ class PbufferImageTransportSurface
 
  protected:
   // ImageTransportSurface implementation
-  virtual void OnBufferPresented(uint32 sync_point) OVERRIDE;
+  virtual void OnBufferPresented(
+      const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
   virtual void OnResizeViewACK() OVERRIDE;
   virtual void OnResize(gfx::Size size) OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
@@ -194,15 +199,16 @@ void PbufferImageTransportSurface::SendBuffersSwapped() {
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.surface_handle = reinterpret_cast<int64>(GetShareHandle());
   CHECK(params.surface_handle);
-
   params.size = GetSize();
+
   helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
   DCHECK(!is_swap_buffers_pending_);
   is_swap_buffers_pending_ = true;
 }
 
-void PbufferImageTransportSurface::OnBufferPresented(uint32 sync_point) {
+void PbufferImageTransportSurface::OnBufferPresented(
+    const AcceleratedSurfaceMsg_BufferPresented_Params& /* params */) {
   is_swap_buffers_pending_ = false;
   if (did_unschedule_) {
     did_unschedule_ = false;
@@ -237,27 +243,43 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
     const gfx::GLSurfaceHandle& handle) {
   scoped_refptr<gfx::GLSurface> surface;
 
-  if (handle.transport &&
-      gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2 &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableImageTransportSurface)) {
-    const char* extensions = eglQueryString(eglGetDisplay(EGL_DEFAULT_DISPLAY),
-                                            EGL_EXTENSIONS);
-    if (strstr(extensions, "EGL_ANGLE_query_surface_pointer") &&
-        strstr(extensions, "EGL_ANGLE_surface_d3d_texture_2d_share_handle")) {
-      surface = new PbufferImageTransportSurface(manager, stub);
+  if (!handle.handle) {
+    // If we don't have a valid handle with the transport flag set, then we're
+    // coming from a renderer and we want to render the webpage contents to a
+    // texture.
+    DCHECK(handle.transport);
+    DCHECK(handle.parent_client_id);
+    surface = new TextureImageTransportSurface(manager, stub, handle);
+  } else {
+    if (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2 &&
+        !CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDisableImageTransportSurface)) {
+      // This path handles two different cases.
+      //
+      // For post-Vista regular Windows, this surface will be used for
+      // renderer compositors.
+      //
+      // For Aura Windows, this will be the surface for the browser compositor
+      // (and the renderer compositors surface's will be
+      // TextureImageTransportSurface above).
+      const char* extensions = eglQueryString(
+          eglGetDisplay(EGL_DEFAULT_DISPLAY), EGL_EXTENSIONS);
+      if (strstr(extensions, "EGL_ANGLE_query_surface_pointer") &&
+          strstr(extensions, "EGL_ANGLE_surface_d3d_texture_2d_share_handle")) {
+        surface = new PbufferImageTransportSurface(manager, stub);
+      }
     }
-  }
 
-  if (!surface.get()) {
-    surface = gfx::GLSurface::CreateViewGLSurface(false, handle.handle);
-    if (!surface.get())
-      return NULL;
+    if (!surface.get()) {
+      surface = gfx::GLSurface::CreateViewGLSurface(false, handle.handle);
+      if (!surface.get())
+        return NULL;
 
-    surface = new PassThroughImageTransportSurface(manager,
-                                                   stub,
-                                                   surface.get(),
-                                                   handle.transport);
+      surface = new PassThroughImageTransportSurface(manager,
+                                                    stub,
+                                                    surface.get(),
+                                                    handle.transport);
+    }
   }
 
   if (surface->Initialize())
@@ -265,5 +287,7 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
   else
     return NULL;
 }
+
+}  // namespace content
 
 #endif  // ENABLE_GPU

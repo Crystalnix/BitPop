@@ -12,8 +12,8 @@
 #include <sys/select.h>
 #include <unistd.h>
 
-#include "base/eintr_wrapper.h"
 #include "base/logging.h"
+#include "base/posix/eintr_wrapper.h"
 
 namespace {
 
@@ -26,7 +26,7 @@ void InitReadFdSet(int out_fd, int stop_fd, fd_set* set) {
 
 void CloseFd(int* fd) {
   if (*fd >= 0) {
-    if (HANDLE_EINTR(close(*fd) != 0))
+    if (HANDLE_EINTR(close(*fd)) != 0)
       DPLOG(WARNING) << "close fd " << *fd << " failed.";
   }
   *fd = -1;

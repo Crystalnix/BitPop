@@ -41,13 +41,21 @@ class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
   void Clear();
 
   // InvalidationStateTracker implementation.
-  virtual syncer::InvalidationVersionMap GetAllMaxVersions() const
+  virtual syncer::InvalidationStateMap GetAllInvalidationStates() const
       OVERRIDE;
-  virtual void SetMaxVersion(const invalidation::ObjectId& id,
-                             int64 max_version) OVERRIDE;
+  virtual void SetMaxVersionAndPayload(const invalidation::ObjectId& id,
+                                       int64 max_version,
+                                       const std::string& payload) OVERRIDE;
+  virtual void Forget(const syncer::ObjectIdSet& ids) OVERRIDE;
   // TODO(tim): These are not yet used. Bug 124140.
-  virtual void SetInvalidationState(const std::string& state) OVERRIDE;
-  virtual std::string GetInvalidationState() const OVERRIDE;
+  virtual void SetBootstrapData(const std::string& data) OVERRIDE;
+  virtual std::string GetBootstrapData() const OVERRIDE;
+  virtual void GenerateAckHandles(
+      const syncer::ObjectIdSet& ids,
+      const scoped_refptr<base::TaskRunner>& task_runner,
+      base::Callback<void(const syncer::AckHandleMap&)> callback) OVERRIDE;
+  virtual void Acknowledge(const invalidation::ObjectId& id,
+                           const syncer::AckHandle& ack_handle) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest, SerializeEmptyMap);
@@ -60,6 +68,8 @@ class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest,
                            DeserializeFromEmptyList);
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest, DeserializeFromListBasic);
+  FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest,
+                           DeserializeFromListMissingOptionalValues);
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest, DeserializeMapOutOfRange);
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest, DeserializeMapInvalidFormat);
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest,
@@ -69,19 +79,19 @@ class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
 
   base::ThreadChecker thread_checker_;
 
-  // Helpers to convert between InvalidationVersionMap <--> ListValue.
+  // Helpers to convert between InvalidationStateMap <--> ListValue.
   static void DeserializeFromList(
-      const base::ListValue& max_versions_list,
-      syncer::InvalidationVersionMap* max_versions_map);
+      const base::ListValue& state_map_list,
+      syncer::InvalidationStateMap* state_map);
   static void SerializeToList(
-      const syncer::InvalidationVersionMap& max_versions_map,
-      base::ListValue* max_versions_list);
+      const syncer::InvalidationStateMap& state_map,
+      base::ListValue* state_map_list);
 
   // Code for migrating from old MaxInvalidationVersions pref, which was a map
   // from sync types to max invalidation versions.
   void MigrateMaxInvalidationVersionsPref();
   static void DeserializeMap(const base::DictionaryValue* max_versions_dict,
-                             syncer::InvalidationVersionMap* map);
+                             syncer::InvalidationStateMap* map);
 
   // May be NULL.
   PrefService* const pref_service_;

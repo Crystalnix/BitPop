@@ -12,11 +12,15 @@
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_job.h"
 
+namespace content {
+
 // This class simulates a URLRequestJob failing with a given error code while
 // trying to connect.
 class URLRequestFailedJob : public net::URLRequestJob {
  public:
-  URLRequestFailedJob(net::URLRequest* request, int net_error);
+  URLRequestFailedJob(net::URLRequest* request,
+                      net::NetworkDelegate* network_delegate,
+                      int net_error);
 
   virtual void Start() OVERRIDE;
 
@@ -31,6 +35,7 @@ class URLRequestFailedJob : public net::URLRequestJob {
 
  private:
   static net::URLRequestJob* Factory(net::URLRequest* request,
+                                     net::NetworkDelegate* network_delegate,
                                      const std::string& scheme);
 
   virtual ~URLRequestFailedJob();
@@ -44,5 +49,7 @@ class URLRequestFailedJob : public net::URLRequestJob {
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestFailedJob);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_TEST_NET_URL_REQUEST_FAILED_JOB_H_

@@ -10,22 +10,25 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/timer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/dock_info.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_selection_model.h"
+#include "chrome/browser/ui/views/tabs/tab_strip_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/widget/widget_observer.h"
 
+namespace gfx {
+class Screen;
+}
 namespace views {
 class View;
 }
-class BaseTab;
 class Browser;
 class DraggedTabView;
+class Tab;
 struct TabRendererData;
 class TabStrip;
 class TabStripModel;
@@ -68,6 +71,10 @@ class TabDragController : public content::WebContentsDelegate,
     REORDER
   };
 
+  // Amount above or below the tabstrip the user has to drag before detaching.
+  static const int kTouchVerticalDetachMagnetism;
+  static const int kVerticalDetachMagnetism;
+
   TabDragController();
   virtual ~TabDragController();
 
@@ -80,8 +87,8 @@ class TabDragController : public content::WebContentsDelegate,
   // strip. |initial_selection_model| is the selection model before the drag
   // started and is only non-empty if |source_tab| was not initially selected.
   void Init(TabStrip* source_tabstrip,
-            BaseTab* source_tab,
-            const std::vector<BaseTab*>& tabs,
+            Tab* source_tab,
+            const std::vector<Tab*>& tabs,
             const gfx::Point& mouse_offset,
             int source_tab_offset,
             const TabStripSelectionModel& initial_selection_model,
@@ -99,6 +106,7 @@ class TabDragController : public content::WebContentsDelegate,
 
   // Sets the move behavior. Has no effect if started_drag() is true.
   void SetMoveBehavior(MoveBehavior behavior);
+  MoveBehavior move_behavior() const { return move_behavior_; }
 
   // See description above fields for details on these.
   bool active() const { return active_; }
@@ -107,13 +115,18 @@ class TabDragController : public content::WebContentsDelegate,
   // Returns true if a drag started.
   bool started_drag() const { return started_drag_; }
 
+  // Returns true if mutating the TabStripModel.
+  bool is_mutating() const { return is_mutating_; }
+
+  // Returns true if we've detached from a tabstrip and are running a nested
+  // move message loop.
+  bool is_dragging_window() const { return is_dragging_window_; }
+
   // Invoked to drag to the new location, in screen coordinates.
   void Drag(const gfx::Point& point_in_screen);
 
-  // Complete the current drag session. If the drag session was canceled
-  // because the user pressed escape or something interrupted it, |canceled|
-  // is true and the drag is reverted.
-  void EndDrag(bool canceled);
+  // Complete the current drag session.
+  void EndDrag(EndDragReason reason);
 
  private:
   class DockDisplayer;
@@ -175,8 +188,8 @@ class TabDragController : public content::WebContentsDelegate,
     TabDragData();
     ~TabDragData();
 
-    // The TabContents being dragged.
-    TabContents* contents;
+    // The WebContents being dragged.
+    content::WebContents* contents;
 
     // The original content::WebContentsDelegate of |contents|, before it was
     // detached from the browser window. We store this so that we can forward
@@ -189,7 +202,7 @@ class TabDragController : public content::WebContentsDelegate,
     int source_model_index;
 
     // If attached this is the tab in |attached_tabstrip_|.
-    BaseTab* attached_tab;
+    Tab* attached_tab;
 
     // Is the tab pinned?
     bool pinned;
@@ -198,8 +211,8 @@ class TabDragController : public content::WebContentsDelegate,
   typedef std::vector<TabDragData> DragData;
 
   // Sets |drag_data| from |tab|. This also registers for necessary
-  // notifications and resets the delegate of the TabContents.
-  void InitTabDragData(BaseTab* tab, TabDragData* drag_data);
+  // notifications and resets the delegate of the WebContents.
+  void InitTabDragData(Tab* tab, TabDragData* drag_data);
 
   // Overridden from content::WebContentsDelegate:
   virtual content::WebContents* OpenURLFromTab(
@@ -211,7 +224,8 @@ class TabDragController : public content::WebContentsDelegate,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
-                              bool user_gesture) OVERRIDE;
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
   virtual bool ShouldSuppressDialogs() OVERRIDE;
   virtual content::JavaScriptDialogCreator*
@@ -228,7 +242,8 @@ class TabDragController : public content::WebContentsDelegate,
   virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE;
 
   // Overriden from views::WidgetObserver:
-  virtual void OnWidgetMoved(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetBoundsChanged(views::Widget* widget,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
   // Overriden from TabStripModelObserver:
   virtual void TabStripEmpty() OVERRIDE;
@@ -291,9 +306,9 @@ class TabDragController : public content::WebContentsDelegate,
   // or isn't compatible.
   TabStrip* GetTabStripForWindow(gfx::NativeWindow window);
 
-  // Returns the compatible TabStrip that is under the specified point (screen
+  // Returns the compatible TabStrip to drag to at the specified point (screen
   // coordinates), or NULL if there is none.
-  TabStrip* GetTabStripForPoint(const gfx::Point& point_in_screen);
+  TabStrip* GetTargetTabStripForPoint(const gfx::Point& point_in_screen);
 
   // Returns true if |tabstrip| contains the specified point in screen
   // coordinates.
@@ -316,8 +331,11 @@ class TabDragController : public content::WebContentsDelegate,
   // runs a nested move loop.
   void DetachIntoNewBrowserAndRunMoveLoop(const gfx::Point& point_in_screen);
 
-  // Runs a nested message loop that handles moving the current Browser.
-  void RunMoveLoop();
+  // Runs a nested message loop that handles moving the current
+  // Browser. |drag_offset| is the offset from the window origin and is used in
+  // calculating the location of the window offset from the cursor while
+  // dragging.
+  void RunMoveLoop(const gfx::Vector2d& drag_offset);
 
   // Determines the index to insert tabs at. |dragged_bounds| is the bounds of
   // the tabs being dragged, |start| the index of the tab to start looking from
@@ -358,7 +376,7 @@ class TabDragController : public content::WebContentsDelegate,
 
   // Finds the Tabs within the specified TabStrip that corresponds to the
   // WebContents of the dragged tabs. Returns an empty vector if not attached.
-  std::vector<BaseTab*> GetTabsMatchingDraggedContents(TabStrip* tabstrip);
+  std::vector<Tab*> GetTabsMatchingDraggedContents(TabStrip* tabstrip);
 
   // Returns the bounds for the tabs based on the attached tab strip. The
   // x-coordinate of each tab is offset by |x_offset|.
@@ -410,7 +428,7 @@ class TabDragController : public content::WebContentsDelegate,
   }
 
   // Convenience for |source_tab_drag_data()->contents|.
-  TabContents* source_dragged_contents() {
+  content::WebContents* source_dragged_contents() {
     return source_tab_drag_data()->contents;
   }
 
@@ -424,6 +442,7 @@ class TabDragController : public content::WebContentsDelegate,
   // Creates and returns a new Browser to handle the drag.
   Browser* CreateBrowserForDrag(TabStrip* source,
                                 const gfx::Point& point_in_screen,
+                                gfx::Vector2d* drag_offset,
                                 std::vector<gfx::Rect>* drag_bounds);
 
   // Returns the TabStripModel for the specified tabstrip.
@@ -432,6 +451,10 @@ class TabDragController : public content::WebContentsDelegate,
   // Returns the location of the cursor. This is either the location of the
   // mouse or the location of the current touch point.
   gfx::Point GetCursorScreenPoint();
+
+  // Returns the offset from the top left corner of the window to
+  // |point_in_screen|.
+  gfx::Vector2d GetWindowOffset(const gfx::Point& point_in_screen);
 
   // Returns true if moving the mouse only changes the visible tabs.
   bool move_only() const {
@@ -450,6 +473,15 @@ class TabDragController : public content::WebContentsDelegate,
   // The TabStrip the dragged Tab is currently attached to, or NULL if the
   // dragged Tab is detached.
   TabStrip* attached_tabstrip_;
+
+  // The screen that this drag is associated with. Cached, because other UI
+  // elements are NULLd at various points during the lifetime of this object.
+  gfx::Screen* screen_;
+
+  // The desktop type that this drag is associated with. Cached, because other
+  // UI elements are NULLd at various points during the lifetime of this
+  // object.
+  chrome::HostDesktopType host_desktop_type_;
 
   // The visual representation of the dragged Tab.
   scoped_ptr<DraggedTabView> view_;
@@ -552,8 +584,7 @@ class TabDragController : public content::WebContentsDelegate,
   // The following are needed when detaching into a browser
   // (|detach_into_browser_| is true).
 
-  // Set to true if we've detached from a tabstrip and are running a nested
-  // move message loop.
+  // See description above getter.
   bool is_dragging_window_;
 
   EndRunLoopBehavior end_run_loop_behavior_;
@@ -569,6 +600,9 @@ class TabDragController : public content::WebContentsDelegate,
 
   // If non-null set to true from destructor.
   bool* destroyed_;
+
+  // See description above getter.
+  bool is_mutating_;
 
   DISALLOW_COPY_AND_ASSIGN(TabDragController);
 };

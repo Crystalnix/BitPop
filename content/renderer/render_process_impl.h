@@ -8,9 +8,9 @@
 #include "base/timer.h"
 #include "content/renderer/render_process.h"
 
-namespace skia {
-class PlatformCanvas;
-}
+class SkCanvas;
+
+namespace content {
 
 // Implementation of the RenderProcess interface for the regular browser.
 // See also MockRenderProcess which implements the active "RenderProcess" when
@@ -21,7 +21,7 @@ class RenderProcessImpl : public RenderProcess {
   virtual ~RenderProcessImpl();
 
   // RenderProcess implementation.
-  virtual skia::PlatformCanvas* GetDrawingCanvas(
+  virtual SkCanvas* GetDrawingCanvas(
       TransportDIB** memory,
       const gfx::Rect& rect) OVERRIDE;
   virtual void ReleaseTransportDIB(TransportDIB* memory) OVERRIDE;
@@ -73,5 +73,7 @@ class RenderProcessImpl : public RenderProcess {
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_RENDER_PROCESS_IMPL_H_

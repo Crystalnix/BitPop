@@ -13,7 +13,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
 #include "chrome/browser/browsing_data/browsing_data_quota_helper.h"
 #include "content/public/browser/browser_thread.h"
 #include "webkit/quota/quota_types.h"
@@ -50,10 +49,7 @@ class BrowsingDataQuotaHelperImpl : public BrowsingDataQuotaHelper {
                     int64 usage);
 
   void OnComplete();
-  void DidRevokeHostQuota(quota::QuotaStatusCode status,
-                          const std::string& host,
-                          quota::StorageType type,
-                          int64 quota);
+  void DidRevokeHostQuota(quota::QuotaStatusCode status, int64 quota);
 
   scoped_refptr<quota::QuotaManager> quota_manager_;
   FetchResultCallback callback_;

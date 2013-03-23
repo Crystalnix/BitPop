@@ -6,51 +6,50 @@
 
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
-#include "chrome/browser/ui/search/toolbar_search_animator.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 
 namespace chrome {
 namespace search {
 
-SearchDelegate::SearchDelegate(SearchModel* browser_model)
-    : browser_model_(browser_model),
-      tab_model_(NULL),
-      toolbar_search_animator_(browser_model) {
+SearchDelegate::SearchDelegate(SearchModel* browser_search_model,
+                               ToolbarModel* toolbar_model)
+    : browser_model_(browser_search_model),
+      tab_model_(NULL) {
 }
 
 SearchDelegate::~SearchDelegate() {
   DCHECK(!tab_model_) << "All tabs should have been deactivated or closed.";
 }
 
-void SearchDelegate::ModeChanged(const Mode& mode) {
-  browser_model_->SetMode(mode);
+void SearchDelegate::ModeChanged(const Mode& old_mode, const Mode& new_mode) {
+  browser_model_->SetMode(new_mode);
 }
 
-void SearchDelegate::OnTabActivated(TabContents* contents) {
+void SearchDelegate::OnTabActivated(content::WebContents* web_contents) {
   if (tab_model_)
     tab_model_->RemoveObserver(this);
-  tab_model_ = contents->search_tab_helper()->model();
-  DCHECK_EQ(tab_model_->tab_contents(), contents);
-  browser_model_->set_tab_contents(contents);
+  tab_model_ =
+      chrome::search::SearchTabHelper::FromWebContents(web_contents)->model();
+  DCHECK_EQ(tab_model_->web_contents(), web_contents);
+  browser_model_->set_web_contents(web_contents);
   browser_model_->SetMode(tab_model_->mode());
   tab_model_->AddObserver(this);
 }
 
-void SearchDelegate::OnTabDeactivated(TabContents* contents) {
-  StopObserveringTab(contents);
+void SearchDelegate::OnTabDeactivated(content::WebContents* web_contents) {
+  StopObservingTab(web_contents);
 }
 
-void SearchDelegate::OnTabDetached(TabContents* contents) {
-  StopObserveringTab(contents);
+void SearchDelegate::OnTabDetached(content::WebContents* web_contents) {
+  StopObservingTab(web_contents);
 }
 
-void SearchDelegate::StopObserveringTab(
-    TabContents* contents) {
-  if (contents->search_tab_helper()->model() == tab_model_) {
+void SearchDelegate::StopObservingTab(content::WebContents* web_contents) {
+  chrome::search::SearchTabHelper* search_tab_helper =
+      chrome::search::SearchTabHelper::FromWebContents(web_contents);
+  if (search_tab_helper->model() == tab_model_) {
     tab_model_->RemoveObserver(this);
-    browser_model_->set_tab_contents(NULL);
+    browser_model_->set_web_contents(NULL);
     tab_model_ = NULL;
-    toolbar_search_animator_.FinishAnimation(contents);
   }
 }
 

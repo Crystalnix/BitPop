@@ -8,24 +8,31 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/password_manager/password_manager_delegate.h"
+#include "content/public/browser/web_contents_user_data.h"
 
-class TabContents;
+namespace content {
+class WebContents;
+}
 
-class PasswordManagerDelegateImpl : public PasswordManagerDelegate {
+class PasswordManagerDelegateImpl
+    : public PasswordManagerDelegate,
+      public content::WebContentsUserData<PasswordManagerDelegateImpl> {
  public:
-  explicit PasswordManagerDelegateImpl(TabContents* contents)
-      : tab_contents_(contents) {}
+  virtual ~PasswordManagerDelegateImpl();
 
   // PasswordManagerDelegate implementation.
   virtual void FillPasswordForm(
-      const webkit::forms::PasswordFormFillData& form_data) OVERRIDE;
+      const PasswordFormFillData& form_data) OVERRIDE;
   virtual void AddSavePasswordInfoBarIfPermitted(
       PasswordFormManager* form_to_save) OVERRIDE;
   virtual Profile* GetProfile() OVERRIDE;
   virtual bool DidLastPageLoadEncounterSSLErrors() OVERRIDE;
 
  private:
-  TabContents* tab_contents_;
+  explicit PasswordManagerDelegateImpl(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<PasswordManagerDelegateImpl>;
+
+  content::WebContents* web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerDelegateImpl);
 };

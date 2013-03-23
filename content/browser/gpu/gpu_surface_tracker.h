@@ -14,6 +14,8 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 
+namespace content {
+
 // This class is responsible for managing rendering surfaces exposed to the
 // GPU process. Every surface gets registered to this class, and gets an ID.
 // All calls to and from the GPU process, with the exception of
@@ -59,6 +61,9 @@ class GpuSurfaceTracker : public GpuSurfaceLookup {
   // Note: This is an O(log N) lookup.
   void SetSurfaceHandle(int surface_id, const gfx::GLSurfaceHandle& handle);
 
+  // Sets the native widget associated with the surface_id.
+  void SetNativeWidget(int surface_id, gfx::AcceleratedWidget widget);
+
   // Gets the native handle for the given surface.
   // Note: This is an O(log N) lookup.
   gfx::GLSurfaceHandle GetSurfaceHandle(int surface_id);
@@ -66,6 +71,9 @@ class GpuSurfaceTracker : public GpuSurfaceLookup {
   // Gets the native window handle for the given surface or NULL if the surface
   // does not exist. This is an O(log N) lookup.
   gfx::PluginWindowHandle GetSurfaceWindowHandle(int surface_id);
+
+  // Returns the number of surfaces currently registered with the tracker.
+  std::size_t GetSurfaceCount();
 
   // Gets the global instance of the surface tracker. Identical to Get(), but
   // named that way for the implementation of Singleton.
@@ -91,5 +99,7 @@ class GpuSurfaceTracker : public GpuSurfaceLookup {
 
   DISALLOW_COPY_AND_ASSIGN(GpuSurfaceTracker);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_GPU_GPU_SURFACE_TRACKER_H_

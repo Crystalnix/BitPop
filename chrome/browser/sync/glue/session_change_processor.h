@@ -48,12 +48,12 @@ class SessionChangeProcessor : public ChangeProcessor,
   // sync API model -> BrowserSessionProvider change application.
   virtual void ApplyChangesFromSyncModel(
       const syncer::BaseTransaction* trans,
+      int64 model_version,
       const syncer::ImmutableChangeRecordList& changes) OVERRIDE;
 
  protected:
   // ChangeProcessor implementation.
   virtual void StartImpl(Profile* profile) OVERRIDE;
-  virtual void StopImpl() OVERRIDE;
 
  private:
   friend class ScopedStopObserving<SessionChangeProcessor>;

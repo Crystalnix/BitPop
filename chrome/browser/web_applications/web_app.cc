@@ -11,10 +11,11 @@
 #include "base/string_util.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/constants.h"
 
 using content::BrowserThread;
 
@@ -27,6 +28,26 @@ bool IconPrecedes(const WebApplicationInfo::IconInfo& left,
   return left.width < right.width;
 }
 #endif
+
+void DeleteShortcutsOnFileThread(
+    const ShellIntegration::ShortcutInfo& shortcut_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  FilePath shortcut_data_dir = web_app::GetWebAppDataDirectory(
+      shortcut_info.profile_path, shortcut_info.extension_id, GURL());
+  return web_app::internals::DeletePlatformShortcuts(
+      shortcut_data_dir, shortcut_info);
+}
+
+void UpdateShortcutsOnFileThread(
+    const ShellIntegration::ShortcutInfo& shortcut_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  FilePath shortcut_data_dir = web_app::GetWebAppDataDirectory(
+      shortcut_info.profile_path, shortcut_info.extension_id, GURL());
+  return web_app::internals::UpdatePlatformShortcuts(
+      shortcut_data_dir, shortcut_info);
+}
 
 }  // namespace
 
@@ -57,6 +78,7 @@ FilePath GetSanitizedFileName(const string16& name) {
 FilePath GetWebAppDataDirectory(const FilePath& profile_path,
                                 const std::string& extension_id,
                                 const GURL& url) {
+  DCHECK(!profile_path.empty());
   FilePath app_data_dir(profile_path.Append(chrome::kWebAppDirname));
 
   if (!extension_id.empty()) {
@@ -118,38 +140,42 @@ std::string GetExtensionIdFromApplicationName(const std::string& app_name) {
   return app_name.substr(prefix.length());
 }
 
-void CreateShortcut(
-    const FilePath& profile_path,
-    const ShellIntegration::ShortcutInfo& shortcut_info) {
+void CreateShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      base::Bind(base::IgnoreResult(&CreateShortcutOnFileThread),
-                 profile_path, shortcut_info));
+      base::Bind(base::IgnoreResult(&CreateShortcutsOnFileThread),
+                 shortcut_info));
 }
 
-void DeleteAllShortcuts(const FilePath& profile_path,
-                        const std::string& extension_id) {
+void DeleteAllShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      base::Bind(&internals::DeletePlatformShortcuts, profile_path,
-                 extension_id));
+      base::Bind(&DeleteShortcutsOnFileThread, shortcut_info));
 }
 
-bool CreateShortcutOnFileThread(
-    const FilePath& profile_path,
+void UpdateAllShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  BrowserThread::PostTask(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&UpdateShortcutsOnFileThread, shortcut_info));
+}
+
+bool CreateShortcutsOnFileThread(
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   FilePath shortcut_data_dir = GetWebAppDataDirectory(
-      profile_path, shortcut_info.extension_id, shortcut_info.url);
-  return internals::CreatePlatformShortcut(
-      shortcut_data_dir, profile_path, shortcut_info);
+      shortcut_info.profile_path, shortcut_info.extension_id,
+      shortcut_info.url);
+  return internals::CreatePlatformShortcuts(shortcut_data_dir, shortcut_info);
 }
 
 bool IsValidUrl(const GURL& url) {
@@ -159,7 +185,7 @@ bool IsValidUrl(const GURL& url) {
       chrome::kFtpScheme,
       chrome::kHttpScheme,
       chrome::kHttpsScheme,
-      chrome::kExtensionScheme,
+      extensions::kExtensionScheme,
   };
 
   for (size_t i = 0; i < arraysize(kValidUrlSchemes); ++i) {

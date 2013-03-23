@@ -6,22 +6,24 @@
 
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/theme_installed_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/app_list/app_list_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/ui/singleton_tabs.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -114,6 +116,13 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
   if (skip_post_install_ui_)
     return;
 
+  if (!profile_) {
+    // TODO(zelidrag): Figure out what exact conditions cause crash
+    // http://crbug.com/159437 and write browser test to cover it.
+    NOTREACHED();
+    return;
+  }
+
   if (extension->is_theme()) {
     ShowThemeInfoBar(previous_theme_id_, previous_using_native_theme_,
                      extension, profile_);
@@ -123,9 +132,11 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
   // Extensions aren't enabled by default in incognito so we confirm
   // the install in a normal window.
   Profile* current_profile = profile_->GetOriginalProfile();
-  Browser* browser = browser::FindOrCreateTabbedBrowser(current_profile);
+  Browser* browser =
+      browser::FindOrCreateTabbedBrowser(current_profile,
+                                         chrome::GetActiveDesktop());
   if (browser->tab_count() == 0)
-    chrome::AddBlankTab(browser, true);
+    chrome::AddBlankTabAt(browser, -1, true);
   browser->window()->Show();
 
   bool use_bubble_for_apps = false;
@@ -150,11 +161,13 @@ void ExtensionInstallUIDefault::OnInstallFailure(
   if (disable_failure_ui_for_tests || skip_post_install_ui_)
     return;
 
-  Browser* browser = browser::FindLastActiveWithProfile(profile_);
-  TabContents* tab_contents = chrome::GetActiveTabContents(browser);
-  if (!tab_contents)
+  Browser* browser = chrome::FindLastActiveWithProfile(profile_,
+      chrome::GetActiveDesktop());
+  WebContents* web_contents = chrome::GetActiveWebContents(browser);
+  if (!web_contents)
     return;
-  InfoBarTabHelper* infobar_helper = tab_contents->infobar_tab_helper();
+  InfoBarTabHelper* infobar_helper =
+      InfoBarTabHelper::FromWebContents(web_contents);
   infobar_helper->AddInfoBar(
       new ErrorInfobarDelegate(infobar_helper, browser, error));
 }
@@ -175,18 +188,21 @@ void ExtensionInstallUIDefault::ShowThemeInfoBar(
     return;
 
   // Get last active tabbed browser of profile.
-  Browser* browser = browser::FindTabbedBrowser(profile, true);
+  Browser* browser = browser::FindTabbedBrowser(profile,
+                                                true,
+                                                chrome::GetActiveDesktop());
   if (!browser)
     return;
 
-  TabContents* tab_contents = chrome::GetActiveTabContents(browser);
-  if (!tab_contents)
+  WebContents* web_contents = chrome::GetActiveWebContents(browser);
+  if (!web_contents)
     return;
-  InfoBarTabHelper* infobar_helper = tab_contents->infobar_tab_helper();
+  InfoBarTabHelper* infobar_helper =
+      InfoBarTabHelper::FromWebContents(web_contents);
 
   // First find any previous theme preview infobars.
   InfoBarDelegate* old_delegate = NULL;
-  for (size_t i = 0; i < infobar_helper->infobar_count(); ++i) {
+  for (size_t i = 0; i < infobar_helper->GetInfoBarCount(); ++i) {
     InfoBarDelegate* delegate = infobar_helper->GetInfoBarDelegateAt(i);
     ThemeInstalledInfoBarDelegate* theme_infobar =
         delegate->AsThemePreviewInfobarDelegate();
@@ -203,7 +219,7 @@ void ExtensionInstallUIDefault::ShowThemeInfoBar(
 
   // Then either replace that old one or add a new one.
   InfoBarDelegate* new_delegate = GetNewThemeInstalledInfoBarDelegate(
-      tab_contents, new_theme, previous_theme_id, previous_using_native_theme);
+      web_contents, new_theme, previous_theme_id, previous_using_native_theme);
 
   if (old_delegate)
     infobar_helper->ReplaceInfoBar(old_delegate, new_delegate);
@@ -212,13 +228,14 @@ void ExtensionInstallUIDefault::ShowThemeInfoBar(
 }
 
 InfoBarDelegate* ExtensionInstallUIDefault::GetNewThemeInstalledInfoBarDelegate(
-    TabContents* tab_contents,
+    WebContents* web_contents,
     const Extension* new_theme,
     const std::string& previous_theme_id,
     bool previous_using_native_theme) {
-  Profile* profile = tab_contents->profile();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
   return new ThemeInstalledInfoBarDelegate(
-      tab_contents->infobar_tab_helper(),
+      InfoBarTabHelper::FromWebContents(web_contents),
       profile->GetExtensionService(),
       ThemeServiceFactory::GetForProfile(profile),
       new_theme,
@@ -241,11 +258,11 @@ void ExtensionInstallUI::OpenAppInstalledUI(Browser* browser,
 
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_APP_INSTALLED_TO_NTP,
-        content::Source<WebContents>(params.target_contents->web_contents()),
+        content::Source<WebContents>(params.target_contents),
         content::Details<const std::string>(&app_id));
   } else {
 #if defined(USE_ASH)
-    ash::Shell::GetInstance()->ToggleAppList();
+    app_list_controller::ShowAppList();
 
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
@@ -263,15 +280,18 @@ void ExtensionInstallUI::DisableFailureUIForTests() {
 }
 
 // static
-ExtensionInstallPrompt* ExtensionInstallUI::CreateInstallPromptWithWebContents(
-    content::WebContents* web_contents) {
-  Browser* browser = browser::FindBrowserWithWebContents(web_contents);
-  return chrome::CreateExtensionInstallPromptWithBrowser(browser);
+ExtensionInstallPrompt* ExtensionInstallUI::CreateInstallPromptWithBrowser(
+    Browser* browser) {
+  content::WebContents* web_contents = NULL;
+  if (browser)
+    web_contents = browser->tab_strip_model()->GetActiveWebContents();
+  return new ExtensionInstallPrompt(web_contents);
 }
 
 // static
 ExtensionInstallPrompt* ExtensionInstallUI::CreateInstallPromptWithProfile(
     Profile* profile) {
-  Browser* browser = browser::FindLastActiveWithProfile(profile);
-  return chrome::CreateExtensionInstallPromptWithBrowser(browser);
+  Browser* browser = chrome::FindLastActiveWithProfile(profile,
+      chrome::GetActiveDesktop());
+  return CreateInstallPromptWithBrowser(browser);
 }

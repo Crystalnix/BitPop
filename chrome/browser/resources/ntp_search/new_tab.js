@@ -4,14 +4,84 @@
 
 /**
  * @fileoverview New tab page
- * This is the main code for the new tab page used by touch-enabled Chrome
- * browsers.  For now this is still a prototype.
+ * This is the main code for the new tab page. NewTabView manages page list,
+ * dot list and handles apps pages callbacks from backend. It also handles
+ * the layout of the Bottom Panel and the global UI states of the New Tab Page.
  */
 
 // Use an anonymous function to enable strict mode just for this file (which
 // will be concatenated with other files when embedded in Chrome
 cr.define('ntp', function() {
   'use strict';
+
+  var APP_LAUNCH = {
+    // The histogram buckets (keep in sync with extension_constants.h).
+    NTP_APPS_MAXIMIZED: 0,
+    NTP_APPS_COLLAPSED: 1,
+    NTP_APPS_MENU: 2,
+    NTP_MOST_VISITED: 3,
+    NTP_RECENTLY_CLOSED: 4,
+    NTP_APP_RE_ENABLE: 16,
+    NTP_WEBSTORE_FOOTER: 18,
+    NTP_WEBSTORE_PLUS_ICON: 19,
+  };
+
+  /**
+   * @type {number}
+   * @const
+   */
+  var BOTTOM_PANEL_HORIZONTAL_MARGIN = 100;
+
+  /**
+   * The height required to show the Bottom Panel.
+   * @type {number}
+   * @const
+   */
+  var HEIGHT_FOR_BOTTOM_PANEL = 531;
+
+  /**
+   * The Bottom Panel width required to show 6 cols of Tiles, which is used
+   * in the width computation.
+   * @type {number}
+   * @const
+   */
+  var MAX_BOTTOM_PANEL_WIDTH = 920;
+
+  /**
+   * The minimum width of the Bottom Panel's content.
+   * @type {number}
+   * @const
+   */
+  var MIN_BOTTOM_PANEL_CONTENT_WIDTH = 200;
+
+  /**
+   * The minimum Bottom Panel width. If the available width is smaller than
+   * this value, then the width of the Bottom Panel's content will be fixed to
+   * MIN_BOTTOM_PANEL_CONTENT_WIDTH.
+   * @type {number}
+   * @const
+   */
+  var MIN_BOTTOM_PANEL_WIDTH = 300;
+
+  /**
+   * The normal Bottom Panel width. If the window width is greater than or
+   * equal to this value, then the width of the Bottom Panel's content will be
+   * the available width minus side margin. If the available width is smaller
+   * than this value, then the width of the Bottom Panel's content will be an
+   * interpolation between the normal width, and the minimum width defined by
+   * the constant MIN_BOTTOM_PANEL_CONTENT_WIDTH.
+   * @type {number}
+   * @const
+   */
+  var NORMAL_BOTTOM_PANEL_WIDTH = 500;
+
+  /**
+   * @type {number}
+   * @const
+   */
+  var TILE_ROW_HEIGHT = 100;
+
+  //----------------------------------------------------------------------------
 
   /**
    * NewTabView instance.
@@ -31,26 +101,35 @@ cr.define('ntp', function() {
    * navigation dot UI.
    * @type {!Element|undefined}
    */
-  var infoBubble;
+  var promoBubble;
 
   /**
-   * If non-null, an bubble confirming that the user has signed into sync. It
-   * points at the login status at the top of the page.
-   * @type {!Element|undefined}
+   * The total number of thumbnails that were hovered over.
+   * @type {number}
+   * @private
    */
-  var loginBubble;
+  var hoveredThumbnailCount = 0;
 
   /**
-   * true if |loginBubble| should be shown.
-   * @type {Boolean}
+   * The time when all sections are ready.
+   * @type {number|undefined}
+   * @private
    */
-  var shouldShowLoginBubble = false;
+  var startTime;
 
   /**
-   * The 'other-sessions-menu-button' element.
-   * @type {!Element|undefined}
+   * The top position of the Bottom Panel.
+   * @type {number|undefined}
+   * @private
    */
-  var otherSessionsButton;
+  var bottomPanelOffsetTop;
+
+  /**
+   * The height of the Bottom Panel Header, in pixels.
+   * @type {number|undefined}
+   * @private
+   */
+  var headerHeight;
 
   /**
    * The time in milliseconds for most transitions.  This should match what's
@@ -68,134 +147,710 @@ cr.define('ntp', function() {
   var NtpFollowAction = {
     CLICKED_TILE: 11,
     CLICKED_OTHER_NTP_PANE: 12,
-    OTHER: 13
+    OTHER: 13,
   };
 
   /**
-   * Creates a NewTabView object. NewTabView extends PageListView with
-   * new tab UI specific logics.
+   * Creates a NewTabView object.
    * @constructor
-   * @extends {PageListView}
    */
   function NewTabView() {
-    var pageSwitcherStart = null;
-    var pageSwitcherEnd = null;
-    if (loadTimeData.getValue('showApps')) {
-      pageSwitcherStart = getRequiredElement('page-switcher-start');
-      pageSwitcherEnd = getRequiredElement('page-switcher-end');
-    }
     this.initialize(getRequiredElement('page-list'),
                     getRequiredElement('dot-list'),
-                    getRequiredElement('card-slider-frame'),
-                    getRequiredElement('trash'),
-                    pageSwitcherStart, pageSwitcherEnd);
+                    getRequiredElement('card-slider-frame'));
   }
 
   NewTabView.prototype = {
-    __proto__: ntp.PageListView.prototype,
+    /**
+     * The CardSlider object to use for changing app pages.
+     * @type {CardSlider|undefined}
+     */
+    cardSlider: undefined,
 
-    /** @inheritDoc */
-    appendTilePage: function(page, title, titleIsEditable, opt_refNode) {
-      ntp.PageListView.prototype.appendTilePage.apply(this, arguments);
+    /**
+     * The frame div for this.cardSlider.
+     * @type {!Element|undefined}
+     */
+    sliderFrame: undefined,
 
-      if (infoBubble)
-        window.setTimeout(infoBubble.reposition.bind(infoBubble), 0);
-    }
+    /**
+     * The 'page-list' element.
+     * @type {!Element|undefined}
+     */
+    pageList: undefined,
+
+    /**
+     * A list of all 'tile-page' elements.
+     * @type {!NodeList|undefined}
+     */
+    tilePages: undefined,
+
+    /**
+     * The Apps page.
+     * @type {!Element|undefined}
+     */
+    appsPage: undefined,
+
+    /**
+     * The Most Visited page.
+     * @type {!Element|undefined}
+     */
+    mostVisitedPage: undefined,
+
+    /**
+     * The Recently Closed page.
+     * @type {!Element|undefined}
+     */
+    recentlyClosedPage: undefined,
+
+    /**
+     * The Devices page.
+     * @type {!Element|undefined}
+     */
+    otherDevicesPage: undefined,
+
+    /**
+     * The 'dots-list' element.
+     * @type {!Element|undefined}
+     */
+    dotList: undefined,
+
+    /**
+     * The type of page that is currently shown. The value is a numerical ID.
+     * @type {number}
+     */
+    shownPage: 0,
+
+    /**
+     * The index of the page that is currently shown, within the page type.
+     * For example if the third Apps page is showing, this will be 2.
+     * @type {number}
+     */
+    shownPageIndex: 0,
+
+    /**
+     * If non-null, this is the ID of the app to highlight to the user the next
+     * time getAppsCallback runs. "Highlight" in this case means to switch to
+     * the page and run the new tile animation.
+     * @type {?string}
+     */
+    highlightAppId: null,
+
+    /**
+     * Initializes new tab view.
+     * @param {!Element} pageList A DIV element to host all pages.
+     * @param {!Element} dotList An UL element to host nav dots. Each dot
+     *     represents a page.
+     * @param {!Element} cardSliderFrame The card slider frame that hosts
+     *     pageList.
+     */
+    initialize: function(pageList, dotList, cardSliderFrame) {
+      this.pageList = pageList;
+
+      this.dotList = dotList;
+      cr.ui.decorate(this.dotList, ntp.DotList);
+
+      this.shownPage = loadTimeData.getInteger('shown_page_type');
+      this.shownPageIndex = loadTimeData.getInteger('shown_page_index');
+
+      if (loadTimeData.getBoolean('showApps')) {
+        // When the Apps Page is available, then the dot list should be visible.
+        this.dotList.removeAttribute('hidden');
+        // Request data on the apps so we can fill them in.
+        // Note that this is kicked off asynchronously.  'getAppsCallback' will
+        // be invoked at some point after this function returns.
+        chrome.send('getApps');
+      } else if (this.shownPage == loadTimeData.getInteger('apps_page_id')) {
+        // No apps page.
+        this.setShownPage_(
+            loadTimeData.getInteger('most_visited_page_id'), 0);
+      }
+
+      this.tilePages = this.pageList.getElementsByClassName('tile-page');
+
+      // Initialize the cardSlider without any cards at the moment.
+      this.sliderFrame = cardSliderFrame;
+      this.cardSlider = new cr.ui.CardSlider(this.sliderFrame, this.pageList,
+          this.sliderFrame.offsetWidth);
+
+      var cardSlider = this.cardSlider;
+      this.cardSlider.initialize(
+          loadTimeData.getBoolean('isSwipeTrackingFromScrollEventsEnabled'));
+
+      // Prevent touch events from triggering any sort of native scrolling.
+      document.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+      }, true);
+
+      // Handle events from the card slider.
+      this.pageList.addEventListener('cardSlider:card_changed',
+          this.onCardChanged_.bind(this));
+      this.pageList.addEventListener('cardSlider:card_added',
+          this.onCardAdded_.bind(this));
+      this.pageList.addEventListener('cardSlider:card_removed',
+         this.onCardRemoved_.bind(this));
+
+      // Update apps when online state changes.
+      window.addEventListener('online',
+          this.updateOfflineEnabledApps_.bind(this));
+      window.addEventListener('offline',
+          this.updateOfflineEnabledApps_.bind(this));
+    },
+
+    /**
+     * Starts listening to user input events. The resize and keydown events
+     * must be added only when all NTP have finished loading because they
+     * will act in the current selected page.
+     */
+    onReady: function() {
+      window.addEventListener('resize', this.onWindowResize_.bind(this));
+      document.addEventListener('keydown', this.onDocKeyDown_.bind(this));
+    },
+
+    /**
+     * Appends a tile page.
+     *
+     * @param {TilePage} page The page element.
+     * @param {string} title The title of the tile page.
+     * @param {TilePage=} opt_refNode Optional reference node to insert in front
+     *     of.
+     * When opt_refNode is falsey, |page| will just be appended to the end of
+     * the page list.
+     */
+    appendTilePage: function(page, title, opt_refNode) {
+      if (opt_refNode) {
+        var refIndex = this.getTilePageIndex(opt_refNode);
+        this.cardSlider.addCardAtIndex(page, refIndex);
+      } else {
+        this.cardSlider.appendCard(page);
+      }
+
+      // Remember special MostVisitedPage.
+      if (typeof ntp.MostVisitedPage != 'undefined' &&
+          page instanceof ntp.MostVisitedPage) {
+        assert(this.tilePages.length == 1,
+               'MostVisitedPage should be added as first tile page');
+        this.mostVisitedPage = page;
+      }
+
+      if (typeof ntp.AppsPage != 'undefined' &&
+          page instanceof ntp.AppsPage) {
+        this.appsPage = page;
+      }
+
+      if (typeof ntp.RecentlyClosedPage != 'undefined' &&
+          page instanceof ntp.RecentlyClosedPage) {
+        this.recentlyClosedPage = page;
+      }
+
+      // Remember special OtherDevicesPage.
+      if (typeof ntp.OtherDevicesPage != 'undefined' &&
+          page instanceof ntp.OtherDevicesPage) {
+        this.otherDevicesPage = page;
+      }
+
+      // Make a deep copy of the dot template to add a new one.
+      var newDot = new ntp.NavDot(page, title);
+      page.navigationDot = newDot;
+      this.dotList.insertBefore(newDot,
+                                opt_refNode ? opt_refNode.navigationDot : null);
+      // Set a tab index on the first dot.
+      if (this.dotList.dots.length == 1)
+        newDot.tabIndex = 3;
+    },
+
+    /**
+     * Called by chrome when an app has changed positions.
+     * @param {Object} data The data for the app. This contains page and
+     *     position indices.
+     */
+    appMoved: function(data) {
+      assert(loadTimeData.getBoolean('showApps'));
+
+      var app = $(data.id);
+      assert(app, 'trying to move an app that doesn\'t exist');
+      app.remove(false);
+
+      this.appsPage.insertApp(data, false);
+    },
+
+    /**
+     * Called by chrome when an existing app has been disabled or
+     * removed/uninstalled from chrome.
+     * @param {Object} data A data structure full of relevant information for
+     *     the app.
+     * @param {boolean} isUninstall True if the app is being uninstalled;
+     *     false if the app is being disabled.
+     * @param {boolean} fromPage True if the removal was from the current page.
+     */
+    appRemoved: function(data, isUninstall, fromPage) {
+      assert(loadTimeData.getBoolean('showApps'));
+
+      var app = $(data.id);
+      assert(app, 'trying to remove an app that doesn\'t exist');
+
+      if (!isUninstall)
+        app.replaceAppData(data);
+      else
+        app.remove(!!fromPage);
+    },
+
+    /**
+     * @return {boolean} If the page is still starting up.
+     * @private
+     */
+    isStartingUp_: function() {
+      return document.documentElement.classList.contains('starting-up');
+    },
+
+    /**
+     * Tracks whether apps have been loaded at least once.
+     * @type {boolean}
+     * @private
+     */
+    appsLoaded_: false,
+
+    /**
+     * Callback invoked by chrome with the apps available.
+     *
+     * Note that calls to this function can occur at any time, not just in
+     * response to a getApps request. For example, when a user
+     * installs/uninstalls an app on another synchronized devices.
+     * @param {Object} data An object with all the data on available
+     *        applications.
+     */
+    getAppsCallback: function(data) {
+      assert(loadTimeData.getBoolean('showApps'));
+
+      var startTime = Date.now();
+
+      // Get the array of apps and add any special synthesized entries.
+      var apps = data.apps;
+
+      // Sort alphabetically.
+      apps.sort(function(a, b) {
+        return a.title.toLocaleLowerCase() > b.title.toLocaleLowerCase() ? 1 :
+          a.title.toLocaleLowerCase() < b.title.toLocaleLowerCase() ? -1 : 0;
+      });
+
+      // An app to animate (in case it was just installed).
+      var highlightApp;
+
+      if (this.appsPage) {
+        this.appsPage.removeAllTiles();
+      } else {
+        var page = new ntp.AppsPage();
+        page.setDataList(apps);
+        this.appendTilePage(page, loadTimeData.getString('appDefaultPageName'));
+      }
+
+      for (var i = 0; i < apps.length; i++) {
+        var app = apps[i];
+        if (app.id == this.highlightAppId)
+          highlightApp = app;
+        else
+          this.appsPage.insertApp(app, false);
+      }
+
+      if (highlightApp)
+        this.appAdded(highlightApp, true);
+
+      logEvent('apps.layout: ' + (Date.now() - startTime));
+
+      // Tell the slider about the pages and mark the current page.
+      this.updateSliderCards();
+
+      if (!this.appsLoaded_) {
+        this.appsLoaded_ = true;
+        cr.dispatchSimpleEvent(document, 'sectionready', true, true);
+      }
+    },
+
+    /**
+     * Called by chrome when a new app has been added to chrome or has been
+     * enabled if previously disabled.
+     * @param {Object} data A data structure full of relevant information for
+     *     the app.
+     * @param {boolean=} opt_highlight Whether the app about to be added should
+     *     be highlighted.
+     */
+    appAdded: function(data, opt_highlight) {
+      assert(loadTimeData.getBoolean('showApps'));
+
+      if (data.id == this.highlightAppId) {
+        opt_highlight = true;
+        this.highlightAppId = null;
+      }
+
+      if (!this.appsLoaded_)
+        opt_highlight = false;
+
+      var app = $(data.id);
+      if (app) {
+        app.replaceAppData(data);
+      } else if (opt_highlight) {
+        this.appsPage.insertAndHighlightApp(data);
+        this.setShownPage_(loadTimeData.getInteger('apps_page_id'),
+                           data.page_index);
+      } else {
+        this.appsPage.insertApp(data, false);
+      }
+    },
+
+    /**
+     * Callback invoked by chrome whenever an app preference changes.
+     * @param {Object} data An object with all the data on available
+     *     applications.
+     */
+    appsPrefChangedCallback: function(data) {
+      assert(loadTimeData.getBoolean('showApps'));
+
+      for (var i = 0; i < data.apps.length; ++i) {
+        var element = $(data.apps[i].id);
+        if (element)
+          element.data = data.apps[i];
+      }
+    },
+
+    /**
+     * Invoked whenever the pages in page-list have changed so that the
+     * CardSlider knows about the new elements.
+     */
+    updateSliderCards: function() {
+      var pageNo = Math.max(0, Math.min(this.cardSlider.currentCard,
+                                        this.tilePages.length - 1));
+      this.cardSlider.setCards(Array.prototype.slice.call(this.tilePages),
+                               pageNo);
+      switch (this.shownPage) {
+        case loadTimeData.getInteger('apps_page_id'):
+          this.cardSlider.selectCardByValue(this.appsPage);
+          break;
+        case loadTimeData.getInteger('most_visited_page_id'):
+          if (this.mostVisitedPage)
+            this.cardSlider.selectCardByValue(this.mostVisitedPage);
+          break;
+      }
+    },
+
+    /**
+     * Handler for cardSlider:card_changed events from this.cardSlider.
+     * @param {Event} e The cardSlider:card_changed event.
+     * @private
+     */
+    onCardChanged_: function(e) {
+      var page = e.cardSlider.currentCardValue;
+
+      // Don't change shownPage until startup is done (and page changes actually
+      // reflect user actions).
+      if (!this.isStartingUp_()) {
+        if (page.classList.contains('apps-page')) {
+          this.setShownPage_(loadTimeData.getInteger('apps_page_id'), 0);
+        } else if (page.classList.contains('most-visited-page')) {
+          this.setShownPage_(
+              loadTimeData.getInteger('most_visited_page_id'), 0);
+        } else if (page.classList.contains('recently-closed-page')) {
+          this.setShownPage_(
+              loadTimeData.getInteger('recently_closed_page_id'), 0);
+        } else if (page.classList.contains('other-devices-page')) {
+          this.setShownPage_(
+              loadTimeData.getInteger('other_devices_page_id'), 0);
+        } else {
+          console.error('unknown page selected');
+        }
+      }
+
+      // Update the active dot
+      var curDot = this.dotList.getElementsByClassName('selected')[0];
+      if (curDot)
+        curDot.classList.remove('selected');
+      page.navigationDot.classList.add('selected');
+    },
+
+    /**
+     * Saves/updates the newly selected page to open when first loading the NTP.
+     * @type {number} shownPage The new shown page type.
+     * @type {number} shownPageIndex The new shown page index.
+     * @private
+     */
+    setShownPage_: function(shownPage, shownPageIndex) {
+      assert(shownPageIndex >= 0);
+      this.shownPage = shownPage;
+      this.shownPageIndex = shownPageIndex;
+      chrome.send('pageSelected', [this.shownPage, this.shownPageIndex]);
+    },
+
+    /**
+     * Listen for card additions to update the current card accordingly.
+     * @param {Event} e A card removed or added event.
+     */
+    onCardAdded_: function(e) {
+      var page = e.addedCard;
+      // When the second arg passed to insertBefore is falsey, it acts just like
+      // appendChild.
+      this.pageList.insertBefore(page, this.tilePages[e.addedIndex]);
+      this.layout(false, page);
+      this.onCardAddedOrRemoved_();
+    },
+
+    /**
+     * Listen for card removals to update the current card accordingly.
+     * @param {Event} e A card removed or added event.
+     */
+    onCardRemoved_: function(e) {
+      e.removedCard.remove();
+      this.onCardAddedOrRemoved_();
+    },
+
+    /**
+     * Called when a card is removed or added.
+     * @private
+     */
+    onCardAddedOrRemoved_: function() {
+      if (this.isStartingUp_())
+        return;
+
+      // Without repositioning there were issues - http://crbug.com/133457.
+      this.cardSlider.repositionFrame();
+    },
+
+    /**
+     * Window resize handler.
+     * @private
+     */
+    onWindowResize_: function(e) {
+      this.cardSlider.resize(this.sliderFrame.offsetWidth);
+      this.layout(true);
+    },
+
+    /**
+     * Handler for key events on the page. Ctrl-Arrow will switch the visible
+     * page.
+     * @param {Event} e The KeyboardEvent.
+     * @private
+     */
+    onDocKeyDown_: function(e) {
+      if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey)
+        return;
+
+      var direction = 0;
+      if (e.keyIdentifier == 'Left')
+        direction = -1;
+      else if (e.keyIdentifier == 'Right')
+        direction = 1;
+      else
+        return;
+
+      var cardIndex =
+          (this.cardSlider.currentCard + direction +
+           this.cardSlider.cardCount) % this.cardSlider.cardCount;
+      this.cardSlider.selectCard(cardIndex, true);
+
+      e.stopPropagation();
+    },
+
+    /**
+     * Listener for offline status change events. Updates apps that are
+     * not offline-enabled to be grayscale if the browser is offline.
+     * @private
+     */
+    updateOfflineEnabledApps_: function() {
+      var apps = document.querySelectorAll('.app');
+      for (var i = 0; i < apps.length; ++i) {
+        if (apps[i].data.enabled && !apps[i].data.offline_enabled) {
+          apps[i].setIcon();
+          apps[i].loadIcon();
+        }
+      }
+    },
+
+    /**
+     * Returns the index of a given tile page.
+     * @param {TilePage} page The TilePage we wish to find.
+     * @return {number} The index of |page| or -1 if it is not in the
+     *    collection.
+     */
+    getTilePageIndex: function(page) {
+      return Array.prototype.indexOf.call(this.tilePages, page);
+    },
+
+    /**
+     * Removes a page and navigation dot (if the navdot exists).
+     * @param {TilePage} page The page to be removed.
+     */
+    removeTilePageAndDot_: function(page) {
+      if (page.navigationDot)
+        page.navigationDot.remove();
+      this.cardSlider.removeCard(page);
+    },
+
+    /**
+     * The width of the Bottom Panel's content.
+     * @type {number}
+     */
+    contentWidth_: 0,
+
+    /**
+     * Calculates the layout of the NTP's Bottom Panel. This method will resize
+     * and position all container elements in the Bottom Panel. At the end of
+     * the layout process it will dispatch the layout method to the current
+     * selected TilePage. Alternatively, you can pass a specific TilePage in
+     * the |opt_page| parameter, which is useful for initializing the layout
+     * of a recently created TilePage.
+     *
+     * The |NewTabView.layout| deals with the global layout state while the
+     * |TilePage.layout| deals with the per-page layout state. A general rule
+     * would be: if you need to resize any element which is outside the
+     * card-slider-frame, it should be handled here in NewTabView. Otherwise,
+     * it should be handled in TilePage.
+     *
+     * @param {boolean=} opt_animate Whether the layout should be animated.
+     * @param {ntp.TilePage=} opt_page Alternative TilePage to calculate layout.
+     */
+    layout: function(opt_animate, opt_page) {
+      opt_animate = typeof opt_animate == 'undefined' ? false : opt_animate;
+
+      var viewHeight = cr.doc.documentElement.clientHeight;
+      var isBottomPanelVisible = viewHeight >= HEIGHT_FOR_BOTTOM_PANEL;
+      // Toggles the visibility of the Bottom Panel when there is (or there
+      // is not) space to show the entire panel.
+      this.showBottomPanel_(isBottomPanelVisible);
+
+      // The layout calculation can be skipped if Bottom Panel is not visible.
+      if (!isBottomPanelVisible && !opt_page)
+        return;
+
+      // Calculates the width of the Bottom Panel's Content.
+      var width = this.calculateContentWidth_();
+      if (width != this.contentWidth_) {
+        this.contentWidth_ = width;
+        $('bottom-panel-footer').style.width = width + 'px';
+      }
+
+      // Finally, dispatch the layout method to the current page.
+      var currentPage = opt_page || this.cardSlider.currentCardValue;
+
+      var contentHeight = TILE_ROW_HEIGHT;
+      if (!opt_page && currentPage.config.scrollable) {
+        contentHeight = viewHeight - bottomPanelOffsetTop -
+            headerHeight - $('bottom-panel-footer').offsetHeight;
+        contentHeight = Math.max(TILE_ROW_HEIGHT, contentHeight);
+      }
+      this.contentHeight_ = contentHeight;
+
+      $('card-slider-frame').style.height = contentHeight + 'px';
+
+      currentPage.layout(opt_animate);
+    },
+
+    /**
+     * @return {number} The height of the Bottom Panel's content.
+     */
+    get contentHeight() {
+      return this.contentHeight_;
+    },
+
+    /**
+     * @return {number} The width of the Bottom Panel's content.
+     */
+    get contentWidth() {
+      return this.contentWidth_;
+    },
+
+    /**
+     * @return {number} The width of the Bottom Panel's content.
+     * @private
+     */
+    calculateContentWidth_: function() {
+      var windowWidth = cr.doc.documentElement.clientWidth;
+      var margin = 2 * BOTTOM_PANEL_HORIZONTAL_MARGIN;
+
+      var width;
+      if (windowWidth >= MAX_BOTTOM_PANEL_WIDTH) {
+        width = MAX_BOTTOM_PANEL_WIDTH - margin;
+      } else if (windowWidth >= NORMAL_BOTTOM_PANEL_WIDTH) {
+        width = windowWidth - margin;
+      } else if (windowWidth >= MIN_BOTTOM_PANEL_WIDTH) {
+        // Interpolation between the previous and next states.
+        var minMargin = MIN_BOTTOM_PANEL_WIDTH - MIN_BOTTOM_PANEL_CONTENT_WIDTH;
+        var factor = (windowWidth - MIN_BOTTOM_PANEL_WIDTH) /
+            (NORMAL_BOTTOM_PANEL_WIDTH - MIN_BOTTOM_PANEL_WIDTH);
+        var interpolatedMargin = minMargin + factor * (margin - minMargin);
+        width = windowWidth - interpolatedMargin;
+      } else {
+        width = MIN_BOTTOM_PANEL_CONTENT_WIDTH;
+      }
+
+      return width;
+    },
+
+    /**
+     * Animates the display of the Bottom Panel.
+     * @param {boolean} show Whether or not to show the Bottom Panel.
+     */
+    showBottomPanel_: function(show) {
+      $('bottom-panel').classList.toggle('hide-bottom-panel', !show);
+    },
   };
 
   /**
    * Invoked at startup once the DOM is available to initialize the app.
    */
   function onLoad() {
-    sectionsToWaitFor = loadTimeData.getBoolean('showApps') ? 2 : 1;
-    if (loadTimeData.getBoolean('isSuggestionsPageEnabled'))
-      sectionsToWaitFor++;
-    measureNavDots();
+
+    if (!loadTimeData.getBoolean('showApps'))
+      cr.dispatchSimpleEvent(document, 'sectionready', true, true);
 
     // Load the current theme colors.
     themeChanged();
 
     newTabView = new NewTabView();
 
+    bottomPanelOffsetTop = $('bottom-panel').offsetTop;
+    headerHeight = $('bottom-panel-header').offsetHeight;
+
     notificationContainer = getRequiredElement('notification-container');
-    notificationContainer.addEventListener(
-        'webkitTransitionEnd', onNotificationTransitionEnd);
-
-    cr.ui.decorate($('recently-closed-menu-button'), ntp.RecentMenuButton);
-    chrome.send('getRecentlyClosedTabs');
-
-    if (loadTimeData.getBoolean('showOtherSessionsMenu')) {
-      otherSessionsButton = getRequiredElement('other-sessions-menu-button');
-      cr.ui.decorate(otherSessionsButton, ntp.OtherSessionsMenuButton);
-      otherSessionsButton.initialize(loadTimeData.getBoolean('isUserSignedIn'));
-    }
 
     var mostVisited = new ntp.MostVisitedPage();
-    // Move the footer into the most visited page if we are in "bare minimum"
-    // mode.
-    if (document.body.classList.contains('bare-minimum'))
-      mostVisited.appendFooter(getRequiredElement('footer'));
     newTabView.appendTilePage(mostVisited,
-                              loadTimeData.getString('mostvisited'),
-                              false);
+                              loadTimeData.getString('mostvisited'));
     chrome.send('getMostVisited');
 
-    if (loadTimeData.getBoolean('isSuggestionsPageEnabled')) {
-      var suggestions_script = document.createElement('script');
-      suggestions_script.src = 'suggestions_page.js';
-      suggestions_script.onload = function() {
-         newTabView.appendTilePage(new ntp.SuggestionsPage(),
-                                   loadTimeData.getString('suggestions'),
-                                   false,
-                                   (newTabView.appsPages.length > 0) ?
-                                       newTabView.appsPages[0] : null);
-         chrome.send('getSuggestions');
-         cr.dispatchSimpleEvent(document, 'sectionready', true, true);
+    if (loadTimeData.valueExists('bubblePromoText')) {
+      promoBubble = new cr.ui.Bubble;
+      promoBubble.anchorNode = getRequiredElement('promo-bubble-anchor');
+      promoBubble.arrowLocation = cr.ui.ArrowLocation.BOTTOM_START;
+      promoBubble.bubbleAlignment = cr.ui.BubbleAlignment.ENTIRELY_VISIBLE;
+      promoBubble.deactivateToDismissDelay = 2000;
+      promoBubble.content = parseHtmlSubset(
+          loadTimeData.getString('bubblePromoText'), ['BR']);
+
+      var bubbleLink = promoBubble.querySelector('a');
+      if (bubbleLink) {
+        bubbleLink.addEventListener('click', function(e) {
+          chrome.send('bubblePromoLinkClicked');
+        });
+      }
+
+      promoBubble.handleCloseEvent = function() {
+        promoBubble.hide();
+        chrome.send('bubblePromoClosed');
       };
-      document.querySelector('head').appendChild(suggestions_script);
+      promoBubble.show();
+      chrome.send('bubblePromoViewed');
     }
-
-    var webStoreLink = loadTimeData.getString('webStoreLink');
-    var url = appendParam(webStoreLink, 'utm_source', 'chrome-ntp-launcher');
-    $('chrome-web-store-link').href = url;
-    $('chrome-web-store-link').addEventListener('click',
-        onChromeWebStoreButtonClick);
-
-    if (loadTimeData.getString('login_status_message')) {
-      loginBubble = new cr.ui.Bubble;
-      loginBubble.anchorNode = $('login-container');
-      loginBubble.setArrowLocation(cr.ui.ArrowLocation.TOP_END);
-      loginBubble.bubbleAlignment =
-          cr.ui.BubbleAlignment.BUBBLE_EDGE_TO_ANCHOR_EDGE;
-      loginBubble.deactivateToDismissDelay = 2000;
-      loginBubble.setCloseButtonVisible(false);
-
-      $('login-status-advanced').onclick = function() {
-        chrome.send('showAdvancedLoginUI');
-      };
-      $('login-status-dismiss').onclick = loginBubble.hide.bind(loginBubble);
-
-      var bubbleContent = $('login-status-bubble-contents');
-      loginBubble.content = bubbleContent;
-
-      // The anchor node won't be updated until updateLogin is called so don't
-      // show the bubble yet.
-      shouldShowLoginBubble = true;
-    }
-
-    var loginContainer = getRequiredElement('login-container');
-    loginContainer.addEventListener('click', showSyncLoginUI);
-    chrome.send('initializeSyncLogin');
 
     doWhenAllSectionsReady(function() {
       // Tell the slider about the pages.
       newTabView.updateSliderCards();
-      // Mark the current page.
-      newTabView.cardSlider.currentCardValue.navigationDot.classList.add(
-          'selected');
+      newTabView.onReady();
 
-      if (loadTimeData.valueExists('serverpromo')) {
-        var promo = loadTimeData.getString('serverpromo');
+      // Restore the visibility only after calling updateSliderCards to avoid
+      // flickering, otherwise for a small fraction of a second the Page List is
+      // partially rendered.
+      $('bottom-panel').style.visibility = 'visible';
+
+      if (loadTimeData.valueExists('notificationPromoText')) {
+        var promoText = loadTimeData.getString('notificationPromoText');
         var tags = ['IMG'];
         var attrs = {
           src: function(node, value) {
@@ -203,37 +858,37 @@ cr.define('ntp', function() {
                    /^data\:image\/(?:png|gif|jpe?g)/.test(value);
           },
         };
-        showNotification(parseHtmlSubset(promo, tags, attrs), [], function() {
-          chrome.send('closeNotificationPromo');
+
+        var promo = parseHtmlSubset(promoText, tags, attrs);
+        var promoLink = promo.querySelector('a');
+        if (promoLink) {
+          promoLink.addEventListener('click', function(e) {
+            chrome.send('notificationPromoLinkClicked');
+          });
+        }
+
+        showNotification(promo, [], function() {
+          chrome.send('notificationPromoClosed');
         }, 60000);
         chrome.send('notificationPromoViewed');
       }
 
       cr.dispatchSimpleEvent(document, 'ntpLoaded', true, true);
       document.documentElement.classList.remove('starting-up');
-    });
-  }
 
-  /**
-   * Launches the chrome web store app with the chrome-ntp-launcher
-   * source.
-   * @param {Event} e The click event.
-   */
-  function onChromeWebStoreButtonClick(e) {
-    chrome.send('recordAppLaunchByURL',
-                [encodeURIComponent(this.href),
-                 ntp.APP_LAUNCH.NTP_WEBSTORE_FOOTER]);
+      startTime = Date.now();
+    });
   }
 
   /*
    * The number of sections to wait on.
    * @type {number}
    */
-  var sectionsToWaitFor = -1;
+  var sectionsToWaitFor = 2;
 
   /**
    * Queued callbacks which lie in wait for all sections to be ready.
-   * @type {array}
+   * @type {!Array}
    */
   var readyCallbacks = [];
 
@@ -262,24 +917,6 @@ cr.define('ntp', function() {
       readyCallbacks.push(callback);
     else
       window.setTimeout(callback, 0);  // Do soon after, but asynchronously.
-  }
-
-  /**
-   * Fills in an invisible div with the 'Most Visited' string so that
-   * its length may be measured and the nav dots sized accordingly.
-   */
-  function measureNavDots() {
-    var measuringDiv = $('fontMeasuringDiv');
-    measuringDiv.textContent = loadTimeData.getString('mostvisited');
-    // The 4 is for border and padding.
-    var pxWidth = Math.max(measuringDiv.clientWidth * 1.15 + 4, 80);
-
-    var styleElement = document.createElement('style');
-    styleElement.type = 'text/css';
-    // max-width is used because if we run out of space, the nav dots will be
-    // shrunk.
-    styleElement.textContent = '.dot { max-width: ' + pxWidth + 'px; }';
-    document.querySelector('head').appendChild(styleElement);
   }
 
   function themeChanged(opt_hasAttribution) {
@@ -325,7 +962,7 @@ cr.define('ntp', function() {
    *     records describing the links in the notification. Each record should
    *     have a 'text' attribute (the display string) and an 'action' attribute
    *     (a function to run when the link is activated).
-   * @param {Function} opt_closeHandler The callback invoked if the user
+   * @param {Function=} opt_closeHandler The callback invoked if the user
    *     manually dismisses the notification.
    */
   function showNotification(message, links, opt_closeHandler, opt_timeout) {
@@ -365,84 +1002,36 @@ cr.define('ntp', function() {
     document.addEventListener('dragstart', closeFunc);
 
     notificationContainer.hidden = false;
-    showNotificationOnCurrentPage();
-
-    newTabView.cardSlider.frame.addEventListener(
-        'cardSlider:card_change_ended', onCardChangeEnded);
 
     var timeout = opt_timeout || 10000;
     notificationTimeout = window.setTimeout(hideNotification, timeout);
+
+    layout();
   }
 
   /**
    * Hide the notification bubble.
    */
   function hideNotification() {
-    notificationContainer.classList.add('inactive');
+    notificationContainer.hidden = true;
 
-    newTabView.cardSlider.frame.removeEventListener(
-        'cardSlider:card_change_ended', onCardChangeEnded);
+    layout();
   }
 
-  /**
-   * Happens when 1 or more consecutive card changes end.
-   * @param {Event} e The cardSlider:card_change_ended event.
-   */
-  function onCardChangeEnded(e) {
-    // If we ended on the same page as we started, ignore.
-    if (newTabView.cardSlider.currentCardValue.notification)
-      return;
+  function setMostVisitedPages(dataList, hasBlacklistedUrls) {
+    var page = newTabView.mostVisitedPage;
+    var state = page.getTileRepositioningState();
+    if (state) {
+      if (state.isRemoving)
+        page.animateTileRemoval(state.index, dataList);
+      else
+        page.animateTileRestoration(state.index, dataList);
 
-    // Hide the notification the old page.
-    notificationContainer.classList.add('card-changed');
-
-    showNotificationOnCurrentPage();
-  }
-
-  /**
-   * Move and show the notification on the current page.
-   */
-  function showNotificationOnCurrentPage() {
-    var page = newTabView.cardSlider.currentCardValue;
-    doWhenAllSectionsReady(function() {
-      if (page != newTabView.cardSlider.currentCardValue)
-        return;
-
-      // NOTE: This moves the notification to inside of the current page.
-      page.notification = notificationContainer;
-
-      // Reveal the notification and instruct it to hide itself if ignored.
-      notificationContainer.classList.remove('inactive');
-
-      // Gives the browser time to apply this rule before we remove it (causing
-      // a transition).
-      window.setTimeout(function() {
-        notificationContainer.classList.remove('card-changed');
-      }, 0);
-    });
-  }
-
-  /**
-   * When done fading out, set hidden to true so the notification can't be
-   * tabbed to or clicked.
-   * @param {Event} e The webkitTransitionEnd event.
-   */
-  function onNotificationTransitionEnd(e) {
-    if (notificationContainer.classList.contains('inactive'))
-      notificationContainer.hidden = true;
-  }
-
-  function setRecentlyClosedTabs(dataItems) {
-    $('recently-closed-menu-button').dataItems = dataItems;
-  }
-
-  function setMostVisitedPages(data, hasBlacklistedUrls) {
-    newTabView.mostVisitedPage.data = data;
-    cr.dispatchSimpleEvent(document, 'sectionready', true, true);
-  }
-
-  function setSuggestionsPages(data, hasBlacklistedUrls) {
-    newTabView.suggestionsPage.data = data;
+      page.resetTileRepositioningState();
+    } else {
+      page.setDataList(dataList);
+      cr.dispatchSimpleEvent(document, 'sectionready', true, true);
+    }
   }
 
   /**
@@ -452,63 +1041,42 @@ cr.define('ntp', function() {
    * @param {string} id The ID of a node.
    * @param {string} color The color represented as a CSS string.
    */
-  function setStripeColor(id, color) {
+  function setFaviconDominantColor(id, color) {
     var node = $(id);
+    var prop = Object.getOwnPropertyDescriptor(node.__proto__, 'stripeColor');
+    assert(prop && prop.set, 'Node doesn\'t have a stripeColor setter');
     if (node)
       node.stripeColor = color;
   }
 
-  /**
-   * Updates the text displayed in the login container. If there is no text then
-   * the login container is hidden.
-   * @param {string} loginHeader The first line of text.
-   * @param {string} loginSubHeader The second line of text.
-   * @param {string} iconURL The url for the login status icon. If this is null
-        then the login status icon is hidden.
-   * @param {boolean} isUserSignedIn Indicates if the user is signed in or not.
-   */
-  function updateLogin(loginHeader, loginSubHeader, iconURL, isUserSignedIn) {
-    if (loginHeader || loginSubHeader) {
-      $('login-container').hidden = false;
-      $('login-status-header').innerHTML = loginHeader;
-      $('login-status-sub-header').innerHTML = loginSubHeader;
-      $('card-slider-frame').classList.add('showing-login-area');
-
-      if (iconURL) {
-        $('login-status-header-container').style.backgroundImage = url(iconURL);
-        $('login-status-header-container').classList.add('login-status-icon');
-      } else {
-        $('login-status-header-container').style.backgroundImage = 'none';
-        $('login-status-header-container').classList.remove(
-            'login-status-icon');
-      }
-    } else {
-      $('login-container').hidden = true;
-      $('card-slider-frame').classList.remove('showing-login-area');
-    }
-    if (shouldShowLoginBubble) {
-      window.setTimeout(loginBubble.show.bind(loginBubble), 0);
-      chrome.send('loginMessageSeen');
-      shouldShowLoginBubble = false;
-    } else if (loginBubble) {
-      loginBubble.reposition();
-    }
-    if (otherSessionsButton)
-      otherSessionsButton.updateSignInState(isUserSignedIn);
+  function getThumbnailUrl(url) {
+    return 'chrome://thumb/' + url;
   }
 
   /**
-   * Show the sync login UI.
-   * @param {Event} e The click event.
+   * Increments the parameter used to log the total number of thumbnail hovered
+   * over.
    */
-  function showSyncLoginUI(e) {
-    var rect = e.currentTarget.getBoundingClientRect();
-    chrome.send('showSyncLoginUI',
-                [rect.left, rect.top, rect.width, rect.height]);
+  function incrementHoveredThumbnailCount() {
+    hoveredThumbnailCount++;
   }
 
   /**
-   * Wrappers to forward the callback to corresponding PageListView member.
+   * Logs the time to click for the specified item and the total number of
+   * thumbnails hovered over.
+   * @param {string} item The item to log the time-to-click.
+   */
+  function logTimeToClickAndHoverCount(item) {
+    var timeToClick = Date.now() - startTime;
+    chrome.send('logTimeToClick',
+        ['ExtendedNewTabPage.TimeToClick' + item, timeToClick]);
+    chrome.send('metricsHandler:recordInHistogram',
+        ['ExtendedNewTabPage.hoveredThumbnailCount',
+         hoveredThumbnailCount, 40]);
+  }
+
+  /**
+   * Wrappers to forward the callback to corresponding NewTabView member.
    */
   function appAdded() {
     return newTabView.appAdded.apply(newTabView, arguments);
@@ -526,67 +1094,61 @@ cr.define('ntp', function() {
     return newTabView.appsPrefChangedCallback.apply(newTabView, arguments);
   }
 
-  function appsReordered() {
-    return newTabView.appsReordered.apply(newTabView, arguments);
-  }
-
-  function enterRearrangeMode() {
-    return newTabView.enterRearrangeMode.apply(newTabView, arguments);
-  }
-
-  function setForeignSessions(sessionList, isTabSyncEnabled) {
-    if (otherSessionsButton)
-      otherSessionsButton.setForeignSessions(sessionList, isTabSyncEnabled);
-  }
-
   function getAppsCallback() {
     return newTabView.getAppsCallback.apply(newTabView, arguments);
-  }
-
-  function getAppsPageIndex() {
-    return newTabView.getAppsPageIndex.apply(newTabView, arguments);
   }
 
   function getCardSlider() {
     return newTabView.cardSlider;
   }
 
-  function leaveRearrangeMode() {
-    return newTabView.leaveRearrangeMode.apply(newTabView, arguments);
-  }
-
-  function saveAppPageName() {
-    return newTabView.saveAppPageName.apply(newTabView, arguments);
-  }
-
   function setAppToBeHighlighted(appId) {
     newTabView.highlightAppId = appId;
   }
 
+  function layout() {
+    newTabView.layout.apply(newTabView, arguments);
+  }
+
+  function getContentHeight() {
+    return newTabView.contentHeight;
+  }
+
+  function getContentWidth() {
+    return newTabView.contentWidth;
+  }
+
+  function noop() {
+    // Ignore some NTP4 callbacks for backwards compatibility purposes.
+  }
+
   // Return an object with all the exports
   return {
+    APP_LAUNCH: APP_LAUNCH,
+    TILE_ROW_HEIGHT: TILE_ROW_HEIGHT,
     appAdded: appAdded,
     appMoved: appMoved,
     appRemoved: appRemoved,
     appsPrefChangeCallback: appsPrefChangeCallback,
-    enterRearrangeMode: enterRearrangeMode,
     getAppsCallback: getAppsCallback,
-    getAppsPageIndex: getAppsPageIndex,
     getCardSlider: getCardSlider,
-    onLoad: onLoad,
-    leaveRearrangeMode: leaveRearrangeMode,
+    getContentHeight: getContentHeight,
+    getContentWidth: getContentWidth,
+    getThumbnailUrl: getThumbnailUrl,
+    incrementHoveredThumbnailCount: incrementHoveredThumbnailCount,
+    layout: layout,
+    logTimeToClickAndHoverCount: logTimeToClickAndHoverCount,
     NtpFollowAction: NtpFollowAction,
-    saveAppPageName: saveAppPageName,
+    onLoad: onLoad,
     setAppToBeHighlighted: setAppToBeHighlighted,
     setBookmarkBarAttached: setBookmarkBarAttached,
-    setForeignSessions: setForeignSessions,
+    setFaviconDominantColor: setFaviconDominantColor,
+    setForeignSessions: noop,
     setMostVisitedPages: setMostVisitedPages,
-    setSuggestionsPages: setSuggestionsPages,
-    setRecentlyClosedTabs: setRecentlyClosedTabs,
-    setStripeColor: setStripeColor,
+    setRecentlyClosedTabs: noop,
     showNotification: showNotification,
     themeChanged: themeChanged,
-    updateLogin: updateLogin
+    updateLogin: noop,
   };
 });
 

@@ -12,7 +12,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
+#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
 #include "chrome/browser/ui/views/infobars/infobar_button_border.h"
 #include "grit/generated_resources.h"
@@ -61,7 +61,9 @@ InfoBarView::InfoBarView(InfoBarTabHelper* owner, InfoBarDelegate* delegate)
       icon_(NULL),
       close_button_(NULL) {
   set_owned_by_client();  // InfoBar deletes itself at the appropriate time.
-  set_background(new InfoBarBackground(delegate->GetInfoBarType()));
+  set_background(new InfoBarBackground(
+      GetInfoBarTopColor(delegate->GetInfoBarType()),
+      GetInfoBarBottomColor(delegate->GetInfoBarType())));
 }
 
 InfoBarView::~InfoBarView() {
@@ -77,7 +79,7 @@ views::Label* InfoBarView::CreateLabel(const string16& text) const {
       rb.GetFont(ui::ResourceBundle::MediumFont));
   label->SetBackgroundColor(background()->get_color());
   label->SetEnabledColor(SK_ColorBLACK);
-  label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   return label;
 }
 
@@ -87,7 +89,7 @@ views::Link* InfoBarView::CreateLink(const string16& text,
   views::Link* link = new views::Link;
   link->SetText(text);
   link->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-  link->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  link->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   link->set_listener(listener);
   link->SetBackgroundColor(background()->get_color());
   link->set_focusable(true);
@@ -144,7 +146,7 @@ views::TextButton* InfoBarView::CreateTextButton(
           icon_info.hIcon, gfx::Size(GetSystemMetrics(SM_CXSMICON),
                                      GetSystemMetrics(SM_CYSMICON))));
       if (icon.get())
-        text_button->SetIcon(*icon);
+        text_button->SetIcon(gfx::ImageSkia(*icon));
       DestroyIcon(icon_info.hIcon);
     }
   }
@@ -224,11 +226,11 @@ void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
 
     close_button_ = new views::ImageButton(this);
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    close_button_->SetImage(views::CustomButton::BS_NORMAL,
+    close_button_->SetImage(views::CustomButton::STATE_NORMAL,
                             rb.GetImageNamed(IDR_CLOSE_BAR).ToImageSkia());
-    close_button_->SetImage(views::CustomButton::BS_HOT,
+    close_button_->SetImage(views::CustomButton::STATE_HOVERED,
                             rb.GetImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
-    close_button_->SetImage(views::CustomButton::BS_PUSHED,
+    close_button_->SetImage(views::CustomButton::STATE_PRESSED,
                             rb.GetImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
@@ -241,6 +243,15 @@ void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
     RemoveChildView(close_button_);
     AddChildView(close_button_);
   }
+
+  // Ensure the infobar is tall enough to display its contents.
+  const int kMinimumVerticalPadding = 6;
+  int height = kDefaultBarTargetHeight;
+  for (int i = 0; i < child_count(); ++i) {
+    const int child_height = child_at(i)->GetPreferredSize().height();
+    height = std::max(height, child_height + kMinimumVerticalPadding);
+  }
+  SetBarTargetHeight(height);
 }
 
 void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
@@ -259,7 +270,7 @@ void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
 }
 
 void InfoBarView::ButtonPressed(views::Button* sender,
-                                const views::Event& event) {
+                                const ui::Event& event) {
   if (!owned())
     return;  // We're closing; don't call anything, it might access the owner.
   if (sender == close_button_) {

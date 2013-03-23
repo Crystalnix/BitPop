@@ -8,7 +8,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "chrome/browser/ui/gtk/status_icons/status_icon_gtk.h"
-#include "grit/theme_resources.h"
+#include "grit/chrome_unscaled_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -30,10 +30,10 @@ TEST(StatusTrayGtkTest, CreateIcon) {
   // Create an icon, set the images and tooltip, then shut it down.
   StatusTrayGtk tray;
   StatusIcon* icon = tray.CreateStatusIcon();
-  SkBitmap* bitmap = ui::ResourceBundle::GetSharedInstance().GetBitmapNamed(
-      IDR_STATUS_TRAY_ICON);
-  icon->SetImage(*bitmap);
-  icon->SetPressedImage(*bitmap);
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  gfx::ImageSkia* image = rb.GetImageSkiaNamed(IDR_STATUS_TRAY_ICON);
+  icon->SetImage(*image);
+  icon->SetPressedImage(*image);
   icon->SetToolTip(ASCIIToUTF16("tool tip"));
   ui::SimpleMenuModel* menu = new ui::SimpleMenuModel(NULL);
   menu->AddItem(0, ASCIIToUTF16("foo"));

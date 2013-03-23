@@ -78,8 +78,11 @@ class BookmarkMenuController : public BaseBookmarkModelObserver,
   // MenuDelegate methods.
   virtual string16 GetTooltipText(int id, const gfx::Point& p) const OVERRIDE;
   virtual bool IsTriggerableEvent(views::MenuItemView* view,
-                                  const views::Event& e) OVERRIDE;
+                                  const ui::Event& e) OVERRIDE;
   virtual void ExecuteCommand(int id, int mouse_event_flags) OVERRIDE;
+  virtual bool ShouldExecuteCommandWithoutClosingMenu(
+      int id,
+      const ui::Event& e) OVERRIDE;
   virtual bool GetDropFormats(
       views::MenuItemView* menu,
       int* formats,
@@ -88,11 +91,11 @@ class BookmarkMenuController : public BaseBookmarkModelObserver,
   virtual bool CanDrop(views::MenuItemView* menu,
                        const ui::OSExchangeData& data) OVERRIDE;
   virtual int GetDropOperation(views::MenuItemView* item,
-                               const views::DropTargetEvent& event,
+                               const ui::DropTargetEvent& event,
                                DropPosition* position) OVERRIDE;
   virtual int OnPerformDrop(views::MenuItemView* menu,
                             DropPosition position,
-                            const views::DropTargetEvent& event) OVERRIDE;
+                            const ui::DropTargetEvent& event) OVERRIDE;
   virtual bool ShowContextMenu(views::MenuItemView* source,
                                int id,
                                const gfx::Point& p,

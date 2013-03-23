@@ -32,6 +32,8 @@ class DownloadItem;
 namespace gfx {
 class Canvas;
 class Image;
+class ImageSkia;
+class Rect;
 }
 
 namespace download_util {
@@ -91,6 +93,14 @@ enum PaintDownloadProgressSize {
 // require the containing View in addition to the canvas because if we are
 // drawing in a right-to-left locale, we need to mirror the position of the
 // progress animation within the containing View.
+void PaintCustomDownloadProgress(gfx::Canvas* canvas,
+                                 const gfx::ImageSkia& background_image,
+                                 const gfx::ImageSkia& foreground_image,
+                                 int image_size,
+                                 const gfx::Rect& bounds,
+                                 int start_angle,
+                                 int percent_done);
+
 void PaintDownloadProgress(gfx::Canvas* canvas,
 #if defined(TOOLKIT_VIEWS)
                            views::View* containing_view,
@@ -130,22 +140,8 @@ void DragDownload(const content::DownloadItem* download,
 
 // Helpers ---------------------------------------------------------------------
 
-// Creates a representation of a download in a format that the downloads
-// HTML page can understand.
-base::DictionaryValue* CreateDownloadItemValue(content::DownloadItem* download,
-                                               int id);
-
 // Get the localized status text for an in-progress download.
 string16 GetProgressStatusText(content::DownloadItem* download);
-
-// Update the application icon to indicate overall download progress.
-// |download_count| is the number of downloads currently in progress. If
-// |progress_known| is false, then at least one download is of indeterminate
-// size and |progress| is invalid, otherwise |progress| indicates the overall
-// download progress (float value from 0..1).
-void UpdateAppIconDownloadProgress(int download_count,
-                                   bool progress_known,
-                                   float progress);
 
 // Returns a .crdownload intermediate path for the |suggested_path|.
 FilePath GetCrDownloadPath(const FilePath& suggested_path);

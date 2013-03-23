@@ -21,16 +21,22 @@ import java.util.List;
 /**
  * Android implementation of the DeviceOrientation API.
  */
-@JNINamespace("device_orientation")
+@JNINamespace("content")
 class DeviceOrientation implements SensorEventListener {
 
     // These fields are lazily initialized by getHandler().
     private Thread mThread;
     private Handler mHandler;
 
+    // The lock to access the mHandler.
+    private Object mHandlerLock = new Object();
+
     // Non-zero if and only if we're listening for events.
     // To avoid race conditions on the C++ side, access must be synchronized.
     private int mNativePtr;
+
+    // The lock to access the mNativePtr.
+    private Object mNativePtrLock = new Object();
 
     // The gravity vector expressed in the body frame.
     private float[] mGravityVector;
@@ -54,13 +60,15 @@ class DeviceOrientation implements SensorEventListener {
      * @return True on success.
      */
     @CalledByNative
-    public synchronized boolean start(int nativePtr, int rateInMilliseconds) {
-        stop();
-        if (registerForSensors(rateInMilliseconds)) {
-            mNativePtr = nativePtr;
-            return true;
+    public boolean start(int nativePtr, int rateInMilliseconds) {
+        synchronized (mNativePtrLock) {
+            stop();
+            if (registerForSensors(rateInMilliseconds)) {
+                mNativePtr = nativePtr;
+                return true;
+            }
+            return false;
         }
-        return false;
     }
 
     /**
@@ -70,10 +78,12 @@ class DeviceOrientation implements SensorEventListener {
      * after this method returns.
      */
     @CalledByNative
-    public synchronized void stop() {
-        if (mNativePtr != 0) {
-            mNativePtr = 0;
-            unregisterForSensors();
+    public void stop() {
+        synchronized (mNativePtrLock) {
+            if (mNativePtr != 0) {
+                mNativePtr = 0;
+                unregisterForSensors();
+            }
         }
     }
 
@@ -131,7 +141,7 @@ class DeviceOrientation implements SensorEventListener {
         float[] rotationAngles = new float[3];
         SensorManager.getOrientation(deviceRotationMatrix, rotationAngles);
 
-        double alpha = Math.toDegrees(-rotationAngles[0]) - 90.0;
+        double alpha = Math.toDegrees(-rotationAngles[0]);
         while (alpha < 0.0) {
             alpha += 360.0; // [0, 360)
         }
@@ -192,42 +202,48 @@ class DeviceOrientation implements SensorEventListener {
         return sensorManager.registerListener(this, sensors.get(0), requestedRate, getHandler());
     }
 
-    synchronized void gotOrientation(double alpha, double beta, double gamma) {
-        if (mNativePtr != 0) {
-            nativeGotOrientation(mNativePtr, alpha, beta, gamma);
-        }
-    }
-
-    private synchronized Handler getHandler() {
-        // If we don't have a background thread, start it now.
-        if (mThread == null) {
-            mThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    Looper.prepare();
-                    // Our Handler doesn't actually have to do anything, because
-                    // SensorManager posts directly to the underlying Looper.
-                    setHandler(new Handler());
-                    Looper.loop();
-                }
-            });
-            mThread.start();
-        }
-        // Wait for the background thread to spin up.
-        while (mHandler == null) {
-            try {
-                wait();
-            } catch (InterruptedException e) {
-                // Somebody doesn't want us to wait! That's okay, SensorManager accepts null.
-                return null;
+    void gotOrientation(double alpha, double beta, double gamma) {
+        synchronized (mNativePtrLock) {
+            if (mNativePtr != 0) {
+              nativeGotOrientation(mNativePtr, alpha, beta, gamma);
             }
         }
-        return mHandler;
     }
 
-    private synchronized void setHandler(Handler handler) {
-        mHandler = handler;
-        notify();
+    private Handler getHandler() {
+        synchronized (mHandlerLock) {
+            // If we don't have a background thread, start it now.
+            if (mThread == null) {
+                mThread = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Looper.prepare();
+                        // Our Handler doesn't actually have to do anything, because
+                        // SensorManager posts directly to the underlying Looper.
+                        setHandler(new Handler());
+                        Looper.loop();
+                    }
+                });
+                mThread.start();
+            }
+            // Wait for the background thread to spin up.
+            while (mHandler == null) {
+                try {
+                    mHandlerLock.wait();
+                } catch (InterruptedException e) {
+                    // Somebody doesn't want us to wait! That's okay, SensorManager accepts null.
+                    return null;
+                }
+            }
+            return mHandler;
+        }
+    }
+
+    private void setHandler(Handler handler) {
+        synchronized (mHandlerLock) {
+            mHandler = handler;
+            mHandlerLock.notify();
+        }
     }
 
     @CalledByNative

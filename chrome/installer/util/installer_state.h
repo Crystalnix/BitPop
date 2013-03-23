@@ -5,6 +5,7 @@
 #ifndef CHROME_INSTALLER_UTIL_INSTALLER_STATE_H_
 #define CHROME_INSTALLER_UTIL_INSTALLER_STATE_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -111,6 +112,12 @@ class InstallerState {
   // TODO(grt): Eradicate the bool in favor of the enum.
   bool is_multi_install() const;
 
+  // A convenient method returning the presence of the
+  // --ensure-google-update-present switch.
+  bool ensure_google_update_present() const {
+    return ensure_google_update_present_;
+  }
+
   // The full path to the place where the operand resides.
   const FilePath& target_path() const { return target_path_; }
 
@@ -198,7 +205,12 @@ class InstallerState {
                             int string_resource_id,
                             const std::wstring* launch_cmd) const;
 
+  // Returns true if this install needs to register an Active Setup command.
+  bool RequiresActiveSetup() const;
+
  protected:
+  // Returns true if |file| exists and cannot be opened for exclusive write
+  // access.
   static bool IsFileInUse(const FilePath& file);
 
   FilePath GetDefaultProductInstallPath(BrowserDistribution* dist) const;
@@ -211,6 +223,11 @@ class InstallerState {
       const InstallationState& machine_state);
   bool IsMultiInstallUpdate(const MasterPreferences& prefs,
                             const InstallationState& machine_state);
+
+  // Enumerates all files named one of
+  // [chrome.exe, old_chrome.exe, new_chrome.exe] in target_path_ and
+  // returns their version numbers in a set.
+  void GetExistingExeVersions(std::set<std::string>* existing_versions) const;
 
   // Sets this object's level and updates the root_key_ accordingly.
   void set_level(Level level);
@@ -233,6 +250,7 @@ class InstallerState {
 #endif
   bool msi_;
   bool verbose_logging_;
+  bool ensure_google_update_present_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InstallerState);

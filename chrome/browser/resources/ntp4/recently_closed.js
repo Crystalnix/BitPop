@@ -36,7 +36,7 @@ cr.define('ntp', function() {
       document.body.appendChild(this.menu);
 
       this.needsRebuild_ = true;
-      this.classList.add('invisible');
+      this.hidden = true;
       this.anchorType = cr.ui.AnchorType.ABOVE;
       this.invertLeftRight = true;
     },
@@ -64,10 +64,7 @@ cr.define('ntp', function() {
     set dataItems(dataItems) {
       this.dataItems_ = dataItems;
       this.needsRebuild_ = true;
-      if (dataItems.length)
-        this.classList.remove('invisible');
-      else
-        this.classList.add('invisible');
+      this.hidden = !dataItems.length;
     },
 
     /**
@@ -86,22 +83,31 @@ cr.define('ntp', function() {
         a.title = data.tabs.map(function(tab) { return tab.title; }).join('\n');
       } else {
         a.href = data.url;
-        a.style.backgroundImage = 'url(chrome://favicon/' + data.url + ')';
+        a.style.backgroundImage = url(getFaviconURL(data.url));
         a.textContent = data.title;
       }
 
-      function onClick(e) {
+      function onActivated(e) {
+        ntp.logTimeToClick('RecentlyClosed');
         chrome.send('recordAppLaunchByURL',
                     [encodeURIComponent(data.url),
                      ntp.APP_LAUNCH.NTP_RECENTLY_CLOSED]);
         var index = Array.prototype.indexOf.call(a.parentNode.children, a);
-        chrome.send('reopenTab', [data.sessionId, index,
-            e.button, e.altKey, e.ctrlKey, e.metaKey, e.shiftKey]);
-        // We are likely deleted by this point!
+        var orig = e.originalEvent;
+        var params = [data.sessionId,
+                      index,
+                      orig.type == 'click' ? orig.button : 0,
+                      orig.altKey,
+                      orig.ctrlKey,
+                      orig.metaKey,
+                      orig.shiftKey];
+        chrome.send('reopenTab', params);
 
+        // We are likely deleted by this point!
+        e.stopPropagation();
         e.preventDefault();
       }
-      a.addEventListener('click', onClick);
+      a.addEventListener('activate', onActivated);
 
       this.menu.appendChild(a);
       cr.ui.decorate(a, MenuItem);

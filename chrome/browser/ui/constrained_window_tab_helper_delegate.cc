@@ -4,16 +4,19 @@
 
 #include "chrome/browser/ui/constrained_window_tab_helper_delegate.h"
 
-void ConstrainedWindowTabHelperDelegate::WillShowConstrainedWindow(
-    TabContents* source) {
-}
+#include <string.h>
 
 bool ConstrainedWindowTabHelperDelegate::ShouldFocusConstrainedWindow() {
   return true;
 }
 
 void ConstrainedWindowTabHelperDelegate::SetTabContentBlocked(
-    TabContents* tab_contents, bool blocked) {
+    content::WebContents* web_contents, bool blocked) {
 }
 
 ConstrainedWindowTabHelperDelegate::~ConstrainedWindowTabHelperDelegate() {}
+
+bool ConstrainedWindowTabHelperDelegate::GetConstrainedWindowTopCenter(
+    gfx::Point* point) {
+  return false;
+}

@@ -5,41 +5,72 @@
 #ifndef CHROME_BROWSER_PROFILES_PROFILE_SHORTCUT_MANAGER_WIN_H_
 #define CHROME_BROWSER_PROFILES_PROFILE_SHORTCUT_MANAGER_WIN_H_
 
-#include <vector>
+#include "chrome/browser/profiles/profile_shortcut_manager.h"
 
-#include "base/string16.h"
-#include "chrome/browser/profiles/profile_info_cache_observer.h"
+class BrowserDistribution;
 
-// This class observes the ProfileInfoCache, and makes corresponding changes
-// to shortcuts on the user's desktop in Windows systems.
-class ProfileShortcutManagerWin : public ProfileInfoCacheObserver {
+// Internal free-standing functions that are exported here for testing.
+namespace profiles {
+namespace internal {
+
+// Name of the badged icon file generated for a given profile.
+extern const char kProfileIconFileName[];
+
+// Returns the default shortcut filename for the given profile name,
+// given |distribution|. Returns a filename appropriate for a
+// single-user installation if |profile_name| is empty.
+string16 GetShortcutFilenameForProfile(const string16& profile_name,
+                                       BrowserDistribution* distribution);
+
+// Returns the command-line flags to launch Chrome with the given profile.
+string16 CreateProfileShortcutFlags(const FilePath& profile_path);
+
+}  // namespace internal
+}  // namespace profiles
+
+class ProfileShortcutManagerWin : public ProfileShortcutManager,
+                                  public ProfileInfoCacheObserver {
  public:
-  ProfileShortcutManagerWin();
+  // Specifies whether a new shortcut should be created if none exist.
+  enum CreateOrUpdateMode {
+    UPDATE_EXISTING_ONLY,
+    CREATE_WHEN_NONE_FOUND,
+  };
+  // Specifies whether non-profile shortcuts should be updated.
+  enum NonProfileShortcutAction {
+    IGNORE_NON_PROFILE_SHORTCUTS,
+    UPDATE_NON_PROFILE_SHORTCUTS,
+  };
+
+  explicit ProfileShortcutManagerWin(ProfileManager* manager);
   virtual ~ProfileShortcutManagerWin();
 
-  // Create a profile shortcut for the profile with path |profile_path|, plus
-  // update the original profile shortcut if |profile_path| is the second
-  // profile created.
-  virtual void AddProfileShortcut(const FilePath& profile_path);
+  // ProfileShortcutManager implementation:
+  virtual void CreateProfileShortcut(const FilePath& profile_path) OVERRIDE;
 
-  // ProfileInfoCacheObserver:
+  // ProfileInfoCacheObserver implementation:
   virtual void OnProfileAdded(const FilePath& profile_path) OVERRIDE;
-  virtual void OnProfileWillBeRemoved(
-      const FilePath& profile_path) OVERRIDE;
-  virtual void OnProfileWasRemoved(
-      const FilePath& profile_path,
-      const string16& profile_name) OVERRIDE;
-  virtual void OnProfileNameChanged(
-      const FilePath& profile_path,
-      const string16& old_profile_name) OVERRIDE;
+  virtual void OnProfileWillBeRemoved(const FilePath& profile_path) OVERRIDE;
+  virtual void OnProfileWasRemoved(const FilePath& profile_path,
+                                   const string16& profile_name) OVERRIDE;
+  virtual void OnProfileNameChanged(const FilePath& profile_path,
+                                    const string16& old_profile_name) OVERRIDE;
   virtual void OnProfileAvatarChanged(const FilePath& profile_path) OVERRIDE;
 
-  // Takes a vector of profile names (for example: "Sparky") and generates a
-  // vector of shortcut link names (for example: "Chromium (Sparky).lnk").
-  static std::vector<string16> GenerateShortcutsFromProfiles(
-      const std::vector<string16>& profile_names);
-
  private:
+  void StartProfileShortcutNameChange(const FilePath& profile_path,
+                                      const string16& old_profile_name);
+
+  // Gives the profile path of an alternate profile than |profile_path|.
+  // Must only be called when the number profiles is 2.
+  FilePath GetOtherProfilePath(const FilePath& profile_path);
+
+  void CreateOrUpdateShortcutsForProfileAtPath(const FilePath& profile_path,
+                                               CreateOrUpdateMode create_mode,
+                                               NonProfileShortcutAction action);
+
+  ProfileManager* profile_manager_;
+
   DISALLOW_COPY_AND_ASSIGN(ProfileShortcutManagerWin);
 };
 

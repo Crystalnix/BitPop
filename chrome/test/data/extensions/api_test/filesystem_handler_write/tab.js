@@ -43,14 +43,14 @@ function errorCallback(error) {
     };
   }
 
-  chrome.extension.sendRequest(fileBrowserExtensionId,
+  chrome.extension.sendMessage(fileBrowserExtensionId,
                                {fileContent: null,
                                 error: {message: "File handler error: " + msg}},
                                 function(response) {});
 };
 
 function onSuccess(text) {
-  chrome.extension.sendRequest(
+  chrome.extension.sendMessage(
       fileBrowserExtensionId,
       {fileContent: text, error: null},
       function(response) {});
@@ -64,15 +64,14 @@ function writeToFile(entry, text) {
     };
     writer.onwrite = onSuccess.bind(this, text);
 
-    var bb = new WebKitBlobBuilder();
-    bb.append(text + text);
-    writer.write(bb.getBlob('text/plain'));
+    var blob = new Blob([text + text], {type: 'text/plain'});
+    writer.write(blob);
   });
 };
 
 function runFileSystemHandlerTest(entries) {
   if (!entries || entries.length != 1 || !entries[0]) {
-    chrome.extension.sendRequest(
+    chrome.extension.sendMessage(
         fileBrowserExtensionId,
         {fileContent: null, error: 'Invalid file entries.'},
         function(response) {});

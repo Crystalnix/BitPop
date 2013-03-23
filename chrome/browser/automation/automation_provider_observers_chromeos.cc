@@ -12,6 +12,7 @@
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/user_image.h"
+#include "chrome/browser/chromeos/login/user_image_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_screen.h"
@@ -64,13 +65,7 @@ OOBEWebuiReadyObserver::OOBEWebuiReadyObserver(AutomationProvider* automation)
       WizardController::default_controller()->current_screen()) {
     OOBEWebuiReady();
   } else {
-    registrar_.Add(this, chrome::NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN,
-                   content::NotificationService::AllSources());
-    registrar_.Add(this, chrome::NOTIFICATION_LOGIN_USER_IMAGES_LOADED,
-                   content::NotificationService::AllSources());
-    registrar_.Add(this, chrome::NOTIFICATION_LOGIN_WEBUI_LOADED,
-                   content::NotificationService::AllSources());
-    registrar_.Add(this, chrome::NOTIFICATION_DEMO_WEBUI_LOADED,
+    registrar_.Add(this, chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
                    content::NotificationService::AllSources());
   }
 }
@@ -79,10 +74,7 @@ void OOBEWebuiReadyObserver::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN ||
-         type == chrome::NOTIFICATION_LOGIN_USER_IMAGES_LOADED ||
-         type == chrome::NOTIFICATION_LOGIN_WEBUI_LOADED ||
-         type == chrome::NOTIFICATION_DEMO_WEBUI_LOADED);
+  DCHECK(type == chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE);
   OOBEWebuiReady();
 }
 
@@ -433,20 +425,17 @@ chromeos::VirtualNetwork* VirtualConnectObserver::GetVirtualNetwork(
 
 EnrollmentObserver::EnrollmentObserver(AutomationProvider* automation,
     IPC::Message* reply_message,
-    chromeos::EnterpriseEnrollmentScreenActor* enrollment_screen_actor,
     chromeos::EnterpriseEnrollmentScreen* enrollment_screen)
     : automation_(automation->AsWeakPtr()),
       reply_message_(reply_message),
       enrollment_screen_(enrollment_screen) {
-  enrollment_screen_actor->AddObserver(this);
+  enrollment_screen_->AddTestingObserver(this);
 }
 
 EnrollmentObserver::~EnrollmentObserver() {}
 
-void EnrollmentObserver::OnEnrollmentComplete(
-    chromeos::EnterpriseEnrollmentScreenActor* enrollment_screen_actor,
-    bool succeeded) {
-  enrollment_screen_actor->RemoveObserver(this);
+void EnrollmentObserver::OnEnrollmentComplete(bool succeeded) {
+  enrollment_screen_->RemoveTestingObserver(this);
   if (automation_) {
     if (succeeded) {
       AutomationJSONReply(automation_,
@@ -457,77 +446,6 @@ void EnrollmentObserver::OnEnrollmentComplete(
       AutomationJSONReply(automation_, reply_message_.release())
           .SendSuccess(return_value.get());
     }
-  }
-  delete this;
-}
-
-PhotoCaptureObserver::PhotoCaptureObserver(
-    AutomationProvider* automation,
-    IPC::Message* reply_message)
-    : automation_(automation->AsWeakPtr()),
-      reply_message_(reply_message) {
-}
-
-PhotoCaptureObserver::~PhotoCaptureObserver() {
-  // TODO(frankf): Currently, we do not destroy TakePhotoDialog
-  // or any of its children.
-}
-
-void PhotoCaptureObserver::OnCaptureSuccess(
-    chromeos::TakePhotoDialog* take_photo_dialog,
-    chromeos::TakePhotoView* take_photo_view) {
-  take_photo_view->FlipCapturingState();
-}
-
-void PhotoCaptureObserver::OnCaptureFailure(
-    chromeos::TakePhotoDialog* take_photo_dialog,
-    chromeos::TakePhotoView* take_photo_view) {
-  if (automation_) {
-    AutomationJSONReply(automation_,
-                        reply_message_.release()).SendError("Capture failure");
-  }
-  delete this;
-}
-
-void PhotoCaptureObserver::OnCapturingStopped(
-    chromeos::TakePhotoDialog* take_photo_dialog,
-    chromeos::TakePhotoView* take_photo_view) {
-  take_photo_dialog->Accept();
-  const gfx::ImageSkia& photo = take_photo_view->GetImage();
-  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
-  if (!user_manager) {
-    if (automation_) {
-      AutomationJSONReply(
-          automation_,
-          reply_message_.release()).SendError("No user manager");
-    }
-    delete this;
-    return;
-  }
-
-  const chromeos::User& user = user_manager->GetLoggedInUser();
-  if (user.email().empty()) {
-    if (automation_) {
-      AutomationJSONReply(
-          automation_,
-          reply_message_.release()).SendError("User email is not set");
-    }
-    delete this;
-    return;
-  }
-
-  // Set up an observer for UserManager (it will delete itself).
-  user_manager->AddObserver(this);
-  user_manager->SaveUserImage(
-      user.email(), chromeos::UserImage::CreateAndEncode(photo));
-}
-
-void PhotoCaptureObserver::LocalStateChanged(
-    chromeos::UserManager* user_manager) {
-  user_manager->RemoveObserver(this);
-  if (automation_) {
-    AutomationJSONReply(
-        automation_, reply_message_.release()).SendSuccess(NULL);
   }
   delete this;
 }

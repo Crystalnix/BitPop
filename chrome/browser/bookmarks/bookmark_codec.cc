@@ -30,6 +30,7 @@ const char* BookmarkCodec::kDateAddedKey = "date_added";
 const char* BookmarkCodec::kURLKey = "url";
 const char* BookmarkCodec::kDateModifiedKey = "date_modified";
 const char* BookmarkCodec::kChildrenKey = "children";
+const char* BookmarkCodec::kMetaInfo = "meta_info";
 const char* BookmarkCodec::kTypeURL = "url";
 const char* BookmarkCodec::kTypeFolder = "folder";
 
@@ -47,26 +48,29 @@ BookmarkCodec::~BookmarkCodec() {}
 Value* BookmarkCodec::Encode(BookmarkModel* model) {
   return Encode(model->bookmark_bar_node(),
                 model->other_node(),
-                model->mobile_node());
+                model->mobile_node(),
+                model->root_node()->meta_info_str());
 }
 
 Value* BookmarkCodec::Encode(const BookmarkNode* bookmark_bar_node,
                              const BookmarkNode* other_folder_node,
-                             const BookmarkNode* mobile_folder_node) {
+                             const BookmarkNode* mobile_folder_node,
+                             const std::string& model_meta_info) {
   ids_reassigned_ = false;
   InitializeChecksum();
   DictionaryValue* roots = new DictionaryValue();
   roots->Set(kRootFolderNameKey, EncodeNode(bookmark_bar_node));
   roots->Set(kOtherBookmarkFolderNameKey, EncodeNode(other_folder_node));
   roots->Set(kMobileBookmarkFolderNameKey, EncodeNode(mobile_folder_node));
-
+  if (!model_meta_info.empty())
+    roots->SetString(kMetaInfo, model_meta_info);
   DictionaryValue* main = new DictionaryValue();
   main->SetInteger(kVersionKey, kCurrentVersion);
   FinalizeChecksum();
   // We are going to store the computed checksum. So set stored checksum to be
   // the same as computed checksum.
   stored_checksum_ = computed_checksum_;
-  main->Set(kChecksumKey, Value::CreateStringValue(computed_checksum_));
+  main->Set(kChecksumKey, new base::StringValue(computed_checksum_));
   main->Set(kRootsKey, roots);
   return main;
 }
@@ -118,6 +122,8 @@ Value* BookmarkCodec::EncodeNode(const BookmarkNode* node) {
     for (int i = 0; i < node->child_count(); ++i)
       child_values->Append(EncodeNode(node->GetChild(i)));
   }
+  if (!node->meta_info_str().empty())
+    value->SetString(kMetaInfo, node->meta_info_str());
   return value;
 }
 
@@ -154,7 +160,7 @@ bool BookmarkCodec::DecodeHelper(BookmarkNode* bb_node,
   const DictionaryValue* roots_d_value =
       static_cast<const DictionaryValue*>(roots);
   const Value* root_folder_value;
-  const Value* other_folder_value;
+  const Value* other_folder_value = NULL;
   if (!roots_d_value->Get(kRootFolderNameKey, &root_folder_value) ||
       root_folder_value->GetType() != Value::TYPE_DICTIONARY ||
       !roots_d_value->Get(kOtherBookmarkFolderNameKey, &other_folder_value) ||
@@ -184,6 +190,8 @@ bool BookmarkCodec::DecodeHelper(BookmarkNode* bb_node,
     if (ids_valid_)
       ReassignIDsHelper(mobile_folder_node);
   }
+
+  roots_d_value->GetString(kMetaInfo, &model_meta_info_);
 
   // Need to reset the type as decoding resets the type to FOLDER. Similarly
   // we need to reset the title as the title is persisted and restored from
@@ -319,6 +327,11 @@ bool BookmarkCodec::DecodeNode(const DictionaryValue& value,
 
   node->SetTitle(title);
   node->set_date_added(date_added);
+
+  std::string meta_info;
+  if (value.GetString(kMetaInfo, &meta_info))
+    node->set_meta_info_str(meta_info);
+
   return true;
 }
 

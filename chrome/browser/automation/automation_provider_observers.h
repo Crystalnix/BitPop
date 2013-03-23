@@ -23,17 +23,15 @@
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/automation/automation_tab_helper.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "chrome/browser/browsing_data/browsing_data_remover.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_screen.h"
-#include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_screen_actor.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/options/take_photo_dialog.h"
 #endif  // defined(OS_CHROMEOS)
-#include "chrome/browser/cancelable_request.h"
+#include "chrome/browser/common/cancelable_request.h"
+#include "chrome/browser/download/all_download_item_notifier.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/importer/importer_data_types.h"
@@ -64,8 +62,6 @@ class InfoBarTabHelper;
 class Notification;
 class Profile;
 class SavePackage;
-class TabContents;
-class TranslateInfoBarDelegate;
 
 namespace automation {
 class Error;
@@ -77,10 +73,6 @@ class ExistingUserController;
 class WizardScreen;
 }
 #endif  // defined(OS_CHROMEOS)
-
-namespace IPC {
-class Message;
-}
 
 namespace content {
 class NavigationController;
@@ -94,6 +86,10 @@ class Extension;
 
 namespace history {
 class TopSites;
+}
+
+namespace IPC {
+class Message;
 }
 
 namespace policy {
@@ -319,11 +315,12 @@ class TabCountChangeObserver : public TabStripModelObserver {
                          IPC::Message* reply_message,
                          int target_tab_count);
   // Implementation of TabStripModelObserver.
-  virtual void TabInsertedAt(TabContents* contents,
+  virtual void TabInsertedAt(content::WebContents* contents,
                              int index,
-                             bool foreground);
-  virtual void TabDetachedAt(TabContents* contents, int index);
-  virtual void TabStripModelDeleted();
+                             bool foreground) OVERRIDE;
+  virtual void TabDetachedAt(content::WebContents* contents,
+                             int index) OVERRIDE;
+  virtual void TabStripModelDeleted() OVERRIDE;
 
  private:
   virtual ~TabCountChangeObserver();
@@ -416,9 +413,9 @@ class ExtensionUnloadNotificationObserver
   DISALLOW_COPY_AND_ASSIGN(ExtensionUnloadNotificationObserver);
 };
 
-// Observes when the extensions have been fully updated.  The ExtensionUpdater
-// service provides notifications for each extension that gets updated, but
-// it does not wait for the updated extensions to be installed or loaded.  This
+// Observes when the extensions have been fully updated. The ExtensionUpdater
+// service provides a notification whem all the updated extensions have been
+// installed, but it does not wait for all of them to be loaded too. This
 // observer waits until all updated extensions have actually been loaded.
 class ExtensionsUpdatedObserver : public content::NotificationObserver {
  public:
@@ -432,12 +429,16 @@ class ExtensionsUpdatedObserver : public content::NotificationObserver {
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // Called by ExtensionUpdater when it has finished updating extensions.
+  void UpdateCheckFinished();
+
  private:
+  void MaybeReply();
+
   content::NotificationRegistrar registrar_;
   ExtensionProcessManager* manager_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
-  std::set<std::string> in_progress_updates_;
   bool updater_finished_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionsUpdatedObserver);
@@ -652,54 +653,11 @@ class MetricEventDurationObserver : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(MetricEventDurationObserver);
 };
 
-class PageTranslatedObserver : public content::NotificationObserver {
- public:
-  PageTranslatedObserver(AutomationProvider* automation,
-                         IPC::Message* reply_message,
-                         content::WebContents* web_contents);
-  virtual ~PageTranslatedObserver();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
-  DISALLOW_COPY_AND_ASSIGN(PageTranslatedObserver);
-};
-
-class TabLanguageDeterminedObserver : public content::NotificationObserver {
- public:
-  TabLanguageDeterminedObserver(AutomationProvider* automation,
-                                IPC::Message* reply_message,
-                                content::WebContents* web_contents,
-                                TranslateInfoBarDelegate* translate_bar);
-  virtual ~TabLanguageDeterminedObserver();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  content::WebContents* web_contents_;
-  TranslateInfoBarDelegate* translate_bar_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabLanguageDeterminedObserver);
-};
-
 class InfoBarCountObserver : public content::NotificationObserver {
  public:
   InfoBarCountObserver(AutomationProvider* automation,
                        IPC::Message* reply_message,
-                       TabContents* tab_contents,
+                       content::WebContents* web_contents,
                        size_t target_count);
   virtual ~InfoBarCountObserver();
 
@@ -716,7 +674,7 @@ class InfoBarCountObserver : public content::NotificationObserver {
   content::NotificationRegistrar registrar_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
 
   const size_t target_count_;
 
@@ -985,19 +943,16 @@ class VirtualConnectObserver
 // Waits for enterprise device enrollment to complete and returns the status to
 // the automation provider.
 class EnrollmentObserver
-    : public chromeos::EnterpriseEnrollmentScreenActor::Observer {
+    : public chromeos::EnterpriseEnrollmentScreen::TestingObserver {
  public:
   EnrollmentObserver(AutomationProvider* automation,
-      IPC::Message* reply_message,
-      chromeos::EnterpriseEnrollmentScreenActor* enrollment_screen_actor,
-      chromeos::EnterpriseEnrollmentScreen* enrollment_screen);
+                     IPC::Message* reply_message,
+                     chromeos::EnterpriseEnrollmentScreen* enrollment_screen);
 
   virtual ~EnrollmentObserver();
 
-  // chromeos::EnterpriseEnrollmentScreenActor::Observer implementation.
-  virtual void OnEnrollmentComplete(
-      chromeos::EnterpriseEnrollmentScreenActor* enrollment_screen_actor,
-      bool succeeded);
+  // chromeos::EnterpriseEnrollmentScreen::Observer implementation.
+  virtual void OnEnrollmentComplete(bool succeeded);
 
  private:
   base::WeakPtr<AutomationProvider> automation_;
@@ -1007,37 +962,6 @@ class EnrollmentObserver
   DISALLOW_COPY_AND_ASSIGN(EnrollmentObserver);
 };
 
-// Waits for profile photo to be captured by the camera,
-// saved to file, and the path set in local state preferences
-class PhotoCaptureObserver : public chromeos::TakePhotoDialog::Observer,
-                             public chromeos::UserManager::Observer {
- public:
-  PhotoCaptureObserver(AutomationProvider* automation,
-                       IPC::Message* reply_message);
-  virtual ~PhotoCaptureObserver();
-
-  // TakePhotoDialog::Observer overrides
-  virtual void OnCaptureSuccess(
-      chromeos::TakePhotoDialog* dialog,
-      chromeos::TakePhotoView* take_photo_view) OVERRIDE;
-  virtual void OnCaptureFailure(
-      chromeos::TakePhotoDialog* dialog,
-      chromeos::TakePhotoView* take_photo_view) OVERRIDE;
-  virtual void OnCapturingStopped(
-      chromeos::TakePhotoDialog* dialog,
-      chromeos::TakePhotoView* take_photo_view) OVERRIDE;
-
-  // UserManager::Observer overrides
-  virtual void LocalStateChanged(
-      chromeos::UserManager* user_manager) OVERRIDE;
-
- private:
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
-  DISALLOW_COPY_AND_ASSIGN(PhotoCaptureObserver);
-};
-
 #endif  // defined(OS_CHROMEOS)
 
 // Waits for the bookmark model to load.
@@ -1045,7 +969,8 @@ class AutomationProviderBookmarkModelObserver : public BookmarkModelObserver {
  public:
   AutomationProviderBookmarkModelObserver(AutomationProvider* provider,
                                           IPC::Message* reply_message,
-                                          BookmarkModel* model);
+                                          BookmarkModel* model,
+                                          bool use_json_interface);
   virtual ~AutomationProviderBookmarkModelObserver();
 
   // BookmarkModelObserver:
@@ -1071,6 +996,8 @@ class AutomationProviderBookmarkModelObserver : public BookmarkModelObserver {
       BookmarkModel* model,
       const BookmarkNode* node) OVERRIDE {}
 
+  IPC::Message* ReleaseReply();
+
  private:
   // Reply to the automation message with the given success value,
   // then delete myself (which removes myself from the bookmark model
@@ -1080,6 +1007,7 @@ class AutomationProviderBookmarkModelObserver : public BookmarkModelObserver {
   base::WeakPtr<AutomationProvider> automation_provider_;
   scoped_ptr<IPC::Message> reply_message_;
   BookmarkModel* model_;
+  bool use_json_interface_;
 
   DISALLOW_COPY_AND_ASSIGN(AutomationProviderBookmarkModelObserver);
 };
@@ -1092,7 +1020,8 @@ class AutomationProviderDownloadUpdatedObserver
   AutomationProviderDownloadUpdatedObserver(
       AutomationProvider* provider,
       IPC::Message* reply_message,
-      bool wait_for_open);
+      bool wait_for_open,
+      bool incognito);
   virtual ~AutomationProviderDownloadUpdatedObserver();
 
   virtual void OnDownloadUpdated(content::DownloadItem* download);
@@ -1102,6 +1031,7 @@ class AutomationProviderDownloadUpdatedObserver
   base::WeakPtr<AutomationProvider> provider_;
   scoped_ptr<IPC::Message> reply_message_;
   bool wait_for_open_;
+  bool incognito_;
 
   DISALLOW_COPY_AND_ASSIGN(AutomationProviderDownloadUpdatedObserver);
 };
@@ -1109,7 +1039,7 @@ class AutomationProviderDownloadUpdatedObserver
 // Allows the automation provider to wait until the download model has changed
 // (because a new download has been added or removed).
 class AutomationProviderDownloadModelChangedObserver
-    : public content::DownloadManager::Observer {
+    : public AllDownloadItemNotifier::Observer {
  public:
   AutomationProviderDownloadModelChangedObserver(
       AutomationProvider* provider,
@@ -1117,12 +1047,17 @@ class AutomationProviderDownloadModelChangedObserver
       content::DownloadManager* download_manager);
   virtual ~AutomationProviderDownloadModelChangedObserver();
 
-  virtual void ModelChanged(content::DownloadManager* manager) OVERRIDE;
+  virtual void OnDownloadCreated(
+      content::DownloadManager* manager, content::DownloadItem* item) OVERRIDE;
+  virtual void OnDownloadRemoved(
+      content::DownloadManager* manager, content::DownloadItem* item) OVERRIDE;
 
  private:
+  void ModelChanged();
+
   base::WeakPtr<AutomationProvider> provider_;
   scoped_ptr<IPC::Message> reply_message_;
-  content::DownloadManager* download_manager_;
+  AllDownloadItemNotifier notifier_;
 
   DISALLOW_COPY_AND_ASSIGN(AutomationProviderDownloadModelChangedObserver);
 };
@@ -1140,11 +1075,12 @@ class AllDownloadsCompleteObserver
   virtual ~AllDownloadsCompleteObserver();
 
   // content::DownloadManager::Observer.
-  virtual void ModelChanged(content::DownloadManager* manager) OVERRIDE;
+  virtual void OnDownloadCreated(
+      content::DownloadManager* manager, content::DownloadItem* item) OVERRIDE;
+  virtual void ManagerGoingDown(content::DownloadManager* manager) OVERRIDE;
 
   // content::DownloadItem::Observer.
   virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
-  virtual void OnDownloadOpened(content::DownloadItem* download) OVERRIDE {}
 
  private:
   void ReplyIfNecessary();
@@ -1223,9 +1159,12 @@ class AutomationProviderGetPasswordsObserver : public PasswordStoreConsumer {
       IPC::Message* reply_message);
   virtual ~AutomationProviderGetPasswordsObserver();
 
+  // PasswordStoreConsumer implementation.
   virtual void OnPasswordStoreRequestDone(
       CancelableRequestProvider::Handle handle,
-      const std::vector<webkit::forms::PasswordForm*>& result) OVERRIDE;
+      const std::vector<content::PasswordForm*>& result) OVERRIDE;
+  virtual void OnGetPasswordStoreResults(
+      const std::vector<content::PasswordForm*>& results) OVERRIDE;
 
  private:
   base::WeakPtr<AutomationProvider> provider_;
@@ -1283,22 +1222,6 @@ class PasswordStoreLoginsChangedObserver
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreLoginsChangedObserver);
 };
 
-// Allows the automation provider to wait for clearing browser data to finish.
-class AutomationProviderBrowsingDataObserver
-    : public BrowsingDataRemover::Observer {
- public:
-  AutomationProviderBrowsingDataObserver(
-      AutomationProvider* provider,
-      IPC::Message* reply_message);
-  virtual ~AutomationProviderBrowsingDataObserver();
-
-  virtual void OnBrowsingDataRemoverDone();
-
- private:
-  base::WeakPtr<AutomationProvider> provider_;
-  scoped_ptr<IPC::Message> reply_message_;
-};
-
 // Allows automation provider to wait until page load after selecting an item
 // in the omnibox popup.
 class OmniboxAcceptNotificationObserver : public content::NotificationObserver {
@@ -1349,7 +1272,7 @@ class PageSnapshotTaker : public TabEventObserver,
  public:
   PageSnapshotTaker(AutomationProvider* automation,
                     IPC::Message* reply_message,
-                    TabContents* tab_contents,
+                    content::WebContents* web_contents,
                     const FilePath& path);
   virtual ~PageSnapshotTaker();
 
@@ -1373,7 +1296,7 @@ class PageSnapshotTaker : public TabEventObserver,
 
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
   FilePath image_path_;
   content::NotificationRegistrar registrar_;
 
@@ -1430,9 +1353,7 @@ class AutomationMouseEventProcessor : public content::RenderViewHostObserver,
 
 class NTPInfoObserver : public content::NotificationObserver {
  public:
-  NTPInfoObserver(AutomationProvider* automation,
-                  IPC::Message* reply_message,
-                  CancelableRequestConsumer* consumer);
+  NTPInfoObserver(AutomationProvider* automation, IPC::Message* reply_message);
   virtual ~NTPInfoObserver();
 
   // Overridden from content::NotificationObserver:
@@ -1446,7 +1367,6 @@ class NTPInfoObserver : public content::NotificationObserver {
 
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
-  CancelableRequestConsumer* consumer_;
   CancelableRequestProvider::Handle request_;
   scoped_ptr<base::DictionaryValue> ntp_info_;
   history::TopSites* top_sites_;
@@ -1479,112 +1399,6 @@ class AppLaunchObserver : public content::NotificationObserver {
   int new_window_id_;
 
   DISALLOW_COPY_AND_ASSIGN(AppLaunchObserver);
-};
-
-// Observes when Autofill information is displayed in the renderer.  This can
-// happen in two different ways: (1) a popup containing Autofill suggestions
-// has been shown in the renderer; (2) a webpage form is filled or previewed
-// with Autofill suggestions.  A constructor argument specifies the appropriate
-// notification to wait for.
-class AutofillDisplayedObserver : public content::NotificationObserver {
- public:
-  AutofillDisplayedObserver(int notification,
-                            content::RenderViewHost* render_view_host,
-                            AutomationProvider* automation,
-                            IPC::Message* reply_message);
-  virtual ~AutofillDisplayedObserver();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  int notification_;
-  content::RenderViewHost* render_view_host_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  content::NotificationRegistrar registrar_;
-
-  DISALLOW_COPY_AND_ASSIGN(AutofillDisplayedObserver);
-};
-
-// Observes when a specified number of autofill profiles and credit cards have
-// been changed in the WebDataService.  The notifications are sent on the DB
-// thread, the thread that interacts with the database.
-class AutofillChangedObserver
-    : public base::RefCountedThreadSafe<
-          AutofillChangedObserver,
-          content::BrowserThread::DeleteOnUIThread>,
-      public content::NotificationObserver {
- public:
-  AutofillChangedObserver(AutomationProvider* automation,
-                          IPC::Message* reply_message,
-                          int num_profiles,
-                          int num_credit_cards);
-
-  // Schedules a task on the DB thread to register the appropriate observers.
-  virtual void Init();
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  friend struct content::BrowserThread::DeleteOnThread<
-      content::BrowserThread::UI>;
-  ~AutofillChangedObserver();
-  friend class base::DeleteHelper<AutofillChangedObserver>;
-
-  // Registers the appropriate observers.  Called on the DB thread.
-  void RegisterObserversTask();
-
-  // Sends the |reply_message_| to |automation_| indicating we're done.  Called
-  // on the UI thread.
-  void IndicateDone();
-
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  scoped_ptr<content::NotificationRegistrar> registrar_;
-  int num_profiles_;
-  int num_credit_cards_;
-
-  // Used to ensure that the UI thread waits for the DB thread to finish
-  // registering observers before proceeding.
-  base::WaitableEvent done_event_;
-
-  DISALLOW_COPY_AND_ASSIGN(AutofillChangedObserver);
-};
-
-// Observes when an Autofill form submitted via a webpage has been processed.
-// This observer also takes care of accepting any infobars that appear as a
-// result of submitting the webpage form (submitting credit card information
-// causes a confirm infobar to appear).
-class AutofillFormSubmittedObserver
-    : public PersonalDataManagerObserver,
-      public content::NotificationObserver {
- public:
-  AutofillFormSubmittedObserver(AutomationProvider* automation,
-                                IPC::Message* reply_message,
-                                PersonalDataManager* pdm);
-  virtual ~AutofillFormSubmittedObserver();
-
-  // PersonalDataManagerObserver interface.
-  virtual void OnPersonalDataChanged() OVERRIDE;
-  virtual void OnInsufficientFormData() OVERRIDE;
-
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- private:
-  content::NotificationRegistrar registrar_;
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  PersonalDataManager* pdm_;
-  InfoBarTabHelper* infobar_helper_;
 };
 
 // Allows the automation provider to wait until all the notification

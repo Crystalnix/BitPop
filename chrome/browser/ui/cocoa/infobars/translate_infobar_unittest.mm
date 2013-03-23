@@ -8,12 +8,12 @@
 #import "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #import "chrome/app/chrome_command_ids.h"  // For translate menu command ids.
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #import "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar.h"
 #import "chrome/browser/ui/cocoa/infobars/translate_infobar_base.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #import "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #import "testing/gmock/include/gmock/gmock.h"
@@ -45,27 +45,16 @@ class MockTranslateInfoBarDelegate : public TranslateInfoBarDelegate {
 
   }
 
-  virtual string16 GetDisplayNameForLocale(const std::string& language_code) {
-    return ASCIIToUTF16("Foo");
-  }
-
-  virtual bool IsLanguageBlacklisted() {
-    return false;
-  }
-
-  virtual bool IsSiteBlacklisted() {
-    return false;
-  }
-
-  virtual bool ShouldAlwaysTranslate() {
-    return false;
-  }
-
   MOCK_METHOD0(Translate, void());
   MOCK_METHOD0(RevertTranslation, void());
+
   MOCK_METHOD0(TranslationDeclined, void());
+
+  virtual bool IsLanguageBlacklisted() OVERRIDE { return false; }
   MOCK_METHOD0(ToggleLanguageBlacklist, void());
+  virtual bool IsSiteBlacklisted() OVERRIDE { return false; }
   MOCK_METHOD0(ToggleSiteBlacklist, void());
+  virtual bool ShouldAlwaysTranslate() OVERRIDE { return false; }
   MOCK_METHOD0(ToggleAlwaysTranslate, void());
 };
 
@@ -75,8 +64,9 @@ class TranslationInfoBarTest : public CocoaProfileTest {
   // the test.
   virtual void SetUp() {
     CocoaProfileTest::SetUp();
-    tab_contents_.reset(new TabContents(WebContents::Create(
-       profile(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
+    web_contents_.reset(
+        WebContents::Create(WebContents::CreateParams(profile())));
+    InfoBarTabHelper::CreateForWebContents(web_contents_.get());
     CreateInfoBar();
   }
 
@@ -88,15 +78,19 @@ class TranslationInfoBarTest : public CocoaProfileTest {
     TranslateErrors::Type error = TranslateErrors::NONE;
     if (type == TranslateInfoBarDelegate::TRANSLATION_ERROR)
       error = TranslateErrors::NETWORK;
+    InfoBarTabHelper* infobar_tab_helper =
+        InfoBarTabHelper::FromWebContents(web_contents_.get());
+    Profile* profile =
+        Profile::FromBrowserContext(web_contents_->GetBrowserContext());
     infobar_delegate_.reset(new MockTranslateInfoBarDelegate(
         type,
         error,
-        tab_contents_->infobar_tab_helper(),
-        tab_contents_->profile()->GetPrefs()));
+        infobar_tab_helper,
+        profile->GetPrefs()));
     [[infobar_controller_ view] removeFromSuperview];
     scoped_ptr<InfoBar> infobar(
         static_cast<InfoBarDelegate*>(infobar_delegate_.get())->
-            CreateInfoBar(tab_contents_->infobar_tab_helper()));
+            CreateInfoBar(infobar_tab_helper));
     infobar_controller_.reset(
         reinterpret_cast<TranslateInfoBarControllerBase*>(
             infobar->controller()));
@@ -107,7 +101,7 @@ class TranslationInfoBarTest : public CocoaProfileTest {
     [[test_window() contentView] addSubview:[infobar_controller_ view]];
   }
 
-  scoped_ptr<TabContents> tab_contents_;
+  scoped_ptr<WebContents> web_contents_;
   scoped_ptr<MockTranslateInfoBarDelegate> infobar_delegate_;
   scoped_nsobject<TranslateInfoBarControllerBase> infobar_controller_;
 };

@@ -5,11 +5,11 @@
 #include "chrome/browser/themes/browser_theme_pack.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/common/chrome_paths.h"
@@ -137,7 +137,7 @@ class BrowserThemePackTest : public ::testing::Test {
     }
 
     test_path = test_path.AppendASCII("profiles");
-    test_path = test_path.AppendASCII("complex_theme");
+    test_path = test_path.AppendASCII("profile_with_complex_theme");
     test_path = test_path.AppendASCII("Default");
     test_path = test_path.AppendASCII("Extensions");
     test_path = test_path.AppendASCII("mblmlcbknbnfebdfjnolmcapmdofhmme");
@@ -393,7 +393,7 @@ TEST_F(BrowserThemePackTest, TestNonExistantImages) {
 // the extension data, but for now, exists so valgrind can test some of the
 // tricky memory stuff that BrowserThemePack does.
 TEST_F(BrowserThemePackTest, CanBuildAndReadPack) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
   FilePath file = dir.path().AppendASCII("data.pak");
 

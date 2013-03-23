@@ -10,13 +10,13 @@
 #include "base/test/test_timeouts.h"
 #include "base/time.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
@@ -89,8 +89,10 @@ bool ModelAssociatorHasTabWithUrl(int index, const GURL& url) {
       nav = (*tab_it)->navigations[nav_index];
       if (nav.virtual_url() == url) {
         DVLOG(1) << "Found tab with url " << url.spec();
+        DVLOG(1) << "Timestamp is "
+                 << SessionTypesTestHelper::GetTimestamp(nav).ToInternalValue();
         if (nav.title().empty()) {
-          DVLOG(1) << "No title!";
+          DVLOG(1) << "Title empty -- tab hasn't finished loading yet";
           continue;
         }
         return true;
@@ -240,9 +242,12 @@ bool NavigationEquals(const TabNavigation& expected,
                << ", actual " << actual.virtual_url();
     return false;
   }
-  if (expected.referrer().url != actual.referrer().url) {
-    LOG(ERROR) << "Expected referrer " << expected.referrer().url
-               << ", actual " << actual.referrer().url;
+  if (SessionTypesTestHelper::GetReferrer(expected).url !=
+      SessionTypesTestHelper::GetReferrer(actual).url) {
+    LOG(ERROR) << "Expected referrer "
+               << SessionTypesTestHelper::GetReferrer(expected).url
+               << ", actual "
+               << SessionTypesTestHelper::GetReferrer(actual).url;
     return false;
   }
   if (expected.title() != actual.title()) {
@@ -250,9 +255,12 @@ bool NavigationEquals(const TabNavigation& expected,
                << ", actual " << actual.title();
     return false;
   }
-  if (expected.transition() != actual.transition()) {
-    LOG(ERROR) << "Expected transition " << expected.transition()
-               << ", actual " << actual.transition();
+  if (SessionTypesTestHelper::GetTransitionType(expected) !=
+      SessionTypesTestHelper::GetTransitionType(actual)) {
+    LOG(ERROR) << "Expected transition "
+               << SessionTypesTestHelper::GetTransitionType(expected)
+               << ", actual "
+               << SessionTypesTestHelper::GetTransitionType(actual);
     return false;
   }
   return true;

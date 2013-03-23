@@ -38,6 +38,7 @@ const char kInvalidRedirect[] = "Did not redirect to the right URL.";
 namespace GetAuthToken = extensions::api::experimental_identity::GetAuthToken;
 namespace LaunchWebAuthFlow =
     extensions::api::experimental_identity::LaunchWebAuthFlow;
+namespace identity = extensions::api::experimental_identity;
 
 IdentityGetAuthTokenFunction::IdentityGetAuthTokenFunction()
     : interactive_(false) {}
@@ -75,7 +76,7 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
     }
   }
 
-  if (StartFlow(GetTokenFlowMode())) {
+  if (StartFlow(OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE)) {
     return true;
   } else {
     Release();
@@ -102,8 +103,7 @@ void IdentityGetAuthTokenFunction::OnIssueAdviceSuccess(
   // Existing grant was revoked and we used NO_FORCE, so we got info back
   // instead.
   if (interactive_) {
-    install_ui_.reset(
-        chrome::CreateExtensionInstallPromptWithBrowser(GetCurrentBrowser()));
+    install_ui_.reset(new ExtensionInstallPrompt(GetAssociatedWebContents()));
     ShowOAuthApprovalDialog(issue_advice);
   } else {
     error_ = identity_constants::kNoGrant;
@@ -115,7 +115,7 @@ void IdentityGetAuthTokenFunction::OnIssueAdviceSuccess(
 void IdentityGetAuthTokenFunction::OnLoginUIClosed(
     LoginUIService::LoginUI* ui) {
   StopObservingLoginService();
-  if (!StartFlow(GetTokenFlowMode())) {
+  if (!StartFlow(OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE)) {
     SendResponse(false);
     Release();
   }
@@ -173,24 +173,7 @@ void IdentityGetAuthTokenFunction::ShowLoginPopup() {
 
   LoginUIService* login_ui_service =
       LoginUIServiceFactory::GetForProfile(profile());
-  LoginUIService::LoginUI* login_ui = login_ui_service->current_login_ui();
-  if (login_ui) {
-    login_ui->FocusUI();
-  } else {
-    Browser* browser =
-        new Browser(Browser::CreateParams(Browser::TYPE_POPUP, profile()));
-    // TODO(munjal): Change the source from SOURCE_NTP_LINK to something else
-    // once we have added a new source for extension API.
-    GURL signin_url(SyncPromoUI::GetSyncPromoURL(GURL(),
-                                                 SyncPromoUI::SOURCE_NTP_LINK,
-                                                 true));
-    chrome::NavigateParams params(browser,
-                                  signin_url,
-                                  content::PAGE_TRANSITION_START_PAGE);
-    params.disposition = CURRENT_TAB;
-    params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-    chrome::Navigate(&params);
-  }
+  login_ui_service->ShowLoginPopup();
 }
 
 void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
@@ -218,13 +201,6 @@ bool IdentityGetAuthTokenFunction::HasLoginToken() const {
   return token_service->HasOAuthLoginToken();
 }
 
-OAuth2MintTokenFlow::Mode IdentityGetAuthTokenFunction::GetTokenFlowMode()
-    const {
-  return ExtensionInstallPrompt::ShouldAutomaticallyApproveScopes() ?
-      OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE :
-      OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE;
-}
-
 IdentityLaunchWebAuthFlowFunction::IdentityLaunchWebAuthFlowFunction() {}
 IdentityLaunchWebAuthFlowFunction::~IdentityLaunchWebAuthFlowFunction() {}
 
@@ -232,15 +208,33 @@ bool IdentityLaunchWebAuthFlowFunction::RunImpl() {
   scoped_ptr<LaunchWebAuthFlow::Params> params(
       LaunchWebAuthFlow::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
+  const identity::WebAuthFlowDetails& details = params->details;
 
-  GURL auth_url(params->details.url);
+  GURL auth_url(details.url);
   WebAuthFlow::Mode mode =
-      params->details.interactive.get() && *params->details.interactive ?
+      details.interactive && *details.interactive ?
       WebAuthFlow::INTERACTIVE : WebAuthFlow::SILENT;
 
+  // The bounds attributes are optional, but using 0 when they're not available
+  // does the right thing.
+  gfx::Rect initial_bounds;
+  if (details.width)
+    initial_bounds.set_width(*details.width);
+  if (details.height)
+    initial_bounds.set_height(*details.height);
+  if (details.left)
+    initial_bounds.set_x(*details.left);
+  if (details.top)
+    initial_bounds.set_y(*details.top);
+
   AddRef();  // Balanced in OnAuthFlowSuccess/Failure.
+
+  Browser* current_browser = this->GetCurrentBrowser();
+  chrome::HostDesktopType host_desktop_type = current_browser ?
+      current_browser->host_desktop_type() : chrome::GetActiveDesktop();
   auth_flow_.reset(new WebAuthFlow(
-      this, profile(), GetExtension()->id(), auth_url, mode));
+      this, profile(), GetExtension()->id(), auth_url, mode, initial_bounds,
+      host_desktop_type));
   auth_flow_->Start();
   return true;
 }

@@ -4,22 +4,25 @@
 
 #include "content/renderer/media/render_audiosourceprovider.h"
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "content/public/common/content_switches.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
+#include "content/renderer/media/renderer_audio_output_device.h"
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/audio_renderer_mixer_input.h"
+#include "media/base/media_switches.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAudioSourceProviderClient.h"
 
-using content::AudioDeviceFactory;
-using content::AudioRendererMixerManager;
 using std::vector;
 using WebKit::WebVector;
 
-RenderAudioSourceProvider::RenderAudioSourceProvider()
+namespace content {
+
+RenderAudioSourceProvider::RenderAudioSourceProvider(int source_render_view_id)
     : is_initialized_(false),
       channels_(0),
       sample_rate_(0),
@@ -31,11 +34,26 @@ RenderAudioSourceProvider::RenderAudioSourceProvider()
   // have the audio format information and call AudioRendererSink::Initialize()
   // to fully initialize it.
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kEnableRendererSideMixing)) {
+#if defined(OS_WIN) || defined(OS_MACOSX)
+  const bool use_mixing =
+      !cmd_line->HasSwitch(switches::kDisableRendererSideMixing);
+#else
+  const bool use_mixing =
+      cmd_line->HasSwitch(switches::kEnableRendererSideMixing);
+#endif
+
+  if (use_mixing) {
     default_sink_ = RenderThreadImpl::current()->
         GetAudioRendererMixerManager()->CreateInput();
+    // TODO(miu): Partition mixer instances per RenderView.
   } else {
-    default_sink_ = AudioDeviceFactory::NewOutputDevice();
+    scoped_refptr<RendererAudioOutputDevice> device =
+        AudioDeviceFactory::NewOutputDevice();
+    // The RenderView creating RenderAudioSourceProvider will be the source of
+    // the audio (WebMediaPlayer is always associated with a document in a frame
+    // at the time RenderAudioSourceProvider is instantiated).
+    device->SetSourceRenderView(source_render_view_id);
+    default_sink_ = device;
   }
 }
 
@@ -77,9 +95,12 @@ void RenderAudioSourceProvider::provideInput(
     for (size_t i = 0; i < audio_data.size(); ++i)
       v[i] = audio_data[i];
 
+    scoped_ptr<media::AudioBus> audio_bus = media::AudioBus::WrapVector(
+        number_of_frames, v);
+
     // TODO(crogers): figure out if we should volume scale here or in common
     // WebAudio code.  In any case we need to take care of volume.
-    renderer_->Render(v, number_of_frames, 0);
+    renderer_->Render(audio_bus.get(), 0);
   } else {
     // Provide silence if the source is not running.
     for (size_t i = 0; i < audio_data.size(); ++i)
@@ -144,3 +165,5 @@ void RenderAudioSourceProvider::Initialize(
 }
 
 RenderAudioSourceProvider::~RenderAudioSourceProvider() {}
+
+}  // namespace content

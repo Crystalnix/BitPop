@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/shared_memory.h"
@@ -25,10 +26,11 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
+#include "content/renderer/hyphenator/hyphenator.h"
 #include "content/renderer/media/audio_hardware.h"
+#include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/render_thread_impl.h"
-#include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
 #include "googleurl/src/gurl.h"
@@ -39,16 +41,12 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKey.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKeyPath.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamCenterClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPeerConnectionHandler.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPeerConnectionHandlerClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSerializedScriptValue.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
@@ -79,7 +77,6 @@
 #include "base/file_descriptor_posix.h"
 #endif
 
-using content::RenderThread;
 using WebKit::WebAudioDevice;
 using WebKit::WebBlobRegistry;
 using WebKit::WebFileInfo;
@@ -87,22 +84,21 @@ using WebKit::WebFileSystem;
 using WebKit::WebFrame;
 using WebKit::WebGamepads;
 using WebKit::WebIDBFactory;
-using WebKit::WebIDBKey;
-using WebKit::WebIDBKeyPath;
 using WebKit::WebKitPlatformSupport;
 using WebKit::WebMediaStreamCenter;
 using WebKit::WebMediaStreamCenterClient;
-using WebKit::WebPeerConnection00Handler;
-using WebKit::WebPeerConnection00HandlerClient;
-using WebKit::WebPeerConnectionHandler;
-using WebKit::WebPeerConnectionHandlerClient;
-using WebKit::WebSerializedScriptValue;
+using WebKit::WebRTCPeerConnectionHandler;
+using WebKit::WebRTCPeerConnectionHandlerClient;
 using WebKit::WebStorageNamespace;
 using WebKit::WebString;
 using WebKit::WebURL;
 using WebKit::WebVector;
 
+namespace content {
+
 static bool g_sandbox_enabled = true;
+base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
+    LAZY_INSTANCE_INITIALIZER;
 
 //------------------------------------------------------------------------------
 
@@ -170,7 +166,7 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
       shared_worker_repository_(new WebSharedWorkerRepositoryImpl) {
-  if (g_sandbox_enabled) {
+  if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(
         new RendererWebKitPlatformSupportImpl::SandboxSupport);
   } else {
@@ -249,13 +245,12 @@ bool RendererWebKitPlatformSupportImpl::sandboxEnabled() {
 unsigned long long RendererWebKitPlatformSupportImpl::visitedLinkHash(
     const char* canonical_url,
     size_t length) {
-  return content::GetContentClient()->renderer()->VisitedLinkHash(
-      canonical_url, length);
+  return GetContentClient()->renderer()->VisitedLinkHash(canonical_url, length);
 }
 
 bool RendererWebKitPlatformSupportImpl::isLinkVisited(
     unsigned long long link_hash) {
-  return content::GetContentClient()->renderer()->IsLinkVisited(link_hash);
+  return GetContentClient()->renderer()->IsLinkVisited(link_hash);
 }
 
 WebKit::WebMessagePortChannel*
@@ -270,7 +265,7 @@ void RendererWebKitPlatformSupportImpl::prefetchHostName(
 
   std::string hostname_utf8;
   UTF16ToUTF8(hostname.data(), hostname.length(), &hostname_utf8);
-  content::GetContentClient()->renderer()->PrefetchHostName(
+  GetContentClient()->renderer()->PrefetchHostName(
       hostname_utf8.data(), hostname_utf8.length());
 }
 
@@ -345,29 +340,6 @@ WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
   return web_idb_factory_.get();
 }
 
-void RendererWebKitPlatformSupportImpl::createIDBKeysFromSerializedValuesAndKeyPath(
-    const WebVector<WebSerializedScriptValue>& values,
-    const WebIDBKeyPath& keyPath,
-    WebVector<WebIDBKey>& keys_out) {
-  DCHECK(CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess));
-  WebVector<WebIDBKey> keys(values.size());
-  for (size_t i = 0; i < values.size(); ++i) {
-    keys[i] = WebIDBKey::createFromValueAndKeyPath(
-        values[i], keyPath);
-  }
-  keys_out.swap(keys);
-}
-
-WebSerializedScriptValue
-RendererWebKitPlatformSupportImpl::injectIDBKeyIntoSerializedValue(
-    const WebIDBKey& key,
-    const WebSerializedScriptValue& value,
-    const WebIDBKeyPath& keyPath) {
-  DCHECK(CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess));
-  return WebIDBKey::injectIDBKeyIntoSerializedValue(
-      key, value, keyPath);
-}
-
 //------------------------------------------------------------------------------
 
 WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
@@ -389,7 +361,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeForExtension(
   std::string mime_type;
   RenderThread::Get()->Send(
       new MimeRegistryMsg_GetMimeTypeFromExtension(
-          webkit_glue::WebStringToFilePathString(file_extension), &mime_type));
+          webkit_base::WebStringToFilePathString(file_extension), &mime_type));
   return ASCIIToUTF16(mime_type);
 
 }
@@ -403,7 +375,7 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
   // these calls over to the browser process.
   std::string mime_type;
   RenderThread::Get()->Send(new MimeRegistryMsg_GetMimeTypeFromFile(
-      FilePath(webkit_glue::WebStringToFilePathString(file_path)),
+      FilePath(webkit_base::WebStringToFilePathString(file_path)),
       &mime_type));
   return ASCIIToUTF16(mime_type);
 
@@ -421,7 +393,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::preferredExtensionForMIMEType(
   RenderThread::Get()->Send(
       new MimeRegistryMsg_GetPreferredExtensionForMimeType(
           UTF16ToASCII(mime_type), &file_extension));
-  return webkit_glue::FilePathStringToWebString(file_extension);
+  return webkit_base::FilePathStringToWebString(file_extension);
 }
 
 //------------------------------------------------------------------------------
@@ -432,7 +404,7 @@ bool RendererWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
   base::PlatformFileInfo file_info;
   base::PlatformFileError status;
   if (!SendSyncMessageFromAnyThread(new FileUtilitiesMsg_GetFileInfo(
-           webkit_glue::WebStringToFilePath(path), &file_info, &status)) ||
+           webkit_base::WebStringToFilePath(path), &file_info, &status)) ||
       status != base::PLATFORM_FILE_OK) {
     return false;
   }
@@ -446,7 +418,7 @@ base::PlatformFile RendererWebKitPlatformSupportImpl::FileUtilities::openFile(
     int mode) {
   IPC::PlatformFileForTransit handle = IPC::InvalidPlatformFileForTransit();
   SendSyncMessageFromAnyThread(new FileUtilitiesMsg_OpenFile(
-      webkit_glue::WebStringToFilePath(path), mode, &handle));
+      webkit_base::WebStringToFilePath(path), mode, &handle));
   return IPC::PlatformFileForTransitToPlatformFile(handle);
 }
 
@@ -517,7 +489,7 @@ RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacters(
     return;
   }
 
-  content::GetFontFamilyForCharacters(
+  GetFontFamilyForCharacters(
       characters,
       num_characters,
       preferred_locale,
@@ -528,7 +500,7 @@ RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacters(
 void
 RendererWebKitPlatformSupportImpl::SandboxSupport::getRenderStyleForStrike(
     const char* family, int sizeAndStyle, WebKit::WebFontRenderStyle* out) {
-  content::GetRenderStyleForStrike(family, sizeAndStyle, out);
+  GetRenderStyleForStrike(family, sizeAndStyle, out);
 }
 
 #endif
@@ -574,11 +546,11 @@ RendererWebKitPlatformSupportImpl::sharedWorkerRepository() {
 bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   GpuChannelHost* host = thread->EstablishGpuChannelSync(
-      content::CAUSE_FOR_GPU_LAUNCH_CANVAS_2D);
+      CAUSE_FOR_GPU_LAUNCH_CANVAS_2D);
   if (!host)
     return false;
 
-  const content::GPUInfo& gpu_info = host->gpu_info();
+  const GPUInfo& gpu_info = host->gpu_info();
   if (gpu_info.can_lose_context || gpu_info.software_rendering)
     return false;
 
@@ -586,11 +558,11 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
 }
 
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
-  return audio_hardware::GetOutputSampleRate();
+  return GetAudioOutputSampleRate();
 }
 
 size_t RendererWebKitPlatformSupportImpl::audioHardwareBufferSize() {
-  return audio_hardware::GetOutputBufferSize();
+  return GetAudioOutputBufferSize();
 }
 
 WebAudioDevice*
@@ -599,7 +571,7 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
     unsigned numberOfChannels,
     double sampleRate,
     WebAudioDevice::RenderCallback* callback) {
-  ChannelLayout layout = CHANNEL_LAYOUT_UNSUPPORTED;
+  media::ChannelLayout layout = media::CHANNEL_LAYOUT_UNSUPPORTED;
 
   // The |numberOfChannels| does not exactly identify the channel layout of the
   // device. The switch statement below assigns a best guess to the channel
@@ -608,31 +580,31 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
   // channel count.
   switch (numberOfChannels) {
     case 1:
-      layout = CHANNEL_LAYOUT_MONO;
+      layout = media::CHANNEL_LAYOUT_MONO;
       break;
     case 2:
-      layout = CHANNEL_LAYOUT_STEREO;
+      layout = media::CHANNEL_LAYOUT_STEREO;
       break;
     case 3:
-      layout = CHANNEL_LAYOUT_2_1;
+      layout = media::CHANNEL_LAYOUT_2_1;
       break;
     case 4:
-      layout = CHANNEL_LAYOUT_4_0;
+      layout = media::CHANNEL_LAYOUT_4_0;
       break;
     case 5:
-      layout = CHANNEL_LAYOUT_5_0;
+      layout = media::CHANNEL_LAYOUT_5_0;
       break;
     case 6:
-      layout = CHANNEL_LAYOUT_5_1;
+      layout = media::CHANNEL_LAYOUT_5_1;
       break;
     case 7:
-      layout = CHANNEL_LAYOUT_7_0;
+      layout = media::CHANNEL_LAYOUT_7_0;
       break;
     case 8:
-      layout = CHANNEL_LAYOUT_7_1;
+      layout = media::CHANNEL_LAYOUT_7_1;
       break;
     default:
-      layout = CHANNEL_LAYOUT_STEREO;
+      layout = media::CHANNEL_LAYOUT_STEREO;
   }
 
   media::AudioParameters params(
@@ -681,9 +653,14 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 //------------------------------------------------------------------------------
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
-  if (!gamepad_shared_memory_reader_.get())
-    gamepad_shared_memory_reader_.reset(new content::GamepadSharedMemoryReader);
-  gamepad_shared_memory_reader_->SampleGamepads(gamepads);
+  if (g_test_gamepads == 0) {
+    if (!gamepad_shared_memory_reader_.get())
+      gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
+    gamepad_shared_memory_reader_->SampleGamepads(gamepads);
+  } else {
+    gamepads = g_test_gamepads.Get();
+    return;
+  }
 }
 
 WebKit::WebString RendererWebKitPlatformSupportImpl::userAgent(
@@ -701,16 +678,20 @@ void RendererWebKitPlatformSupportImpl::GetPlugins(
 
 //------------------------------------------------------------------------------
 
-WebPeerConnection00Handler*
-RendererWebKitPlatformSupportImpl::createPeerConnection00Handler(
-    WebPeerConnection00HandlerClient* client) {
-  WebFrame* web_frame = WebFrame::frameForCurrentContext();
-  if (!web_frame)
+WebRTCPeerConnectionHandler*
+RendererWebKitPlatformSupportImpl::createRTCPeerConnectionHandler(
+    WebRTCPeerConnectionHandlerClient* client) {
+  RenderThreadImpl* render_thread = RenderThreadImpl::current();
+  DCHECK(render_thread);
+  if (!render_thread)
     return NULL;
-  RenderViewImpl* render_view = RenderViewImpl::FromWebView(web_frame->view());
-  if (!render_view)
-    return NULL;
-  return render_view->CreatePeerConnectionHandlerJsep(client);
+#if defined(ENABLE_WEBRTC)
+  MediaStreamDependencyFactory* rtc_dependency_factory =
+      render_thread->GetMediaStreamDependencyFactory();
+  return rtc_dependency_factory->CreateRTCPeerConnectionHandler(client);
+#else
+  return NULL;
+#endif  // defined(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
@@ -733,7 +714,47 @@ bool RendererWebKitPlatformSupportImpl::SetSandboxEnabledForTesting(
   return was_enabled;
 }
 
+// static
+void RendererWebKitPlatformSupportImpl::SetMockGamepadsForTesting(
+    const WebGamepads& pads) {
+  g_test_gamepads.Get() = pads;
+}
+
 GpuChannelHostFactory*
 RendererWebKitPlatformSupportImpl::GetGpuChannelHostFactory() {
   return RenderThreadImpl::current();
 }
+
+//------------------------------------------------------------------------------
+
+bool RendererWebKitPlatformSupportImpl::canHyphenate(
+    const WebKit::WebString& locale) {
+  // Return false unless WebKit asks for US English dictionaries because WebKit
+  // can currently hyphenate only English words.
+  if (!locale.isEmpty() && !locale.equals("en-US"))
+    return false;
+
+  // Create a hyphenator object and attach it to the render thread so it can
+  // receive a dictionary file opened by a browser.
+  if (!hyphenator_.get()) {
+    hyphenator_.reset(new Hyphenator(base::kInvalidPlatformFileValue));
+    if (!hyphenator_.get())
+      return false;
+    return hyphenator_->Attach(RenderThreadImpl::current(), locale);
+  }
+  return hyphenator_->CanHyphenate(locale);
+}
+
+size_t RendererWebKitPlatformSupportImpl::computeLastHyphenLocation(
+    const char16* characters,
+    size_t length,
+    size_t before_index,
+    const WebKit::WebString& locale) {
+  // Crash if WebKit calls this function when canHyphenate returns false.
+  DCHECK(locale.isEmpty() || locale.equals("en-US"));
+  DCHECK(hyphenator_.get());
+  return hyphenator_->ComputeLastHyphenLocation(string16(characters, length),
+                                                before_index);
+}
+
+}  // namespace content

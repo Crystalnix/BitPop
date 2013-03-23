@@ -25,13 +25,11 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
+#include "grit/chrome_unscaled_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
@@ -47,9 +45,6 @@
 
 // These conflict with base/tracked_objects.h, so need to come last.
 #include <gdk/gdkx.h>  // NOLINT
-
-using content::RenderWidgetHost;
-using content::WebContents;
 
 namespace {
 
@@ -278,16 +273,6 @@ gboolean PaintNoBackground(GtkWidget* widget,
   return TRUE;
 }
 
-WebContents* GetBrowserWindowSelectedWebContents(BrowserWindow* window) {
-  BrowserWindowGtk* browser_window = static_cast<BrowserWindowGtk*>(
-      window);
-  return chrome::GetActiveWebContents(browser_window->browser());
-}
-
-GtkWidget* GetBrowserWindowFocusedWidget(BrowserWindow* window) {
-  return gtk_window_get_focus(window->GetNativeWindow());
-}
-
 }  // namespace
 
 namespace gtk_util {
@@ -500,8 +485,7 @@ void ConvertWidgetPointToScreen(GtkWidget* widget, gfx::Point* p) {
   DCHECK(widget);
   DCHECK(p);
 
-  gfx::Point position = ui::GetWidgetScreenPosition(widget);
-  p->SetPoint(p->x() + position.x(), p->y() + position.y());
+  *p += ui::GetWidgetScreenOffset(widget);
 }
 
 GtkWidget* CenterWidgetInHBox(GtkWidget* hbox, GtkWidget* widget,
@@ -744,9 +728,9 @@ void DrawThemedToolbarBackground(GtkWidget* widget,
   // The toolbar is supposed to blend in with the active tab, so we have to pass
   // coordinates for the IDR_THEME_TOOLBAR bitmap relative to the top of the
   // tab strip.
-  const gfx::Image* background =
+  const gfx::Image background =
       theme_service->GetImageNamed(IDR_THEME_TOOLBAR);
-  background->ToCairo()->SetSource(cr, widget,
+  background.ToCairo()->SetSource(cr, widget,
                                    tabstrip_origin.x(), tabstrip_origin.y());
   // We tile the toolbar background in both directions.
   cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_REPEAT);
@@ -760,10 +744,10 @@ void DrawThemedToolbarBackground(GtkWidget* widget,
 
 void DrawFullImage(cairo_t* cr,
                    GtkWidget* widget,
-                   const gfx::Image* image,
+                   const gfx::Image& image,
                    gint dest_x,
                    gint dest_y) {
-  gfx::CairoCachedSurface* surface = image->ToCairo();
+  gfx::CairoCachedSurface* surface = image.ToCairo();
   surface->SetSource(cr, widget, dest_x, dest_y);
   cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_REPEAT);
   cairo_rectangle(cr, dest_x, dest_y, surface->Width(), surface->Height());
@@ -1006,40 +990,6 @@ void ApplyMessageDialogQuirks(GtkWidget* dialog) {
         base::nix::GetDesktopEnvironment(env.get()))
       gtk_window_set_skip_taskbar_hint(GTK_WINDOW(dialog), FALSE);
   }
-}
-
-// Performs Cut/Copy/Paste operation on the |window|.
-// If the current render view is focused, then just call the specified |method|
-// against the current render view host, otherwise emit the specified |signal|
-// against the focused widget.
-// TODO(suzhe): This approach does not work for plugins.
-void DoCutCopyPaste(BrowserWindow* window,
-                    void (RenderWidgetHost::*method)(),
-                    const char* signal) {
-  GtkWidget* widget = GetBrowserWindowFocusedWidget(window);
-  if (widget == NULL)
-    return;  // Do nothing if no focused widget.
-
-  WebContents* current_tab = GetBrowserWindowSelectedWebContents(window);
-  if (current_tab && widget == current_tab->GetContentNativeView()) {
-    (current_tab->GetRenderViewHost()->*method)();
-  } else {
-    guint id;
-    if ((id = g_signal_lookup(signal, G_OBJECT_TYPE(widget))) != 0)
-      g_signal_emit(widget, id, 0);
-  }
-}
-
-void DoCut(BrowserWindow* window) {
-  DoCutCopyPaste(window, &RenderWidgetHost::Cut, "cut-clipboard");
-}
-
-void DoCopy(BrowserWindow* window) {
-  DoCutCopyPaste(window, &RenderWidgetHost::Copy, "copy-clipboard");
-}
-
-void DoPaste(BrowserWindow* window) {
-  DoCutCopyPaste(window, &RenderWidgetHost::Paste, "paste-clipboard");
 }
 
 }  // namespace gtk_util

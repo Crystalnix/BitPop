@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #import "base/memory/scoped_nsobject.h"
 #include "base/string_piece.h"
@@ -15,7 +14,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/shell/resource.h"
-#include "content/shell/shell_switches.h"
 #include "googleurl/src/gurl.h"
 #import "ui/base/cocoa/underlay_opengl_hosting_window.h"
 
@@ -83,6 +81,26 @@ enum {
 
 @end
 
+@interface CrShellWindow : UnderlayOpenGLHostingWindow {
+ @private
+  content::Shell* shell_;
+}
+- (void)setShell:(content::Shell*)shell;
+- (void)showDevTools:(id)sender;
+@end
+
+@implementation CrShellWindow
+
+- (void)setShell:(content::Shell*)shell {
+  shell_ = shell;
+}
+
+- (void)showDevTools:(id)sender {
+  shell_->ShowDevTools();
+}
+
+@end
+
 namespace {
 
 NSString* kWindowTitle = @"Content Shell";
@@ -99,7 +117,9 @@ void MakeShellButton(NSRect* rect,
                      NSString* title,
                      NSView* parent,
                      int control,
-                     NSView* target) {
+                     NSView* target,
+                     NSString* key,
+                     NSUInteger modifier) {
   scoped_nsobject<NSButton> button([[NSButton alloc] initWithFrame:*rect]);
   [button setTitle:title];
   [button setBezelStyle:NSSmallSquareBezelStyle];
@@ -107,6 +127,8 @@ void MakeShellButton(NSRect* rect,
   [button setTarget:target];
   [button setAction:@selector(performAction:)];
   [button setTag:control];
+  [button setKeyEquivalent:key];
+  [button setKeyEquivalentModifierMask:modifier];
   [parent addSubview:button];
   rect->origin.x += kButtonWidth;
 }
@@ -116,10 +138,6 @@ void MakeShellButton(NSRect* rect,
 namespace content {
 
 void Shell::PlatformInitialize() {
-}
-
-base::StringPiece Shell::PlatformResourceProvider(int key) {
-  return base::StringPiece();
 }
 
 void Shell::PlatformCleanUp() {
@@ -160,15 +178,13 @@ void Shell::PlatformCreateWindow(int width, int height) {
                           NSClosableWindowMask |
                           NSMiniaturizableWindowMask |
                           NSResizableWindowMask;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
-    content_rect = NSOffsetRect(initial_window_bounds, -10000, -10000);
-    style_mask = NSBorderlessWindowMask;
-  }
-  window_ = [[UnderlayOpenGLHostingWindow alloc]
-      initWithContentRect:content_rect
+  CrShellWindow* window =
+      [[CrShellWindow alloc] initWithContentRect:content_rect
                 styleMask:style_mask
                   backing:NSBackingStoreBuffered
                     defer:NO];
+  window_ = window;
+  [window setShell:this];
   [window_ setTitle:kWindowTitle];
   NSView* content = [window_ contentView];
 
@@ -201,13 +217,13 @@ void Shell::PlatformCreateWindow(int width, int height) {
                  kButtonWidth, kURLBarHeight);
 
   MakeShellButton(&button_frame, @"Back", content, IDC_NAV_BACK,
-                  (NSView*)delegate);
+                  (NSView*)delegate, @"[", NSCommandKeyMask);
   MakeShellButton(&button_frame, @"Forward", content, IDC_NAV_FORWARD,
-                  (NSView*)delegate);
+                  (NSView*)delegate, @"]", NSCommandKeyMask);
   MakeShellButton(&button_frame, @"Reload", content, IDC_NAV_RELOAD,
-                  (NSView*)delegate);
+                  (NSView*)delegate, @"r", NSCommandKeyMask);
   MakeShellButton(&button_frame, @"Stop", content, IDC_NAV_STOP,
-                  (NSView*)delegate);
+                  (NSView*)delegate, @".", NSCommandKeyMask);
 
   button_frame.size.width =
       NSWidth(initial_window_bounds) - NSMinX(button_frame);
@@ -276,14 +292,22 @@ void Shell::URLEntered(std::string url_string) {
   }
 }
 
-void Shell::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
+void Shell::HandleKeyboardEvent(WebContents* source,
+                                const NativeWebKeyboardEvent& event) {
   if (event.skip_in_browser)
     return;
 
   // The event handling to get this strictly right is a tangle; cheat here a bit
   // by just letting the menus have a chance at it.
-  if ([event.os_event type] == NSKeyDown)
+  if ([event.os_event type] == NSKeyDown) {
+    if (([event.os_event modifierFlags] & NSCommandKeyMask) &&
+        [[event.os_event characters] isEqual:@"l"]) {
+      [window_ makeFirstResponder:url_edit_view_];
+      return;
+    }
+
     [[NSApp mainMenu] performKeyEquivalent:event.os_event];
+  }
 }
 
 }  // namespace content

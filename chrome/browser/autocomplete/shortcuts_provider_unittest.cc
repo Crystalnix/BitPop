@@ -187,7 +187,7 @@ void ShortcutsProviderTest::SetUp() {
 void ShortcutsProviderTest::TearDown() {
   // Run all pending tasks or else some threads hold on to the message loop
   // and prevent it from being deleted.
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
   provider_ = NULL;
 }
 
@@ -225,8 +225,8 @@ void ShortcutsProviderTest::RunTest(const string16 text,
                                    std::string expected_top_result) {
   std::sort(expected_urls.begin(), expected_urls.end());
 
-  MessageLoop::current()->RunAllPending();
-  AutocompleteInput input(text, string16(), false, false, true,
+  MessageLoop::current()->RunUntilIdle();
+  AutocompleteInput input(text, string16::npos, string16(), false, false, true,
                           AutocompleteInput::ALL_MATCHES);
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
@@ -501,8 +501,8 @@ TEST_F(ShortcutsProviderTest, ClassifyAllMatchesInString) {
   EXPECT_EQ(17U, spans_i[4].offset);
   EXPECT_EQ(ACMatchClassification::URL, spans_i[4].style);
 
-  // Some web sites do not have a description, so second and third parameters in
-  // ClassifyAllMatchesInString could be empty.
+  // Some web sites do not have a description.  If the string being searched is
+  // empty, the classifications must also be empty: http://crbug.com/148647
   // Extra parens in the next line hack around C++03's "most vexing parse".
   class ClassifyTest classify_test5((string16()), ACMatchClassifications());
   ACMatchClassifications spans_j = classify_test5.RunTest(ASCIIToUTF16("man"));
@@ -554,7 +554,6 @@ TEST_F(ShortcutsProviderTest, ClassifyAllMatchesInString) {
             spans_l[2].style);
   EXPECT_EQ(11U, spans_l[3].offset);
   EXPECT_EQ(ACMatchClassification::NONE, spans_l[3].style);
-
 }
 
 TEST_F(ShortcutsProviderTest, CalculateScore) {

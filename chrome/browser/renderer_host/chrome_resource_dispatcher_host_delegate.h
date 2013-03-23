@@ -9,8 +9,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/metrics/field_trial.h"
-#include "chrome/common/metrics/variation_ids.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 
 class DelayedResourceQueue;
@@ -28,8 +26,7 @@ class PrerenderTracker;
 // Implements ResourceDispatcherHostDelegate. Currently used by the Prerender
 // system to abort requests and add to the load flags when a request begins.
 class ChromeResourceDispatcherHostDelegate
-    : public content::ResourceDispatcherHostDelegate,
-      public base::FieldTrialList::Observer {
+    : public content::ResourceDispatcherHostDelegate {
  public:
   // This class does not take ownership of the tracker but merely holds a
   // reference to it to avoid accessing g_browser_process.
@@ -50,6 +47,7 @@ class ChromeResourceDispatcherHostDelegate
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
+      appcache::AppCacheService* appcache_service,
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
@@ -70,7 +68,7 @@ class ChromeResourceDispatcherHostDelegate
                                  net::AuthChallengeInfo* auth_info) OVERRIDE;
   virtual content::ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info, net::URLRequest* request) OVERRIDE;
-  virtual void HandleExternalProtocol(const GURL& url,
+  virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
                                       int route_id) OVERRIDE;
   virtual bool ShouldForceDownloadResource(
@@ -86,16 +84,9 @@ class ChromeResourceDispatcherHostDelegate
       content::ResourceContext* resource_context,
       content::ResourceResponse* response) OVERRIDE;
 
-  // base::FieldTrialList::Observer implementation.
-  // This will add the variation ID associated with |trial_name| and
-  // |group_name| to the variation ID cache.
-  virtual void OnFieldTrialGroupFinalized(
-      const std::string& trial_name,
-      const std::string& group_name) OVERRIDE;
-
  private:
   void AppendStandardResourceThrottles(
-      const net::URLRequest* request,
+      net::URLRequest* request,
       content::ResourceContext* resource_context,
       int child_id,
       int route_id,
@@ -110,29 +101,18 @@ class ChromeResourceDispatcherHostDelegate
       content::ResourceContext* resource_context,
       ResourceType::Type resource_type);
 
-  // Prepares the variation IDs cache with initial values if not already done.
-  // This method also registers the caller with the FieldTrialList to receive
-  // new variation IDs.
-  void InitVariationIDsCacheIfNeeded();
-
-  // Takes whatever is currently in |variation_ids_set_| and recreates
-  // |variation_ids_header_| with it.
-  void UpdateVariationIDsHeaderValue();
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+  // Append headers required to tell Gaia whether the sync interstitial
+  // should be shown or not.  This header is only added for valid Gaia URLs.
+  void AppendChromeSyncGaiaHeader(
+      net::URLRequest* request,
+      content::ResourceContext* resource_context);
+#endif
 
   scoped_refptr<DownloadRequestLimiter> download_request_limiter_;
   scoped_refptr<SafeBrowsingService> safe_browsing_;
   scoped_refptr<extensions::UserScriptListener> user_script_listener_;
   prerender::PrerenderTracker* prerender_tracker_;
-
-  // Whether or not we've initialized the Cache.
-  bool variation_ids_cache_initialized_;
-
-  // Keep a cache of variation IDs that are transmitted in headers to Google.
-  // This consists of a list of valid IDs, and the actual transmitted header.
-  // Note that since this cache is both initialized and accessed from the IO
-  // thread, we do not need to synchronize its uses.
-  std::set<chrome_variations::VariationID> variation_ids_set_;
-  std::string variation_ids_header_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeResourceDispatcherHostDelegate);
 };

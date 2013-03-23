@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_INTENTS_CWS_INTENTS_REGISTRY_H_
 #define CHROME_BROWSER_INTENTS_CWS_INTENTS_REGISTRY_H_
 
+#include <vector>
+
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/hash_tables.h"
@@ -29,7 +31,7 @@ class CWSIntentsRegistry : public ProfileKeyedService,
     IntentExtensionInfo();
     ~IntentExtensionInfo();
 
-    string16 id;  // The id of the extension.
+    std::string id;  // The id of the extension.
     string16 name;  // The name of the extension.
     int num_ratings;  // Number of ratings in CWS store.
     double average_rating;  // The average CWS rating.

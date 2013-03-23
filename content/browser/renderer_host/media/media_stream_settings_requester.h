@@ -10,7 +10,7 @@
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
 
-namespace media_stream {
+namespace content {
 
 // Implemented by the class requesting media capture device usage.
 class CONTENT_EXPORT SettingsRequester {
@@ -23,10 +23,13 @@ class CONTENT_EXPORT SettingsRequester {
   // An error for specified |request_id| has occurred.
   virtual void SettingsError(const std::string& label) = 0;
 
+  // Gets a list of available devices stored in the requester.
+  virtual void GetAvailableDevices(MediaStreamDevices* devices) = 0;
+
  protected:
   virtual ~SettingsRequester() {}
 };
 
-}  // namespace media_stream
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_SETTINGS_REQUESTER_H_

@@ -8,13 +8,13 @@
 #include <set>
 
 #include "base/basictypes.h"
+#include "chrome/browser/download/all_download_item_notifier.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 
 // Keeps track of download progress for the entire browser.
 class DownloadStatusUpdater
-    : public content::DownloadManager::Observer,
-      public content::DownloadItem::Observer {
+  : public AllDownloadItemNotifier::Observer {
  public:
   DownloadStatusUpdater();
   virtual ~DownloadStatusUpdater();
@@ -32,24 +32,21 @@ class DownloadStatusUpdater
   // manager when the manager is shutdown.
   void AddManager(content::DownloadManager* manager);
 
-  // Methods inherited from content::DownloadManager::Observer.
-  virtual void ModelChanged(content::DownloadManager* manager) OVERRIDE;
-  virtual void ManagerGoingDown(content::DownloadManager* manager) OVERRIDE;
-
-  // Methods inherited from content::DownloadItem::Observer.
-  virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
-  virtual void OnDownloadOpened(content::DownloadItem* download) OVERRIDE;
+  // AllDownloadItemNotifier::Observer
+  virtual void OnDownloadCreated(
+      content::DownloadManager* manager, content::DownloadItem* item) OVERRIDE;
+  virtual void OnDownloadUpdated(
+      content::DownloadManager* manager, content::DownloadItem* item) OVERRIDE;
 
  protected:
-  // Update the app icon. Virtual to be overridable for testing.
-  virtual void UpdateAppIconDownloadProgress();
+  // Platform-specific function to update the platform UI for download progress.
+  // |download| is the download item that changed. Implementations should not
+  // hold the value of |download| as it is not guaranteed to remain valid.
+  // Virtual to be overridable for testing.
+  virtual void UpdateAppIconDownloadProgress(content::DownloadItem* download);
 
  private:
-  // Update the internal state tracking an item.
-  void UpdateItem(content::DownloadItem* download);
-
-  std::set<content::DownloadManager*> managers_;
-  std::set<content::DownloadItem*> items_;
+  std::vector<AllDownloadItemNotifier*> notifiers_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadStatusUpdater);
 };

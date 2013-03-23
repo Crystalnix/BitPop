@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/api_resource_event_notifier.h"
 #include "chrome/browser/extensions/api/serial/serial_api.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -25,7 +24,7 @@ using content::BrowserThread;
 
 namespace {
 
-class SerialApiTest : public PlatformAppApiTest {
+class SerialApiTest : public ExtensionApiTest {
  public:
   SerialApiTest() {}
 };
@@ -53,8 +52,8 @@ class FakeEchoSerialConnection : public SerialConnection {
   explicit FakeEchoSerialConnection(
       const std::string& port,
       int bitrate,
-      ApiResourceEventNotifier* event_notifier)
-      : SerialConnection(port, bitrate, event_notifier),
+      const std::string& owner_extension_id)
+      : SerialConnection(port, bitrate, owner_extension_id),
         opened_(true) {
     Flush();
     opened_ = false;
@@ -119,9 +118,9 @@ class FakeSerialOpenFunction : public SerialOpenFunction {
   virtual SerialConnection* CreateSerialConnection(
       const std::string& port,
       int bitrate,
-      ApiResourceEventNotifier* event_notifier) OVERRIDE {
+      const std::string& owner_extension_id) OVERRIDE {
     FakeEchoSerialConnection* serial_connection =
-        new FakeEchoSerialConnection(port, bitrate, event_notifier);
+        new FakeEchoSerialConnection(port, bitrate, owner_extension_id);
     EXPECT_CALL(*serial_connection, GetControlSignals(_)).
         Times(1).WillOnce(Return(true));
     EXPECT_CALL(*serial_connection, SetControlSignals(_)).

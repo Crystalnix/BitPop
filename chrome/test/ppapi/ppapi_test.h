@@ -5,24 +5,43 @@
 #ifndef CHROME_TEST_PPAPI_PPAPI_TEST_H_
 #define CHROME_TEST_PPAPI_PPAPI_TEST_H_
 
+#include <list>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/timer.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "chrome/test/base/javascript_test_observer.h"
 
 namespace content {
 class RenderViewHost;
 }
 
+class PPAPITestMessageHandler : public TestMessageHandler {
+ public:
+  PPAPITestMessageHandler();
+
+  MessageResponse HandleMessage(const std::string& json);
+
+  virtual void Reset() OVERRIDE;
+
+  const std::string& message() const {
+    return message_;
+  }
+
+ private:
+  std::string message_;
+
+  DISALLOW_COPY_AND_ASSIGN(PPAPITestMessageHandler);
+};
+
 class PPAPITestBase : public InProcessBrowserTest {
  public:
   PPAPITestBase();
 
+  // InProcessBrowserTest:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpOnMainThread() OVERRIDE;
 
   virtual std::string BuildQuery(const std::string& base,
                                  const std::string& test_case) = 0;
@@ -41,32 +60,20 @@ class PPAPITestBase : public InProcessBrowserTest {
   std::string StripPrefixes(const std::string& test_name);
 
  protected:
-  class TestFinishObserver : public content::NotificationObserver {
+  class InfoBarObserver : public content::NotificationObserver {
    public:
-    TestFinishObserver(content::RenderViewHost* render_view_host,
-                       base::TimeDelta timeout);
-
-    bool WaitForFinish();
+    InfoBarObserver();
+    ~InfoBarObserver();
 
     virtual void Observe(int type,
                          const content::NotificationSource& source,
                          const content::NotificationDetails& details) OVERRIDE;
 
-    std::string result() const { return result_; }
-
-    void Reset();
+    void ExpectInfoBarAndAccept(bool should_accept);
 
    private:
-    void OnTimeout();
-
-    bool finished_;
-    bool waiting_;
-    base::TimeDelta timeout_;
-    std::string result_;
     content::NotificationRegistrar registrar_;
-    base::RepeatingTimer<TestFinishObserver> timer_;
-
-    DISALLOW_COPY_AND_ASSIGN(TestFinishObserver);
+    std::list<bool> expected_infobars_;
   };
 
   // Runs the test for a tab given the tab that's already navigated to the
@@ -130,6 +137,12 @@ class PPAPINaClTestDisallowedSockets : public PPAPITestBase {
 
   virtual std::string BuildQuery(const std::string& base,
                                  const std::string& test_case) OVERRIDE;
+};
+
+class PPAPIBrokerInfoBarTest : public OutOfProcessPPAPITest {
+ public:
+  // PPAPITestBase override:
+  virtual void SetUpOnMainThread() OVERRIDE;
 };
 
 #endif  // CHROME_TEST_PPAPI_PPAPI_TEST_H_

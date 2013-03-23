@@ -64,11 +64,11 @@ class HistoryDatabase : public DownloadDatabase,
 
   virtual ~HistoryDatabase();
 
-  // Must call this function to complete initialization. Will return true on
-  // success. On false, no other function should be called. You may want to call
-  // BeginExclusiveMode after this when you are ready.
+  // Must call this function to complete initialization. Will return
+  // sql::INIT_OK on success. Otherwise, no other function should be called. You
+  // may want to call BeginExclusiveMode after this when you are ready.
   sql::InitStatus Init(const FilePath& history_name,
-                       const FilePath& tmp_bookmarks_path);
+                       sql::ErrorDelegate* error_delegate);
 
   // Call to set the mode on the database to exclusive. The default locking mode
   // is "normal" but we want to run in exclusive mode for slightly better
@@ -116,6 +116,9 @@ class HistoryDatabase : public DownloadDatabase,
   // Vacuums the database. This will cause sqlite to defragment and collect
   // unused space in the file. It can be VERY SLOW.
   void Vacuum();
+
+  // Razes the database. Returns true if successful.
+  bool Raze();
 
   // Returns true if the history backend should erase the full text search
   // and archived history files as part of version 16 -> 17 migration. The
@@ -167,13 +170,12 @@ class HistoryDatabase : public DownloadDatabase,
   // Migration -----------------------------------------------------------------
 
   // Makes sure the version is up-to-date, updating if necessary. If the
-  // database is too old to migrate, the user will be notified. In this case, or
-  // for other errors, false will be returned. True means it is up-to-date and
-  // ready for use.
+  // database is too old to migrate, the user will be notified. Returns
+  // sql::INIT_OK iff  the DB is up-to-date and ready for use.
   //
   // This assumes it is called from the init function inside a transaction. It
   // may commit the transaction and start a new one if migration requires it.
-  sql::InitStatus EnsureCurrentVersion(const FilePath& tmp_bookmarks_path);
+  sql::InitStatus EnsureCurrentVersion();
 
 #if !defined(OS_WIN)
   // Converts the time epoch in the database from being 1970-based to being

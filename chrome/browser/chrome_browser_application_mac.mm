@@ -12,7 +12,6 @@
 #import "base/metrics/histogram.h"
 #import "base/sys_string_conversions.h"
 #import "chrome/browser/app_controller_mac.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #import "chrome/common/mac/objc_method_swizzle.h"
 #import "chrome/common/mac/objc_zombie.h"
@@ -112,9 +111,8 @@ static IMP gOriginalInitIMP = NULL;
     } else {
       // Make sure that developers see when their code throws
       // exceptions.
-      DLOG(ERROR) << "Someone is trying to raise an exception!  "
-                  << base::SysNSStringToUTF8(value);
-      DCHECK(allow);
+      DCHECK(allow) << "Someone is trying to raise an exception!  "
+                    << base::SysNSStringToUTF8(value);
     }
   }
 
@@ -331,14 +329,15 @@ void SwizzleInit() {
 // Termination is cancelled by resetting this flag. The standard
 // |-applicationShouldTerminate:| is not supported, and code paths leading to it
 // must be redirected.
+//
+// When the last browser has been destroyed, the BrowserList calls
+// browser::OnAppExiting(), which is the point of no return. That will cause
+// the NSApplicationWillTerminateNotification to be posted, which ends the
+// NSApplication event loop, so final post- MessageLoop::Run() work is done
+// before exiting.
 - (void)terminate:(id)sender {
   AppController* appController = static_cast<AppController*>([NSApp delegate]);
-  if ([appController tryToTerminateApplication:self]) {
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:NSApplicationWillTerminateNotification
-                      object:self];
-  }
-
+  [appController tryToTerminateApplication:self];
   // Return, don't exit. The application is responsible for exiting on its own.
 }
 
@@ -388,8 +387,11 @@ void SwizzleInit() {
 
   NSString* actionString = NSStringFromSelector(anAction);
   NSString* value =
-        [NSString stringWithFormat:@"%@ tag %d sending %@ to %p",
-                  [sender className], tag, actionString, aTarget];
+        [NSString stringWithFormat:@"%@ tag %ld sending %@ to %p",
+                  [sender className],
+                  static_cast<long>(tag),
+                  actionString,
+                  aTarget];
 
   base::mac::ScopedCrashKey key(kActionKey, value);
 
@@ -468,26 +470,42 @@ void SwizzleInit() {
     // go off the rails.  The last exception thrown is tracked because
     // it may be the one most directly associated with the crash.
     static NSString* const kFirstExceptionKey = @"firstexception";
+    static NSString* const kFirstExceptionBtKey = @"firstexception_bt";
     static BOOL trackedFirstException = NO;
     static NSString* const kLastExceptionKey = @"lastexception";
+    static NSString* const kLastExceptionBtKey = @"lastexception_bt";
 
-    // TODO(shess): It would be useful to post some stacktrace info
-    // from the exception.
-    // 10.6 has -[NSException callStackSymbols]
-    // 10.5 has -[NSException callStackReturnAddresses]
-    // 10.5 has backtrace_symbols().
-    // I've tried to combine the latter two, but got nothing useful.
-    // The addresses are right, though, maybe we could train the crash
-    // server to decode them for us.
-
+    NSString* const kExceptionKey =
+        trackedFirstException ? kLastExceptionKey : kFirstExceptionKey;
     NSString* value = [NSString stringWithFormat:@"%@ reason %@",
                                 [anException name], [anException reason]];
-    if (!trackedFirstException) {
-      base::mac::SetCrashKeyValue(kFirstExceptionKey, value);
-      trackedFirstException = YES;
+    base::mac::SetCrashKeyValue(kExceptionKey, value);
+
+    // Encode the callstack from point of throw.
+    // TODO(shess): Our swizzle plus the 23-frame limit plus Cocoa
+    // overhead may make this less than useful.  If so, perhaps skip
+    // some items and/or use two keys.
+    NSString* const kExceptionBtKey =
+        trackedFirstException ? kLastExceptionBtKey : kFirstExceptionBtKey;
+    NSArray* addressArray = [anException callStackReturnAddresses];
+    NSUInteger addressCount = [addressArray count];
+    if (addressCount) {
+      // SetCrashKeyFromAddresses() only encodes 23, so that's a natural limit.
+      const NSUInteger kAddressCountMax = 23;
+      void* addresses[kAddressCountMax];
+      if (addressCount > kAddressCountMax)
+        addressCount = kAddressCountMax;
+
+      for (NSUInteger i = 0; i < addressCount; ++i) {
+        addresses[i] = reinterpret_cast<void*>(
+            [[addressArray objectAtIndex:i] unsignedIntegerValue]);
+      }
+      base::mac::SetCrashKeyFromAddresses(
+          kExceptionBtKey, addresses, static_cast<size_t>(addressCount));
     } else {
-      base::mac::SetCrashKeyValue(kLastExceptionKey, value);
+      base::mac::ClearCrashKey(kExceptionBtKey);
     }
+    trackedFirstException = YES;
 
     reportingException = NO;
   }
@@ -498,23 +516,18 @@ void SwizzleInit() {
 - (void)accessibilitySetValue:(id)value forAttribute:(NSString*)attribute {
   if ([attribute isEqualToString:@"AXEnhancedUserInterface"] &&
       [value intValue] == 1) {
-    BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
-    for (TabContentsIterator it;
-         !it.done();
-         ++it) {
-      if (TabContents* contents = *it) {
-        if (content::RenderViewHost* rvh =
-                contents->web_contents()->GetRenderViewHost()) {
+    content::BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
+    for (TabContentsIterator it; !it.done(); ++it) {
+      if (content::WebContents* contents = *it)
+        if (content::RenderViewHost* rvh = contents->GetRenderViewHost())
           rvh->EnableFullAccessibilityMode();
-        }
-      }
     }
   }
   return [super accessibilitySetValue:value forAttribute:attribute];
 }
 
 - (void)_cycleWindowsReversed:(BOOL)arg1 {
-  AutoReset<BOOL> pin(&cyclingWindows_, YES);
+  base::AutoReset<BOOL> pin(&cyclingWindows_, YES);
   [super _cycleWindowsReversed:arg1];
 }
 

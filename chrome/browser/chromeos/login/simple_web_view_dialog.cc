@@ -10,14 +10,16 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chromeos/login/captive_portal_window_proxy.h"
-#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/command_updater.h"
+#include "chrome/browser/password_manager/password_manager.h"
+#include "chrome/browser/password_manager/password_manager_delegate_impl.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/constrained_window_tab_helper.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
-#include "chrome/browser/ui/views/page_info_bubble_view.h"
 #include "chrome/browser/ui/views/reload_button.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -101,7 +103,8 @@ class StubBubbleModelDelegate : public ContentSettingBubbleModelDelegate {
   virtual ~StubBubbleModelDelegate() {}
 
   // ContentSettingBubbleModelDelegate implementation:
-  virtual void ShowCollectedCookiesDialog(TabContents* contents) OVERRIDE {
+  virtual void ShowCollectedCookiesDialog(
+      content::WebContents* web_contents) OVERRIDE {
   }
 
   virtual void ShowContentSettingsPage(ContentSettingsType type) OVERRIDE {
@@ -142,20 +145,19 @@ SimpleWebViewDialog::~SimpleWebViewDialog() {
 void SimpleWebViewDialog::StartLoad(const GURL& url) {
   web_view_container_.reset(new views::WebView(profile_));
   web_view_ = web_view_container_.get();
-
-  // We create the WebContents ourselves because the TabContents assumes
-  // ownership of it. This should be reworked once we don't need to use the
-  // TabContents here.
-  WebContents* web_contents =
-      WebContents::Create(ProfileManager::GetDefaultProfile(),
-                          NULL,
-                          MSG_ROUTING_NONE,
-                          NULL,
-                          NULL);
-  tab_contents_.reset(new TabContents(web_contents));
-  web_view_->SetWebContents(web_contents);
-  web_contents->SetDelegate(this);
+  web_view_->GetWebContents()->SetDelegate(this);
   web_view_->LoadInitialURL(url);
+
+  WebContents* web_contents = web_view_->GetWebContents();
+  DCHECK(web_contents);
+
+  // Create the password manager that is needed for the proxy.
+  PasswordManagerDelegateImpl::CreateForWebContents(web_contents);
+  PasswordManager::CreateForWebContentsAndDelegate(
+      web_contents, PasswordManagerDelegateImpl::FromWebContents(web_contents));
+
+  // LoginHandlerViews uses a constrained window for the password manager view.
+  ConstrainedWindowTabHelper::CreateForWebContents(web_contents);
 }
 
 void SimpleWebViewDialog::Init() {
@@ -180,14 +182,14 @@ void SimpleWebViewDialog::Init() {
   forward_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_FORWARD));
   forward_->set_id(VIEW_ID_FORWARD_BUTTON);
 
-  toolbar_model_.reset(new ToolbarModel(this));
+  toolbar_model_.reset(new ToolbarModelImpl(this));
 
   // Location bar.
-  location_bar_ = new LocationBarView(profile_,
+  location_bar_ = new LocationBarView(NULL,
+                                      profile_,
                                       command_updater_.get(),
                                       toolbar_model_.get(),
                                       this,
-                                      NULL,  // no SearchModel
                                       LocationBarView::POPUP);
 
   // Reload button.
@@ -229,7 +231,7 @@ void SimpleWebViewDialog::Init() {
   layout->AddView(web_view_container_.release());
   layout->AddPaddingRow(0, kInnerMargin);
 
-  location_bar_->Init(NULL);
+  location_bar_->Init();
   UpdateReload(web_view_->web_contents()->IsLoading(), true);
 
   Layout();
@@ -244,7 +246,7 @@ views::View* SimpleWebViewDialog::GetInitiallyFocusedView() {
 }
 
 void SimpleWebViewDialog::ButtonPressed(views::Button* sender,
-                                        const views::Event& event) {
+                                        const ui::Event& event) {
   command_updater_->ExecuteCommand(sender->tag());
 }
 
@@ -269,7 +271,7 @@ void SimpleWebViewDialog::LoadingStateChanged(WebContents* source) {
   command_updater_->UpdateCommandEnabled(IDC_STOP, is_loading);
 }
 
-TabContents* SimpleWebViewDialog::GetTabContents() const {
+WebContents* SimpleWebViewDialog::GetWebContents() const {
   return NULL;
 }
 
@@ -291,19 +293,8 @@ void SimpleWebViewDialog::ShowPageInfo(content::WebContents* web_contents,
                                        const GURL& url,
                                        const content::SSLStatus& ssl,
                                        bool show_history) {
-  PageInfoBubbleView* page_info_bubble =
-      new PageInfoBubbleView(
-          location_bar_->location_icon_view(),
-          web_contents,
-          url, ssl,
-          true,
-          this);
-  page_info_bubble->set_parent_window(
-      ash::Shell::GetContainer(
-          ash::Shell::GetPrimaryRootWindow(),
-          ash::internal::kShellWindowId_LockSystemModalContainer));
-  CreateViewsBubble(page_info_bubble);
-  page_info_bubble->Show();
+  NOTIMPLEMENTED();
+  // TODO (ygorshenin@,markusheintz@): implement this
 }
 
 PageActionImageView* SimpleWebViewDialog::CreatePageActionImageView(
@@ -357,22 +348,22 @@ void SimpleWebViewDialog::ExecuteCommandWithDisposition(
 void SimpleWebViewDialog::LoadImages() {
   ui::ThemeProvider* tp = GetThemeProvider();
 
-  back_->SetImage(views::CustomButton::BS_NORMAL,
+  back_->SetImage(views::CustomButton::STATE_NORMAL,
                   tp->GetImageSkiaNamed(IDR_BACK));
-  back_->SetImage(views::CustomButton::BS_HOT,
+  back_->SetImage(views::CustomButton::STATE_HOVERED,
                   tp->GetImageSkiaNamed(IDR_BACK_H));
-  back_->SetImage(views::CustomButton::BS_PUSHED,
+  back_->SetImage(views::CustomButton::STATE_PRESSED,
                   tp->GetImageSkiaNamed(IDR_BACK_P));
-  back_->SetImage(views::CustomButton::BS_DISABLED,
+  back_->SetImage(views::CustomButton::STATE_DISABLED,
                   tp->GetImageSkiaNamed(IDR_BACK_D));
 
-  forward_->SetImage(views::CustomButton::BS_NORMAL,
+  forward_->SetImage(views::CustomButton::STATE_NORMAL,
                      tp->GetImageSkiaNamed(IDR_FORWARD));
-  forward_->SetImage(views::CustomButton::BS_HOT,
+  forward_->SetImage(views::CustomButton::STATE_HOVERED,
                      tp->GetImageSkiaNamed(IDR_FORWARD_H));
-  forward_->SetImage(views::CustomButton::BS_PUSHED,
+  forward_->SetImage(views::CustomButton::STATE_PRESSED,
                      tp->GetImageSkiaNamed(IDR_FORWARD_P));
-  forward_->SetImage(views::CustomButton::BS_DISABLED,
+  forward_->SetImage(views::CustomButton::STATE_DISABLED,
                      tp->GetImageSkiaNamed(IDR_FORWARD_D));
 
   reload_->LoadImages(tp);

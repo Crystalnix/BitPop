@@ -16,9 +16,7 @@
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/extensions/extension_constants.h"
 
-class ExtensionDevToolsManager;
 class ExtensionInfoMap;
-class ExtensionNavigationObserver;
 class ExtensionProcessManager;
 class ExtensionService;
 class Profile;
@@ -27,14 +25,20 @@ namespace extensions {
 // Unfortunately, for the ApiResourceManager<> template classes, we don't seem
 // to be able to forward-declare because of compilation errors on Windows.
 class AlarmManager;
+class Blacklist;
 class EventRouter;
 class Extension;
 class ExtensionPrefs;
 class ExtensionSystemSharedFactory;
+class ExtensionWarningBadgeService;
+class ExtensionWarningService;
 class LazyBackgroundTaskQueue;
 class ManagementPolicy;
 class MessageService;
+class NavigationObserver;
 class RulesRegistryService;
+class ShellWindowGeometryCache;
+class StandardManagementPolicyProvider;
 class StateStore;
 class UserScriptMaster;
 
@@ -70,9 +74,6 @@ class ExtensionSystem : public ProfileKeyedService {
   // The ManagementPolicy is created at startup.
   virtual ManagementPolicy* management_policy() = 0;
 
-  //  The ExtensionDevToolsManager is created at startup.
-  virtual ExtensionDevToolsManager* devtools_manager() = 0;
-
   // The UserScriptMaster is created at startup.
   virtual UserScriptMaster* user_script_master() = 0;
 
@@ -84,6 +85,9 @@ class ExtensionSystem : public ProfileKeyedService {
 
   // The StateStore is created at startup.
   virtual StateStore* state_store() = 0;
+
+  // The ShellWindowGeometryCache is created at startup.
+  virtual ShellWindowGeometryCache* shell_window_geometry_cache() = 0;
 
   // Returns the IO-thread-accessible extension data.
   virtual ExtensionInfoMap* info_map() = 0;
@@ -111,6 +115,12 @@ class ExtensionSystem : public ProfileKeyedService {
   // The UsbDeviceResource ResourceManager is created at startup.
   virtual ApiResourceManager<UsbDeviceResource>*
   usb_device_resource_manager() = 0;
+
+  // The ExtensionWarningService is created at startup.
+  virtual ExtensionWarningService* warning_service() = 0;
+
+  // The blacklist is created at startup.
+  virtual Blacklist* blacklist() = 0;
 
   // Called by the ExtensionService that lives in this system. Gives the
   // info map a chance to react to the load event before the EXTENSION_LOADED
@@ -147,10 +157,11 @@ class ExtensionSystemImpl : public ExtensionSystem {
   virtual ExtensionService* extension_service() OVERRIDE;  // shared
   virtual ManagementPolicy* management_policy() OVERRIDE;  // shared
   virtual UserScriptMaster* user_script_master() OVERRIDE;  // shared
-  virtual ExtensionDevToolsManager* devtools_manager() OVERRIDE;
   virtual ExtensionProcessManager* process_manager() OVERRIDE;
   virtual AlarmManager* alarm_manager() OVERRIDE;
-  virtual StateStore* state_store() OVERRIDE;
+  virtual StateStore* state_store() OVERRIDE;  // shared
+  virtual ShellWindowGeometryCache* shell_window_geometry_cache()
+      OVERRIDE;  // shared
   virtual LazyBackgroundTaskQueue* lazy_background_task_queue()
       OVERRIDE;  // shared
   virtual ExtensionInfoMap* info_map() OVERRIDE;  // shared
@@ -163,6 +174,8 @@ class ExtensionSystemImpl : public ExtensionSystem {
   virtual ApiResourceManager<Socket>* socket_manager() OVERRIDE;
   virtual ApiResourceManager<UsbDeviceResource>* usb_device_resource_manager()
       OVERRIDE;
+  virtual ExtensionWarningService* warning_service() OVERRIDE;
+  virtual Blacklist* blacklist() OVERRIDE;  // shared
 
   virtual void RegisterExtensionWithRequestContexts(
       const Extension* extension) OVERRIDE;
@@ -185,17 +198,22 @@ class ExtensionSystemImpl : public ExtensionSystem {
     virtual void InitPrefs();
     // This must not be called until all the providers have been created.
     void RegisterManagementPolicyProviders();
-    void InitInfoMap();
     void Init(bool extensions_enabled);
 
+    // ProfileKeyedService implementation.
+    virtual void Shutdown() OVERRIDE;
+
     StateStore* state_store();
+    ShellWindowGeometryCache* shell_window_geometry_cache();
     ExtensionService* extension_service();
     ManagementPolicy* management_policy();
     UserScriptMaster* user_script_master();
+    Blacklist* blacklist();
     ExtensionInfoMap* info_map();
     LazyBackgroundTaskQueue* lazy_background_task_queue();
     MessageService* message_service();
     EventRouter* event_router();
+    ExtensionWarningService* warning_service();
 
    private:
     Profile* profile_;
@@ -204,25 +222,33 @@ class ExtensionSystemImpl : public ExtensionSystem {
 
     scoped_ptr<StateStore> state_store_;
     scoped_ptr<ExtensionPrefs> extension_prefs_;
-    // ExtensionService depends on the 2 above.
+    // ShellWindowGeometryCache depends on ExtensionPrefs.
+    scoped_ptr<ShellWindowGeometryCache> shell_window_geometry_cache_;
+    // LazyBackgroundTaskQueue is a dependency of
+    // MessageService and EventRouter.
+    scoped_ptr<LazyBackgroundTaskQueue> lazy_background_task_queue_;
+    scoped_ptr<EventRouter> event_router_;
+    scoped_ptr<MessageService> message_service_;
+    scoped_ptr<NavigationObserver> navigation_observer_;
+    scoped_refptr<UserScriptMaster> user_script_master_;
+    // Blacklist depends on ExtensionPrefs.
+    scoped_ptr<Blacklist> blacklist_;
+    // StandardManagementPolicyProvider depends on ExtensionPrefs and Blacklist.
+    scoped_ptr<StandardManagementPolicyProvider>
+        standard_management_policy_provider_;
+    // ExtensionService depends on ExtensionPrefs, StateStore, and Blacklist.
     scoped_ptr<ExtensionService> extension_service_;
     scoped_ptr<ManagementPolicy> management_policy_;
-    scoped_refptr<UserScriptMaster> user_script_master_;
     // extension_info_map_ needs to outlive extension_process_manager_.
     scoped_refptr<ExtensionInfoMap> extension_info_map_;
-    // This is a dependency of MessageService and EventRouter.
-    scoped_ptr<LazyBackgroundTaskQueue> lazy_background_task_queue_;
-    scoped_ptr<MessageService> message_service_;
-    scoped_ptr<EventRouter> extension_event_router_;
-    scoped_ptr<ExtensionNavigationObserver> extension_navigation_observer_;
+    scoped_ptr<ExtensionWarningService> extension_warning_service_;
+    scoped_ptr<ExtensionWarningBadgeService> extension_warning_badge_service_;
   };
 
   Profile* profile_;
 
   Shared* shared_;
 
-  // The services that have their own instances in incognito.
-  scoped_refptr<ExtensionDevToolsManager> extension_devtools_manager_;
   // |extension_process_manager_| must be destroyed before the Profile's
   // |io_data_|. While |extension_process_manager_| still lives, we handle
   // incoming resource requests from extension processes and those require

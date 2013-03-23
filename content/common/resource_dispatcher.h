@@ -72,23 +72,13 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
   typedef std::deque<IPC::Message*> MessageQueue;
   struct PendingRequestInfo {
-    PendingRequestInfo()
-        : peer(NULL),
-          resource_type(ResourceType::SUB_RESOURCE),
-          is_deferred(false) {
-    }
+    PendingRequestInfo();
 
     PendingRequestInfo(webkit_glue::ResourceLoaderBridge::Peer* peer,
                        ResourceType::Type resource_type,
-                       const GURL& request_url)
-        : peer(peer),
-          resource_type(resource_type),
-          is_deferred(false),
-          url(request_url),
-          request_start(base::TimeTicks::Now()) {
-    }
+                       const GURL& request_url);
 
-    ~PendingRequestInfo() {}
+    ~PendingRequestInfo();
 
     webkit_glue::ResourceLoaderBridge::Peer* peer;
     ResourceType::Type resource_type;
@@ -99,6 +89,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     base::TimeTicks request_start;
     base::TimeTicks response_start;
     base::TimeTicks completion_time;
+    linked_ptr<base::SharedMemory> buffer;
+    int buffer_size;
   };
   typedef base::hash_map<int, PendingRequestInfo> PendingRequestList;
 
@@ -122,11 +114,16 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
       int request_id,
       const GURL& new_url,
       const ResourceResponseHead& response_head);
+  void OnSetDataBuffer(
+      const IPC::Message& message,
+      int request_id,
+      base::SharedMemoryHandle shm_handle,
+      int shm_size);
   void OnReceivedData(
       const IPC::Message& message,
       int request_id,
-      base::SharedMemoryHandle data,
-      int data_len,
+      int data_offset,
+      int data_length,
       int encoded_data_length);
   void OnDownloadedData(
       const IPC::Message& message,
@@ -134,7 +131,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
       int data_len);
   void OnRequestComplete(
       int request_id,
-      const net::URLRequestStatus& status,
+      int error_code,
+      bool was_ignored_by_handler,
       const std::string& security_info,
       const base::TimeTicks& completion_time);
 

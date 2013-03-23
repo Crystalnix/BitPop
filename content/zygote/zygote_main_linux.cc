@@ -14,12 +14,12 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/file_path.h"
 #include "base/hash_tables.h"
 #include "base/linux_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
@@ -319,7 +319,7 @@ static bool CreateInitProcessReaper() {
     (void) HANDLE_EINTR(close(sync_fds[0]));
     shutdown(sync_fds[1], SHUT_RD);
     // This "magic" socket must only appear in one process.
-    (void) HANDLE_EINTR(close(content::kZygoteIdFd));
+    (void) HANDLE_EINTR(close(kZygoteIdFd));
     // Tell the child to continue
     CHECK(HANDLE_EINTR(send(sync_fds[1], "C", 1, MSG_NOSIGNAL)) == 1);
     (void) HANDLE_EINTR(close(sync_fds[1]));

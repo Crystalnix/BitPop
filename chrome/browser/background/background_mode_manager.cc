@@ -17,6 +17,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -29,6 +30,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -37,11 +39,10 @@
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/chrome_unscaled_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -94,7 +95,8 @@ void BackgroundModeManager::BackgroundModeData::ExecuteCommand(int item) {
 }
 
 Browser* BackgroundModeManager::BackgroundModeData::GetBrowserWindow() {
-  Browser* browser = browser::FindLastActiveWithProfile(profile_);
+  Browser* browser = chrome::FindLastActiveWithProfile(profile_,
+      chrome::GetActiveDesktop());
   return browser ? browser : chrome::OpenEmptyWindow(profile_);
 }
 
@@ -121,7 +123,7 @@ void BackgroundModeManager::BackgroundModeData::BuildProfileMenu(
       const std::string& name = (*cursor)->name();
       menu->AddItem(position, UTF8ToUTF16(name));
       if (icon)
-        menu->SetIcon(menu->GetItemCount() - 1, *icon);
+        menu->SetIcon(menu->GetItemCount() - 1, gfx::Image(*icon));
     }
   }
   if (containing_menu)
@@ -170,7 +172,10 @@ BackgroundModeManager::BackgroundModeManager(
   // Listen for the background mode preference changing.
   if (g_browser_process->local_state()) {  // Skip for unit tests
     pref_registrar_.Init(g_browser_process->local_state());
-    pref_registrar_.Add(prefs::kBackgroundModeEnabled, this);
+    pref_registrar_.Add(
+        prefs::kBackgroundModeEnabled,
+        base::Bind(&BackgroundModeManager::OnBackgroundModeEnabledPrefChanged,
+                   base::Unretained(this)));
   }
 
   // Keep the browser alive until extensions are done loading - this is needed
@@ -183,16 +188,16 @@ BackgroundModeManager::BackgroundModeManager(
   }
 
   // If the -keep-alive-for-test flag is passed, then always keep chrome running
-  // in the background until the user explicitly terminates it, by acting as if
-  // we loaded a background app.
-  if (command_line->HasSwitch(switches::kKeepAliveForTest)) {
+  // in the background until the user explicitly terminates it.
+  if (command_line->HasSwitch(switches::kKeepAliveForTest))
     keep_alive_for_test_ = true;
+
+  if (ShouldBeInBackgroundMode())
     StartBackgroundMode();
-  }
 
   // Listen for the application shutting down so we can decrement our KeepAlive
   // count.
-  registrar_.Add(this, content::NOTIFICATION_APP_TERMINATING,
+  registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
 }
 
@@ -216,6 +221,7 @@ BackgroundModeManager::~BackgroundModeManager() {
 // static
 void BackgroundModeManager::RegisterPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kUserCreatedLoginItem, false);
+  prefs->RegisterBooleanPref(prefs::kUserRemovedLoginItem, false);
   prefs->RegisterBooleanPref(prefs::kBackgroundModeEnabled, true);
 }
 
@@ -261,7 +267,8 @@ void BackgroundModeManager::RegisterProfile(Profile* profile) {
 void BackgroundModeManager::LaunchBackgroundApplication(
     Profile* profile,
     const Extension* extension) {
-  ExtensionService* service = profile->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile)->
+      extension_service();
   extension_misc::LaunchContainer launch_container =
       service->extension_prefs()->GetLaunchContainer(
           extension, extensions::ExtensionPrefs::LAUNCH_REGULAR);
@@ -284,14 +291,6 @@ void BackgroundModeManager::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_PREF_CHANGED:
-      DCHECK(*content::Details<std::string>(details).ptr() ==
-             prefs::kBackgroundModeEnabled);
-      if (IsBackgroundModePrefEnabled())
-        EnableBackgroundMode();
-      else
-        DisableBackgroundMode();
-      break;
     case chrome::NOTIFICATION_EXTENSIONS_READY:
       // Extensions are loaded, so we don't need to manually keep the browser
       // process alive any more when running in no-startup-window mode.
@@ -305,8 +304,10 @@ void BackgroundModeManager::Observe(
                 *extension, profile)) {
           // Extensions loaded after the ExtensionsService is ready should be
           // treated as new installs.
-          if (profile->GetExtensionService()->is_ready())
+          if (extensions::ExtensionSystem::Get(profile)->extension_service()->
+                  is_ready()) {
             OnBackgroundAppInstalled(extension);
+          }
         }
       }
       break;
@@ -321,7 +322,7 @@ void BackgroundModeManager::Observe(
         }
       }
       break;
-    case content::NOTIFICATION_APP_TERMINATING:
+    case chrome::NOTIFICATION_APP_TERMINATING:
       // Make sure we aren't still keeping the app alive (only happens if we
       // don't receive an EXTENSIONS_READY notification for some reason).
       EndKeepAliveForStartup();
@@ -344,6 +345,13 @@ void BackgroundModeManager::Observe(
   }
 }
 
+void BackgroundModeManager::OnBackgroundModeEnabledPrefChanged() {
+  if (IsBackgroundModePrefEnabled())
+    EnableBackgroundMode();
+  else
+    DisableBackgroundMode();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  BackgroundModeManager, BackgroundApplicationListModel::Observer overrides
 void BackgroundModeManager::OnApplicationDataChanged(
@@ -355,9 +363,6 @@ void BackgroundModeManager::OnApplicationListChanged(Profile* profile) {
   if (!IsBackgroundModePrefEnabled())
     return;
 
-  // Figure out what just happened based on the count of background apps.
-  int count = GetBackgroundAppCount();
-
   // Update the profile cache with the fact whether background apps are running
   // for this profile.
   size_t profile_index = profile_cache_->GetIndexOfProfileWithPath(
@@ -367,7 +372,7 @@ void BackgroundModeManager::OnApplicationListChanged(Profile* profile) {
         profile_index, GetBackgroundAppCountForProfile(profile) != 0);
   }
 
-  if (count == 0) {
+  if (!ShouldBeInBackgroundMode()) {
     // We've uninstalled our last background app, make sure we exit background
     // mode and no longer launch on startup.
     EnableLaunchOnStartup(false);
@@ -534,10 +539,10 @@ void BackgroundModeManager::EndKeepAliveForStartup() {
 }
 
 void BackgroundModeManager::StartBackgroundMode() {
+  DCHECK(ShouldBeInBackgroundMode());
   // Don't bother putting ourselves in background mode if we're already there
   // or if background mode is disabled.
-  if (in_background_mode_ ||
-      (!IsBackgroundModePrefEnabled() && !keep_alive_for_test_))
+  if (in_background_mode_)
     return;
 
   // Mark ourselves as running in background mode.
@@ -558,9 +563,8 @@ void BackgroundModeManager::StartBackgroundMode() {
 void BackgroundModeManager::InitStatusTrayIcon() {
   // Only initialize status tray icons for those profiles which actually
   // have a background app running.
-  if (keep_alive_for_test_ || GetBackgroundAppCount() > 0) {
+  if (ShouldBeInBackgroundMode())
     CreateStatusTrayIcon();
-  }
 }
 
 void BackgroundModeManager::EndBackgroundMode() {
@@ -581,8 +585,7 @@ void BackgroundModeManager::EndBackgroundMode() {
 void BackgroundModeManager::EnableBackgroundMode() {
   DCHECK(IsBackgroundModePrefEnabled());
   // If background mode should be enabled, but isn't, turn it on.
-  if (!in_background_mode_ &&
-      (GetBackgroundAppCount() > 0 || keep_alive_for_test_)) {
+  if (!in_background_mode_ && ShouldBeInBackgroundMode()) {
     StartBackgroundMode();
     EnableLaunchOnStartup(true);
   }
@@ -614,6 +617,11 @@ int BackgroundModeManager::GetBackgroundAppCountForProfile(
     Profile* const profile) const {
   BackgroundModeData* bmd = GetBackgroundModeData(profile);
   return bmd->GetBackgroundAppCount();
+}
+
+bool BackgroundModeManager::ShouldBeInBackgroundMode() const {
+  return IsBackgroundModePrefEnabled() &&
+      (GetBackgroundAppCount() > 0 || keep_alive_for_test_);
 }
 
 void BackgroundModeManager::OnBackgroundAppInstalled(
@@ -662,7 +670,7 @@ void BackgroundModeManager::CreateStatusTrayIcon() {
 
   // Set the image and add ourselves as a click observer on it.
   // TODO(rlp): Status tray icon should have submenus for each profile.
-  gfx::ImageSkia* image_skia = ResourceBundle::GetSharedInstance().
+  gfx::ImageSkia* image_skia = ui::ResourceBundle::GetSharedInstance().
       GetImageSkiaNamed(IDR_STATUS_TRAY_ICON);
   status_icon_->SetImage(*image_skia);
   status_icon_->SetToolTip(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
@@ -694,7 +702,7 @@ void BackgroundModeManager::UpdateStatusTrayIconContextMenu() {
   // Add About item
   menu->AddItem(IDC_ABOUT, l10n_util::GetStringUTF16(IDS_ABOUT));
   menu->AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
-  menu->AddSeparator();
+  menu->AddSeparator(ui::NORMAL_SEPARATOR);
 
   if (profile_cache_->GetNumberOfProfiles() > 1) {
     std::vector<BackgroundModeData*> bmd_vector;
@@ -730,7 +738,7 @@ void BackgroundModeManager::UpdateStatusTrayIconContextMenu() {
     DCHECK(profile_cache_->GetNumberOfProfiles() == size_t(1) ||
            keep_alive_for_test_);
     background_mode_data_.begin()->second->BuildProfileMenu(menu, NULL);
-    menu->AddSeparator();
+    menu->AddSeparator(ui::NORMAL_SEPARATOR);
   }
   menu->AddCheckItemWithStringId(
       IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND,

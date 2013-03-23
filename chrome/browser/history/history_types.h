@@ -12,16 +12,19 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/containers/stack_container.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/stack_container.h"
 #include "base/string16.h"
 #include "base/time.h"
+#include "base/values.h"
 #include "chrome/browser/history/snippet.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
 #include "chrome/common/thumbnail_score.h"
 #include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/size.h"
 
 class PageUsageData;
 
@@ -29,7 +32,9 @@ namespace history {
 
 // Forward declaration for friend statements.
 class HistoryBackend;
+class TextDatabase;
 class URLDatabase;
+class VisitDatabase;
 
 // Structure to hold redirect lists for URLs.  For a redirect chain
 // A -> B -> C, and entry in the map would look like "A => {B -> C}".
@@ -38,10 +43,9 @@ typedef std::map<GURL, scoped_refptr<RefCountedVector<GURL> > > RedirectMap;
 // Container for a list of URLs.
 typedef std::vector<GURL> RedirectList;
 
-typedef int64 StarID;  // Unique identifier for star entries.
-typedef int64 UIStarID;  // Identifier for star entries that come from the UI.
 typedef int64 DownloadID;   // Identifier for a download.
 typedef int64 FaviconID;  // For favicons.
+typedef int64 FaviconBitmapID; // Identifier for a bitmap in a favicon.
 typedef int64 SegmentID;  // URL segments for the most visited view.
 typedef int64 IconMappingID; // For page url and icon mapping.
 
@@ -272,23 +276,6 @@ typedef std::vector<VisitRow> VisitVector;
 // used by HistoryBackend::AddVisits() to create new visits for a URL.
 typedef std::pair<base::Time, content::PageTransition> VisitInfo;
 
-// Favicons -------------------------------------------------------------------
-
-// Used by the importer to set favicons for imported bookmarks.
-struct ImportedFaviconUsage {
-  ImportedFaviconUsage();
-  ~ImportedFaviconUsage();
-
-  // The URL of the favicon.
-  GURL favicon_url;
-
-  // The raw png-encoded data.
-  std::vector<unsigned char> png_data;
-
-  // The list of URLs using this favicon.
-  std::set<GURL> urls;
-};
-
 // PageVisit ------------------------------------------------------------------
 
 // Represents a simplified version of a visit for external users. Normally,
@@ -297,79 +284,6 @@ struct ImportedFaviconUsage {
 struct PageVisit {
   URLID page_id;
   base::Time visit_time;
-};
-
-// StarredEntry ---------------------------------------------------------------
-
-// StarredEntry represents either a starred page, or a folder (where a folder
-// consists of child starred entries). Use the type to determine the type of a
-// particular entry.
-//
-// The database internally uses the id field to uniquely identify a starred
-// entry. On the other hand, the UI, which is anything routed through
-// HistoryService and HistoryBackend (including BookmarkBarView), uses the
-// url field to uniquely identify starred entries of type URL and the folder_id
-// field to uniquely identify starred entries of type USER_FOLDER. For example,
-// HistoryService::UpdateStarredEntry identifies the entry by url (if the
-// type is URL) or folder_id (if the type is not URL).
-struct StarredEntry {
-  enum Type {
-    // Type represents a starred URL.
-    URL,
-
-    // The bookmark bar folder.
-    BOOKMARK_BAR,
-
-    // User created folder.
-    USER_FOLDER,
-
-    // The "other bookmarks" folder that holds uncategorized bookmarks.
-    OTHER,
-
-    // The mobile folder.
-    MOBILE,
-  };
-
-  StarredEntry();
-  ~StarredEntry();
-
-  void Swap(StarredEntry* other);
-
-  // Unique identifier of this entry.
-  StarID id;
-
-  // Title.
-  string16 title;
-
-  // When this was added.
-  base::Time date_added;
-
-  // Folder ID of the folder this entry is in. If 0, this entry is not in a
-  // folder.
-  UIStarID parent_folder_id;
-
-  // Unique identifier for folders. This is assigned by the UI.
-  //
-  // WARNING: this is NOT the same as id, id is assigned by the database,
-  // this is assigned by the UI. See note about StarredEntry for more info.
-  UIStarID folder_id;
-
-  // Visual order within the parent. Only valid if folder_id is not 0.
-  int visual_order;
-
-  // Type of this entry (see enum).
-  Type type;
-
-  // If type == URL, this is the URL of the page that was starred.
-  GURL url;
-
-  // If type == URL, this is the ID of the URL of the primary page that was
-  // starred.
-  URLID url_id;
-
-  // Time the entry was last modified. This is only used for folders and
-  // indicates the last time a URL was added as a child to the folder.
-  base::Time date_folder_modified;
 };
 
 // URLResult -------------------------------------------------------------------
@@ -410,6 +324,42 @@ class URLResult : public URLRow {
   // We support the implicit copy constructor and operator=.
 };
 
+// QueryCursor -----------------------------------------------------------------
+
+// Represents the point at which a QueryResult ended. This should be treated as
+// an opaque token by clients of the history service.
+class QueryCursor {
+ public:
+  QueryCursor();
+  ~QueryCursor();
+
+  // Returns a newly-allocated Value object representing the cursor. The caller
+  // takes ownership of the value.
+  Value* ToValue() const;
+
+  // Opposite of ToValue() -- converts a Value object to a QueryCursor.
+  // Returns true if the conversion was successful.
+  static bool FromValue(const Value* value, QueryCursor* cursor);
+
+  bool empty() const {
+    return time_.is_null() && rowid_ == 0;
+  }
+
+  void Clear() {
+    time_ = base::Time();
+    rowid_ = 0;
+  }
+
+ private:
+  friend class HistoryBackend;
+  friend struct QueryOptions;
+  friend class TextDatabase;
+  friend class VisitDatabase;
+
+  int64 rowid_;
+  base::Time time_;
+};
+
 // QueryResults ----------------------------------------------------------------
 
 // Encapsulates the results of a history query. It supports an ordered list of
@@ -440,6 +390,9 @@ class QueryResults {
 
   void set_reached_beginning(bool reached) { reached_beginning_ = reached; }
   bool reached_beginning() { return reached_beginning_; }
+
+  void set_cursor(const QueryCursor& cursor) { cursor_ = cursor; }
+  QueryCursor cursor() { return cursor_; }
 
   size_t size() const { return results_.size(); }
   bool empty() const { return results_.empty(); }
@@ -474,12 +427,6 @@ class QueryResults {
   // object will be cleared after this call.
   void AppendURLBySwapping(URLResult* result);
 
-  // Appends a new result set to the other. The |other| results will be
-  // destroyed because the pointer ownership will just be transferred. When
-  // |remove_dupes| is set, each URL that appears in this array will be removed
-  // from the |other| array before appending.
-  void AppendResultsBySwapping(QueryResults* other, bool remove_dupes);
-
   // Removes all instances of the given URL from the result set.
   void DeleteURL(const GURL& url);
 
@@ -491,7 +438,7 @@ class QueryResults {
   // time an entry with that URL appears. Normally, each URL will have one or
   // very few indices after it, so we optimize this to use statically allocated
   // memory when possible.
-  typedef std::map<GURL, StackVector<size_t, 4> > URLToResultIndices;
+  typedef std::map<GURL, base::StackVector<size_t, 4> > URLToResultIndices;
 
   // Inserts an entry into the |url_to_results_| map saying that the given URL
   // is at the given index in the results_.
@@ -513,6 +460,23 @@ class QueryResults {
   // Maps URLs to entries in results_.
   URLToResultIndices url_to_results_;
 
+  // An opaque value representing the point at which the QueryResult begins.
+  // This value can be passed to a future query through QueryOptions::cursor,
+  // in order to fetch a set of results contiguous to, but strictly older than,
+  // the results in this object. (Just using timestamps doesn't work because
+  // multiple visits can have the same timestamp.)
+  //
+  // For example, to fetch all results, 100 at a time:
+  //
+  //   QueryOptions options;
+  //   QueryResults results;
+  //   options.max_count = 100;
+  //   do {
+  //     QueryHistory(query_text, options, &results);
+  //     options.cursor = results.cursor();
+  //   } while (results.size() > 0);
+  QueryCursor cursor_;
+
   DISALLOW_COPY_AND_ASSIGN(QueryResults);
 };
 
@@ -521,18 +485,15 @@ class QueryResults {
 struct QueryOptions {
   QueryOptions();
 
-  // The time range to search for matches in.
+  // The time range to search for matches in. The beginning is inclusive and
+  // the ending is exclusive. Either one (or both) may be null. If |cursor| is
+  // set, it takes precedence over end_time.
   //
-  // This will match only the one recent visit of a URL.  For text search
-  // queries, if the URL was visited in the given time period, but has also been
-  // visited more recently than that, it will not be returned. When the text
-  // query is empty, this will return the most recent visit within the time
-  // range.
-  //
-  // As a special case, if both times are is_null(), then the entire database
-  // will be searched. However, if you set one, you must set the other.
-  //
-  // The beginning is inclusive and the ending is exclusive.
+  // This will match only the one recent visit of a URL. For text search
+  // queries, if the URL was visited in the given time period, but has also
+  // been visited more recently than that, it will not be returned. When the
+  // text query is empty, this will return the most recent visit within the
+  // time range.
   base::Time begin_time;
   base::Time end_time;
 
@@ -547,6 +508,39 @@ struct QueryOptions {
   // Only search within the page body if true, otherwise search all columns
   // including url and time. Defaults to false.
   bool body_only;
+
+  // If set, the cursor provides an alternate way to specify the end of the
+  // query range. The value should come from QueryResults::cursor() from a
+  // previous query, which means that the new query should only return results
+  // older than the ones in the previous query. Due to the possiblity of
+  // duplicate timestamps, |end_time| is not sufficient for that purpose.
+  QueryCursor cursor;
+
+  enum DuplicateHandling {
+    // Omit visits for which there is a more recent visit to the same URL.
+    // Each URL in the results will appear only once.
+    REMOVE_ALL_DUPLICATES,
+
+    // Omit visits for which there is a more recent visit to the same URL on
+    // the same day. Each URL will appear no more than once per day, where the
+    // day is defined by the local timezone.
+    REMOVE_DUPLICATES_PER_DAY
+  };
+
+  // Allows the caller to specify how duplicate URLs in the result set should
+  // be handled. The default is REMOVE_DUPLICATES.
+  DuplicateHandling duplicate_policy;
+
+  // Helpers to get the effective parameters values, since a value of 0 means
+  // "unspecified".
+  int EffectiveMaxCount() const;
+  int64 EffectiveBeginTime() const;
+
+  // The effective end time can be determined by either |end_time| or |cursor|.
+  // If cursor is set, it takes precedence. This allows consecutive queries to
+  // re-use the same QueryOptions to fetch consecutive pages of results by
+  // simply copying the cursor from the QueryResults of the previous query.
+  int64 EffectiveEndTime() const;
 };
 
 // KeywordSearchTermVisit -----------------------------------------------------
@@ -621,22 +615,24 @@ struct FilteredURL {
 // Navigation -----------------------------------------------------------------
 
 // Marshalling structure for AddPage.
-class HistoryAddPageArgs
-    : public base::RefCountedThreadSafe<HistoryAddPageArgs> {
- public:
-  HistoryAddPageArgs(const GURL& arg_url,
-                     base::Time arg_time,
-                     const void* arg_id_scope,
-                     int32 arg_page_id,
-                     const GURL& arg_referrer,
-                     const history::RedirectList& arg_redirects,
-                     content::PageTransition arg_transition,
-                     VisitSource arg_source,
-                     bool arg_did_replace_entry);
-
-  // Returns a new HistoryAddPageArgs that is a copy of this (ref count is
-  // of course reset). Ownership of returned object passes to caller.
-  HistoryAddPageArgs* Clone() const;
+struct HistoryAddPageArgs {
+  // The default constructor is equivalent to:
+  //
+  //   HistoryAddPageArgs(
+  //       GURL(), base::Time(), NULL, 0, GURL(),
+  //       history::RedirectList(), content::PAGE_TRANSITION_LINK,
+  //       SOURCE_BROWSED, false)
+  HistoryAddPageArgs();
+  HistoryAddPageArgs(const GURL& url,
+                     base::Time time,
+                     const void* id_scope,
+                     int32 page_id,
+                     const GURL& referrer,
+                     const history::RedirectList& redirects,
+                     content::PageTransition transition,
+                     VisitSource source,
+                     bool did_replace_entry);
+  ~HistoryAddPageArgs();
 
   GURL url;
   base::Time time;
@@ -649,13 +645,6 @@ class HistoryAddPageArgs
   content::PageTransition transition;
   VisitSource visit_source;
   bool did_replace_entry;
-
- private:
-  friend class base::RefCountedThreadSafe<HistoryAddPageArgs>;
-
-  ~HistoryAddPageArgs();
-
-  DISALLOW_COPY_AND_ASSIGN(HistoryAddPageArgs);
 };
 
 // TopSites -------------------------------------------------------------------
@@ -741,8 +730,13 @@ base::Time AutocompleteAgeThreshold();
 // AutocompleteAgeThreshold() (or any other desired time in the past).
 bool RowQualifiesAsSignificant(const URLRow& row, const base::Time& threshold);
 
+// Favicons -------------------------------------------------------------------
+
 // Defines the icon types. They are also stored in icon_type field of favicons
 // table.
+// The values of the IconTypes are used to select the priority in which favicon
+// data is returned in HistoryBackend and ThumbnailDatabase. Data for the
+// largest IconType takes priority if data for multiple IconTypes is available.
 enum IconType {
   INVALID_ICON = 0x0,
   FAVICON = 1 << 0,
@@ -764,32 +758,121 @@ struct IconMapping {
   // The unique id of the icon.
   FaviconID icon_id;
 
+  // The url of the icon.
+  GURL icon_url;
+
   // The type of icon.
   IconType icon_type;
 };
 
-// Defines the favicon stored in history backend.
-struct FaviconData {
-  FaviconData();
-  ~FaviconData();
+// Defines a favicon bitmap which best matches the desired DIP size and one of
+// the desired scale factors.
+struct FaviconBitmapResult {
+  FaviconBitmapResult();
+  ~FaviconBitmapResult();
 
-  // Returns true if the icon is known and image has data.
-  bool is_valid();
+  // Returns true if |bitmap_data| contains a valid bitmap.
+  bool is_valid() const { return bitmap_data.get() && bitmap_data->size(); }
 
-  // Indicates whether the icon is known by the history backend.
-  bool known_icon;
-
-  // The bits of image.
-  scoped_refptr<base::RefCountedMemory> image_data;
-
-  // Indicates whether image is expired.
+  // Indicates whether |bitmap_data| is expired.
   bool expired;
 
-  // The icon's URL.
+  // The bits of the bitmap.
+  scoped_refptr<base::RefCountedMemory> bitmap_data;
+
+  // The pixel dimensions of |bitmap_data|.
+  gfx::Size pixel_size;
+
+  // The URL of the containing favicon.
   GURL icon_url;
 
-  // The type of favicon.
-  history::IconType icon_type;
+  // The icon type of the containing favicon.
+  IconType icon_type;
+};
+
+// Define type with same structure as FaviconBitmapResult for passing data to
+// HistoryBackend::SetFavicons().
+typedef FaviconBitmapResult FaviconBitmapData;
+
+// Defines a gfx::Image of size desired_size_in_dip composed of image
+// representations for each of the desired scale factors.
+struct FaviconImageResult {
+  FaviconImageResult();
+  ~FaviconImageResult();
+
+  // The resulting image.
+  gfx::Image image;
+
+  // The URL of the favicon which contains all of the image representations of
+  // |image|.
+  // TODO(pkotwicz): Return multiple |icon_urls| to allow |image| to have
+  // representations from several favicons once content::FaviconStatus supports
+  // multiple URLs.
+  GURL icon_url;
+};
+
+// FaviconSizes represents the sizes that the thumbnail database knows a
+// favicon is available from the web. FaviconSizes has several entries
+// only if FaviconSizes is for an .ico file. FaviconSizes can be different
+// from the pixel sizes of the entries in the |favicon_bitmaps| table. For
+// instance, if a web page has a .ico favicon with bitmaps of pixel sizes
+// (16x16, 32x32), FaviconSizes will have both sizes regardless of whether
+// either of these bitmaps is cached in the favicon_bitmaps database table.
+typedef std::vector<gfx::Size> FaviconSizes;
+
+// Returns the default FaviconSizes to use if the favicon sizes for a FaviconID
+// are unknown.
+const FaviconSizes& GetDefaultFaviconSizes();
+
+// A map from an icon URL to the FaviconSizes for that URL.
+typedef std::map<GURL, FaviconSizes> IconURLSizesMap;
+
+// Defines a favicon bitmap and its associated pixel size.
+struct FaviconBitmapIDSize {
+  FaviconBitmapIDSize();
+  ~FaviconBitmapIDSize();
+
+  // The unique id of the favicon bitmap.
+  FaviconBitmapID bitmap_id;
+
+  // The pixel dimensions of the associated bitmap.
+  gfx::Size pixel_size;
+};
+
+// Defines a favicon bitmap stored in the history backend.
+struct FaviconBitmap {
+  FaviconBitmap();
+  ~FaviconBitmap();
+
+  // The unique id of the bitmap.
+  FaviconBitmapID bitmap_id;
+
+  // The id of the favicon to which the bitmap belongs to.
+  FaviconID icon_id;
+
+  // Time at which |bitmap_data| was last updated.
+  base::Time last_updated;
+
+  // The bits of the bitmap.
+  scoped_refptr<base::RefCountedMemory> bitmap_data;
+
+  // The pixel dimensions of bitmap_data.
+  gfx::Size pixel_size;
+};
+
+// Used by the importer to set favicons for imported bookmarks.
+struct ImportedFaviconUsage {
+  ImportedFaviconUsage();
+  ~ImportedFaviconUsage();
+
+  // The URL of the favicon.
+  GURL favicon_url;
+
+  // The raw png-encoded data.
+  std::vector<unsigned char> png_data;
+
+  // The list of URLs using this favicon.
+  std::set<GURL> urls;
 };
 
 // Abbreviated information about a visit.
@@ -802,7 +885,7 @@ struct BriefVisitInfo {
 // An observer of VisitDatabase.
 class VisitDatabaseObserver {
  public:
-  virtual ~VisitDatabaseObserver() {}
+  virtual ~VisitDatabaseObserver();
   virtual void OnAddVisit(const BriefVisitInfo& info) = 0;
 };
 

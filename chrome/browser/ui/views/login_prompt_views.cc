@@ -8,9 +8,9 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/login_view.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -20,8 +20,8 @@
 #include "ui/views/window/dialog_delegate.h"
 
 using content::BrowserThread;
+using content::PasswordForm;
 using content::WebContents;
-using webkit::forms::PasswordForm;
 
 // ----------------------------------------------------------------------------
 // LoginHandlerViews
@@ -79,6 +79,14 @@ class LoginHandlerViews : public LoginHandler,
     ReleaseSoon();
   }
 
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+#if defined(USE_ASH)
+    return ui::MODAL_TYPE_CHILD;
+#else
+    return views::WidgetDelegate::GetModalType();
+#endif
+  }
+
   virtual bool Cancel() OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -127,9 +135,7 @@ class LoginHandlerViews : public LoginHandler,
     // will occur via an InvokeLater on the UI thread, which is guaranteed
     // to happen after this is called (since this was InvokeLater'd first).
     WebContents* requesting_contents = GetWebContentsForLogin();
-    TabContents* tab_contents =
-        TabContents::FromWebContents(requesting_contents);
-    SetDialog(new ConstrainedWindowViews(tab_contents, this));
+    SetDialog(new ConstrainedWindowViews(requesting_contents, this));
     NotifyAuthNeeded();
   }
 

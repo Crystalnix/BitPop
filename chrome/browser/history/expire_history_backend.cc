@@ -5,13 +5,15 @@
 #include "chrome/browser/history/expire_history_backend.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
-#include "chrome/browser/bookmarks/bookmark_service.h"
+#include "chrome/browser/api/bookmarks/bookmark_service.h"
 #include "chrome/browser/history/archived_database.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -103,7 +105,7 @@ bool ShouldArchiveVisit(const VisitRow& visit) {
   // to see them.
   if (no_qualifier == content::PAGE_TRANSITION_TYPED ||
       no_qualifier == content::PAGE_TRANSITION_AUTO_BOOKMARK ||
-      no_qualifier == content::PAGE_TRANSITION_START_PAGE)
+      no_qualifier == content::PAGE_TRANSITION_AUTO_TOPLEVEL)
     return true;
 
   // Only archive these "less important" transitions when they were the final
@@ -266,6 +268,30 @@ void ExpireHistoryBackend::ExpireHistoryBetween(
         visits.push_back(*visit);
     }
   }
+  ExpireVisits(visits);
+}
+
+void ExpireHistoryBackend::ExpireHistoryForTimes(
+    const std::vector<base::Time>& times) {
+  // |times| must be in reverse chronological order and have no
+  // duplicates, i.e. each member must be earlier than the one before
+  // it.
+  DCHECK(
+      std::adjacent_find(
+          times.begin(), times.end(), std::less_equal<base::Time>()) ==
+      times.end());
+
+  if (!main_db_)
+    return;
+
+  // There may be stuff in the text database manager's temporary cache.
+  if (text_db_)
+    text_db_->DeleteFromUncommittedForTimes(times);
+
+  // Find the affected visits and delete them.
+  // TODO(brettw): bug 1171164: We should query the archived database here, too.
+  VisitVector visits;
+  main_db_->GetVisitsForTimes(times, &visits);
   ExpireVisits(visits);
 }
 
@@ -691,6 +717,11 @@ void ExpireHistoryBackend::ScheduleExpireHistoryIndexFiles() {
 }
 
 void ExpireHistoryBackend::DoExpireHistoryIndexFiles() {
+  if (!text_db_) {
+    // The text database may have been closed since the task was scheduled.
+    return;
+  }
+
   Time::Exploded exploded;
   Time::Now().LocalExplode(&exploded);
   int cutoff_month =

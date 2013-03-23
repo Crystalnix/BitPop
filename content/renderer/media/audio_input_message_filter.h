@@ -18,6 +18,8 @@
 #include "media/audio/audio_buffers_state.h"
 #include "media/audio/audio_input_ipc.h"
 
+namespace content {
+
 class CONTENT_EXPORT AudioInputMessageFilter
     : public IPC::ChannelProxy::MessageFilter,
       public NON_EXPORTED_BASE(media::AudioInputIPC) {
@@ -26,6 +28,9 @@ class CONTENT_EXPORT AudioInputMessageFilter
 
   // Getter for the one AudioInputMessageFilter object.
   static AudioInputMessageFilter* Get();
+
+  // Associates |render_view_id| as the destination of audio for a stream.
+  void AssociateStreamWithConsumer(int stream_id, int render_view_id);
 
   // Implementation of AudioInputIPC.
   virtual int AddDelegate(
@@ -80,5 +85,7 @@ class CONTENT_EXPORT AudioInputMessageFilter
 
   DISALLOW_COPY_AND_ASSIGN(AudioInputMessageFilter);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_AUDIO_INPUT_MESSAGE_FILTER_H_

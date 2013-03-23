@@ -7,38 +7,70 @@
 
 #include "base/basictypes.h"
 
+namespace content {
+
 // These are per context memory allocation limits set by the GpuMemoryManager
 // and assigned to the browser and renderer context.
 // They will change over time, given memory availability, and browser state.
 
 // Memory Allocation which will be assigned to the renderer context.
 struct GpuMemoryAllocationForRenderer {
-  enum {
-    INVALID_RESOURCE_SIZE = -1
+  enum PriorityCutoff {
+    // Allow no allocations.
+    kPriorityCutoffAllowNothing,
+    // Allow only allocations that are strictly required for correct rendering.
+    // For compositors, this is what is visible.
+    kPriorityCutoffAllowOnlyRequired,
+    // Allow allocations that are not strictly needed for correct rendering, but
+    // are nice to have for performance. For compositors, this includes textures
+    // that are a few screens away from being visible.
+    kPriorityCutoffAllowNiceToHave,
+    // Allow all allocations.
+    kPriorityCutoffAllowEverything,
   };
 
-  // Exceeding this limit for an unreasonable amount of time may cause context
-  // to be lost.
-  size_t gpu_resource_size_in_bytes;
-  bool suggest_have_backbuffer;
+  // Limits when this renderer is visible.
+  size_t bytes_limit_when_visible;
+  PriorityCutoff priority_cutoff_when_visible;
+
+  // Limits when this renderer is not visible.
+  size_t bytes_limit_when_not_visible;
+  PriorityCutoff priority_cutoff_when_not_visible;
+  bool have_backbuffer_when_not_visible;
+
+  // If true, enforce this policy just once, but do not keep
+  // it as a permanent policy.
+  bool enforce_but_do_not_keep_as_policy;
 
   GpuMemoryAllocationForRenderer()
-      : gpu_resource_size_in_bytes(0),
-        suggest_have_backbuffer(false) {
+      : bytes_limit_when_visible(0),
+        priority_cutoff_when_visible(kPriorityCutoffAllowNothing),
+        bytes_limit_when_not_visible(0),
+        priority_cutoff_when_not_visible(kPriorityCutoffAllowNothing),
+        have_backbuffer_when_not_visible(false),
+        enforce_but_do_not_keep_as_policy(false) {
   }
 
-  GpuMemoryAllocationForRenderer(size_t gpu_resource_size_in_bytes,
-                                 bool suggest_have_backbuffer)
-      : gpu_resource_size_in_bytes(gpu_resource_size_in_bytes),
-        suggest_have_backbuffer(suggest_have_backbuffer) {
+  GpuMemoryAllocationForRenderer(size_t bytes_limit_when_visible)
+      : bytes_limit_when_visible(bytes_limit_when_visible),
+        priority_cutoff_when_visible(kPriorityCutoffAllowEverything),
+        bytes_limit_when_not_visible(0),
+        priority_cutoff_when_not_visible(kPriorityCutoffAllowNothing),
+        have_backbuffer_when_not_visible(false),
+        enforce_but_do_not_keep_as_policy(false) {
   }
 
-  bool operator==(const GpuMemoryAllocationForRenderer& other) const {
-    return gpu_resource_size_in_bytes == other.gpu_resource_size_in_bytes &&
-           suggest_have_backbuffer == other.suggest_have_backbuffer;
-  }
-  bool operator!=(const GpuMemoryAllocationForRenderer& other) const {
-    return !(*this == other);
+  bool Equals(const GpuMemoryAllocationForRenderer& other) const {
+    return bytes_limit_when_visible ==
+               other.bytes_limit_when_visible &&
+        priority_cutoff_when_visible == other.priority_cutoff_when_visible &&
+        bytes_limit_when_not_visible == other.bytes_limit_when_not_visible &&
+        priority_cutoff_when_not_visible ==
+            other.priority_cutoff_when_not_visible &&
+        have_backbuffer_when_not_visible ==
+            other.have_backbuffer_when_not_visible &&
+        enforce_but_do_not_keep_as_policy ==
+            other.enforce_but_do_not_keep_as_policy;
   }
 };
 
@@ -54,72 +86,79 @@ struct GpuMemoryAllocationForBrowser {
       : suggest_have_frontbuffer(suggest_have_frontbuffer) {
   }
 
-  bool operator==(const GpuMemoryAllocationForBrowser& other) const {
+  bool Equals(const GpuMemoryAllocationForBrowser& other) const {
       return suggest_have_frontbuffer == other.suggest_have_frontbuffer;
-  }
-  bool operator!=(const GpuMemoryAllocationForBrowser& other) const {
-    return !(*this == other);
   }
 };
 
 // Combination of the above two Memory Allocations which will be created by the
 // GpuMemoryManager.
-struct GpuMemoryAllocation : public GpuMemoryAllocationForRenderer,
-                             public GpuMemoryAllocationForBrowser {
-  // Bitmap
+struct GpuMemoryAllocation {
+  GpuMemoryAllocationForRenderer renderer_allocation;
+  GpuMemoryAllocationForBrowser browser_allocation;
+
   enum BufferAllocation {
-    kHasNoBuffers = 0,
+    kHasNoFrontbuffer = 0,
     kHasFrontbuffer = 1,
-    kHasBackbuffer = 2
   };
 
-  GpuMemoryAllocation()
-      : GpuMemoryAllocationForRenderer(),
-        GpuMemoryAllocationForBrowser() {
+  GpuMemoryAllocation() {
   }
 
   GpuMemoryAllocation(size_t gpu_resource_size_in_bytes,
-                      int allocationBitmap)
-      : GpuMemoryAllocationForRenderer(gpu_resource_size_in_bytes,
-            (allocationBitmap & kHasBackbuffer) == kHasBackbuffer),
-        GpuMemoryAllocationForBrowser(
-            (allocationBitmap & kHasFrontbuffer) == kHasFrontbuffer) {
+                      BufferAllocation buffer_allocation)
+      : renderer_allocation(gpu_resource_size_in_bytes),
+        browser_allocation(buffer_allocation == kHasFrontbuffer) {
   }
 
-  bool operator==(const GpuMemoryAllocation& other) const {
-      return static_cast<const GpuMemoryAllocationForRenderer&>(*this) ==
-             static_cast<const GpuMemoryAllocationForRenderer&>(other) &&
-             static_cast<const GpuMemoryAllocationForBrowser&>(*this) ==
-             static_cast<const GpuMemoryAllocationForBrowser&>(other);
-  }
-  bool operator!=(const GpuMemoryAllocation& other) const {
-    return !(*this == other);
+  bool Equals(const GpuMemoryAllocation& other) const {
+      return renderer_allocation.Equals(other.renderer_allocation) &&
+          browser_allocation.Equals(other.browser_allocation);
   }
 };
 
 // Memory Allocation request which is sent by a client, to help GpuMemoryManager
 // more ideally split memory allocations across clients.
-struct GpuMemoryAllocationRequest {
-  size_t min_allocation_bytes;
-  size_t ideal_allocation_bytes;
+struct GpuManagedMemoryStats {
+  // Bytes required for correct rendering.
+  size_t bytes_required;
 
-  GpuMemoryAllocationRequest()
-      : min_allocation_bytes(0),
-        ideal_allocation_bytes(0) {
+  // Bytes that are not strictly required for correctness, but, if allocated,
+  // will provide good performance.
+  size_t bytes_nice_to_have;
+
+  // The number of bytes currently allocated.
+  size_t bytes_allocated;
+
+  // Whether or not a backbuffer is currently requested (the memory usage
+  // of the buffer is known by the GPU process).
+  bool backbuffer_requested;
+
+  GpuManagedMemoryStats()
+      : bytes_required(0),
+        bytes_nice_to_have(0),
+        bytes_allocated(0),
+        backbuffer_requested(false) {
   }
 
-  GpuMemoryAllocationRequest(size_t min_bytes, size_t ideal_bytes)
-      : min_allocation_bytes(min_bytes),
-        ideal_allocation_bytes(ideal_bytes) {
+  GpuManagedMemoryStats(size_t bytes_required,
+                        size_t bytes_nice_to_have,
+                        size_t bytes_allocated,
+                        bool backbuffer_requested)
+      : bytes_required(bytes_required),
+        bytes_nice_to_have(bytes_nice_to_have),
+        bytes_allocated(bytes_allocated),
+        backbuffer_requested(backbuffer_requested) {
   }
 
-  bool operator==(const GpuMemoryAllocationRequest& other) const {
-    return min_allocation_bytes == other.min_allocation_bytes &&
-        ideal_allocation_bytes == other.ideal_allocation_bytes;
-  }
-  bool operator!=(const GpuMemoryAllocationRequest& other) const {
-    return !(*this == other);
+  bool Equals(const GpuManagedMemoryStats& other) const {
+    return bytes_required == other.bytes_required &&
+        bytes_nice_to_have == other.bytes_nice_to_have &&
+        bytes_allocated == other.bytes_allocated &&
+        backbuffer_requested == other.backbuffer_requested;
   }
 };
+
+}  // namespace content
 
 #endif // CONTENT_COMMON_GPU_GPU_MEMORY_ALLOCATION_H_

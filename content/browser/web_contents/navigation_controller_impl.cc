@@ -4,6 +4,7 @@
 
 #include "content/browser/web_contents/navigation_controller_impl.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"  // Temporary
@@ -22,31 +23,23 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
-#include "webkit/glue/webkit_glue.h"
+#include "webkit/glue/glue_serialize.h"
 
-using content::BrowserContext;
-using content::DOMStorageContext;
-using content::GlobalRequestID;
-using content::NavigationController;
-using content::NavigationEntry;
-using content::NavigationEntryImpl;
-using content::RenderViewHostImpl;
-using content::SessionStorageNamespace;
-using content::SiteInstance;
-using content::UserMetricsAction;
-using content::WebContents;
-
+namespace content {
 namespace {
 
 const int kInvalidateAll = 0xFFFFFFFF;
@@ -57,13 +50,13 @@ const int kInvalidateAll = 0xFFFFFFFF;
 void NotifyPrunedEntries(NavigationControllerImpl* nav_controller,
                          bool from_front,
                          int count) {
-  content::PrunedDetails details;
+  PrunedDetails details;
   details.from_front = from_front;
   details.count = count;
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_NAV_LIST_PRUNED,
-      content::Source<NavigationController>(nav_controller),
-      content::Details<content::PrunedDetails>(&details));
+  NotificationService::current()->Notify(
+      NOTIFICATION_NAV_LIST_PRUNED,
+      Source<NavigationController>(nav_controller),
+      Details<PrunedDetails>(&details));
 }
 
 // Ensure the given NavigationEntry has a valid state, so that WebKit does not
@@ -80,26 +73,43 @@ void SetContentStateIfEmpty(NavigationEntryImpl* entry) {
   }
 }
 
+NavigationEntryImpl::RestoreType ControllerRestoreTypeToEntryType(
+    NavigationController::RestoreType type) {
+  switch (type) {
+    case NavigationController::RESTORE_CURRENT_SESSION:
+      return NavigationEntryImpl::RESTORE_CURRENT_SESSION;
+    case NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY:
+      return NavigationEntryImpl::RESTORE_LAST_SESSION_EXITED_CLEANLY;
+    case NavigationController::RESTORE_LAST_SESSION_CRASHED:
+      return NavigationEntryImpl::RESTORE_LAST_SESSION_CRASHED;
+  }
+  NOTREACHED();
+  return NavigationEntryImpl::RESTORE_CURRENT_SESSION;
+}
+
 // Configure all the NavigationEntries in entries for restore. This resets
 // the transition type to reload and makes sure the content state isn't empty.
 void ConfigureEntriesForRestore(
     std::vector<linked_ptr<NavigationEntryImpl> >* entries,
-    bool from_last_session) {
+    NavigationController::RestoreType type) {
   for (size_t i = 0; i < entries->size(); ++i) {
     // Use a transition type of reload so that we don't incorrectly increase
     // the typed count.
-    (*entries)[i]->SetTransitionType(content::PAGE_TRANSITION_RELOAD);
-    (*entries)[i]->set_restore_type(from_last_session ?
-        NavigationEntryImpl::RESTORE_LAST_SESSION :
-        NavigationEntryImpl::RESTORE_CURRENT_SESSION);
+    (*entries)[i]->SetTransitionType(PAGE_TRANSITION_RELOAD);
+    (*entries)[i]->set_restore_type(ControllerRestoreTypeToEntryType(type));
     // NOTE(darin): This code is only needed for backwards compat.
     SetContentStateIfEmpty((*entries)[i].get());
   }
 }
 
 // See NavigationController::IsURLInPageNavigation for how this works and why.
-bool AreURLsInPageNavigation(const GURL& existing_url, const GURL& new_url) {
-  if (existing_url == new_url || !new_url.has_ref()) {
+bool AreURLsInPageNavigation(const GURL& existing_url,
+                             const GURL& new_url,
+                             bool renderer_says_in_page) {
+  if (existing_url == new_url)
+    return renderer_says_in_page;
+
+  if (!new_url.has_ref()) {
     // TODO(jcampan): what about when navigating back from a ref URL to the top
     // non ref URL? Nothing is loaded in that case but we return false here.
     // The user could also navigate from the ref URL to the non ref URL by
@@ -117,7 +127,7 @@ bool AreURLsInPageNavigation(const GURL& existing_url, const GURL& new_url) {
 
 // Determines whether or not we should be carrying over a user agent override
 // between two NavigationEntries.
-bool ShouldKeepOverride(const content::NavigationEntry* last_entry) {
+bool ShouldKeepOverride(const NavigationEntry* last_entry) {
   return last_entry && last_entry->GetIsOverridingUserAgent();
 }
 
@@ -135,7 +145,6 @@ size_t NavigationControllerImpl::max_entry_count_for_testing_ =
 // when testing.
 static bool g_check_for_repost = true;
 
-namespace content {
 // static
 NavigationEntry* NavigationController::CreateNavigationEntry(
       const GURL& url,
@@ -174,12 +183,25 @@ void NavigationController::DisablePromptOnRepost() {
   g_check_for_repost = false;
 }
 
-}  // namespace content
+base::Time NavigationControllerImpl::TimeSmoother::GetSmoothedTime(
+    base::Time t) {
+  // If |t| is between the water marks, we're in a run of duplicates
+  // or just getting out of it, so increase the high-water mark to get
+  // a time that probably hasn't been used before and return it.
+  if (low_water_mark_ <= t && t <= high_water_mark_) {
+    high_water_mark_ += base::TimeDelta::FromMicroseconds(1);
+    return high_water_mark_;
+  }
+
+  // Otherwise, we're clear of the last duplicate run, so reset the
+  // water marks.
+  low_water_mark_ = high_water_mark_ = t;
+  return t;
+}
 
 NavigationControllerImpl::NavigationControllerImpl(
     WebContentsImpl* web_contents,
-    BrowserContext* browser_context,
-    SessionStorageNamespaceImpl* session_storage_namespace)
+    BrowserContext* browser_context)
     : browser_context_(browser_context),
       pending_entry_(NULL),
       last_committed_entry_index_(-1),
@@ -189,14 +211,10 @@ NavigationControllerImpl::NavigationControllerImpl(
       max_restored_page_id_(-1),
       ALLOW_THIS_IN_INITIALIZER_LIST(ssl_manager_(this)),
       needs_reload_(false),
-      session_storage_namespace_(session_storage_namespace),
-      pending_reload_(NO_RELOAD) {
+      is_initial_navigation_(true),
+      pending_reload_(NO_RELOAD),
+      get_timestamp_callback_(base::Bind(&base::Time::Now)) {
   DCHECK(browser_context_);
-  if (!session_storage_namespace_) {
-    session_storage_namespace_ = new SessionStorageNamespaceImpl(
-        static_cast<DOMStorageContextImpl*>(
-            BrowserContext::GetDefaultDOMStorageContext(browser_context_)));
-  }
 }
 
 NavigationControllerImpl::~NavigationControllerImpl() {
@@ -218,7 +236,7 @@ void NavigationControllerImpl::SetBrowserContext(
 
 void NavigationControllerImpl::Restore(
     int selected_navigation,
-    bool from_last_session,
+    RestoreType type,
     std::vector<NavigationEntry*>* entries) {
   // Verify that this controller is unused and that the input is valid.
   DCHECK(GetEntryCount() == 0 && !GetPendingEntry());
@@ -234,7 +252,7 @@ void NavigationControllerImpl::Restore(
   entries->clear();
 
   // And finish the restore.
-  FinishRestore(selected_navigation, from_last_session);
+  FinishRestore(selected_navigation, type);
 }
 
 void NavigationControllerImpl::Reload(bool check_for_repost) {
@@ -249,9 +267,19 @@ void NavigationControllerImpl::ReloadOriginalRequestURL(bool check_for_repost) {
 
 void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
                                               ReloadType reload_type) {
-  // Reloading a transient entry does nothing.
-  if (transient_entry_index_ != -1)
+  if (transient_entry_index_ != -1) {
+    // If an interstitial is showing, treat a reload as a navigation to the
+    // transient entry's URL.
+    NavigationEntryImpl* active_entry =
+        NavigationEntryImpl::FromNavigationEntry(GetActiveEntry());
+    if (!active_entry)
+      return;
+    LoadURL(active_entry->GetURL(),
+            Referrer(),
+            PAGE_TRANSITION_RELOAD,
+            active_entry->extra_headers());
     return;
+  }
 
   DiscardNonCommittedEntriesInternal();
   int current_index = GetCurrentEntryIndex();
@@ -266,10 +294,10 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
     // The user is asking to reload a page with POST data. Prompt to make sure
     // they really want to do this. If they do, the dialog will call us back
     // with check_for_repost = false.
-    content::NotificationService::current()->Notify(
-        content::NOTIFICATION_REPOST_WARNING_SHOWN,
-        content::Source<NavigationController>(this),
-        content::NotificationService::NoDetails());
+    NotificationService::current()->Notify(
+        NOTIFICATION_REPOST_WARNING_SHOWN,
+        Source<NavigationController>(this),
+        NotificationService::NoDetails());
 
     pending_reload_ = reload_type;
     web_contents_->Activate();
@@ -291,7 +319,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
     if (site_instance &&
         site_instance->HasWrongProcessForURL(entry->GetURL())) {
       // Create a navigation entry that resembles the current one, but do not
-      // copy page id, site instance, and content state.
+      // copy page id, site instance, content state, or timestamp.
       NavigationEntryImpl* nav_entry = NavigationEntryImpl::FromNavigationEntry(
           CreateNavigationEntry(
               entry->GetURL(), entry->GetReferrer(), entry->GetTransitionType(),
@@ -301,7 +329,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
       // a reload in the renderer.
       reload_type = NavigationController::NO_RELOAD;
 
-      nav_entry->set_is_cross_site_reload(true);
+      nav_entry->set_should_replace_entry(true);
       pending_entry_ = nav_entry;
     } else {
       pending_entry_index_ = current_index;
@@ -312,8 +340,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
       // See Chromium issue 96041.
       entries_[pending_entry_index_]->SetTitle(string16());
 
-      entries_[pending_entry_index_]->SetTransitionType(
-          content::PAGE_TRANSITION_RELOAD);
+      entries_[pending_entry_index_]->SetTransitionType(PAGE_TRANSITION_RELOAD);
     }
 
     NavigateToPendingEntry(reload_type);
@@ -335,7 +362,7 @@ void NavigationControllerImpl::ContinuePendingReload() {
 }
 
 bool NavigationControllerImpl::IsInitialNavigation() {
-  return last_document_loaded_.is_null();
+  return is_initial_navigation_;
 }
 
 NavigationEntryImpl* NavigationControllerImpl::GetEntryWithPageID(
@@ -363,10 +390,10 @@ void NavigationControllerImpl::LoadEntry(NavigationEntryImpl* entry) {
   // result in a download or a 'no content' response (e.g., a mailto: URL).
   DiscardNonCommittedEntriesInternal();
   pending_entry_ = entry;
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_NAV_ENTRY_PENDING,
-      content::Source<NavigationController>(this),
-      content::Details<NavigationEntry>(entry));
+  NotificationService::current()->Notify(
+      NOTIFICATION_NAV_ENTRY_PENDING,
+      Source<NavigationController>(this),
+      Details<NavigationEntry>(entry));
   NavigateToPendingEntry(NO_RELOAD);
 }
 
@@ -472,9 +499,9 @@ void NavigationControllerImpl::GoBack() {
 
   pending_entry_index_ = current_index - 1;
   entries_[pending_entry_index_]->SetTransitionType(
-      content::PageTransitionFromInt(
+      PageTransitionFromInt(
           entries_[pending_entry_index_]->GetTransitionType() |
-          content::PAGE_TRANSITION_FORWARD_BACK));
+          PAGE_TRANSITION_FORWARD_BACK));
   NavigateToPendingEntry(NO_RELOAD);
 }
 
@@ -498,9 +525,9 @@ void NavigationControllerImpl::GoForward() {
     pending_entry_index_++;
 
   entries_[pending_entry_index_]->SetTransitionType(
-      content::PageTransitionFromInt(
+      PageTransitionFromInt(
           entries_[pending_entry_index_]->GetTransitionType() |
-          content::PAGE_TRANSITION_FORWARD_BACK));
+          PAGE_TRANSITION_FORWARD_BACK));
   NavigateToPendingEntry(NO_RELOAD);
 }
 
@@ -525,9 +552,9 @@ void NavigationControllerImpl::GoToIndex(int index) {
 
   pending_entry_index_ = index;
   entries_[pending_entry_index_]->SetTransitionType(
-      content::PageTransitionFromInt(
+      PageTransitionFromInt(
           entries_[pending_entry_index_]->GetTransitionType() |
-          content::PAGE_TRANSITION_FORWARD_BACK));
+          PAGE_TRANSITION_FORWARD_BACK));
   NavigateToPendingEntry(NO_RELOAD);
 }
 
@@ -566,132 +593,105 @@ void NavigationControllerImpl::AddTransientEntry(NavigationEntryImpl* entry) {
   web_contents_->NotifyNavigationStateChanged(kInvalidateAll);
 }
 
-void NavigationControllerImpl::TransferURL(
-    const GURL& url,
-    const content::Referrer& referrer,
-    content::PageTransition transition,
-    const std::string& extra_headers,
-    const GlobalRequestID& transferred_global_request_id,
-    bool is_renderer_initiated) {
-  // The user initiated a load, we don't need to reload anymore.
-  needs_reload_ = false;
-
-  NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-      CreateNavigationEntry(
-          url, referrer, transition, is_renderer_initiated, extra_headers,
-          browser_context_));
-  entry->set_transferred_global_request_id(transferred_global_request_id);
-
-  LoadEntry(entry);
-}
-
 void NavigationControllerImpl::LoadURL(
     const GURL& url,
-    const content::Referrer& referrer,
-    content::PageTransition transition,
+    const Referrer& referrer,
+    PageTransition transition,
     const std::string& extra_headers) {
-  if (content::HandleDebugURL(url, transition))
+  LoadURLParams params(url);
+  params.referrer = referrer;
+  params.transition_type = transition;
+  params.extra_headers = extra_headers;
+  LoadURLWithParams(params);
+}
+
+void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
+  if (HandleDebugURL(params.url, params.transition_type))
     return;
 
-  bool override = ShouldKeepOverride(GetLastCommittedEntry());
-  LoadURLWithUserAgentOverride(url, referrer, transition, false, extra_headers,
-      override);
-}
+  // Checks based on params.load_type.
+  switch (params.load_type) {
+    case LOAD_TYPE_DEFAULT:
+      break;
+    case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
+      if (!params.url.SchemeIs(chrome::kHttpScheme) &&
+          !params.url.SchemeIs(chrome::kHttpsScheme)) {
+        NOTREACHED() << "Http post load must use http(s) scheme.";
+        return;
+      }
+      break;
+    case LOAD_TYPE_DATA:
+      if (!params.url.SchemeIs(chrome::kDataScheme)) {
+        NOTREACHED() << "Data load must use data scheme.";
+        return;
+      }
+      break;
+    default:
+      NOTREACHED();
+      break;
+  };
 
-void NavigationControllerImpl::LoadURLFromRenderer(
-    const GURL& url,
-    const content::Referrer& referrer,
-    content::PageTransition transition,
-    const std::string& extra_headers) {
-  bool override = ShouldKeepOverride(GetLastCommittedEntry());
-  LoadURLWithUserAgentOverride(url, referrer, transition, true, extra_headers,
-      override);
-}
-
-void NavigationControllerImpl::LoadURLWithUserAgentOverride(
-    const GURL& url,
-    const content::Referrer& referrer,
-    content::PageTransition transition,
-    bool is_renderer_initiated,
-    const std::string& extra_headers,
-    bool is_overriding_user_agent) {
   // The user initiated a load, we don't need to reload anymore.
   needs_reload_ = false;
 
-  NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-      CreateNavigationEntry(
-          url, referrer, transition, is_renderer_initiated, extra_headers,
-          browser_context_));
-  entry->SetIsOverridingUserAgent(is_overriding_user_agent);
-
-  LoadEntry(entry);
-}
-
-void NavigationControllerImpl::LoadDataWithBaseURL(
-    const GURL& data_url,
-    const content::Referrer& referrer,
-    const GURL& base_url,
-    const GURL& history_url,
-    bool is_overriding_user_agent) {
-  // Make sure we don't allow non-'data:' URLs.
-  if (!data_url.SchemeIs(chrome::kDataScheme)) {
-    NOTREACHED();
-    return;
+  bool override = false;
+  switch (params.override_user_agent) {
+    case UA_OVERRIDE_INHERIT:
+      override = ShouldKeepOverride(GetLastCommittedEntry());
+      break;
+    case UA_OVERRIDE_TRUE:
+      override = true;
+      break;
+    case UA_OVERRIDE_FALSE:
+      override = false;
+      break;
+    default:
+      NOTREACHED();
+      break;
   }
 
-  needs_reload_ = false;
-
   NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
       CreateNavigationEntry(
-          data_url,
-          referrer,
-          content::PAGE_TRANSITION_TYPED,
-          false,
-          std::string(),
+          params.url,
+          params.referrer,
+          params.transition_type,
+          params.is_renderer_initiated,
+          params.extra_headers,
           browser_context_));
-  entry->SetIsOverridingUserAgent(is_overriding_user_agent);
-  entry->SetBaseURLForDataURL(base_url);
-  entry->SetVirtualURL(history_url);
+  if (params.is_cross_site_redirect)
+    entry->set_should_replace_entry(true);
+  entry->SetIsOverridingUserAgent(override);
+  entry->set_transferred_global_request_id(
+      params.transferred_global_request_id);
 
-  LoadEntry(entry);
-}
-
-void NavigationControllerImpl::PostURL(
-    const GURL& url,
-    const content::Referrer& referrer,
-    const base::RefCountedMemory& http_body,
-    bool is_overriding_user_agent) {
-  // Must be http scheme for a post request.
-  if (!url.SchemeIs(chrome::kHttpScheme) &&
-      !url.SchemeIs(chrome::kHttpsScheme)) {
-    NOTREACHED();
-    return;
-  }
-
-  needs_reload_ = false;
-
-  NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-      CreateNavigationEntry(
-          url,
-          referrer,
-          content::PAGE_TRANSITION_TYPED,
-          false,
-          std::string(),
-          browser_context_));
-  entry->SetIsOverridingUserAgent(is_overriding_user_agent);
-  entry->SetHasPostData(true);
-  entry->SetBrowserInitiatedPostData(&http_body);
+  switch (params.load_type) {
+    case LOAD_TYPE_DEFAULT:
+      break;
+    case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
+      entry->SetHasPostData(true);
+      entry->SetBrowserInitiatedPostData(
+          params.browser_initiated_post_data);
+      break;
+    case LOAD_TYPE_DATA:
+      entry->SetBaseURLForDataURL(params.base_url_for_data_url);
+      entry->SetVirtualURL(params.virtual_url_for_data_url);
+      entry->SetCanLoadLocalResources(params.can_load_local_resources);
+      break;
+    default:
+      NOTREACHED();
+      break;
+  };
 
   LoadEntry(entry);
 }
 
 void NavigationControllerImpl::DocumentLoadedInFrame() {
-  last_document_loaded_ = base::TimeTicks::Now();
+  is_initial_navigation_ = false;
 }
 
 bool NavigationControllerImpl::RendererDidNavigate(
     const ViewHostMsg_FrameNavigate_Params& params,
-    content::LoadCommittedDetails* details) {
+    LoadCommittedDetails* details) {
 
   // Save the previous state before we clobber it.
   if (GetLastCommittedEntry()) {
@@ -710,60 +710,71 @@ bool NavigationControllerImpl::RendererDidNavigate(
   // If we are doing a cross-site reload, we need to replace the existing
   // navigation entry, not add another entry to the history. This has the side
   // effect of removing forward browsing history, if such existed.
-  if (pending_entry_ != NULL) {
-    details->did_replace_entry = pending_entry_->is_cross_site_reload();
-  }
+  // Or if we are doing a cross-site redirect navigation,
+  // we will do a similar thing.
+  details->did_replace_entry =
+      pending_entry_ && pending_entry_->should_replace_entry();
 
   // is_in_page must be computed before the entry gets committed.
-  details->is_in_page = IsURLInPageNavigation(params.url);
+  details->is_in_page = IsURLInPageNavigation(
+      params.url, params.was_within_same_page);
 
   // Do navigation-type specific actions. These will make and commit an entry.
   details->type = ClassifyNavigation(params);
 
   switch (details->type) {
-    case content::NAVIGATION_TYPE_NEW_PAGE:
-      RendererDidNavigateToNewPage(params, &(details->did_replace_entry));
+    case NAVIGATION_TYPE_NEW_PAGE:
+      RendererDidNavigateToNewPage(params, details->did_replace_entry);
       break;
-    case content::NAVIGATION_TYPE_EXISTING_PAGE:
+    case NAVIGATION_TYPE_EXISTING_PAGE:
       RendererDidNavigateToExistingPage(params);
       break;
-    case content::NAVIGATION_TYPE_SAME_PAGE:
+    case NAVIGATION_TYPE_SAME_PAGE:
       RendererDidNavigateToSamePage(params);
       break;
-    case content::NAVIGATION_TYPE_IN_PAGE:
-      RendererDidNavigateInPage(params, &(details->did_replace_entry));
+    case NAVIGATION_TYPE_IN_PAGE:
+      RendererDidNavigateInPage(params, &details->did_replace_entry);
       break;
-    case content::NAVIGATION_TYPE_NEW_SUBFRAME:
+    case NAVIGATION_TYPE_NEW_SUBFRAME:
       RendererDidNavigateNewSubframe(params);
       break;
-    case content::NAVIGATION_TYPE_AUTO_SUBFRAME:
+    case NAVIGATION_TYPE_AUTO_SUBFRAME:
       if (!RendererDidNavigateAutoSubframe(params))
         return false;
       break;
-    case content::NAVIGATION_TYPE_NAV_IGNORE:
+    case NAVIGATION_TYPE_NAV_IGNORE:
       // If a pending navigation was in progress, this canceled it.  We should
       // discard it and make sure it is removed from the URL bar.  After that,
       // there is nothing we can do with this navigation, so we just return to
       // the caller that nothing has happened.
       if (pending_entry_) {
         DiscardNonCommittedEntries();
-        web_contents_->NotifyNavigationStateChanged(
-            content::INVALIDATE_TYPE_URL);
+        web_contents_->NotifyNavigationStateChanged(INVALIDATE_TYPE_URL);
       }
       return false;
     default:
       NOTREACHED();
   }
 
+  // At this point, we know that the navigation has just completed, so
+  // record the time.
+  //
+  // TODO(akalin): Use "sane time" as described in
+  // http://www.chromium.org/developers/design-documents/sane-time .
+  base::Time timestamp =
+      time_smoother_.GetSmoothedTime(get_timestamp_callback_.Run());
+  DVLOG(1) << "Navigation finished at (smoothed) timestamp "
+           << timestamp.ToInternalValue();
+
   // All committed entries should have nonempty content state so WebKit doesn't
   // get confused when we go back to them (see the function for details).
   DCHECK(!params.content_state.empty());
   NavigationEntryImpl* active_entry =
       NavigationEntryImpl::FromNavigationEntry(GetActiveEntry());
+  active_entry->SetTimestamp(timestamp);
   active_entry->SetContentState(params.content_state);
   // No longer needed since content state will hold the post data if any.
   active_entry->SetBrowserInitiatedPostData(NULL);
-
 
   // Once committed, we do not need to track if the entry was initiated by
   // the renderer.
@@ -775,7 +786,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
   // Now prep the rest of the details for the notification and broadcast.
   details->entry = active_entry;
   details->is_main_frame =
-      content::PageTransitionIsMainFrame(params.transition);
+      PageTransitionIsMainFrame(params.transition);
   details->serialized_security_info = params.security_info;
   details->http_status_code = params.http_status_code;
   NotifyNavigationEntryCommitted(details);
@@ -783,7 +794,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
   return true;
 }
 
-content::NavigationType NavigationControllerImpl::ClassifyNavigation(
+NavigationType NavigationControllerImpl::ClassifyNavigation(
     const ViewHostMsg_FrameNavigate_Params& params) const {
   if (params.page_id == -1) {
     // The renderer generates the page IDs, and so if it gives us the invalid
@@ -804,15 +815,15 @@ content::NavigationType NavigationControllerImpl::ClassifyNavigation(
     //   list.
     //
     // In these cases, there's nothing we can do with them, so ignore.
-    return content::NAVIGATION_TYPE_NAV_IGNORE;
+    return NAVIGATION_TYPE_NAV_IGNORE;
   }
 
   if (params.page_id > web_contents_->GetMaxPageID()) {
     // Greater page IDs than we've ever seen before are new pages. We may or may
     // not have a pending entry for the page, and this may or may not be the
     // main frame.
-    if (content::PageTransitionIsMainFrame(params.transition))
-      return content::NAVIGATION_TYPE_NEW_PAGE;
+    if (PageTransitionIsMainFrame(params.transition))
+      return NAVIGATION_TYPE_NEW_PAGE;
 
     // When this is a new subframe navigation, we should have a committed page
     // for which it's a suframe in. This may not be the case when an iframe is
@@ -820,10 +831,10 @@ content::NavigationType NavigationControllerImpl::ClassifyNavigation(
     // written into the popup by script on the main page). For these cases,
     // there isn't any navigation stuff we can do, so just ignore it.
     if (!GetLastCommittedEntry())
-      return content::NAVIGATION_TYPE_NAV_IGNORE;
+      return NAVIGATION_TYPE_NAV_IGNORE;
 
     // Valid subframe navigation.
-    return content::NAVIGATION_TYPE_NEW_SUBFRAME;
+    return NAVIGATION_TYPE_NEW_SUBFRAME;
   }
 
   // Now we know that the notification is for an existing page. Find that entry.
@@ -839,7 +850,7 @@ content::NavigationType NavigationControllerImpl::ClassifyNavigation(
     // Because the unknown entry has committed, we risk showing the wrong URL in
     // release builds. Instead, we'll kill the renderer process to be safe.
     LOG(ERROR) << "terminating renderer for bad navigation: " << params.url;
-    content::RecordAction(UserMetricsAction("BadMessageTerminate_NC"));
+    RecordAction(UserMetricsAction("BadMessageTerminate_NC"));
 
     // Temporary code so we can get more information.  Format:
     //  http://url/foo.html#page1#max3#frame1#ids:2_Nx,1_1x,3_2
@@ -870,16 +881,16 @@ content::NavigationType NavigationControllerImpl::ClassifyNavigation(
     static_cast<RenderViewHostImpl*>(
         web_contents_->GetRenderViewHost())->Send(
             new ViewMsg_TempCrashWithData(url));
-    return content::NAVIGATION_TYPE_NAV_IGNORE;
+    return NAVIGATION_TYPE_NAV_IGNORE;
   }
   NavigationEntryImpl* existing_entry = entries_[existing_entry_index].get();
 
-  if (!content::PageTransitionIsMainFrame(params.transition)) {
+  if (!PageTransitionIsMainFrame(params.transition)) {
     // All manual subframes would get new IDs and were handled above, so we
     // know this is auto. Since the current page was found in the navigation
     // entry list, we're guaranteed to have a last committed entry.
     DCHECK(GetLastCommittedEntry());
-    return content::NAVIGATION_TYPE_AUTO_SUBFRAME;
+    return NAVIGATION_TYPE_AUTO_SUBFRAME;
   }
 
   // Anything below here we know is a main frame navigation.
@@ -894,7 +905,7 @@ content::NavigationType NavigationControllerImpl::ClassifyNavigation(
     // (the user doesn't want to have a new back/forward entry when they do
     // this). If this matches the last committed entry, we want to just ignore
     // the pending entry and go back to where we were (the "existing entry").
-    return content::NAVIGATION_TYPE_SAME_PAGE;
+    return NAVIGATION_TYPE_SAME_PAGE;
   }
 
   // Any toplevel navigations with the same base (minus the reference fragment)
@@ -902,26 +913,28 @@ content::NavigationType NavigationControllerImpl::ClassifyNavigation(
   // the time this doesn't matter since WebKit doesn't tell us about subframe
   // navigations that don't actually navigate, but it can happen when there is
   // an encoding override (it always sends a navigation request).
-  if (AreURLsInPageNavigation(existing_entry->GetURL(), params.url))
-    return content::NAVIGATION_TYPE_IN_PAGE;
+  if (AreURLsInPageNavigation(existing_entry->GetURL(), params.url,
+                              params.was_within_same_page)) {
+    return NAVIGATION_TYPE_IN_PAGE;
+  }
 
   // Since we weeded out "new" navigations above, we know this is an existing
   // (back/forward) navigation.
-  return content::NAVIGATION_TYPE_EXISTING_PAGE;
+  return NAVIGATION_TYPE_EXISTING_PAGE;
 }
 
 bool NavigationControllerImpl::IsRedirect(
   const ViewHostMsg_FrameNavigate_Params& params) {
   // For main frame transition, we judge by params.transition.
   // Otherwise, by params.redirects.
-  if (content::PageTransitionIsMainFrame(params.transition)) {
-    return content::PageTransitionIsRedirect(params.transition);
+  if (PageTransitionIsMainFrame(params.transition)) {
+    return PageTransitionIsRedirect(params.transition);
   }
   return params.redirects.size() > 1;
 }
 
 void NavigationControllerImpl::RendererDidNavigateToNewPage(
-    const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry) {
+   const ViewHostMsg_FrameNavigate_Params& params, bool replace_entry) {
   NavigationEntryImpl* new_entry;
   bool update_virtual_url;
   if (pending_entry_) {
@@ -933,15 +946,25 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     // Don't use the page type from the pending entry. Some interstitial page
     // may have set the type to interstitial. Once we commit, however, the page
     // type must always be normal.
-    new_entry->set_page_type(content::PAGE_TYPE_NORMAL);
+    new_entry->set_page_type(PAGE_TYPE_NORMAL);
     update_virtual_url = new_entry->update_virtual_url_with_url();
   } else {
     new_entry = new NavigationEntryImpl;
+
+    // Find out whether the new entry needs to update its virtual URL on URL
+    // change and set up the entry accordingly. This is needed to correctly
+    // update the virtual URL when replaceState is called after a pushState.
+    GURL url = params.url;
+    bool needs_update = false;
+    BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
+        &url, browser_context_, &needs_update);
+    new_entry->set_update_virtual_url_with_url(needs_update);
+
     // When navigating to a new page, give the browser URL handler a chance to
     // update the virtual URL based on the new URL. For example, this is needed
     // to show chrome://bookmarks/#1 when the bookmarks webui extension changes
     // the URL.
-    update_virtual_url = true;
+    update_virtual_url = needs_update;
   }
 
   new_entry->SetURL(params.url);
@@ -957,13 +980,13 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   new_entry->SetOriginalRequestURL(params.original_request_url);
   new_entry->SetIsOverridingUserAgent(params.is_overriding_user_agent);
 
-  InsertOrReplaceEntry(new_entry, *did_replace_entry);
+  InsertOrReplaceEntry(new_entry, replace_entry);
 }
 
 void NavigationControllerImpl::RendererDidNavigateToExistingPage(
     const ViewHostMsg_FrameNavigate_Params& params) {
   // We should only get here for main frame navigations.
-  DCHECK(content::PageTransitionIsMainFrame(params.transition));
+  DCHECK(PageTransitionIsMainFrame(params.transition));
 
   // This is a back/forward navigation. The existing page for the ID is
   // guaranteed to exist by ClassifyNavigation, and we just need to update it
@@ -974,12 +997,18 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
          entry_index < static_cast<int>(entries_.size()));
   NavigationEntryImpl* entry = entries_[entry_index].get();
 
-  // The URL may have changed due to redirects. The site instance will normally
-  // be the same except during session restore, when no site instance will be
-  // assigned.
+  // The URL may have changed due to redirects.
   entry->SetURL(params.url);
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
+
+  // The redirected to page should not inherit the favicon from the previous
+  // page.
+  if (PageTransitionIsRedirect(params.transition))
+    entry->GetFavicon() = FaviconStatus();
+
+  // The site instance will normally be the same except during session restore,
+  // when no site instance will be assigned.
   DCHECK(entry->site_instance() == NULL ||
          entry->site_instance() == web_contents_->GetSiteInstance());
   entry->set_site_instance(
@@ -997,8 +1026,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   //
   // Note that we need to use the "internal" version since we don't want to
   // actually change any other state, just kill the pointer.
-  if (pending_entry_)
-    DiscardNonCommittedEntriesInternal();
+  DiscardNonCommittedEntriesInternal();
 
   // If a transient entry was removed, the indices might have changed, so we
   // have to query the entry index again.
@@ -1029,7 +1057,7 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
 
 void NavigationControllerImpl::RendererDidNavigateInPage(
     const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry) {
-  DCHECK(content::PageTransitionIsMainFrame(params.transition)) <<
+  DCHECK(PageTransitionIsMainFrame(params.transition)) <<
       "WebKit should only tell us about in-page navs for the main frame.";
   // We're guaranteed to have an entry for this one.
   NavigationEntryImpl* existing_entry = GetEntryWithPageID(
@@ -1046,8 +1074,7 @@ void NavigationControllerImpl::RendererDidNavigateInPage(
   // This replaces the existing entry since the page ID didn't change.
   *did_replace_entry = true;
 
-  if (pending_entry_)
-    DiscardNonCommittedEntriesInternal();
+  DiscardNonCommittedEntriesInternal();
 
   // If a transient entry was removed, the indices might have changed, so we
   // have to query the entry index again.
@@ -1057,8 +1084,8 @@ void NavigationControllerImpl::RendererDidNavigateInPage(
 
 void NavigationControllerImpl::RendererDidNavigateNewSubframe(
     const ViewHostMsg_FrameNavigate_Params& params) {
-  if (content::PageTransitionStripQualifier(params.transition) ==
-      content::PAGE_TRANSITION_AUTO_SUBFRAME) {
+  if (PageTransitionStripQualifier(params.transition) ==
+      PAGE_TRANSITION_AUTO_SUBFRAME) {
     // This is not user-initiated. Ignore.
     return;
   }
@@ -1110,11 +1137,11 @@ int NavigationControllerImpl::GetIndexOfEntry(
   return (i == entries_.end()) ? -1 : static_cast<int>(i - entries_.begin());
 }
 
-bool NavigationControllerImpl::IsURLInPageNavigation(const GURL& url) const {
+bool NavigationControllerImpl::IsURLInPageNavigation(
+    const GURL& url, bool renderer_says_in_page) const {
   NavigationEntry* last_committed = GetLastCommittedEntry();
-  if (!last_committed)
-    return false;
-  return AreURLsInPageNavigation(last_committed->GetURL(), url);
+  return last_committed && AreURLsInPageNavigation(
+      last_committed->GetURL(), url, renderer_says_in_page);
 }
 
 void NavigationControllerImpl::CopyStateFrom(
@@ -1130,9 +1157,17 @@ void NavigationControllerImpl::CopyStateFrom(
   needs_reload_ = true;
   InsertEntriesFrom(source, source.GetEntryCount());
 
-  session_storage_namespace_ = source.session_storage_namespace_->Clone();
+  for (SessionStorageNamespaceMap::const_iterator it =
+           source.session_storage_namespace_map_.begin();
+       it != source.session_storage_namespace_map_.end();
+       ++it) {
+    SessionStorageNamespaceImpl* source_namespace =
+        static_cast<SessionStorageNamespaceImpl*>(it->second.get());
+    session_storage_namespace_map_.insert(
+        make_pair(it->first, source_namespace->Clone()));
+  }
 
-  FinishRestore(source.last_committed_entry_index_, false);
+  FinishRestore(source.last_committed_entry_index_, RESTORE_CURRENT_SESSION);
 
   // Copy the max page id map from the old tab to the new tab.  This ensures
   // that new and existing navigations in the tab's current SiteInstances
@@ -1251,6 +1286,23 @@ void NavigationControllerImpl::PruneAllButActive() {
   }
 }
 
+void NavigationControllerImpl::SetSessionStorageNamespace(
+    const std::string& partition_id,
+    SessionStorageNamespace* session_storage_namespace) {
+  if (!session_storage_namespace)
+    return;
+
+  // We can't overwrite an existing SessionStorage without violating spec.
+  // Attempts to do so may give a tab access to another tab's session storage
+  // so die hard on an error.
+  bool successful_insert = session_storage_namespace_map_.insert(
+      make_pair(partition_id,
+                static_cast<SessionStorageNamespaceImpl*>(
+                    session_storage_namespace)))
+          .second;
+  CHECK(successful_insert) << "Cannot replace existing SessionStorageNamespace";
+}
+
 void NavigationControllerImpl::SetMaxRestoredPageID(int32 max_id) {
   max_restored_page_id_ = max_id;
 }
@@ -1260,8 +1312,45 @@ int32 NavigationControllerImpl::GetMaxRestoredPageID() const {
 }
 
 SessionStorageNamespace*
-    NavigationControllerImpl::GetSessionStorageNamespace() const {
-  return session_storage_namespace_;
+NavigationControllerImpl::GetSessionStorageNamespace(SiteInstance* instance) {
+  std::string partition_id;
+  if (instance) {
+    // TODO(ajwong): When GetDefaultSessionStorageNamespace() goes away, remove
+    // this if statement so |instance| must not be NULL.
+    partition_id =
+        GetContentClient()->browser()->GetStoragePartitionIdForSite(
+            browser_context_, instance->GetSiteURL());
+  }
+
+  SessionStorageNamespaceMap::const_iterator it =
+      session_storage_namespace_map_.find(partition_id);
+  if (it != session_storage_namespace_map_.end())
+    return it->second.get();
+
+  // Create one if no one has accessed session storage for this partition yet.
+  //
+  // TODO(ajwong): Should this use the |partition_id| directly rather than
+  // re-lookup via |instance|?  http://crbug.com/142685
+  StoragePartition* partition =
+              BrowserContext::GetStoragePartition(browser_context_, instance);
+  SessionStorageNamespaceImpl* session_storage_namespace =
+      new SessionStorageNamespaceImpl(
+          static_cast<DOMStorageContextImpl*>(
+              partition->GetDOMStorageContext()));
+  session_storage_namespace_map_[partition_id] = session_storage_namespace;
+
+  return session_storage_namespace;
+}
+
+SessionStorageNamespace*
+NavigationControllerImpl::GetDefaultSessionStorageNamespace() {
+  // TODO(ajwong): Remove if statement in GetSessionStorageNamespace().
+  return GetSessionStorageNamespace(NULL);
+}
+
+const SessionStorageNamespaceMap&
+NavigationControllerImpl::GetSessionStorageNamespaceMap() const {
+  return session_storage_namespace_map_;
 }
 
 bool NavigationControllerImpl::NeedsReload() const {
@@ -1300,7 +1389,7 @@ int NavigationControllerImpl::GetPendingEntryIndex() const {
 
 void NavigationControllerImpl::InsertOrReplaceEntry(NavigationEntryImpl* entry,
                                                     bool replace) {
-  DCHECK(entry->GetTransitionType() != content::PAGE_TRANSITION_AUTO_SUBFRAME);
+  DCHECK(entry->GetTransitionType() != PAGE_TRANSITION_AUTO_SUBFRAME);
 
   // Copy the pending entry's unique ID to the committed entry.
   // I don't know if pending_entry_index_ can be other than -1 here.
@@ -1365,7 +1454,7 @@ void NavigationControllerImpl::NavigateToPendingEntry(ReloadType reload_type) {
       (entries_[pending_entry_index_]->restore_type() ==
           NavigationEntryImpl::RESTORE_NONE) &&
       (entries_[pending_entry_index_]->GetTransitionType() &
-          content::PAGE_TRANSITION_FORWARD_BACK)) {
+          PAGE_TRANSITION_FORWARD_BACK)) {
     web_contents_->Stop();
 
     // If an interstitial page is showing, we want to close it to get back
@@ -1408,10 +1497,10 @@ void NavigationControllerImpl::NavigateToPendingEntry(ReloadType reload_type) {
 }
 
 void NavigationControllerImpl::NotifyNavigationEntryCommitted(
-    content::LoadCommittedDetails* details) {
+    LoadCommittedDetails* details) {
   details->entry = GetActiveEntry();
-  content::NotificationDetails notification_details =
-      content::Details<content::LoadCommittedDetails>(details);
+  NotificationDetails notification_details =
+      Details<LoadCommittedDetails>(details);
 
   // We need to notify the ssl_manager_ before the web_contents_ so the
   // location bar will have up-to-date information about the security style
@@ -1423,9 +1512,9 @@ void NavigationControllerImpl::NotifyNavigationEntryCommitted(
   // notification below instead.
   web_contents_->NotifyNavigationStateChanged(kInvalidateAll);
 
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<NavigationController>(this),
+  NotificationService::current()->Notify(
+      NOTIFICATION_NAV_ENTRY_COMMITTED,
+      Source<NavigationController>(this),
       notification_details);
 }
 
@@ -1433,7 +1522,7 @@ void NavigationControllerImpl::NotifyNavigationEntryCommitted(
 size_t NavigationControllerImpl::max_entry_count() {
   if (max_entry_count_for_testing_ != kMaxEntryCountForTestingNotSet)
      return max_entry_count_for_testing_;
-  return content::kMaxSessionHistoryEntries;
+  return kMaxSessionHistoryEntries;
 }
 
 void NavigationControllerImpl::SetActive(bool is_active) {
@@ -1454,19 +1543,19 @@ void NavigationControllerImpl::LoadIfNecessary() {
 
 void NavigationControllerImpl::NotifyEntryChanged(const NavigationEntry* entry,
                                                   int index) {
-  content::EntryChangedDetails det;
+  EntryChangedDetails det;
   det.changed_entry = entry;
   det.index = index;
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_NAV_ENTRY_CHANGED,
-      content::Source<NavigationController>(this),
-      content::Details<content::EntryChangedDetails>(&det));
+  NotificationService::current()->Notify(
+      NOTIFICATION_NAV_ENTRY_CHANGED,
+      Source<NavigationController>(this),
+      Details<EntryChangedDetails>(&det));
 }
 
 void NavigationControllerImpl::FinishRestore(int selected_index,
-                                             bool from_last_session) {
+                                             RestoreType type) {
   DCHECK(selected_index >= 0 && selected_index < GetEntryCount());
-  ConfigureEntriesForRestore(&entries_, from_last_session);
+  ConfigureEntriesForRestore(&entries_, type);
 
   SetMaxRestoredPageID(static_cast<int32>(GetEntryCount()));
 
@@ -1515,10 +1604,17 @@ void NavigationControllerImpl::InsertEntriesFrom(
   for (int i = 0; i < max_index; i++) {
     // When cloning a tab, copy all entries except interstitial pages
     if (source.entries_[i].get()->GetPageType() !=
-        content::PAGE_TYPE_INTERSTITIAL) {
+        PAGE_TYPE_INTERSTITIAL) {
       entries_.insert(entries_.begin() + insert_index++,
                       linked_ptr<NavigationEntryImpl>(
                           new NavigationEntryImpl(*source.entries_[i])));
     }
   }
 }
+
+void NavigationControllerImpl::SetGetTimestampCallbackForTest(
+    const base::Callback<base::Time()>& get_timestamp_callback) {
+  get_timestamp_callback_ = get_timestamp_callback;
+}
+
+}  // namespace content

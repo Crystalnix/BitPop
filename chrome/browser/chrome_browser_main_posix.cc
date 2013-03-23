@@ -15,16 +15,12 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/logging.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/string_number_conversions.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
-
-#if defined(OS_ANDROID)
-#include <asm/page.h>  // for PAGE_SIZE needed by PTHREAD_STACK_MIN
-#endif
 
 #if defined(TOOLKIT_GTK)
 #include "chrome/browser/ui/gtk/chrome_browser_main_extra_parts_gtk.h"
@@ -283,11 +279,6 @@ void ChromeBrowserMainPartsPosix::PostMainMessageLoopStart() {
 void ChromeBrowserMainPartsPosix::ShowMissingLocaleMessageBox() {
 #if defined(OS_CHROMEOS)
   NOTREACHED();  // Should not ever happen on ChromeOS.
-#elif defined(OS_ANDROID)
-  // TODO(port) Update this as needed.
-  // Probably should not ever happen on Android, but at the time of this
-  // writing, Android isn't even using ChromeBrowserMainPartsPosix yet.
-  NOTREACHED();
 #elif defined(OS_MACOSX)
   // Not called on Mac because we load the locale files differently.
   NOTREACHED();

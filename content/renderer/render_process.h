@@ -14,9 +14,7 @@ namespace gfx {
 class Rect;
 }
 
-namespace skia {
-class PlatformCanvas;
-}
+namespace content {
 
 // A abstract interface representing the renderer end of the browser<->renderer
 // connection. The opposite end is the RenderProcessHost. This is a singleton
@@ -37,8 +35,8 @@ class RenderProcess : public ChildProcess {
   //
   // When no longer needed, you should pass the TransportDIB to
   // ReleaseTransportDIB so that it can be recycled.
-  virtual skia::PlatformCanvas* GetDrawingCanvas(TransportDIB** memory,
-                                                 const gfx::Rect& rect) = 0;
+  virtual SkCanvas* GetDrawingCanvas(TransportDIB** memory,
+                                     const gfx::Rect& rect) = 0;
 
   // Frees shared memory allocated by AllocSharedMemory.  You should only use
   // this function to free the SharedMemory object.
@@ -69,5 +67,7 @@ class RenderProcess : public ChildProcess {
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderProcess);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_RENDER_PROCESS_H_

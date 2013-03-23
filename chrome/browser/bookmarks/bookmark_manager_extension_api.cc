@@ -7,20 +7,22 @@
 #include <vector>
 
 #include "base/json/json_writer.h"
+#include "base/prefs/public/pref_service_base.h"
 #include "base/string_number_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/bookmarks/bookmark_extension_api_constants.h"
-#include "chrome/browser/bookmarks/bookmark_extension_helpers.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
+// TODO (rdevlin.cronin): Move BookmarkManagerAPI to
+// chrome/browser/extensions/api so these two aren't interdependent.
+#include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
+#include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/view_type_utils.h"
 #include "chrome/common/pref_names.h"
@@ -31,10 +33,10 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_WIN)
-#include "base/win/metro.h"
+#include "win8/util/win8_util.h"
 #endif  // OS_WIN
 
-namespace keys = bookmark_extension_api_constants;
+namespace keys = extensions::bookmark_api_constants;
 
 using content::WebContents;
 
@@ -155,36 +157,43 @@ void BookmarkNodeDataToJSON(Profile* profile, const BookmarkNodeData& data,
 }  // namespace
 
 BookmarkManagerExtensionEventRouter::BookmarkManagerExtensionEventRouter(
-    Profile* profile, TabContents* tab)
+    Profile* profile,
+    content::WebContents* web_contents)
     : profile_(profile),
-    tab_(tab) {
-  tab_->bookmark_tab_helper()->SetBookmarkDragDelegate(this);
+      web_contents_(web_contents) {
+  BookmarkTabHelper* bookmark_tab_helper =
+      BookmarkTabHelper::FromWebContents(web_contents_);
+  bookmark_tab_helper->set_bookmark_drag_delegate(this);
 }
 
 BookmarkManagerExtensionEventRouter::~BookmarkManagerExtensionEventRouter() {
-  if (tab_->bookmark_tab_helper()->GetBookmarkDragDelegate() == this)
-    tab_->bookmark_tab_helper()->SetBookmarkDragDelegate(NULL);
+  BookmarkTabHelper* bookmark_tab_helper =
+      BookmarkTabHelper::FromWebContents(web_contents_);
+  if (bookmark_tab_helper->bookmark_drag_delegate() == this)
+    bookmark_tab_helper->set_bookmark_drag_delegate(NULL);
 }
 
-void BookmarkManagerExtensionEventRouter::DispatchEvent(const char* event_name,
-                                                        const ListValue* args) {
-  if (!profile_->GetExtensionEventRouter())
+void BookmarkManagerExtensionEventRouter::DispatchEvent(
+    const char* event_name,
+    scoped_ptr<ListValue> args) {
+  if (!extensions::ExtensionSystem::Get(profile_)->event_router())
     return;
 
-  std::string json_args;
-  base::JSONWriter::Write(args, &json_args);
-  profile_->GetExtensionEventRouter()->DispatchEventToRenderers(
-      event_name, json_args, NULL, GURL(), extensions::EventFilteringInfo());
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      event_name, args.Pass()));
+  extensions::ExtensionSystem::Get(profile_)->event_router()->
+      BroadcastEvent(event.Pass());
 }
 
 void BookmarkManagerExtensionEventRouter::DispatchDragEvent(
-    const BookmarkNodeData& data, const char* event_name) {
+    const BookmarkNodeData& data,
+    const char* event_name) {
   if (data.size() == 0)
     return;
 
-  ListValue args;
-  BookmarkNodeDataToJSON(profile_, data, &args);
-  DispatchEvent(event_name, &args);
+  scoped_ptr<ListValue> args(new ListValue());
+  BookmarkNodeDataToJSON(profile_, data, args.get());
+  DispatchEvent(event_name, args.Pass());
 }
 
 void BookmarkManagerExtensionEventRouter::OnDragEnter(
@@ -281,7 +290,7 @@ bool CanPasteBookmarkManagerFunction::RunImpl() {
     return false;
   }
   bool can_paste = bookmark_utils::CanPasteFromClipboard(parent_node);
-  SetResult(Value::CreateBooleanValue(can_paste));
+  SetResult(new base::FundamentalValue(can_paste));
   return true;
 }
 
@@ -485,19 +494,20 @@ bool GetSubtreeBookmarkManagerFunction::RunImpl() {
   }
   scoped_ptr<ListValue> json(new ListValue());
   if (folders_only) {
-    bookmark_extension_helpers::AddNodeFoldersOnly(node,
+    extensions::bookmark_api_helpers::AddNodeFoldersOnly(node,
                                                    json.get(),
                                                    true);
   } else {
-    bookmark_extension_helpers::AddNode(node, json.get(), true);
+    extensions::bookmark_api_helpers::AddNode(node, json.get(), true);
   }
   SetResult(json.release());
   return true;
 }
 
 bool CanEditBookmarkManagerFunction::RunImpl() {
-  SetResult(Value::CreateBooleanValue(
-      profile_->GetPrefs()->GetBoolean(prefs::kEditBookmarksEnabled)));
+  PrefServiceBase* prefs = PrefServiceBase::FromBrowserContext(profile_);
+  SetResult(new base::FundamentalValue(
+      prefs->GetBoolean(prefs::kEditBookmarksEnabled)));
   return true;
 }
 
@@ -510,10 +520,10 @@ bool CanOpenNewWindowsBookmarkFunction::RunImpl() {
   bool can_open_new_windows = true;
 
 #if defined(OS_WIN)
-  if (base::win::IsMetroProcess())
+  if (win8::IsSingleWindowMetroMode())
     can_open_new_windows = false;
 #endif  // OS_WIN
 
-  SetResult(Value::CreateBooleanValue(can_open_new_windows));
+  SetResult(new base::FundamentalValue(can_open_new_windows));
   return true;
 }

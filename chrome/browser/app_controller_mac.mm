@@ -25,10 +25,10 @@
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/printing/cloud_print/virtual_driver_install_helper.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/service/service_process_control.h"
+#include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
@@ -69,11 +69,11 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
-#include "ui/base/accelerators/accelerator_cocoa.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
@@ -102,7 +102,8 @@ bool g_is_opening_new_window = false;
 // not possible. If the last active browser is minimized (in particular, if
 // there are only minimized windows), it will unminimize it.
 Browser* ActivateBrowser(Profile* profile) {
-  Browser* browser = browser::FindLastActiveWithProfile(profile);
+  Browser* browser = chrome::FindLastActiveWithProfile(profile,
+      chrome::HOST_DESKTOP_TYPE_NATIVE);
   if (browser)
     browser->window()->Activate();
   return browser;
@@ -112,11 +113,11 @@ Browser* ActivateBrowser(Profile* profile) {
 // to the new |Browser|.
 Browser* CreateBrowser(Profile* profile) {
   {
-    AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
+    base::AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
     chrome::NewEmptyWindow(profile);
   }
 
-  Browser* browser = browser::GetLastActiveBrowser();
+  Browser* browser = chrome::GetLastActiveBrowser();
   CHECK(browser);
   return browser;
 }
@@ -167,9 +168,6 @@ void RecordLastRunAppBundlePath() {
 
 }  // anonymous namespace
 
-const AEEventClass kAECloudPrintInstallClass = 'GCPi';
-const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
-
 @interface AppController (Private)
 - (void)initMenuState;
 - (void)initProfileMenu;
@@ -179,8 +177,6 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 - (void)getUrl:(NSAppleEventDescriptor*)event
      withReply:(NSAppleEventDescriptor*)reply;
 - (void)submitCloudPrintJob:(NSAppleEventDescriptor*)event;
-- (void)installCloudPrint:(NSAppleEventDescriptor*)event;
-- (void)uninstallCloudPrint:(NSAppleEventDescriptor*)event;
 - (void)windowLayeringDidChange:(NSNotification*)inNotification;
 - (void)windowChangedToProfile:(Profile*)profile;
 - (void)checkForAnyKeyWindows;
@@ -207,15 +203,6 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
           andSelector:@selector(submitCloudPrintJob:)
         forEventClass:cloud_print::kAECloudPrintClass
            andEventID:cloud_print::kAECloudPrintClass];
-  // Install and uninstall handlers for virtual drivers.
-  [em setEventHandler:self
-          andSelector:@selector(installCloudPrint:)
-        forEventClass:kAECloudPrintInstallClass
-           andEventID:kAECloudPrintInstallClass];
-  [em setEventHandler:self
-          andSelector:@selector(uninstallCloudPrint:)
-        forEventClass:kAECloudPrintUninstallClass
-           andEventID:kAECloudPrintUninstallClass];
   [em setEventHandler:self
           andSelector:@selector(getUrl:withReply:)
         forEventClass:'WWW!'    // A particularly ancient AppleEvent that dates
@@ -273,10 +260,6 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
                            andEventID:kAEGetURL];
   [em removeEventHandlerForEventClass:cloud_print::kAECloudPrintClass
                            andEventID:cloud_print::kAECloudPrintClass];
-  [em removeEventHandlerForEventClass:kAECloudPrintInstallClass
-                           andEventID:kAECloudPrintInstallClass];
-  [em removeEventHandlerForEventClass:kAECloudPrintUninstallClass
-                           andEventID:kAECloudPrintUninstallClass];
   [em removeEventHandlerForEventClass:'WWW!'
                            andEventID:'OURL'];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -366,8 +349,8 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 }
 
 - (void)didEndMainMessageLoop {
-  DCHECK_EQ(0u, browser::GetBrowserCount([self lastProfile]));
-  if (!browser::GetBrowserCount([self lastProfile])) {
+  DCHECK_EQ(0u, chrome::GetBrowserCount([self lastProfile]));
+  if (!chrome::GetBrowserCount([self lastProfile])) {
     // As we're shutting down, we need to nuke the TabRestoreService, which
     // will start the shutdown of the NavigationControllers and allow for
     // proper shutdown. If we don't do this, Chrome won't shut down cleanly,
@@ -609,10 +592,7 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidBecomeActive:(NSNotification*)notify {
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_APP_ACTIVATED,
-      content::NotificationService::AllSources(),
-      content::NotificationService::NoDetails());
+  content::PluginService::GetInstance()->AppActivated();
 }
 
 // Helper function for populating and displaying the in progress downloads at
@@ -672,7 +652,8 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
       if ([self userWillWaitForInProgressDownloads:downloadCount]) {
         // Create a new browser window (if necessary) and navigate to the
         // downloads page if the user chooses to wait.
-        Browser* browser = browser::FindBrowserWithProfile(profiles[i]);
+        Browser* browser = chrome::FindBrowserWithProfile(
+            profiles[i], chrome::HOST_DESKTOP_TYPE_NATIVE);
         if (!browser) {
           browser = new Browser(Browser::CreateParams(profiles[i]));
           browser->window()->Show();
@@ -705,7 +686,7 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 // sheets) will not count as blocking the browser. But things like open/save
 // dialogs that are window modal will block the browser.
 - (BOOL)keyWindowIsNotModal {
-  Browser* browser = browser::GetLastActiveBrowser();
+  Browser* browser = chrome::GetLastActiveBrowser();
   return [NSApp modalWindow] == nil && (!browser ||
          ![[browser->window()->GetNativeWindow() attachedSheet]
              isKindOfClass:[NSWindow class]]);
@@ -806,6 +787,13 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
       return;
     }
   }
+
+  // Ignore commands during session restore's browser creation.  It uses a
+  // nested message loop and commands dispatched during this operation cause
+  // havoc.
+  if (SessionRestore::IsRestoring(lastProfile) &&
+      MessageLoop::current()->IsNested())
+    return;
 
   NSInteger tag = [sender tag];
   switch (tag) {
@@ -986,7 +974,7 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 
   // Otherwise open a new window.
   {
-    AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
+    base::AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
     int return_code;
     StartupBrowserCreator browser_creator;
     browser_creator.LaunchBrowser(
@@ -1026,12 +1014,7 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
   NSMenu* mainMenu = [NSApp mainMenu];
   NSMenuItem* profileMenu = [mainMenu itemWithTag:IDC_PROFILE_MAIN_MENU];
 
-  // On Leopard, hiding main menubar items does not work. This manifests itself
-  // in Chromium as squished menu items <http://crbug.com/90753>. To prevent
-  // this, remove the Profile menu on Leopard, regardless of the user's
-  // multiprofile state.
-  if (!ProfileManager::IsMultipleProfilesEnabled() ||
-      base::mac::IsOSLeopard()) {
+  if (!ProfileManager::IsMultipleProfilesEnabled()) {
     [mainMenu removeItem:profileMenu];
     return;
   }
@@ -1089,7 +1072,7 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
     return;
   }
 
-  Browser* browser = browser::GetLastActiveBrowser();
+  Browser* browser = chrome::GetLastActiveBrowser();
   // if no browser window exists then create one with no tabs to be filled in
   if (!browser) {
     browser = new Browser(Browser::CreateParams([self lastProfile]));
@@ -1136,18 +1119,6 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
         FilePath([inputPath UTF8String]), title16,
         printTicket16, [mime UTF8String], /*delete_on_close=*/false);
   }
-}
-
-// Calls the helper class to install the virtual driver to the
-// service process.
-- (void)installCloudPrint:(NSAppleEventDescriptor*)event {
-  cloud_print::VirtualDriverInstallHelper::SetUpInstall();
-}
-
-// Calls the helper class to uninstall the virtual driver to the
-// service process.
-- (void)uninstallCloudPrint:(NSAppleEventDescriptor*)event {
-  cloud_print::VirtualDriverInstallHelper::SetUpUninstall();
 }
 
 - (void)application:(NSApplication*)sender
@@ -1202,6 +1173,12 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
   NSMenu* dockMenu = [[[NSMenu alloc] initWithTitle: @""] autorelease];
   Profile* profile = [self lastProfile];
 
+  BOOL profilesAdded = [profileMenuController_ insertItemsIntoMenu:dockMenu
+                                                          atOffset:0
+                                                          fromDock:YES];
+  if (profilesAdded)
+    [dockMenu addItem:[NSMenuItem separatorItem]];
+
   NSString* titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_WINDOW_MAC);
   scoped_nsobject<NSMenuItem> item(
       [[NSMenuItem alloc] initWithTitle:titleStr
@@ -1212,9 +1189,10 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
   [dockMenu addItem:item];
 
   titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_INCOGNITO_WINDOW_MAC);
-  item.reset([[NSMenuItem alloc] initWithTitle:titleStr
-                                        action:@selector(commandFromDock:)
-                                 keyEquivalent:@""]);
+  item.reset(
+      [[NSMenuItem alloc] initWithTitle:titleStr
+                                 action:@selector(commandFromDock:)
+                          keyEquivalent:@""]);
   [item setTarget:self];
   [item setTag:IDC_NEW_INCOGNITO_WINDOW];
   [dockMenu addItem:item];

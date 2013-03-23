@@ -18,8 +18,10 @@
 #include "sandbox/win/src/sandbox.h"
 #endif
 
+namespace content {
+
 // Mainline routine for running as the worker process.
-int WorkerMain(const content::MainFunctionParams& parameters) {
+int WorkerMain(const MainFunctionParams& parameters) {
   // The main message loop of the worker process.
   MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrWorkerMain");
@@ -27,8 +29,6 @@ int WorkerMain(const content::MainFunctionParams& parameters) {
   base::SystemMonitor system_monitor;
   HighResolutionTimerManager hi_res_timer_manager;
 
-  ChildProcess worker_process;
-  worker_process.set_main_thread(new WorkerThread());
 #if defined(OS_WIN)
   sandbox::TargetServices* target_services =
       parameters.sandbox_info->target_services;
@@ -43,11 +43,18 @@ int WorkerMain(const content::MainFunctionParams& parameters) {
   ::GetUserDefaultLCID();
 
   target_services->LowerToken();
+#elif defined(OS_MAC)
+  // On OS X, if the sandbox fails to initialize, something has gone terribly
+  // wrong and we should die.
+  CHECK(InitializeSandbox());
+#elif defined(OS_LINUX)
+  // On Linux, the sandbox must be initialized early, before any thread is
+  // created.
+  InitializeSandbox();
 #endif
 
-#if defined(OS_LINUX)
-  content::InitializeSandbox();
-#endif
+  ChildProcess worker_process;
+  worker_process.set_main_thread(new WorkerThread());
 
   const CommandLine& parsed_command_line = parameters.command_line;
   if (parsed_command_line.HasSwitch(switches::kWaitForDebugger)) {
@@ -60,3 +67,5 @@ int WorkerMain(const content::MainFunctionParams& parameters) {
 
   return 0;
 }
+
+}  // namespace content

@@ -9,13 +9,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
-#include "content/public/browser/notification_observer.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service.h"
 
 class PrefService;
-class PrefSetObserver;
 
 // A net::ProxyConfigService implementation that applies preference proxy
 // settings (pushed from PrefProxyConfigTrackerImpl) as overrides to the proxy
@@ -78,7 +77,7 @@ class ChromeProxyConfigService
 // A class that tracks proxy preferences. It translates the configuration
 // to net::ProxyConfig and pushes the result over to the IO thread for
 // ChromeProxyConfigService::UpdateProxyConfig to use.
-class PrefProxyConfigTrackerImpl : public content::NotificationObserver {
+class PrefProxyConfigTrackerImpl {
  public:
   explicit PrefProxyConfigTrackerImpl(PrefService* pref_service);
   virtual ~PrefProxyConfigTrackerImpl();
@@ -132,11 +131,7 @@ class PrefProxyConfigTrackerImpl : public content::NotificationObserver {
   virtual void OnProxyConfigChanged(ProxyPrefs::ConfigState config_state,
                                     const net::ProxyConfig& config);
 
-  // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
+  void OnProxyPrefChanged();
 
   const PrefService* prefs() const { return pref_service_; }
   bool update_pending() const { return update_pending_; }
@@ -157,7 +152,7 @@ class PrefProxyConfigTrackerImpl : public content::NotificationObserver {
   PrefService* pref_service_;
   ChromeProxyConfigService* chrome_proxy_config_service_;  // Weak ptr.
   bool update_pending_;  // True if config has not been pushed to network stack.
-  scoped_ptr<PrefSetObserver> proxy_prefs_observer_;
+  PrefChangeRegistrar proxy_prefs_;
 
   DISALLOW_COPY_AND_ASSIGN(PrefProxyConfigTrackerImpl);
 };

@@ -2,11 +2,11 @@
 
 
 <p>
-Each internationalized extension has at least one
+Each internationalized extension or app has at least one
 file named <code>messages.json</code>
-that provides locale-specific strings for the extension.
+that provides locale-specific strings.
 This page describes the format of <code>messages.json</code> files.
-For information on how to internationalize and localize your extension,
+For information on how to internationalize and localize,
 see the <a href="i18n.html">Internationalization</a> page.
 </p>
 
@@ -182,7 +182,7 @@ For example, use the following code to specify the message
 Although placeholders such as <code>$USER$</code> are
 the preferred way of referring to <em>substitution strings</em>
 (strings specified using the <em>substitutions</em> parameter of
-<a href="i18n.html#method-getMessage"><code>getMessage()</code></a>)
+$ref:i18n.getMessage)
 you can also refer to substitution strings directly
 within the message.
 For example, the following message
@@ -266,7 +266,7 @@ as a <a href="#name">message name</a>.
 The "content" item's value is a string
 that can refer to substitution strings, which are
 specified using the
-<a href="i18n.html#method-getMessage"><code>getMessage()</code></a> method's
+$ref:i18n.getMessage method's
 <em>substitutions</em> parameter.
 The value of a "content" item is typically something like
 "Example.com" or "$1".
@@ -278,7 +278,7 @@ The following table shows how
 strings specified by the <em>substitutions</em> parameter.
 </p>
 
-<table>
+<table class="simple">
 <tr>
 <th> <em>substitutions</em> parameter </th>
 <th> Value of $1</th>

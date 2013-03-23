@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_resource_dispatcher_host_delegate.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
@@ -26,6 +27,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -183,6 +185,7 @@ class DelayLoadStartAndExecuteJavascript
 
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
+      int64 parent_frame_id,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
@@ -236,6 +239,7 @@ class TestResourceDispatcherHostDelegate
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
+      appcache::AppCacheService* appcache_service,
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
@@ -244,6 +248,7 @@ class TestResourceDispatcherHostDelegate
     ChromeResourceDispatcherHostDelegate::RequestBeginning(
         request,
         resource_context,
+        appcache_service,
         resource_type,
         child_id,
         route_id,
@@ -397,6 +402,36 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirect) {
           << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirectSingleProcess) {
+  // Set max renderers to 1 to force running out of processes.
+  content::RenderProcessHost::SetMaxRendererProcessCount(1);
+
+  // Wait for the extension to set itself up and return control to us.
+  ASSERT_TRUE(RunExtensionSubtest(
+      "webnavigation", "test_serverRedirectSingleProcess.html"))
+          << message_;
+
+  WebContents* tab = chrome::GetActiveWebContents(browser());
+  content::WaitForLoadStop(tab);
+
+  ResultCatcher catcher;
+  GURL url(base::StringPrintf(
+      "http://www.a.com:%d/"
+          "files/extensions/api_test/webnavigation/serverRedirect/a.html",
+      test_server()->host_port_pair().port()));
+
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  url = GURL(base::StringPrintf(
+      "http://www.b.com:%d/server-redirect?http://www.b.com:%d/",
+      test_server()->host_port_pair().port(),
+      test_server()->host_port_pair().port()));
+
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
 IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ForwardBack) {
   ASSERT_TRUE(
       RunExtensionSubtest("webnavigation", "test_forwardBack.html"))
@@ -444,7 +479,8 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, UserAction) {
 
   ResultCatcher catcher;
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
   GURL url = extension->GetResourceURL("userAction/a.html");
@@ -477,7 +513,8 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, RequestOpenTab) {
 
   ResultCatcher catcher;
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
   GURL url = extension->GetResourceURL("requestOpenTab/a.html");
@@ -569,7 +606,8 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
   LoadExtension(test_data_dir_.AppendASCII("webnavigation").AppendASCII("app"));
   LoadExtension(test_data_dir_.AppendASCII("webnavigation"));
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
 
@@ -580,12 +618,18 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
       "navigate2()",
       extension->GetResourceURL("crossProcess/empty.html"));
 
-  // See crossProcess/e.html.
-  DelayLoadStartAndExecuteJavascript call_script2(
-      test_navigation_listener(),
-      test_server()->GetURL("test2"),
-      "updateHistory()",
-      extension->GetResourceURL("crossProcess/empty.html"));
+  ASSERT_TRUE(RunPageTest(
+      extension->GetResourceURL("test_crossProcess.html").spec()))
+          << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessFragment) {
+  LoadExtension(test_data_dir_.AppendASCII("webnavigation"));
+
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
+  const extensions::Extension* extension =
+      service->GetExtensionById(last_loaded_extension_id_, false);
 
   // See crossProcess/f.html.
   DelayLoadStartAndExecuteJavascript call_script3(
@@ -605,6 +649,26 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
           "crossProcess/g.html?%d#foo",
           test_server()->host_port_pair().port())));
 
+  ASSERT_TRUE(RunPageTest(
+      extension->GetResourceURL("test_crossProcessFragment.html").spec()))
+          << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessHistory) {
+  LoadExtension(test_data_dir_.AppendASCII("webnavigation"));
+
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
+  const extensions::Extension* extension =
+      service->GetExtensionById(last_loaded_extension_id_, false);
+
+  // See crossProcess/e.html.
+  DelayLoadStartAndExecuteJavascript call_script2(
+      test_navigation_listener(),
+      test_server()->GetURL("test2"),
+      "updateHistory()",
+      extension->GetResourceURL("crossProcess/empty.html"));
+
   // See crossProcess/h.html.
   DelayLoadStartAndExecuteJavascript call_script5(
       test_navigation_listener(),
@@ -620,7 +684,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
       extension->GetResourceURL("crossProcess/empty.html"));
 
   ASSERT_TRUE(RunPageTest(
-      extension->GetResourceURL("test_crossProcess.html").spec()))
+      extension->GetResourceURL("test_crossProcessHistory.html").spec()))
           << message_;
 }
 

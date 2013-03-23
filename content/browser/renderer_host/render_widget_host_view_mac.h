@@ -7,6 +7,10 @@
 
 #import <Cocoa/Cocoa.h>
 #include <list>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
@@ -56,7 +60,7 @@ class RenderWidgetHostViewMacEditCommandHelper;
 
   // These are part of the magic tooltip code from WebKit's WebHTMLView:
   id trackingRectOwner_;              // (not retained)
-  void *trackingRectUserData_;
+  void* trackingRectUserData_;
   NSTrackingRectTag lastToolTipTag_;
   scoped_nsobject<NSString> toolTip_;
 
@@ -117,7 +121,7 @@ class RenderWidgetHostViewMacEditCommandHelper;
   // Contains edit commands received by the -doCommandBySelector: method when
   // handling a key down event, not including inserting commands, eg. insertTab,
   // etc.
-  EditCommands editCommands_;
+  content::EditCommands editCommands_;
 
   // The plugin that currently has focus (-1 if no plugin has focus).
   int focusedPluginIdentifier_;
@@ -138,9 +142,16 @@ class RenderWidgetHostViewMacEditCommandHelper;
 
   // The scale factor of the display this view is in.
   float deviceScaleFactor_;
+
+  // If true then escape key down events are suppressed until the first escape
+  // key up event. (The up event is suppressed as well). This is used by the
+  // flash fullscreen code to avoid sending a key up event without a matching
+  // key down event.
+  BOOL suppressNextEscapeKeyUp_;
 }
 
 @property(nonatomic, readonly) NSRange selectedRange;
+@property(nonatomic, readonly) BOOL suppressNextEscapeKeyUp;
 
 - (void)setCanBeKeyView:(BOOL)can;
 - (void)setTakesFocusOnlyOnMouseDown:(BOOL)b;
@@ -188,6 +199,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
   RenderWidgetHostViewCocoa* cocoa_view() const { return cocoa_view_; }
 
   void SetDelegate(NSObject<RenderWidgetHostViewMacDelegate>* delegate);
+  void SetAllowOverlappingViews(bool overlapping);
 
   // RenderWidgetHostView implementation.
   virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
@@ -208,6 +220,11 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
   virtual void SetTakesFocusOnlyOnMouseDown(bool flag) OVERRIDE;
   virtual void SetWindowVisibility(bool visible) OVERRIDE;
   virtual void WindowFrameChanged() OVERRIDE;
+  virtual void ShowDefinitionForSelection() OVERRIDE;
+  virtual bool SupportsSpeech() const OVERRIDE;
+  virtual void SpeakSelection() OVERRIDE;
+  virtual bool IsSpeaking() const OVERRIDE;
+  virtual void StopSpeaking() OVERRIDE;
   virtual void SetBackground(const SkBitmap& background) OVERRIDE;
 
   // Implementation of RenderWidgetHostViewPort.
@@ -218,21 +235,26 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
+      const gfx::Vector2d& scroll_offset,
       const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(ui::TextInputType state,
-                                     bool can_compose_inline) OVERRIDE;
-  virtual void SelectionBoundsChanged(const gfx::Rect& start_rect,
-                                      const gfx::Rect& end_rect) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void SelectionBoundsChanged(
+      const gfx::Rect& start_rect,
+      WebKit::WebTextDirection start_direction,
+      const gfx::Rect& end_rect,
+      WebKit::WebTextDirection end_direction) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
   virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect, int scroll_dx, int scroll_dy,
+      const gfx::Rect& scroll_rect,
+      const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
@@ -246,7 +268,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool)>& callback,
-      skia::PlatformCanvas* output) OVERRIDE;
+      skia::PlatformBitmap* output) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
 
   virtual void OnAccessibilityNotifications(
@@ -306,8 +328,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
   // to be reloaded.
   void ForceTextureReload();
 
-  virtual void ProcessTouchAck(WebKit::WebInputEvent::Type type,
-                               bool processed) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
@@ -332,7 +352,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
   // Call setNeedsDisplay on the cocoa_view_. The IOSurface will be drawn during
   // the next drawRect. Return true if the Ack should be sent, false if it
   // should be deferred until drawRect.
-  bool CompositorSwapBuffers(uint64 surface_handle);
+  bool CompositorSwapBuffers(uint64 surface_handle, const gfx::Size& size);
   // Ack pending SwapBuffers requests, if any, to unblock the GPU process. Has
   // no effect if there are no pending requests.
   void AckPendingSwapBuffers();
@@ -406,8 +426,15 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
 
   scoped_ptr<CompositingIOSurfaceMac> compositing_iosurface_;
 
+  // Whether to allow overlapping views.
+  bool allow_overlapping_views_;
+
   NSWindow* pepper_fullscreen_window() const {
     return pepper_fullscreen_window_;
+  }
+
+  RenderWidgetHostViewMac* fullscreen_parent_host_view() const {
+    return fullscreen_parent_host_view_;
   }
 
  private:
@@ -452,6 +479,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase {
   // The fullscreen window used for pepper flash.
   scoped_nsobject<NSWindow> pepper_fullscreen_window_;
   scoped_nsobject<FullscreenWindowManager> fullscreen_window_manager_;
+  // Our parent host view, if this is fullscreen.  NULL otherwise.
+  RenderWidgetHostViewMac* fullscreen_parent_host_view_;
 
   // List of pending swaps for deferred acking:
   //   pairs of (route_id, gpu_host_id).

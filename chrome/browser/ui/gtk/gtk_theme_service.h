@@ -11,15 +11,18 @@
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "chrome/browser/themes/theme_service.h"
-#include "content/public/browser/notification_observer.h"
 #include "ui/base/glib/glib_integers.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/color_utils.h"
 
 class Profile;
+
+namespace content {
+class NotificationObserver;
+}
 
 namespace extensions {
 class Extension;
@@ -67,9 +70,8 @@ class GtkThemeService : public ThemeService {
   // Sets that we aren't using the system theme, then calls
   // ThemeService's implementation.
   virtual void Init(Profile* profile) OVERRIDE;
-  virtual SkBitmap* GetBitmapNamed(int id) const OVERRIDE;
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE;
-  virtual const gfx::Image* GetImageNamed(int id) const OVERRIDE;
+  virtual gfx::Image GetImageNamed(int id) const OVERRIDE;
   virtual SkColor GetColor(int id) const OVERRIDE;
   virtual bool HasCustomImage(int id) const OVERRIDE;
   virtual void SetTheme(const extensions::Extension* extension) OVERRIDE;
@@ -77,11 +79,6 @@ class GtkThemeService : public ThemeService {
   virtual void SetNativeTheme() OVERRIDE;
   virtual bool UsingDefaultTheme() const OVERRIDE;
   virtual bool UsingNativeTheme() const OVERRIDE;
-
-  // Overridden from ThemeService, content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   // Creates a GtkChromeButton instance, registered with this theme provider,
   // with a "destroy" signal to remove it from our internal list when it goes
@@ -95,7 +92,7 @@ class GtkThemeService : public ThemeService {
   // Builds a GtkLabel that is |color| in chrome theme mode, and the normal
   // text color in gtk-mode. Like the previous two calls, listens for the
   // object's destruction.
-  GtkWidget* BuildLabel(const std::string& text, GdkColor color);
+  GtkWidget* BuildLabel(const std::string& text, const GdkColor& color);
 
   // Creates a theme-aware vertical separator widget.
   GtkWidget* CreateToolbarSeparator();
@@ -138,6 +135,12 @@ class GtkThemeService : public ThemeService {
   }
   SkColor get_inactive_selection_fg_color() const {
     return inactive_selection_fg_color_;
+  }
+  SkColor get_location_bar_text_color() const {
+    return location_bar_text_color_;
+  }
+  SkColor get_location_bar_bg_color() const {
+    return location_bar_bg_color_;
   }
 
   // These functions return an image that is not owned by the caller and should
@@ -239,6 +242,8 @@ class GtkThemeService : public ThemeService {
   CHROMEGTK_CALLBACK_1(GtkThemeService, gboolean, OnSeparatorExpose,
                        GdkEventExpose*);
 
+  void OnUsesSystemThemeChanged();
+
   // Whether we should be using gtk rendering.
   bool use_gtk_;
 
@@ -280,6 +285,8 @@ class GtkThemeService : public ThemeService {
   SkColor active_selection_fg_color_;
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
+  SkColor location_bar_bg_color_;
+  SkColor location_bar_text_color_;
 
   // A GtkIconSet that has the tinted icons for the NORMAL and PRELIGHT states
   // of the IDR_FULLSCREEN_MENU_BUTTON tinted to the respective menu item label
@@ -287,7 +294,7 @@ class GtkThemeService : public ThemeService {
   GtkIconSet* fullscreen_icon_set_;
 
   // Image cache of lazily created images, created when requested by
-  // GetBitmapNamed().
+  // GetImageNamed().
   mutable ImageCache gtk_images_;
 
   PrefChangeRegistrar registrar_;

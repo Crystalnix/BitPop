@@ -11,6 +11,8 @@
 #include "base/i18n/rtl.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/plugins/plugin_finder.h"
+#include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
@@ -32,9 +34,6 @@ using content::PluginService;
 using content::WebContents;
 
 namespace {
-
-// Padding between content and edge of bubble.
-const int kContentBorder = 7;
 
 // The maximum width of a title entry in the content box. We elide anything
 // longer than this.
@@ -94,13 +93,15 @@ void ContentSettingBubbleGtk::BuildBubble() {
   GtkThemeService* theme_provider = GtkThemeService::GetFrom(profile_);
 
   GtkWidget* bubble_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
-  gtk_container_set_border_width(GTK_CONTAINER(bubble_content), kContentBorder);
+  gtk_container_set_border_width(GTK_CONTAINER(bubble_content),
+                                 ui::kContentAreaBorder);
 
   const ContentSettingBubbleModel::BubbleContent& content =
       content_setting_bubble_model_->bubble_content();
   if (!content.title.empty()) {
     // Add the content label.
-    GtkWidget* label = gtk_label_new(content.title.c_str());
+    GtkWidget* label = theme_provider->BuildLabel(content.title.c_str(),
+                                                  ui::kGdkBlack);
     gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
     gtk_box_pack_start(GTK_BOX(bubble_content), label, FALSE, FALSE, 0);
   }
@@ -109,14 +110,12 @@ void ContentSettingBubbleGtk::BuildBubble() {
   if (!plugins.empty()) {
     GtkWidget* list_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
 
+    PluginFinder* finder = PluginFinder::GetInstance();
     for (std::set<std::string>::const_iterator it = plugins.begin();
         it != plugins.end(); ++it) {
-      std::string name = UTF16ToUTF8(
-          PluginService::GetInstance()->GetPluginGroupName(*it));
-      if (name.empty())
-        name = *it;
-
-      GtkWidget* label = gtk_label_new(BuildElidedText(name).c_str());
+      std::string name = UTF16ToUTF8(finder->FindPluginNameWithIdentifier(*it));
+      GtkWidget* label = theme_provider->BuildLabel(
+          BuildElidedText(name).c_str(), ui::kGdkBlack);
       GtkWidget* label_box = gtk_hbox_new(FALSE, 0);
       gtk_box_pack_start(GTK_BOX(label_box), label, FALSE, FALSE, 0);
 
@@ -137,10 +136,9 @@ void ContentSettingBubbleGtk::BuildBubble() {
     for (std::vector<ContentSettingBubbleModel::PopupItem>::const_iterator
          i(popup_items.begin()); i != popup_items.end(); ++i, ++row) {
       GtkWidget* image = gtk_image_new();
-      if (!i->bitmap.empty()) {
-        GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(i->bitmap);
+      if (!i->image.IsEmpty()) {
+        GdkPixbuf* icon_pixbuf = i->image.ToGdkPixbuf();
         gtk_image_set_from_pixbuf(GTK_IMAGE(image), icon_pixbuf);
-        g_object_unref(icon_pixbuf);
 
         // We stuff the image in an event box so we can trap mouse clicks on the
         // image (and launch the popup).
@@ -176,10 +174,12 @@ void ContentSettingBubbleGtk::BuildBubble() {
     std::string elided = BuildElidedText(*i);
     GtkWidget* radio =
         radio_group_gtk_.empty() ?
-            gtk_radio_button_new_with_label(NULL, elided.c_str()) :
-            gtk_radio_button_new_with_label_from_widget(
-                GTK_RADIO_BUTTON(radio_group_gtk_[0]),
-                elided.c_str());
+            gtk_radio_button_new(NULL) :
+            gtk_radio_button_new_from_widget(
+                GTK_RADIO_BUTTON(radio_group_gtk_[0]));
+    GtkWidget* label =
+        theme_provider->BuildLabel(elided.c_str(), ui::kGdkBlack);
+    gtk_container_add(GTK_CONTAINER(radio), label);
     gtk_box_pack_start(GTK_BOX(bubble_content), radio, FALSE, FALSE, 0);
     if (i - radio_group.radio_items.begin() == radio_group.default_item) {
       // We must set the default value before we attach the signal handlers
@@ -202,7 +202,8 @@ void ContentSettingBubbleGtk::BuildBubble() {
     // Put each list into its own vbox to allow spacing between lists.
     GtkWidget* list_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
 
-    GtkWidget* label = gtk_label_new(BuildElidedText(i->title).c_str());
+    GtkWidget* label = theme_provider->BuildLabel(
+        BuildElidedText(i->title).c_str(), ui::kGdkBlack);
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
     GtkWidget* label_box = gtk_hbox_new(FALSE, 0);
     gtk_box_pack_start(GTK_BOX(label_box), label, FALSE, FALSE, 0);
@@ -221,11 +222,13 @@ void ContentSettingBubbleGtk::BuildBubble() {
     GtkWidget* custom_link_box = gtk_hbox_new(FALSE, 0);
     GtkWidget* custom_link = NULL;
     if (content.custom_link_enabled) {
-      custom_link = gtk_chrome_link_button_new(content.custom_link.c_str());
+      custom_link =
+          theme_provider->BuildChromeLinkButton(content.custom_link.c_str());
       g_signal_connect(custom_link, "clicked",
                        G_CALLBACK(OnCustomLinkClickedThunk), this);
     } else {
-      custom_link = gtk_label_new(content.custom_link.c_str());
+      custom_link = theme_provider->BuildLabel(content.custom_link.c_str(),
+                                               ui::kGdkBlack);
       gtk_misc_set_alignment(GTK_MISC(custom_link), 0, 0.5);
     }
     DCHECK(custom_link);
@@ -240,7 +243,7 @@ void ContentSettingBubbleGtk::BuildBubble() {
   GtkWidget* bottom_box = gtk_hbox_new(FALSE, 0);
 
   GtkWidget* manage_link =
-      gtk_chrome_link_button_new(content.manage_link.c_str());
+      theme_provider->BuildChromeLinkButton(content.manage_link.c_str());
   g_signal_connect(manage_link, "clicked", G_CALLBACK(OnManageLinkClickedThunk),
                    this);
   gtk_box_pack_start(GTK_BOX(bottom_box), manage_link, FALSE, FALSE, 0);

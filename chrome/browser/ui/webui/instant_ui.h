@@ -7,15 +7,20 @@
 
 #include "content/public/browser/web_ui_controller.h"
 
-// Provides configuration options for instant web search.
+class PrefService;
+
+namespace content {
+class BrowserContext;
+}
+
+// Provides configuration options for Instant web search.
 class InstantUI : public content::WebUIController {
  public:
   // Constructs an instance using |web_ui| for its data sources and message
   // handlers.
   explicit InstantUI(content::WebUI* web_ui);
 
-  // Returns a scale factor to slow down instant animations.
-  static int GetSlowAnimationScaleFactor();
+  static void RegisterUserPrefs(PrefService* user_prefs);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InstantUI);

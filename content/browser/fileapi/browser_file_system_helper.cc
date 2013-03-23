@@ -16,8 +16,7 @@
 #include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/quota/quota_manager.h"
 
-using content::BrowserThread;
-
+namespace content {
 namespace {
 
 const char kChromeScheme[] = "chrome";
@@ -47,7 +46,7 @@ scoped_refptr<fileapi::FileSystemContext> CreateFileSystemContext(
         quota::QuotaManagerProxy* quota_manager_proxy) {
   base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
   base::SequencedWorkerPool::SequenceToken media_sequence_token =
-      pool->GetSequenceToken();
+      pool->GetNamedSequenceToken(fileapi::kMediaTaskRunnerName);
 
   scoped_ptr<fileapi::FileSystemTaskRunners> task_runners(
       new fileapi::FileSystemTaskRunners(
@@ -62,3 +61,5 @@ scoped_refptr<fileapi::FileSystemContext> CreateFileSystemContext(
       profile_path,
       CreateBrowserFileSystemOptions(is_incognito));
 }
+
+}  // namespace content

@@ -33,6 +33,7 @@
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "net/url_request/url_request_status.h"
 
 using content::BrowserThread;
 using content::UtilityProcessHost;
@@ -97,7 +98,7 @@ static std::string HexStringToID(const std::string& hexstr) {
 // decent chance of being unique among the registered components. It also has
 // the nice property that can be trivially computed by hand.
 static int CrxIdtoUMAId(const std::string& id) {
-  CHECK(id.size() > 2);
+  CHECK_GT(id.size(), 2U);
   return id[0] + id[1] + id[2] - ('a' * 3);
 }
 
@@ -219,7 +220,7 @@ CrxComponent::~CrxComponent() {}
 //////////////////////////////////////////////////////////////////////////////
 // The one and only implementation of the ComponentUpdateService interface. In
 // charge of running the show. The main method is ProcessPendingItems() which
-// is called periodically to do the updgrades/installs or the update checks.
+// is called periodically to do the upgrades/installs or the update checks.
 // An important consideration here is to be as "low impact" as we can to the
 // rest of the browser, so even if we have many components registered and
 // eligible for update, we only do one thing at a time with pauses in between
@@ -604,7 +605,8 @@ void CrxUpdateService::ParseManifest(const std::string& xml) {
     }
   } else {
     UtilityProcessHost* host = UtilityProcessHost::Create(
-        new ManifestParserBridge(this), BrowserThread::UI);
+        new ManifestParserBridge(this),
+        base::MessageLoopProxy::current());
     host->EnableZygote();
     host->Send(new ChromeUtilityMsg_ParseUpdateManifest(xml));
   }
@@ -617,7 +619,7 @@ void CrxUpdateService::ParseManifest(const std::string& xml) {
 void CrxUpdateService::OnParseUpdateManifestSucceeded(
     const UpdateManifest::Results& results) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  int update_pending = 0;
+  size_t update_pending = 0;
   std::vector<UpdateManifest::Result>::const_iterator it;
   for (it = results.list.begin(); it != results.list.end(); ++it) {
     CrxUpdateItem* crx = FindUpdateItemById(it->extension_id);
@@ -664,7 +666,7 @@ void CrxUpdateService::OnParseUpdateManifestSucceeded(
   ChangeItemStatus(CrxUpdateItem::kChecking, CrxUpdateItem::kUpToDate);
 
   // If there are updates pending we do a short wait.
-  ScheduleNextRun(update_pending ? true : false);
+  ScheduleNextRun(update_pending > 0);
 }
 
 void CrxUpdateService::OnParseUpdateManifestFailed(

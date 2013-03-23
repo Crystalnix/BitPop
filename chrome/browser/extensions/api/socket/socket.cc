@@ -5,7 +5,6 @@
 #include "chrome/browser/extensions/api/socket/socket.h"
 
 #include "base/bind.h"
-#include "chrome/browser/extensions/api/api_resource_event_notifier.h"
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -14,9 +13,10 @@
 
 namespace extensions {
 
-Socket::Socket(ApiResourceEventNotifier* event_notifier)
-    : ApiResource(event_notifier),
-      port_(0),
+const char kSocketTypeNotSupported[] = "Socket type does not support this API";
+
+Socket::Socket(const std::string& owner_extension_id)
+    : ApiResource(owner_extension_id, NULL),
       is_connected_(false) {
 }
 
@@ -40,7 +40,7 @@ void Socket::WriteData() {
 
   WriteRequest& request = write_queue_.front();
 
-  DCHECK(request.byte_count > request.bytes_written);
+  DCHECK(request.byte_count >= request.bytes_written);
   io_buffer_write_ = new net::WrappedIOBuffer(
       request.io_buffer->data() + request.bytes_written);
   int result = WriteImpl(
@@ -86,6 +86,16 @@ bool Socket::SetNoDelay(bool no_delay) {
   return false;
 }
 
+int Socket::Listen(const std::string& address, int port, int backlog,
+                   std::string* error_msg) {
+  *error_msg = kSocketTypeNotSupported;
+  return net::ERR_FAILED;
+}
+
+void Socket::Accept(const AcceptCompletionCallback& callback) {
+  callback.Run(net::ERR_FAILED, NULL);
+}
+
 // static
 bool Socket::StringAndPortToIPEndPoint(const std::string& ip_address_str,
                                        int port,
@@ -123,5 +133,16 @@ void Socket::IPEndPointToStringAndPort(const net::IPEndPoint& address,
     *port = address.port();
   }
 }
+
+Socket::WriteRequest::WriteRequest(scoped_refptr<net::IOBuffer> io_buffer,
+                                   int byte_count,
+                                   const CompletionCallback& callback)
+    : io_buffer(io_buffer),
+      byte_count(byte_count),
+      callback(callback),
+      bytes_written(0) {
+}
+
+Socket::WriteRequest::~WriteRequest() { }
 
 }  // namespace extensions

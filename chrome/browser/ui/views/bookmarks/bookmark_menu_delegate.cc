@@ -12,6 +12,7 @@
 #include "chrome/browser/event_disposition.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/event_utils.h"
@@ -109,13 +110,14 @@ string16 BookmarkMenuDelegate::GetTooltipText(
   const BookmarkNode* node = i->second;
   if (node->is_url()) {
     return BookmarkBarView::CreateToolTipForURLAndTitle(
-        screen_loc, node->url(), node->GetTitle(), profile_);
+        screen_loc, node->url(), node->GetTitle(), profile_,
+        parent()->GetNativeView());
   }
   return string16();
 }
 
 bool BookmarkMenuDelegate::IsTriggerableEvent(views::MenuItemView* menu,
-                                              const views::Event& e) {
+                                              const ui::Event& e) {
   return e.type() == ui::ET_GESTURE_TAP ||
          e.type() == ui::ET_GESTURE_TAP_DOWN ||
          event_utils::IsPossibleDispositionEvent(e);
@@ -128,10 +130,16 @@ void BookmarkMenuDelegate::ExecuteCommand(int id, int mouse_event_flags) {
   std::vector<const BookmarkNode*> selection;
   selection.push_back(node);
 
-  bookmark_utils::OpenAll(
-      parent_->GetNativeWindow(), page_navigator_, selection,
-      chrome::DispositionFromEventFlags(mouse_event_flags));
+  chrome::OpenAll(parent_->GetNativeWindow(), page_navigator_, selection,
+                  chrome::DispositionFromEventFlags(mouse_event_flags),
+                  profile_);
   bookmark_utils::RecordBookmarkLaunch(location_);
+}
+
+bool BookmarkMenuDelegate::ShouldExecuteCommandWithoutClosingMenu(
+    int id, const ui::Event& event) {
+  return (event.flags() & ui::EF_LEFT_MOUSE_BUTTON) &&
+         chrome::DispositionFromEventFlags(event.flags()) == NEW_BACKGROUND_TAB;
 }
 
 bool BookmarkMenuDelegate::GetDropFormats(
@@ -182,7 +190,7 @@ bool BookmarkMenuDelegate::CanDrop(MenuItemView* menu,
 
 int BookmarkMenuDelegate::GetDropOperation(
     MenuItemView* item,
-    const views::DropTargetEvent& event,
+    const ui::DropTargetEvent& event,
     views::MenuDelegate::DropPosition* position) {
   // Should only get here if we have drop data.
   DCHECK(drop_data_.is_valid());
@@ -227,7 +235,7 @@ int BookmarkMenuDelegate::GetDropOperation(
 int BookmarkMenuDelegate::OnPerformDrop(
     MenuItemView* menu,
     views::MenuDelegate::DropPosition position,
-    const views::DropTargetEvent& event) {
+    const ui::DropTargetEvent& event) {
   const BookmarkNode* drop_node = menu_id_to_node_map_[menu->GetCommand()];
   DCHECK(drop_node);
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
@@ -331,8 +339,7 @@ void BookmarkMenuDelegate::BookmarkNodeFaviconChanged(
     MenuItemView* menu_item = i->second->GetMenuItemByID(menu_pair->second);
     if (menu_item) {
       const gfx::Image& favicon = model->GetFavicon(node);
-      menu_item->SetIcon(
-          favicon.IsEmpty() ? SkBitmap() : *favicon.ToSkBitmap());
+      menu_item->SetIcon(favicon.AsImageSkia());
       return;
     }
   }
@@ -342,8 +349,7 @@ void BookmarkMenuDelegate::BookmarkNodeFaviconChanged(
         menu_pair->second);
     if (menu_item) {
       const gfx::Image& favicon = model->GetFavicon(node);
-      menu_item->SetIcon(
-          favicon.IsEmpty() ? SkBitmap() : *favicon.ToSkBitmap());
+      menu_item->SetIcon(favicon.AsImageSkia());
     }
   }
 }

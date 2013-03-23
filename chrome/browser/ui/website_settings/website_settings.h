@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/time.h"
-#include "chrome/browser/cancelable_request.h"
+#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/common/content_settings.h"
@@ -51,8 +51,6 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
     SITE_IDENTITY_STATUS_CERT,
     // The website provided a valid EV certificate.
     SITE_IDENTITY_STATUS_EV_CERT,
-    // The website provided a valid DNSSEC certificate.
-    SITE_IDENTITY_STATUS_DNSSEC_CERT,
     // The website provided a valid certificate but no revocation check could be
     // performed.
     SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN,

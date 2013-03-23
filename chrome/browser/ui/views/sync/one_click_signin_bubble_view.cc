@@ -18,7 +18,6 @@
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
-#include "ui/views/events/event.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
@@ -105,7 +104,7 @@ void OneClickSigninBubbleView::Init() {
   views::Label* label = new views::Label(
       l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_BUBBLE_MESSAGE));
   label->SetMultiLine(true);
-  label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label->SizeToFit(kMinimumLabelWidth);
 
   layout->StartRow(0, kColumnSetFillAlign);
@@ -117,7 +116,7 @@ void OneClickSigninBubbleView::Init() {
   advanced_link_= new views::Link(
       l10n_util::GetStringUTF16(IDS_SYNC_PROMO_NTP_BUBBLE_ADVANCED));
   advanced_link_->set_listener(this);
-  advanced_link_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  advanced_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   // Add controls at the bottom.
   ok_button_ = new views::NativeTextButton(this);
@@ -149,7 +148,7 @@ void OneClickSigninBubbleView::WindowClosing() {
   // We have to reset |bubble_view_| here, not in our destructor, because
   // we'll be destroyed asynchronously and the shown state will be checked
   // before then.
-  DCHECK(bubble_view_ == this);
+  DCHECK_EQ(bubble_view_, this);
   bubble_view_ = NULL;
 
   if (!start_sync_callback_.is_null()) {
@@ -184,7 +183,7 @@ void OneClickSigninBubbleView::LinkClicked(views::Link* source,
 }
 
 void OneClickSigninBubbleView::ButtonPressed(views::Button* sender,
-                                             const views::Event& event) {
+                                             const ui::Event& event) {
   StartFade(false);
   if (ok_button_ == sender) {
     base::ResetAndReturn(&start_sync_callback_).Run(

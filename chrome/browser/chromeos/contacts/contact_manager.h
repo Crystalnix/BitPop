@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/stl_util.h"
 #include "chrome/browser/chromeos/contacts/contact_store_observer.h"
@@ -28,8 +29,38 @@ class ContactManagerObserver;
 class ContactStore;
 class ContactStoreFactory;
 
-// Singleton class that exposes contacts to rest of the browser.
-class ContactManager : public ContactStoreObserver,
+// Class that exposes contacts to rest of the browser.
+class ContactManagerInterface {
+ public:
+  ContactManagerInterface() {}
+  virtual ~ContactManagerInterface() {}
+
+  // Returns a weak pointer tied to the lifetime of this object.
+  virtual base::WeakPtr<ContactManagerInterface> GetWeakPtr() = 0;
+
+  // Adds or removes an observer for changes to |profile|'s contacts.
+  virtual void AddObserver(ContactManagerObserver* observer,
+                           Profile* profile) = 0;
+  virtual void RemoveObserver(ContactManagerObserver* observer,
+                              Profile* profile) = 0;
+
+  // Returns pointers to all currently-loaded contacts for |profile|.  The
+  // returned Contact objects may not persist indefinitely; the caller must not
+  // refer to them again after unblocking the UI thread.
+  virtual scoped_ptr<ContactPointers> GetAllContacts(Profile* profile) = 0;
+
+  // Returns the contact identified by |contact_id|.
+  // NULL is returned if the contact doesn't exist.
+  virtual const Contact* GetContactById(Profile* profile,
+                                        const std::string& contact_id) = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ContactManagerInterface);
+};
+
+// Real, singleton implementation of ContactManagerInterface.
+class ContactManager : public ContactManagerInterface,
+                       public ContactStoreObserver,
                        public content::NotificationObserver {
  public:
   static ContactManager* GetInstance();
@@ -43,19 +74,15 @@ class ContactManager : public ContactStoreObserver,
 
   void Init();
 
-  // Adds or removes an observer for changes to |profile|'s contacts.
-  void AddObserver(ContactManagerObserver* observer, Profile* profile);
-  void RemoveObserver(ContactManagerObserver* observer, Profile* profile);
-
-  // Returns pointers to all currently-loaded contacts for |profile|.  The
-  // returned Contact objects may not persist indefinitely; the caller must not
-  // refer to them again after unblocking the UI thread.
-  scoped_ptr<ContactPointers> GetAllContacts(Profile* profile);
-
-  // Returns the contact identified by |provider_id|.
-  // NULL is returned if the contact doesn't exist.
-  const Contact* GetContactByProviderId(Profile* profile,
-                                        const std::string& provider_id);
+  // ContactManagerInterface overrides:
+  virtual base::WeakPtr<ContactManagerInterface> GetWeakPtr() OVERRIDE;
+  virtual void AddObserver(ContactManagerObserver* observer,
+                           Profile* profile) OVERRIDE;
+  virtual void RemoveObserver(ContactManagerObserver* observer,
+                              Profile* profile) OVERRIDE;
+  virtual scoped_ptr<ContactPointers> GetAllContacts(Profile* profile) OVERRIDE;
+  virtual const Contact* GetContactById(Profile* profile,
+                                        const std::string& contact_id) OVERRIDE;
 
   // ContactStoreObserver overrides:
   virtual void OnContactsUpdated(ContactStore* store) OVERRIDE;
@@ -95,6 +122,10 @@ class ContactManager : public ContactStoreObserver,
 
   // Deletes values in |contact_stores_|.
   STLValueDeleter<ContactStoreMap> contact_stores_deleter_;
+
+  // Note: This should remain the last member so it'll be destroyed and
+  // invalidate its weak pointers before any other members are destroyed.
+  base::WeakPtrFactory<ContactManagerInterface> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ContactManager);
 };

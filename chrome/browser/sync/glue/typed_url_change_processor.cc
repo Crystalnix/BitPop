@@ -43,7 +43,6 @@ TypedUrlChangeProcessor::TypedUrlChangeProcessor(
       profile_(profile),
       model_associator_(model_associator),
       history_backend_(history_backend),
-      observing_(false),
       expected_loop_(MessageLoop::current()) {
   DCHECK(model_associator);
   DCHECK(history_backend);
@@ -53,7 +52,6 @@ TypedUrlChangeProcessor::TypedUrlChangeProcessor(
   // Since only one can exist at a time per thread, check first.
   if (!content::NotificationService::current())
     notification_service_.reset(content::NotificationService::Create());
-  StartObserving();
 }
 
 TypedUrlChangeProcessor::~TypedUrlChangeProcessor() {
@@ -65,11 +63,8 @@ void TypedUrlChangeProcessor::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK(expected_loop_ == MessageLoop::current());
-  if (!observing_)
-    return;
 
   DVLOG(1) << "Observed typed_url change.";
-  DCHECK(running());
   if (type == chrome::NOTIFICATION_HISTORY_URLS_MODIFIED) {
     HandleURLsModified(
         content::Details<history::URLsModifiedDetails>(details).ptr());
@@ -118,13 +113,11 @@ bool TypedUrlChangeProcessor::CreateOrUpdateSyncNode(
     return false;
   }
 
-  std::string tag = url.url().spec();
-  // Ignore URLs with empty specs - these can happen through history import if
-  // the source history DB has errors.
-  if (tag.empty())
+  if (model_associator_->ShouldIgnoreUrl(url.url()))
     return true;
-  DCHECK(!visit_vector.empty());
 
+  DCHECK(!visit_vector.empty());
+  std::string tag = url.url().spec();
   syncer::WriteNode update_node(trans);
   syncer::BaseNode::InitByLookupResult result =
       update_node.InitByClientTagLookup(syncer::TYPED_URLS, tag);
@@ -133,7 +126,7 @@ bool TypedUrlChangeProcessor::CreateOrUpdateSyncNode(
   } else if (result == syncer::BaseNode::INIT_FAILED_DECRYPT_IF_NECESSARY) {
     // TODO(tim): Investigating bug 121587.
     syncer::Cryptographer* crypto = trans->GetCryptographer();
-    syncer::ModelTypeSet encrypted_types(crypto->GetEncryptedTypes());
+    syncer::ModelTypeSet encrypted_types(trans->GetEncryptedTypes());
     const sync_pb::EntitySpecifics& specifics =
         update_node.GetEntry()->Get(syncer::syncable::SPECIFICS);
     CHECK(specifics.has_encrypted());
@@ -244,10 +237,9 @@ bool TypedUrlChangeProcessor::ShouldSyncVisit(
 
 void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
     const syncer::BaseTransaction* trans,
+    int64 model_version,
     const syncer::ImmutableChangeRecordList& changes) {
   DCHECK(expected_loop_ == MessageLoop::current());
-  if (!running())
-    return;
 
   syncer::ReadNode typed_url_root(trans);
   if (typed_url_root.InitByTagLookup(kTypedUrlTag) !=
@@ -286,10 +278,10 @@ void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
     const sync_pb::TypedUrlSpecifics& typed_url(
         sync_node.GetTypedUrlSpecifics());
     DCHECK(typed_url.visits_size());
-    // Ignore blank URLs - these should never happen in practice, but they
-    // can sneak into the data via browser import.
-    if (typed_url.url().empty())
+
+    if (model_associator_->ShouldIgnoreUrl(GURL(typed_url.url())))
       continue;
+
     sync_pb::TypedUrlSpecifics filtered_url =
         model_associator_->FilterExpiredVisits(typed_url);
     if (!filtered_url.visits_size()) {
@@ -304,8 +296,6 @@ void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
 
 void TypedUrlChangeProcessor::CommitChangesFromSyncModel() {
   DCHECK(expected_loop_ == MessageLoop::current());
-  if (!running())
-    return;
 
   // Make sure we stop listening for changes while we're modifying the backend,
   // so we don't try to re-apply these changes to the sync DB.
@@ -330,14 +320,8 @@ void TypedUrlChangeProcessor::CommitChangesFromSyncModel() {
 void TypedUrlChangeProcessor::StartImpl(Profile* profile) {
   DCHECK(expected_loop_ == MessageLoop::current());
   DCHECK_EQ(profile, profile_);
-  observing_ = true;
+  StartObserving();
 }
-
-void TypedUrlChangeProcessor::StopImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  observing_ = false;
-}
-
 
 void TypedUrlChangeProcessor::StartObserving() {
   DCHECK(expected_loop_ == MessageLoop::current());

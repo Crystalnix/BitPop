@@ -4,19 +4,21 @@
 
 #include "content/browser/trace_subscriber_stdio.h"
 
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/public/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace content {
+
 class TraceSubscriberStdioTest : public ::testing::Test {};
 
 TEST_F(TraceSubscriberStdioTest, CanWriteDataToFile) {
-  ScopedTempDir trace_dir;
+  base::ScopedTempDir trace_dir;
   ASSERT_TRUE(trace_dir.CreateUniqueTempDir());
   FilePath trace_file(trace_dir.path().AppendASCII("trace.txt"));
   {
-    content::TraceSubscriberStdio subscriber(trace_file);
+    TraceSubscriberStdio subscriber(trace_file);
 
     std::string foo("foo");
     subscriber.OnTraceDataCollected(
@@ -28,8 +30,10 @@ TEST_F(TraceSubscriberStdioTest, CanWriteDataToFile) {
 
     subscriber.OnEndTracingComplete();
   }
-  content::BrowserThread::GetBlockingPool()->FlushForTesting();
+  BrowserThread::GetBlockingPool()->FlushForTesting();
   std::string result;
   EXPECT_TRUE(file_util::ReadFileToString(trace_file, &result));
   EXPECT_EQ("[foo,bar]", result);
 }
+
+}  // namespace content

@@ -30,15 +30,15 @@ const char kOnExtensionEnabled[] = "management.onEnabled";
 const char kOnExtensionDisabled[] = "management.onDisabled";
 
 const char kOnFileBrowserDiskChanged[] = "fileBrowserPrivate.onDiskChanged";
-const char kOnFileChanged[] = "fileBrowserPrivate.onFileChanged";
+const char kOnDirectoryChanged[] = "fileBrowserPrivate.onDirectoryChanged";
 const char kOnFileBrowserMountCompleted[] =
     "fileBrowserPrivate.onMountCompleted";
 const char kOnFileTransfersUpdated[] =
     "fileBrowserPrivate.onFileTransfersUpdated";
 const char kOnDocumentFeedFetched[] =
     "fileBrowserPrivate.onDocumentFeedFetched";
-const char kOnFileBrowserGDataPreferencesChanged[] =
-    "fileBrowserPrivate.onGDataPreferencesChanged";
+const char kOnFileBrowserPreferencesChanged[] =
+    "fileBrowserPrivate.onPreferencesChanged";
 const char kOnFileBrowserNetworkConnectionChanged[] =
     "fileBrowserPrivate.onNetworkConnectionChanged";
 
@@ -46,6 +46,8 @@ const char kOnInputMethodChanged[] = "inputMethodPrivate.onChanged";
 
 const char kOnContextMenus[] = "contextMenus";
 const char kOnContextMenuClicked[] = "contextMenus.onClicked";
+
+const char kOnDialDeviceList[] = "dial.onDeviceList";
 
 const char kOnDownloadCreated[] = "downloads.onCreated";
 const char kOnDownloadChanged[] = "downloads.onChanged";
@@ -57,18 +59,30 @@ const char kOnTerminalProcessOutput[] = "terminalPrivate.onProcessOutput";
 
 const char kOnOffscreenTabUpdated[] = "experimental.offscreenTabs.onUpdated";
 
-#if defined(OS_CHROMEOS)
-const char kBluetoothOnAvailabilityChanged[] =
-    "experimental.bluetooth.onAvailabilityChanged";
-const char kBluetoothOnDeviceDiscovered[] =
-    "experimental.bluetooth.onDeviceDiscovered";
-const char kBluetoothOnDiscoveringChanged[] =
-    "experimental.bluetooth.onDiscoveringChanged";
-const char kBluetoothOnPowerChanged[] =
-    "experimental.bluetooth.onPowerChanged";
-#endif
+const char kOnTabCaptureStatusChanged[] = "tabCapture.onStatusChanged";
 
-const char kOnPushMessage[] = "experimental.pushMessaging.onMessage";
+const char kBluetoothOnAdapterStateChanged[] =
+    "bluetooth.onAdapterStateChanged";
+const char kBluetoothOnDeviceDiscovered[] = "bluetooth.onDeviceDiscovered";
+const char kBluetoothOnDeviceSearchFinished[] =
+    "bluetooth.onDeviceSearchFinished";
+const char kBluetoothOnDeviceSearchResult[] = "bluetooth.onDeviceSearchResult";
+
+const char kOnPushMessage[] = "pushMessaging.onMessage";
+
+const char kOnCpuUpdated[] = "experimental.systemInfo.cpu.onUpdated";
+const char kOnStorageAvailableCapacityChanged[] =
+    "experimental.systemInfo.storage.onAvailableCapacityChanged";
+const char kOnStorageAdded[] = "experimental.systemInfo.storage.onAdded";
+const char kOnStorageRemoved[] = "experimental.systemInfo.storage.onRemoved";
+
+const char kOnSystemIndicatorClicked[] = "systemIndicator.onClicked";
+
+const char kOnSyncStateChanged[] = "syncFileSystem.onSyncStateChanged";
+const char kOnFileSynced[] = "syncFileSystem.onFileSynced";
+
+const char kOnAttachEventName[] = "mediaGalleriesPrivate.onDeviceAttached";
+const char kOnDetachEventName[] = "mediaGalleriesPrivate.onDeviceDetached";
 
 }  // namespace event_names
 

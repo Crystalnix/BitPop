@@ -8,6 +8,8 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
+#include "base/string_number_conversions.h"
+#include "base/values.h"
 #include "chrome/browser/history/page_usage_data.h"
 
 namespace history {
@@ -90,41 +92,6 @@ VisitRow::VisitRow(URLID arg_url_id,
 VisitRow::~VisitRow() {
 }
 
-// Favicons -------------------------------------------------------------------
-
-ImportedFaviconUsage::ImportedFaviconUsage() {
-}
-
-ImportedFaviconUsage::~ImportedFaviconUsage() {
-}
-
-// StarredEntry ----------------------------------------------------------------
-
-StarredEntry::StarredEntry()
-    : id(0),
-      parent_folder_id(0),
-      folder_id(0),
-      visual_order(0),
-      type(URL),
-      url_id(0) {
-}
-
-StarredEntry::~StarredEntry() {
-}
-
-void StarredEntry::Swap(StarredEntry* other) {
-  std::swap(id, other->id);
-  title.swap(other->title);
-  std::swap(date_added, other->date_added);
-  std::swap(parent_folder_id, other->parent_folder_id);
-  std::swap(folder_id, other->folder_id);
-  std::swap(visual_order, other->visual_order);
-  std::swap(type, other->type);
-  url.Swap(&other->url);
-  std::swap(url_id, other->url_id);
-  std::swap(date_folder_modified, other->date_folder_modified);
-}
-
 // URLResult -------------------------------------------------------------------
 
 URLResult::URLResult() {
@@ -149,6 +116,38 @@ void URLResult::SwapResult(URLResult* other) {
   std::swap(visit_time_, other->visit_time_);
   snippet_.Swap(&other->snippet_);
   title_match_positions_.swap(other->title_match_positions_);
+}
+
+// QueryCursor -----------------------------------------------------------------
+
+QueryCursor::QueryCursor() : rowid_(0) {
+}
+
+QueryCursor::~QueryCursor() {
+}
+
+Value* QueryCursor::ToValue() const {
+  ListValue* value = new ListValue;
+  value->AppendString(base::Int64ToString(time_.ToInternalValue()));
+  value->AppendString(base::Int64ToString(rowid_));
+  return value;
+}
+
+bool QueryCursor::FromValue(const Value* value, QueryCursor* cursor) {
+  if (value->GetType() == Value::TYPE_LIST) {
+    const ListValue* list_value = static_cast<const ListValue*>(value);
+    string16 string_value;
+    int64 timestamp;
+
+    if (list_value->GetString(0, &string_value) &&
+        base::StringToInt64(string_value, &timestamp) &&
+        list_value->GetString(1, &string_value) &&
+        base::StringToInt64(string_value, &cursor->rowid_)) {
+      cursor->time_ = base::Time::FromInternalValue(timestamp);
+      return true;
+    }
+  }
+  return false;
 }
 
 // QueryResults ----------------------------------------------------------------
@@ -181,6 +180,7 @@ const size_t* QueryResults::MatchesForURL(const GURL& url,
 void QueryResults::Swap(QueryResults* other) {
   std::swap(first_time_searched_, other->first_time_searched_);
   std::swap(reached_beginning_, other->reached_beginning_);
+  std::swap(cursor_, other->cursor_);
   results_.swap(other->results_);
   url_to_results_.swap(other->url_to_results_);
 }
@@ -191,31 +191,6 @@ void QueryResults::AppendURLBySwapping(URLResult* result) {
 
   results_.push_back(new_result);
   AddURLUsageAtIndex(new_result->url(), results_.size() - 1);
-}
-
-void QueryResults::AppendResultsBySwapping(QueryResults* other,
-                                           bool remove_dupes) {
-  if (remove_dupes) {
-    // Delete all entries in the other array that are already in this one.
-    for (size_t i = 0; i < results_.size(); i++)
-      other->DeleteURL(results_[i]->url());
-  }
-
-  if (first_time_searched_ > other->first_time_searched_)
-    std::swap(first_time_searched_, other->first_time_searched_);
-
-  if (reached_beginning_ != other->reached_beginning_)
-    std::swap(reached_beginning_, other->reached_beginning_);
-
-  for (size_t i = 0; i < other->results_.size(); i++) {
-    // Just transfer pointer ownership.
-    results_.push_back(other->results_[i]);
-    AddURLUsageAtIndex(results_.back()->url(), results_.size() - 1);
-  }
-
-  // We just took ownership of all the results in the input vector.
-  other->results_.clear();
-  other->url_to_results_.clear();
 }
 
 void QueryResults::DeleteURL(const GURL& url) {
@@ -279,7 +254,7 @@ void QueryResults::AddURLUsageAtIndex(const GURL& url, size_t index) {
   }
 
   // Need to add a new entry for this URL.
-  StackVector<size_t, 4> new_list;
+  base::StackVector<size_t, 4> new_list;
   new_list->push_back(index);
   url_to_results_[url] = new_list;
 }
@@ -297,11 +272,35 @@ void QueryResults::AdjustResultMap(size_t begin, size_t end, ptrdiff_t delta) {
 
 // QueryOptions ----------------------------------------------------------------
 
-QueryOptions::QueryOptions() : max_count(0), body_only(false) {}
+QueryOptions::QueryOptions()
+    : max_count(0),
+      body_only(false),
+      duplicate_policy(QueryOptions::REMOVE_ALL_DUPLICATES) {
+}
 
 void QueryOptions::SetRecentDayRange(int days_ago) {
   end_time = base::Time::Now();
   begin_time = end_time - base::TimeDelta::FromDays(days_ago);
+}
+
+int64 QueryOptions::EffectiveBeginTime() const {
+  return begin_time.ToInternalValue();
+}
+
+int64 QueryOptions::EffectiveEndTime() const {
+  int64 end = end_time.is_null() ?
+      std::numeric_limits<int64>::max() : end_time.ToInternalValue();
+
+  // If the cursor is specified, it provides the true end time.
+  if (!cursor.empty()) {
+    DCHECK(cursor.time_.ToInternalValue() <= end);
+    return cursor.time_.ToInternalValue();
+  }
+  return end;
+}
+
+int QueryOptions::EffectiveMaxCount() const {
+  return max_count ? max_count : std::numeric_limits<int>::max();
 }
 
 // KeywordSearchTermVisit -----------------------------------------------------
@@ -362,34 +361,35 @@ TopSitesDelta::~TopSitesDelta() {}
 
 // HistoryAddPageArgs ---------------------------------------------------------
 
+HistoryAddPageArgs::HistoryAddPageArgs()
+    : id_scope(NULL),
+      page_id(0),
+      transition(content::PAGE_TRANSITION_LINK),
+      visit_source(SOURCE_BROWSED),
+      did_replace_entry(false) {}
+
 HistoryAddPageArgs::HistoryAddPageArgs(
-    const GURL& arg_url,
-    base::Time arg_time,
-    const void* arg_id_scope,
-    int32 arg_page_id,
-    const GURL& arg_referrer,
-    const history::RedirectList& arg_redirects,
-    content::PageTransition arg_transition,
-    VisitSource arg_source,
-    bool arg_did_replace_entry)
-      : url(arg_url),
-        time(arg_time),
-        id_scope(arg_id_scope),
-        page_id(arg_page_id),
-        referrer(arg_referrer),
-        redirects(arg_redirects),
-        transition(arg_transition),
-        visit_source(arg_source),
-        did_replace_entry(arg_did_replace_entry) {
+    const GURL& url,
+    base::Time time,
+    const void* id_scope,
+    int32 page_id,
+    const GURL& referrer,
+    const history::RedirectList& redirects,
+    content::PageTransition transition,
+    VisitSource source,
+    bool did_replace_entry)
+      : url(url),
+        time(time),
+        id_scope(id_scope),
+        page_id(page_id),
+        referrer(referrer),
+        redirects(redirects),
+        transition(transition),
+        visit_source(source),
+        did_replace_entry(did_replace_entry) {
 }
 
 HistoryAddPageArgs::~HistoryAddPageArgs() {}
-
-HistoryAddPageArgs* HistoryAddPageArgs::Clone() const {
-  return new HistoryAddPageArgs(
-      url, time, id_scope, page_id, referrer, redirects, transition,
-      visit_source, did_replace_entry);
-}
 
 ThumbnailMigration::ThumbnailMigration() {}
 
@@ -429,17 +429,60 @@ IconMapping::IconMapping()
 
 IconMapping::~IconMapping() {}
 
+// FaviconBitmapResult --------------------------------------------------------
 
-FaviconData::FaviconData()
-  : known_icon(false),
-    expired(false),
-    icon_type(history::INVALID_ICON) {
+FaviconBitmapResult::FaviconBitmapResult()
+    : expired(false),
+      icon_type(history::INVALID_ICON) {
 }
 
-FaviconData::~FaviconData() {}
-
-bool FaviconData::is_valid() {
-  return known_icon && image_data.get() && image_data->size();
+FaviconBitmapResult::~FaviconBitmapResult() {
 }
+
+// FaviconImageResult ---------------------------------------------------------
+
+FaviconImageResult::FaviconImageResult() {
+}
+
+FaviconImageResult::~FaviconImageResult() {
+}
+
+// FaviconSizes --------------------------------------------------------------
+
+const FaviconSizes& GetDefaultFaviconSizes() {
+  CR_DEFINE_STATIC_LOCAL(FaviconSizes, kDefaultFaviconSizes, ());
+  return kDefaultFaviconSizes;
+}
+
+// FaviconBitmapIDSize ---------------------------------------------------------
+
+FaviconBitmapIDSize::FaviconBitmapIDSize()
+    : bitmap_id(0) {
+}
+
+FaviconBitmapIDSize::~FaviconBitmapIDSize() {
+}
+
+// FaviconBitmap --------------------------------------------------------------
+
+FaviconBitmap::FaviconBitmap()
+    : bitmap_id(0),
+      icon_id(0) {
+}
+
+FaviconBitmap::~FaviconBitmap() {
+}
+
+// ImportedFaviconUsage --------------------------------------------------------
+
+ImportedFaviconUsage::ImportedFaviconUsage() {
+}
+
+ImportedFaviconUsage::~ImportedFaviconUsage() {
+}
+
+// VisitDatabaseObserver -------------------------------------------------------
+
+VisitDatabaseObserver::~VisitDatabaseObserver() {}
 
 }  // namespace history

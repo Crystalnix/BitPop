@@ -79,9 +79,9 @@ IPC_MESSAGE_CONTROL2(InputTagSpeechHostMsg_StopRecording,
 // Browser -> Renderer messages.
 
 // Relays a speech recognition result, either partial or final.
-IPC_MESSAGE_ROUTED2(InputTagSpeechMsg_SetRecognitionResult,
+IPC_MESSAGE_ROUTED2(InputTagSpeechMsg_SetRecognitionResults,
                     int /* request_id */,
-                    content::SpeechRecognitionResult /* result */)
+                    content::SpeechRecognitionResults /* results */)
 
 // Indicates that speech recognizer has stopped recording and started
 // recognition.
@@ -115,10 +115,12 @@ IPC_STRUCT_BEGIN(SpeechRecognitionHostMsg_StartRequest_Params)
   IPC_STRUCT_MEMBER(content::SpeechRecognitionGrammarArray, grammars)
   // URL of the page (or iframe if applicable).
   IPC_STRUCT_MEMBER(std::string, origin_url)
-  // One-shot/continuous recognition mode.
-  IPC_STRUCT_MEMBER(bool, is_one_shot)
   // Maximum number of hypotheses allowed for each results.
   IPC_STRUCT_MEMBER(uint32, max_hypotheses)
+  // Whether the user requested continuous recognition or not.
+  IPC_STRUCT_MEMBER(bool, continuous)
+  // Whether the user requested interim results or not.
+  IPC_STRUCT_MEMBER(bool, interim_results)
 IPC_STRUCT_END()
 
 
@@ -147,7 +149,7 @@ IPC_MESSAGE_CONTROL2(SpeechRecognitionHostMsg_StopCaptureRequest,
 // events defined in content/public/browser/speech_recognition_event_listener.h.
 IPC_MESSAGE_ROUTED2(SpeechRecognitionMsg_ResultRetrieved,
                     int /* request_id */,
-                    content::SpeechRecognitionResult /* result */)
+                    content::SpeechRecognitionResults /* results */)
 
 IPC_MESSAGE_ROUTED2(SpeechRecognitionMsg_ErrorOccurred,
                     int /* request_id */,

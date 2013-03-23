@@ -20,11 +20,12 @@
 
 class BackgroundContents;
 class BalloonHost;
-class TabContents;
 class Panel;
+class Profile;
 
 namespace content {
 class RenderViewHost;
+class WebContents;
 }
 
 namespace extensions {
@@ -74,6 +75,10 @@ class TaskManagerRendererResource : public TaskManager::Resource {
   virtual void NotifyV8HeapStats(size_t v8_memory_allocated,
                                  size_t v8_memory_used) OVERRIDE;
 
+  content::RenderViewHost* render_view_host() const {
+    return render_view_host_;
+  }
+
  private:
   base::ProcessHandle process_;
   int pid_;
@@ -100,12 +105,14 @@ class TaskManagerRendererResource : public TaskManager::Resource {
   DISALLOW_COPY_AND_ASSIGN(TaskManagerRendererResource);
 };
 
+// Tracks a single tab contents, prerendered page, instant page, or background
+// printing page.
 class TaskManagerTabContentsResource : public TaskManagerRendererResource {
  public:
-  explicit TaskManagerTabContentsResource(TabContents* tab_contents);
+  explicit TaskManagerTabContentsResource(content::WebContents* web_contents);
   virtual ~TaskManagerTabContentsResource();
 
-  // Called when the underlying tab_contents has been committed, and is thus no
+  // Called when the underlying web_contents has been committed and is no
   // longer an Instant preview.
   void InstantCommitted();
 
@@ -118,18 +125,19 @@ class TaskManagerTabContentsResource : public TaskManagerRendererResource {
   virtual const extensions::Extension* GetExtension() const OVERRIDE;
 
  private:
-  bool IsPrerendering() const;
-
   // Returns true if contains content rendered by an extension.
   bool HostsExtension() const;
 
   static gfx::ImageSkia* prerender_icon_;
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
+  Profile* profile_;
   bool is_instant_preview_;
 
   DISALLOW_COPY_AND_ASSIGN(TaskManagerTabContentsResource);
 };
 
+// Provides resources for tab contents, prerendered pages, instant pages, and
+// background printing pages.
 class TaskManagerTabContentsResourceProvider
     : public TaskManager::ResourceProvider,
       public content::NotificationObserver {
@@ -150,11 +158,11 @@ class TaskManagerTabContentsResourceProvider
  private:
   virtual ~TaskManagerTabContentsResourceProvider();
 
-  void Add(TabContents* tab_contents);
-  void Remove(TabContents* tab_contents);
-  void Update(TabContents* tab_contents);
+  void Add(content::WebContents* web_contents);
+  void Remove(content::WebContents* web_contents);
+  void InstantCommitted(content::WebContents* web_contents);
 
-  void AddToTaskManager(TabContents* tab_contents);
+  void AddToTaskManager(content::WebContents* web_contents);
 
   // Whether we are currently reporting to the task manager. Used to ignore
   // notifications sent after StopUpdating().
@@ -162,9 +170,9 @@ class TaskManagerTabContentsResourceProvider
 
   TaskManager* task_manager_;
 
-  // Maps the actual resources (the TabContentses) to the Task Manager
+  // Maps the actual resources (the WebContentses) to the Task Manager
   // resources.
-  std::map<TabContents*, TaskManagerTabContentsResource*> resources_;
+  std::map<content::WebContents*, TaskManagerTabContentsResource*> resources_;
 
   // A scoped container for notification registries.
   content::NotificationRegistrar registrar_;
@@ -475,12 +483,9 @@ class TaskManagerExtensionProcessResourceProvider
 
   // Maps the actual resources (content::RenderViewHost*) to the Task Manager
   // resources.
-  std::map<content::RenderViewHost*,
-           TaskManagerExtensionProcessResource*> resources_;
-
-  // Maps the pids to the resources (used for quick access to the resource on
-  // byte read notifications).
-  std::map<int, TaskManagerExtensionProcessResource*> pid_to_resources_;
+  typedef std::map<content::RenderViewHost*,
+      TaskManagerExtensionProcessResource*> ExtensionRenderViewHostMap;
+  ExtensionRenderViewHostMap resources_;
 
   // A scoped container for notification registries.
   content::NotificationRegistrar registrar_;
@@ -617,6 +622,64 @@ class TaskManagerBrowserProcessResourceProvider
   TaskManagerBrowserProcessResource resource_;
 
   DISALLOW_COPY_AND_ASSIGN(TaskManagerBrowserProcessResourceProvider);
+};
+
+
+class TaskManagerGuestResource : public TaskManagerRendererResource {
+ public:
+  explicit TaskManagerGuestResource(content::RenderViewHost* render_view_host);
+  virtual ~TaskManagerGuestResource();
+
+  // TaskManager::Resource methods:
+  virtual Type GetType() const OVERRIDE;
+  virtual string16 GetTitle() const OVERRIDE;
+  virtual string16 GetProfileName() const OVERRIDE;
+  virtual gfx::ImageSkia GetIcon() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  virtual const extensions::Extension* GetExtension() const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TaskManagerGuestResource);
+};
+
+class TaskManagerGuestResourceProvider
+    : public TaskManager::ResourceProvider,
+      public content::NotificationObserver {
+ public:
+  explicit TaskManagerGuestResourceProvider(TaskManager* task_manager);
+
+  // TaskManager::ResourceProvider methods:
+  virtual TaskManager::Resource* GetResource(int origin_pid,
+                                             int render_process_host_id,
+                                             int routing_id) OVERRIDE;
+  virtual void StartUpdating() OVERRIDE;
+  virtual void StopUpdating() OVERRIDE;
+
+  // content::NotificationObserver method:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+ private:
+  virtual ~TaskManagerGuestResourceProvider();
+
+  void Add(content::RenderViewHost* render_view_host);
+  void Remove(content::RenderViewHost* render_view_host);
+
+  // Whether we are currently reporting to the task manager. Used to ignore
+  // notifications sent after StopUpdating().
+  bool updating_;
+
+  TaskManager* task_manager_;
+
+  typedef std::map<content::RenderViewHost*,
+      TaskManagerGuestResource*> GuestResourceMap;
+  GuestResourceMap resources_;
+
+  // A scoped container for notification registries.
+  content::NotificationRegistrar registrar_;
+
+  DISALLOW_COPY_AND_ASSIGN(TaskManagerGuestResourceProvider);
 };
 
 #endif  // CHROME_BROWSER_TASK_MANAGER_TASK_MANAGER_RESOURCE_PROVIDERS_H_

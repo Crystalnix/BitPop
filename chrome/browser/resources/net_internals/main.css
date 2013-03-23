@@ -9,8 +9,9 @@
   -moz-box-sizing: border-box;
   box-sizing: border-box;
 }
-body {
-  font-family: sans-serif;
+
+ul {
+  padding-left: 2em;
 }
 
 /* This class is used to create the splitter widget in
@@ -25,17 +26,22 @@ body {
   width: 8px;
 }
 
+/* Needs to be wider on touch devices. */
+.touch .vertical-splitter {
+  width: 5mm;
+}
+
 .log-source-entry {
   margin: 5px;
 }
 
 .log-source-entry * p {
-  font-size: 12px;
+  font-size: 75%;
   font-weight: bold;
 }
 
 .log-source-entry * td {
-  font-size: 10px;
+  font-size: 62%;
 }
 
 /*
@@ -91,4 +97,22 @@ table.styled-table,
  */
 .warning-text {
   color: red;
+}
+
+/**
+ * Styling for help windows that appear when mousing over an element.
+ */
+.mouse-over-help {
+  background: #EEE;
+  border: 1px solid black;
+  font-size: 80%;
+  padding: 5px;
+  z-index: 1;
+}
+
+/**
+ * Styling for elements that show a help window on mouse over.
+ */
+.mouse-over-help-hover {
+  cursor: help;
 }

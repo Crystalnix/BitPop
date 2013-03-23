@@ -7,10 +7,9 @@
 #include "base/memory/scoped_nsobject.h"
 
 @class AnimatableView;
-@class HoverCloseButton;
 @protocol InfoBarContainer;
 class InfoBarDelegate;
-class InfoBarTabHelper;
+class InfoBarService;
 @class InfoBarGradientView;
 
 // A controller for an infobar in the browser window.  There is one
@@ -20,7 +19,7 @@ class InfoBarTabHelper;
 @interface InfoBarController : NSViewController<NSTextViewDelegate> {
  @private
   id<InfoBarContainer> containerController_;  // weak, owns us
-  InfoBarTabHelper* owner_;  // weak
+  InfoBarService* owner_;  // weak
   BOOL infoBarClosing_;
 
  @protected
@@ -29,7 +28,7 @@ class InfoBarTabHelper;
   IBOutlet NSTextField* labelPlaceholder_;
   IBOutlet NSButton* okButton_;
   IBOutlet NSButton* cancelButton_;
-  IBOutlet HoverCloseButton* closeButton_;
+  IBOutlet NSButton* closeButton_;
 
   // In rare instances, it can be possible for |delegate_| to delete itself
   // while this controller is still alive.  Always check |delegate_| against
@@ -45,7 +44,7 @@ class InfoBarTabHelper;
 
 // Initializes a new InfoBarController.
 - (id)initWithDelegate:(InfoBarDelegate*)delegate
-                 owner:(InfoBarTabHelper*)owner;
+                 owner:(InfoBarService*)owner;
 
 // Returns YES if the infobar is owned.  If this is NO, it is not safe to call
 // any delegate functions, since they might attempt to access the owner.  Code

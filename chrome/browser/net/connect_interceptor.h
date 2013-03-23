@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_NET_CONNECT_INTERCEPTOR_H_
 #define CHROME_BROWSER_NET_CONNECT_INTERCEPTOR_H_
 
+#include "base/containers/mru_cache.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/mru_cache.h"
 #include "base/time.h"
 #include "net/url_request/url_request_job_factory.h"
 
@@ -28,11 +28,15 @@ class ConnectInterceptor : public net::URLRequestJobFactory::Interceptor {
   // Overridden from net::URLRequest::Interceptor:
   // Learn about referrers, and optionally preconnect based on history.
   virtual net::URLRequestJob* MaybeIntercept(
-      net::URLRequest* request) const OVERRIDE;
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
   virtual net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request) const OVERRIDE;
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
   virtual net::URLRequestJob* MaybeInterceptRedirect(
-      const GURL& location, net::URLRequest* request) const OVERRIDE;
+      const GURL& location,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
 
  private:
   // Provide access to local class TimedCache for testing.

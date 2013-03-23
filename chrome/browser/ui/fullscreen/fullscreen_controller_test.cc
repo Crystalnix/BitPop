@@ -19,38 +19,6 @@ using content::WebContents;
 const char FullscreenControllerTest::kFullscreenMouseLockHTML[] =
     "files/fullscreen_mouselock/fullscreen_mouselock.html";
 
-void FullscreenControllerTest::SetUpCommandLine(CommandLine* command_line) {
-  command_line->AppendSwitch(switches::kEnablePointerLock);
-}
-
-void FullscreenControllerTest::ToggleTabFullscreen(bool enter_fullscreen) {
-  ToggleTabFullscreen_Internal(enter_fullscreen, true);
-}
-
-// |ToggleTabFullscreen| should not need to tolerate the transition failing.
-// Most fullscreen tests run sharded in fullscreen_controller_browsertest.cc
-// and some flakiness has occurred when calling |ToggleTabFullscreen|, so that
-// method has been made robust by retrying if the transition fails.
-// The root cause of that flakiness should still be tracked down, see
-// http://crbug.com/133831. In the mean time, this method
-// allows a fullscreen_controller_interactive_browsertest.cc test to verify
-// that when running serially there is no flakiness in the transition.
-void FullscreenControllerTest::ToggleTabFullscreenNoRetries(
-    bool enter_fullscreen) {
-  ToggleTabFullscreen_Internal(enter_fullscreen, false);
-}
-
-void FullscreenControllerTest::ToggleBrowserFullscreen(bool enter_fullscreen) {
-  ASSERT_EQ(browser()->window()->IsFullscreen(), !enter_fullscreen);
-  FullscreenNotificationObserver fullscreen_observer;
-
-  chrome::ToggleFullscreenMode(browser());
-
-  fullscreen_observer.Wait();
-  ASSERT_EQ(browser()->window()->IsFullscreen(), enter_fullscreen);
-  ASSERT_EQ(IsFullscreenForBrowser(), enter_fullscreen);
-}
-
 void FullscreenControllerTest::RequestToLockMouse(
     bool user_gesture,
     bool last_unlocked_by_target) {
@@ -122,16 +90,6 @@ void FullscreenControllerTest::DenyCurrentFullscreenOrMouseLockRequest() {
   browser()->fullscreen_controller()->OnDenyFullscreenPermission(type);
 }
 
-void FullscreenControllerTest::AddTabAtIndexAndWait(int index, const GURL& url,
-    content::PageTransition transition) {
-  content::TestNavigationObserver observer(
-      content::NotificationService::AllSources(), NULL, 1);
-
-  AddTabAtIndex(index, url, transition);
-
-  observer.Wait();
-}
-
 void FullscreenControllerTest::GoBack() {
   content::TestNavigationObserver observer(
       content::NotificationService::AllSources(), NULL, 1);
@@ -150,24 +108,3 @@ void FullscreenControllerTest::Reload() {
   observer.Wait();
 }
 
-void FullscreenControllerTest::ToggleTabFullscreen_Internal(
-    bool enter_fullscreen, bool retry_until_success) {
-  WebContents* tab = chrome::GetActiveWebContents(browser());
-  if (IsFullscreenForBrowser()) {
-    // Changing tab fullscreen state will not actually change the window
-    // when browser fullscreen is in effect.
-    browser()->ToggleFullscreenModeForTab(tab, enter_fullscreen);
-  } else {  // Not in browser fullscreen, expect window to actually change.
-    ASSERT_NE(browser()->window()->IsFullscreen(), enter_fullscreen);
-    do {
-      FullscreenNotificationObserver fullscreen_observer;
-      browser()->ToggleFullscreenModeForTab(tab, enter_fullscreen);
-      fullscreen_observer.Wait();
-      // Repeat ToggleFullscreenModeForTab until the correct state is entered.
-      // This addresses flakiness on test bots running many fullscreen
-      // tests in parallel.
-    } while (retry_until_success &&
-             browser()->window()->IsFullscreen() != enter_fullscreen);
-    ASSERT_EQ(browser()->window()->IsFullscreen(), enter_fullscreen);
-  }
-}

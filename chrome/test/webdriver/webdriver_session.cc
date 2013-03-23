@@ -109,6 +109,7 @@ Error* Session::Init(const DictionaryValue* capabilities_dict) {
   browser_options.channel_id = capabilities_.channel;
   browser_options.detach_process = capabilities_.detach;
   browser_options.user_data_dir = capabilities_.profile;
+  browser_options.exclude_switches = capabilities_.exclude_switches;
   if (!capabilities_.no_website_testing_defaults) {
     browser_options.ignore_certificate_errors = true;
   }
@@ -267,6 +268,8 @@ Error* Session::SendKeys(const ElementId& element, const string16& keys) {
   //     the body, sometimes we still need to focus the body element for send
   //     keys to work. Not sure why
   //   - You cannot focus a descendant of a content editable node
+  //   - V8 throws a TypeError when calling setSelectionRange for a non-text
+  //     input, which still have setSelectionRange defined.
   // TODO(jleyba): Update this to use the correct atom.
   const char* kFocusScript =
       "function(elem) {"
@@ -277,7 +280,13 @@ Error* Session::SendKeys(const ElementId& element, const string16& keys) {
       "  elem.focus();"
       "  if (elem != prevActiveElem && elem.value && elem.value.length &&"
       "      elem.setSelectionRange) {"
-      "    elem.setSelectionRange(elem.value.length, elem.value.length);"
+      "    try {"
+      "      elem.setSelectionRange(elem.value.length, elem.value.length);"
+      "    } catch (error) {"
+      "      if (!(error instanceof TypeError)) {"
+      "        throw error;"
+      "      }"
+      "    }"
       "  }"
       "  if (elem != doc.activeElement)"
       "    throw new Error('Failed to send keys because cannot focus element');"
@@ -1830,7 +1839,7 @@ Error* Session::GetScreenShot(std::string* png) {
                      "The current target does not support screenshot");
   }
   Error* error = NULL;
-  ScopedTempDir screenshots_dir;
+  base::ScopedTempDir screenshots_dir;
   if (!screenshots_dir.CreateUniqueTempDir()) {
     return new Error(kUnknownError,
                      "Could not create temp directory for screenshot");

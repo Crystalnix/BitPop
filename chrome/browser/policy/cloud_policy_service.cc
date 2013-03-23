@@ -11,11 +11,12 @@ namespace em = enterprise_management;
 
 namespace policy {
 
-CloudPolicyService::CloudPolicyService(scoped_ptr<CloudPolicyClient> client,
+CloudPolicyService::CloudPolicyService(CloudPolicyClient* client,
                                        CloudPolicyStore* store)
-    : client_(client.Pass()),
+    : client_(client),
       store_(store),
-      refresh_state_(REFRESH_NONE) {
+      refresh_state_(REFRESH_NONE),
+      initialization_complete_(false) {
   client_->AddObserver(this);
   store_->AddObserver(this);
 
@@ -40,10 +41,10 @@ std::string CloudPolicyService::ManagedBy() const {
   return std::string();
 }
 
-void CloudPolicyService::RefreshPolicy(const base::Closure& callback) {
+void CloudPolicyService::RefreshPolicy(const RefreshPolicyCallback& callback) {
   // If the client is not registered, bail out.
   if (!client_->is_registered()) {
-    callback.Run();
+    callback.Run(false);
     return;
   }
 
@@ -55,7 +56,7 @@ void CloudPolicyService::RefreshPolicy(const base::Closure& callback) {
 
 void CloudPolicyService::OnPolicyFetched(CloudPolicyClient* client) {
   if (client_->status() != DM_STATUS_SUCCESS) {
-    RefreshCompleted();
+    RefreshCompleted(false);
     return;
   }
 
@@ -65,7 +66,7 @@ void CloudPolicyService::OnPolicyFetched(CloudPolicyClient* client) {
       refresh_state_ = REFRESH_POLICY_STORE;
     store_->Store(*policy);
   } else {
-    RefreshCompleted();
+    RefreshCompleted(false);
   }
 }
 
@@ -74,7 +75,7 @@ void CloudPolicyService::OnRegistrationStateChanged(CloudPolicyClient* client) {
 
 void CloudPolicyService::OnClientError(CloudPolicyClient* client) {
   if (refresh_state_ == REFRESH_POLICY_FETCH)
-    RefreshCompleted();
+    RefreshCompleted(false);
 }
 
 void CloudPolicyService::OnStoreLoaded(CloudPolicyStore* store) {
@@ -105,31 +106,51 @@ void CloudPolicyService::OnStoreLoaded(CloudPolicyStore* store) {
   // Finally, set up registration if necessary.
   if (policy && policy->has_request_token() && policy->has_device_id() &&
       !client_->is_registered()) {
+    DVLOG(1) << "Setting up registration with request token: "
+             << policy->request_token();
     client_->SetupRegistration(policy->request_token(),
                                policy->device_id());
   }
 
   if (refresh_state_ == REFRESH_POLICY_STORE)
-    RefreshCompleted();
+    RefreshCompleted(true);
+
+  CheckInitializationCompleted();
 }
 
 void CloudPolicyService::OnStoreError(CloudPolicyStore* store) {
   if (refresh_state_ == REFRESH_POLICY_STORE)
-    RefreshCompleted();
+    RefreshCompleted(false);
+  CheckInitializationCompleted();
 }
 
-void CloudPolicyService::RefreshCompleted() {
+void CloudPolicyService::CheckInitializationCompleted() {
+  if (!IsInitializationComplete() && store_->is_initialized()) {
+    initialization_complete_ = true;
+    FOR_EACH_OBSERVER(Observer, observers_, OnInitializationCompleted(this));
+  }
+}
+
+void CloudPolicyService::RefreshCompleted(bool success) {
   // Clear state and |refresh_callbacks_| before actually invoking them, s.t.
   // triggering new policy fetches behaves as expected.
-  std::vector<base::Closure> callbacks;
+  std::vector<RefreshPolicyCallback> callbacks;
   callbacks.swap(refresh_callbacks_);
   refresh_state_ = REFRESH_NONE;
 
-  for (std::vector<base::Closure>::iterator callback(callbacks.begin());
+  for (std::vector<RefreshPolicyCallback>::iterator callback(callbacks.begin());
        callback != callbacks.end();
        ++callback) {
-    callback->Run();
+    callback->Run(success);
   }
+}
+
+void CloudPolicyService::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void CloudPolicyService::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 }  // namespace policy

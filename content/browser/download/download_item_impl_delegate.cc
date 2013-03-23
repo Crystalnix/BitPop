@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/logging.h"
 #include "content/browser/download/download_item_impl_delegate.h"
 
-class DownloadItemImpl;
+#include "base/logging.h"
+#include "content/browser/download/download_item_impl.h"
+
+namespace content {
 
 // Infrastructure in DownloadItemImplDelegate to assert invariant that
 // delegate always outlives all attached DownloadItemImpls.
@@ -25,42 +27,49 @@ void DownloadItemImplDelegate::Detach() {
   --count_;
 }
 
-bool DownloadItemImplDelegate::ShouldOpenFileBasedOnExtension(
-    const FilePath& path) {
+void DownloadItemImplDelegate::DetermineDownloadTarget(
+    DownloadItemImpl* download, const DownloadTargetCallback& callback) {
+  // TODO(rdsmith/asanka): Do something useful if forced file path is null.
+  FilePath target_path(download->GetForcedFilePath());
+  callback.Run(target_path,
+               DownloadItem::TARGET_DISPOSITION_OVERWRITE,
+               DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
+               target_path);
+}
+
+bool DownloadItemImplDelegate::ShouldCompleteDownload(
+    DownloadItemImpl* download,
+    const base::Closure& complete_callback) {
+  return true;
+}
+
+bool DownloadItemImplDelegate::ShouldOpenDownload(
+    DownloadItemImpl* download, const ShouldOpenDownloadCallback& callback) {
   return false;
 }
 
-bool DownloadItemImplDelegate::ShouldOpenDownload(DownloadItemImpl* download) {
+bool DownloadItemImplDelegate::ShouldOpenFileBasedOnExtension(
+    const FilePath& path) {
   return false;
 }
 
 void DownloadItemImplDelegate::CheckForFileRemoval(
     DownloadItemImpl* download_item) {}
 
-void DownloadItemImplDelegate::MaybeCompleteDownload(
-    DownloadItemImpl* download) {}
-
-content::BrowserContext* DownloadItemImplDelegate::GetBrowserContext() const {
+BrowserContext* DownloadItemImplDelegate::GetBrowserContext() const {
   return NULL;
 }
 
-DownloadFileManager* DownloadItemImplDelegate::GetDownloadFileManager() {
-  return NULL;
-}
-
-void DownloadItemImplDelegate::DownloadStopped(DownloadItemImpl* download) {}
-
-void DownloadItemImplDelegate::DownloadCompleted(DownloadItemImpl* download) {}
+void DownloadItemImplDelegate::UpdatePersistence(DownloadItemImpl* download) {}
 
 void DownloadItemImplDelegate::DownloadOpened(DownloadItemImpl* download) {}
 
 void DownloadItemImplDelegate::DownloadRemoved(DownloadItemImpl* download) {}
 
-void DownloadItemImplDelegate::DownloadRenamedToIntermediateName(
-    DownloadItemImpl* download) {}
-
-void DownloadItemImplDelegate::DownloadRenamedToFinalName(
+void DownloadItemImplDelegate::ShowDownloadInBrowser(
     DownloadItemImpl* download) {}
 
 void DownloadItemImplDelegate::AssertStateConsistent(
     DownloadItemImpl* download) const {}
+
+}  // namespace content

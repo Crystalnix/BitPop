@@ -256,7 +256,7 @@ class BasePerfTest(pyauto.PyUITest):
     return timer.timeit(number=1) * 1000  # Convert seconds to milliseconds.
 
   def _OutputPerfForStandaloneGraphing(self, graph_name, description, value,
-                                       units, units_x):
+                                       units, units_x, is_stacked):
     """Outputs perf measurement data to a local folder to be graphed.
 
     This function only applies to Chrome desktop, and assumes that environment
@@ -280,6 +280,8 @@ class BasePerfTest(pyauto.PyUITest):
           with the performance measurements, such as 'iteration' if the x values
           are iteration numbers.  If this argument is specified, then the
           |value| argument must be a list of (x, y) tuples.
+      is_stacked: True to draw a "stacked" graph.  First-come values are
+          stacked at bottom by default.
     """
     revision_num_file = os.path.join(self._local_perf_dir, 'last_revision.dat')
     if os.path.exists(revision_num_file):
@@ -322,30 +324,37 @@ class BasePerfTest(pyauto.PyUITest):
     if os.path.exists(data_file):
       with open(data_file) as f:
         existing_lines = f.readlines()
-    existing_lines = map(eval, map(lambda x: x.strip(), existing_lines))
+    existing_lines = map(
+        simplejson.loads, map(lambda x: x.strip(), existing_lines))
 
-    seen_key = graph_name + '|' + description
+    seen_key = graph_name
+    # We assume that the first line |existing_lines[0]| is the latest.
     if units_x:
-      points = []
+      new_line = {
+        'rev': revision,
+        'traces': { description: [] }
+      }
       if seen_key in self._seen_graph_lines:
         # We've added points previously for this graph line in the current
         # test execution, so retrieve the original set of points specified in
         # the most recent revision in the data file.
-        points = existing_lines[0]['traces'][description]
+        new_line = existing_lines[0]
+        if not description in new_line['traces']:
+          new_line['traces'][description] = []
       for x_value, y_value in value:
-        points.append([str(x_value), str(y_value)])
-      new_traces = {
-        description: points
-      }
+        new_line['traces'][description].append([str(x_value), str(y_value)])
     else:
-      new_traces = {
-        description: [str(value), str(0.0)]
+      new_line = {
+        'rev': revision,
+        'traces': { description: [str(value), str(0.0)] }
       }
 
-    new_line = {
-      'rev': revision,
-      'traces': new_traces
-    }
+    if is_stacked:
+      new_line['stack'] = True
+      if 'stack_order' not in new_line:
+        new_line['stack_order'] = []
+      if description not in new_line['stack_order']:
+        new_line['stack_order'].append(description)
 
     if seen_key in self._seen_graph_lines:
       # Update results for the most recent revision.
@@ -355,7 +364,7 @@ class BasePerfTest(pyauto.PyUITest):
       existing_lines.insert(0, new_line)
       self._seen_graph_lines[seen_key] = True
 
-    existing_lines = map(str, existing_lines)
+    existing_lines = map(simplejson.dumps, existing_lines)
     with open(data_file, 'w') as f:
       f.write('\n'.join(existing_lines))
     os.chmod(data_file, 0755)
@@ -364,7 +373,7 @@ class BasePerfTest(pyauto.PyUITest):
       f.write(str(revision))
 
   def _OutputPerfGraphValue(self, description, value, units,
-                            graph_name, units_x=None):
+                            graph_name, units_x=None, is_stacked=False):
     """Outputs a performance value to have it graphed on the performance bots.
 
     The output format differs, depending on whether the current platform is
@@ -395,6 +404,8 @@ class BasePerfTest(pyauto.PyUITest):
           with the performance measurements, such as 'iteration' if the x values
           are iteration numbers.  If this argument is specified, then the
           |value| argument must be a list of (x, y) tuples.
+      is_stacked: True to draw a "stacked" graph.  First-come values are
+          stacked at bottom by default.
     """
     if (isinstance(value, list) and value[0] is not None and
         isinstance(value[0], tuple)):
@@ -403,15 +414,16 @@ class BasePerfTest(pyauto.PyUITest):
       assert isinstance(value, list)
 
     if self.IsChromeOS():
-      # ChromeOS results don't support lists.
+      # Autotest doesn't support result lists.
+      autotest_value = value
       if (isinstance(value, list) and value[0] is not None and
           not isinstance(value[0], tuple)):
-        value = Mean(value)
+        autotest_value = Mean(value)
 
       if units_x:
         # TODO(dennisjeffrey): Support long-running performance measurements on
         # ChromeOS in a way that can be graphed: crosbug.com/21881.
-        pyauto_utils.PrintPerfResult(graph_name, description, value,
+        pyauto_utils.PrintPerfResult(graph_name, description, autotest_value,
                                      units + ' ' + units_x)
       else:
         # Output short-running performance results in a format understood by
@@ -422,10 +434,18 @@ class BasePerfTest(pyauto.PyUITest):
                           '(length 30) when added to the autotest database.',
                           perf_key, perf_key[:30])
         print '\n%s(\'%s\', %f)%s' % (self._PERF_OUTPUT_MARKER_PRE,
-                                        perf_key, value,
+                                        perf_key, autotest_value,
                                         self._PERF_OUTPUT_MARKER_POST)
+
+        # Also output results in the format recognized by buildbot, for cases
+        # in which these tests are run on chromeOS through buildbot.  Since
+        # buildbot supports result lists, it's ok for |value| to be a list here.
+        pyauto_utils.PrintPerfResult(graph_name, description, value, units)
+
         sys.stdout.flush()
     else:
+      # TODO(dmikurube): Support stacked graphs in PrintPerfResult.
+      # See http://crbug.com/122119.
       if units_x:
         pyauto_utils.PrintPerfResult(graph_name, description, value,
                                      units + ' ' + units_x)
@@ -434,7 +454,7 @@ class BasePerfTest(pyauto.PyUITest):
 
       if self._local_perf_dir:
         self._OutputPerfForStandaloneGraphing(
-            graph_name, description, value, units, units_x)
+            graph_name, description, value, units, units_x, is_stacked)
 
   def _OutputEventForStandaloneGraphing(self, description, event_list):
     """Outputs event information to a local folder to be graphed.
@@ -593,19 +613,74 @@ class BasePerfTest(pyauto.PyUITest):
       self.assertEqual(1 + num_tabs, self.GetTabCount(),
                        msg='Did not open %d new tab(s).' % num_tabs)
       for _ in range(num_tabs):
-        self.GetBrowserWindow(0).GetTab(1).Close(True)
+        self.CloseTab(tab_index=1)
 
     self._PrintSummaryResults(description, timings, 'milliseconds', graph_name)
+
+  def _GetConfig(self):
+    """Load perf test configuration file.
+
+    Returns:
+      A dictionary that represents the config information.
+    """
+    config_file = os.path.join(os.path.dirname(__file__), 'perf.cfg')
+    config = {'username': None,
+              'password': None,
+              'google_account_url': 'https://accounts.google.com/',
+              'gmail_url': 'https://www.gmail.com',
+              'plus_url': 'https://plus.google.com',
+              'docs_url': 'https://docs.google.com'}
+    if os.path.exists(config_file):
+      try:
+        new_config = pyauto.PyUITest.EvalDataFrom(config_file)
+        for key in new_config:
+          if new_config.get(key) is not None:
+            config[key] = new_config.get(key)
+      except SyntaxError, e:
+        logging.info('Could not read %s: %s', config_file, str(e))
+    return config
 
   def _LoginToGoogleAccount(self, account_key='test_google_account'):
     """Logs in to a test Google account.
 
+    Login with user-defined credentials if they exist.
+    Else login with private test credentials if they exist.
+    Else fail.
+
     Args:
-      account_key: The string key associated with the test account login
-          credentials to use.
+      account_key: The string key in private_tests_info.txt which is associated
+                   with the test account login credentials to use. It will only
+                   be used when fail to load user-defined credentials.
+
+    Raises:
+      RuntimeError: if could not get credential information.
     """
-    creds = self.GetPrivateInfo()[account_key]
-    test_utils.GoogleAccountsLogin(self, creds['username'], creds['password'])
+    private_file = os.path.join(pyauto.PyUITest.DataDir(), 'pyauto_private',
+                                'private_tests_info.txt')
+    config_file = os.path.join(os.path.dirname(__file__), 'perf.cfg')
+    config = self._GetConfig()
+    google_account_url = config.get('google_account_url')
+    username = config.get('username')
+    password = config.get('password')
+    if username and password:
+      logging.info(
+          'Using google account credential from %s',
+          os.path.join(os.path.dirname(__file__), 'perf.cfg'))
+    elif os.path.exists(private_file):
+      creds = self.GetPrivateInfo()[account_key]
+      username = creds['username']
+      password = creds['password']
+      logging.info(
+          'User-defined credentials not found,' +
+          ' using private test credentials instead.')
+    else:
+      message = 'No user-defined or private test ' \
+                'credentials could be found. ' \
+                'Please specify credential information in %s.' \
+                % config_file
+      raise RuntimeError(message)
+    test_utils.GoogleAccountsLogin(
+        self, username, password, url=google_account_url)
     self.NavigateToURL('about:blank')  # Clear the existing tab.
 
   def _GetCPUUsage(self):
@@ -676,16 +751,6 @@ class TabPerfTest(BasePerfTest):
     self._RunNewTabTest('NewTabPage',
                         lambda: self._AppendTab('chrome://newtab'), 'open_tab')
 
-  def testNewTabPdf(self):
-    """Measures time to open a new tab navigated to a PDF file."""
-    self.assertTrue(
-        os.path.exists(os.path.join(self.DataDir(), 'pyauto_private', 'pdf',
-                                    'TechCrunch.pdf')),
-        msg='Missing required PDF data file.')
-    url = self.GetFileURLForDataPath('pyauto_private', 'pdf', 'TechCrunch.pdf')
-    self._RunNewTabTest('NewTabPdfPage', lambda: self._AppendTab(url),
-                        'open_tab')
-
   def testNewTabFlash(self):
     """Measures time to open a new tab navigated to a flash page."""
     self.assertTrue(
@@ -738,7 +803,7 @@ class BenchmarkPerfTest(BasePerfTest):
         benchmark_name = match.group(1)
         benchmark_score = match.group(2)
         result_dict[benchmark_name] = int(benchmark_score)
-      self.GetBrowserWindow(0).GetTab(1).Close(True)
+      self.CloseTab(tab_index=1)
       return result_dict
 
     timings = {}
@@ -748,8 +813,8 @@ class BenchmarkPerfTest(BasePerfTest):
       if iteration:
         for key, val in result_dict.items():
           timings.setdefault(key, []).append(val)
-        logging.info('Iteration %d of %d:\n%s', iteration, self._num_iterations,
-                     self.pformat(result_dict))
+        logging.info('Iteration %d of %d:\n%s', iteration,
+                     self._num_iterations, self.pformat(result_dict))
 
     for key, val in timings.items():
       if key == 'final_score':
@@ -773,8 +838,8 @@ class BenchmarkPerfTest(BasePerfTest):
     """
     self.assertTrue(
         self.WaitUntil(
-            lambda: self.ExecuteJavascript(js_is_done, tab_index=1) == 'true',
-            timeout=300, retry_sleep=1),
+            lambda: self.ExecuteJavascript(js_is_done, tab_index=1),
+            timeout=300, expect_retval='true', retry_sleep=1),
         msg='Timed out when waiting for SunSpider benchmark score.')
 
     js_get_results = """
@@ -1437,14 +1502,14 @@ class GPUPerfTest(BasePerfTest):
       status2 = self._GetStdAvgAndCompare(avg_fps, desc_array[index + 1],
                                           ref_dict)
       # Go Back to previous demo
-      self.GetBrowserWindow(0).GetTab(0).GoBack();
+      self.TabGoBack()
       # Measures performance for first demo when moved back
       avg_fps = self._MeasureFpsOverTime()
       status3 = self._GetStdAvgAndCompare(
           avg_fps, desc_array[index] + '_backward',
           ref_dict)
       # Go Forward to previous demo
-      self.GetBrowserWindow(0).GetTab(0).GoForward();
+      self.TabGoForward()
       # Measures performance for second demo when moved forward
       avg_fps = self._MeasureFpsOverTime()
       status4 = self._GetStdAvgAndCompare(
@@ -1628,40 +1693,32 @@ class FileUploadDownloadTest(BasePerfTest):
                               'upload_file')
 
 
-class FrameTimes(object):
-  """Container for a list of frame times."""
-
-  def __init__(self, frame_times):
-    self._frame_times = frame_times
-
-  def GetFps(self):
-    if not self._frame_times:
-      return 0
-    avg = sum(self._frame_times) / len(self._frame_times)
-    if not avg:
-      return 0
-    return int(1000.0 / avg)
-
-  def GetMeanFrameTime(self):
-    return Mean(self._frame_times)
-
-  def GetPercentBelow60Fps(self):
-    if not self._frame_times:
-      return 0
-    threshold = math.ceil(1000 / 60.)
-    num_frames_below_60 = len([t for t in self._frame_times if t > threshold])
-    num_frames = len(self._frame_times)
-    return (100. * num_frames_below_60) / num_frames
-
-
 class ScrollResults(object):
   """Container for ScrollTest results."""
 
-  def __init__(self, first_paint_seconds, frame_times_lists):
-    assert len(frame_times_lists) == 2, 'Expecting initial and repeat times'
-    self.first_paint_time = 1000.0 * first_paint_seconds
-    self.initial_frame_times = FrameTimes(frame_times_lists[0])
-    self.repeat_frame_times = FrameTimes(frame_times_lists[1])
+  def __init__(self, first_paint_seconds, results_list):
+    assert len(results_list) == 2, 'Expecting initial and repeat results.'
+    self._first_paint_time = 1000.0 * first_paint_seconds
+    self._results_list = results_list
+
+  def GetFirstPaintTime(self):
+    return self._first_paint_time
+
+  def GetFrameCount(self, index):
+    results = self._results_list[index]
+    return results.get('numFramesSentToScreen', results['numAnimationFrames'])
+
+  def GetFps(self, index):
+    return (self.GetFrameCount(index) /
+            self._results_list[index]['totalTimeInSeconds'])
+
+  def GetMeanFrameTime(self, index):
+    return (self._results_list[index]['totalTimeInSeconds'] /
+            self.GetFrameCount(index))
+
+  def GetPercentBelow60Fps(self, index):
+    return (float(self._results_list[index]['droppedFrameCount']) /
+            self.GetFrameCount(index))
 
 
 class BaseScrollTest(BasePerfTest):
@@ -1674,57 +1731,50 @@ class BaseScrollTest(BasePerfTest):
     with open(scroll_file) as f:
       self._scroll_text = f.read()
 
-  def RunSingleInvocation(self, url, setup_js=''):
+  def ExtraChromeFlags(self):
+    """Ensures Chrome is launched with custom flags.
+
+    Returns:
+      A list of extra flags to pass to Chrome when it is launched.
+    """
+    # Extra flag used by scroll performance tests.
+    return (super(BaseScrollTest, self).ExtraChromeFlags() +
+            ['--enable-gpu-benchmarking'])
+
+  def RunSingleInvocation(self, url, is_gmail_test=False):
     """Runs a single invocation of the scroll test.
 
     Args:
       url: The string url for the webpage on which to run the scroll test.
-      setup_js: String representing additional Javascript setup code to execute
-          in the webpage immediately before running the scroll test.
+      is_gmail_test: True iff the test is a GMail test.
 
     Returns:
       Instance of ScrollResults.
     """
+
     self.assertTrue(self.AppendTab(pyauto.GURL(url)),
                     msg='Failed to append tab for webpage.')
 
-    js = """
-        %s
-        %s
-        __scroll_test();
-        window.domAutomationController.send('done');
-    """ % (self._scroll_text, setup_js)
-    self.ExecuteJavascript(js, tab_index=1)
+    timeout = pyauto.PyUITest.ActionTimeoutChanger(self, 300 * 1000)  # ms
+    test_js = """%s;
+        new __ScrollTest(function(results) {
+          var stringify = JSON.stringify || JSON.encode;
+          window.domAutomationController.send(stringify(results));
+        }, %s);
+    """ % (self._scroll_text, 'true' if is_gmail_test else 'false')
+    results = simplejson.loads(self.ExecuteJavascript(test_js, tab_index=1))
 
-    # Poll the webpage until the test is complete.
-    def IsTestComplete():
-      done_js = """
-        if (__scrolling_complete)
-          window.domAutomationController.send('complete');
-        else
-          window.domAutomationController.send('incomplete');
-      """
-      return self.ExecuteJavascript(done_js, tab_index=1) == 'complete'
+    first_paint_js = ('window.domAutomationController.send('
+                      '(chrome.loadTimes().firstPaintTime - '
+                      'chrome.loadTimes().requestTime).toString());')
+    first_paint_time = float(self.ExecuteJavascript(first_paint_js,
+                                                    tab_index=1))
 
-    self.assertTrue(
-        self.WaitUntil(IsTestComplete, timeout=300, expect_retval=True,
-                       retry_sleep=1),
-        msg='Timed out when waiting for scrolling tests to complete.')
+    self.CloseTab(tab_index=1)
 
-    # Get the scroll test results from the webpage.
-    results_js = """
-      var __stringify = JSON.stringify || JSON.encode;
-      window.domAutomationController.send(__stringify({
-          'first_paint_time': chrome.loadTimes().firstPaintTime -
-                              chrome.loadTimes().requestTime,
-          'frame_times': __frame_times,
-      }));
-    """
-    results = eval(self.ExecuteJavascript(results_js, tab_index=1))
-    self.GetBrowserWindow(0).GetTab(1).Close(True)
-    return ScrollResults(results['first_paint_time'], results['frame_times'])
+    return ScrollResults(first_paint_time, results)
 
-  def RunScrollTest(self, url, description, graph_name, setup_js=''):
+  def RunScrollTest(self, url, description, graph_name, is_gmail_test=False):
     """Runs a scroll performance test on the specified webpage.
 
     Args:
@@ -1732,21 +1782,20 @@ class BaseScrollTest(BasePerfTest):
       description: A string description for the particular test being run.
       graph_name: A string name for the performance graph associated with this
           test.  Only used on Chrome desktop.
-      setup_js: String representing additional Javascript setup code to execute
-          in the webpage immediately before running the scroll test.
+      is_gmail_test: True iff the test is a GMail test.
     """
     results = []
     for iteration in range(self._num_iterations + 1):
-      result = self.RunSingleInvocation(url, setup_js)
+      result = self.RunSingleInvocation(url, is_gmail_test)
       # Ignore the first iteration.
       if iteration:
-        fps = result.repeat_frame_times.GetFps()
+        fps = result.GetFps(1)
         assert fps, '%s did not scroll' % url
         logging.info('Iteration %d of %d: %f fps', iteration,
                      self._num_iterations, fps)
         results.append(result)
     self._PrintSummaryResults(
-        description, [r.repeat_frame_times.GetFps() for r in results],
+        description, [r.GetFps(1) for r in results],
         'FPS', graph_name)
 
 
@@ -1776,21 +1825,21 @@ class PopularSitesScrollTest(BaseScrollTest):
 
   def _PrintScrollResults(self, results):
     self._PrintSummaryResults(
-        'initial', [r.initial_frame_times.GetMeanFrameTime() for r in results],
+        'initial', [r.GetMeanFrameTime(0) for r in results],
         'ms', 'FrameTimes')
     self._PrintSummaryResults(
-        'repeat', [r.repeat_frame_times.GetMeanFrameTime() for r in results],
+        'repeat', [r.GetMeanFrameTime(1) for r in results],
         'ms', 'FrameTimes')
     self._PrintSummaryResults(
         'initial',
-        [r.initial_frame_times.GetPercentBelow60Fps() for r in results],
+        [r.GetPercentBelow60Fps(0) for r in results],
         'percent', 'PercentBelow60FPS')
     self._PrintSummaryResults(
         'repeat',
-        [r.repeat_frame_times.GetPercentBelow60Fps() for r in results],
+        [r.GetPercentBelow60Fps(1) for r in results],
         'percent', 'PercentBelow60FPS')
     self._PrintSummaryResults(
-        'first_paint_time', [r.first_paint_time for r in results],
+        'first_paint_time', [r.GetFirstPaintTime() for r in results],
         'ms', 'FirstPaintTime')
 
   def test2012Q3(self):
@@ -1803,9 +1852,9 @@ class PopularSitesScrollTest(BaseScrollTest):
       for iteration in range(self._num_iterations):
         for url in urls:
           result = self.RunSingleInvocation(url)
-          fps = result.initial_frame_times.GetFps()
+          fps = result.GetFps(0)
           assert fps, '%s did not scroll' % url
-          logging.info('Iteration %d of %d: %f fps', iteration,
+          logging.info('Iteration %d of %d: %f fps', iteration + 1,
                        self._num_iterations, fps)
           results.append(result)
     self._PrintScrollResults(results)
@@ -1844,8 +1893,8 @@ class ScrollTest(BaseScrollTest):
   def testGmailScroll(self):
     """Runs the scroll test using the live Gmail site."""
     self._LoginToGoogleAccount(account_key='test_google_account_gmail')
-    self.RunScrollTest('http://www.gmail.com', 'ScrollGmail', 'scroll_fps',
-                       setup_js='__is_gmail_test = true;')
+    self.RunScrollTest('http://www.gmail.com', 'ScrollGmail',
+                       'scroll_fps', True)
 
 
 class FlashTest(BasePerfTest):
@@ -2021,6 +2070,17 @@ class BasePageCyclerTest(BasePerfTest):
              '--enable-file-cookies',
              '--allow-outdated-plugins'])
 
+  def WaitUntilStarted(self, start_url):
+    """Check that the test navigates away from the start_url."""
+    js_is_started = """
+        var is_started = document.location.href !== "%s";
+        window.domAutomationController.send(JSON.stringify(is_started));
+    """ % start_url
+    self.assertTrue(
+        self.WaitUntil(lambda: self.ExecuteJavascript(js_is_started) == 'true',
+                       timeout=10),
+        msg='Timed out when waiting to leave start page.')
+
   def WaitUntilDone(self, url, iterations):
     """Check cookies for "__pc_done=1" to know the test is over."""
     def IsDone():
@@ -2124,6 +2184,8 @@ class BasePageCyclerTest(BasePerfTest):
     iterations = self._num_iterations
     start_url = self.StartUrl(name, iterations)
     self.NavigateToURL(start_url)
+    if self.use_auto:
+      self.WaitUntilStarted(start_url)
     self.WaitUntilDone(start_url, iterations)
     pages, times = self.CollectPagesAndTimes(start_url)
     final_result = self.ComputeFinalResult(pages, times, iterations)
@@ -2221,7 +2283,6 @@ class PageCyclerReplay(object):
       '--disable-background-networking',
       '--enable-experimental-extension-apis',
       '--enable-logging',
-      '--enable-stats-table',
       '--enable-benchmarking',
       '--metrics-recording-only',
       '--activate-on-launch',
@@ -2234,9 +2295,9 @@ class PageCyclerReplay(object):
     return FormatChromePath(cls._PATHS[key], **kwargs)
 
   @classmethod
-  def ReplayServer(cls, test_name):
+  def ReplayServer(cls, test_name, replay_options=None):
     archive_path = cls.Path('archive', test_name=test_name)
-    return webpagereplay.ReplayServer(archive_path)
+    return webpagereplay.ReplayServer(archive_path, replay_options)
 
 
 class PageCyclerNetSimTest(BasePageCyclerTest):
@@ -2269,8 +2330,9 @@ class PageCyclerNetSimTest(BasePageCyclerTest):
       test_name: name for archive (.wpr) and config (.js) files.
       description: a string description for the test
     """
-    with PageCyclerReplay.ReplayServer(test_name) as replay_server:
-      if replay_server.is_record_mode:
+    replay_options = None
+    with PageCyclerReplay.ReplayServer(test_name, replay_options) as server:
+      if server.is_record_mode:
         self._num_iterations = 1
       super_self = super(PageCyclerNetSimTest, self)
       super_self.RunPageCyclerTest(test_name, description)
@@ -2357,7 +2419,7 @@ class MemoryTest(BasePerfTest):
                               duration)
 
       for _ in xrange(len(tabs)):
-        self.GetBrowserWindow(0).GetTab(1).Close(True)
+        self.CloseTab(tab_index=1)
 
       self._RecordMemoryStats(description, '0Tabs%d' % (iteration_num + 1),
                               duration)

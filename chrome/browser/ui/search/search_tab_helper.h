@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,18 +6,17 @@
 #define CHROME_BROWSER_UI_SEARCH_SEARCH_TAB_HELPER_H_
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 
 class OmniboxEditModel;
-class TabContents;
 
 namespace content {
 class WebContents;
-};
+}
 
 namespace chrome {
 namespace search {
@@ -25,23 +24,26 @@ namespace search {
 // Per-tab search "helper".  Acts as the owner and controller of the tab's
 // search UI model.
 class SearchTabHelper : public content::WebContentsObserver,
-                        public content::NotificationObserver {
+                        public content::NotificationObserver,
+                        public content::WebContentsUserData<SearchTabHelper> {
  public:
-  SearchTabHelper(TabContents* contents, bool is_search_enabled);
   virtual ~SearchTabHelper();
 
   SearchModel* model() {
     return &model_;
   }
 
-  // Lazily create web contents for NTP.  Owned by SearchTabHelper.
-  content::WebContents* GetNTPWebContents();
-
   // Invoked when the OmniboxEditModel changes state in some way that might
   // affect the search mode.
-  void OmniboxEditModelChanged(OmniboxEditModel* edit_model);
+  void OmniboxEditModelChanged(bool user_input_in_progress, bool cancelling);
 
-  // content::WebContentsObserver overrides:
+  // Invoked when the active navigation entry is updated in some way that might
+  // affect the search mode. This is used by Instant when it "fixes up" the
+  // virtual URL of the active entry. Regular navigations are captured through
+  // the notification system and shouldn't call this method.
+  void NavigationEntryUpdated();
+
+  // Overridden from contents::WebContentsObserver:
   virtual void NavigateToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
@@ -52,19 +54,22 @@ class SearchTabHelper : public content::WebContentsObserver,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
-  // Sets the mode of the model based on |url|.
-  void UpdateModel(const GURL& url);
+  explicit SearchTabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<SearchTabHelper>;
 
-  // On navigation away from NTP and Search pages, delete |ntp_web_contents_|.
-  void FlushNTP(const GURL& url);
+  // Sets the mode of the model based on |url|.
+  void UpdateModelBasedOnURL(const GURL& url);
+
+  // Returns the web contents associated with the tab that owns this helper.
+  const content::WebContents* web_contents() const;
 
   const bool is_search_enabled_;
 
+  // Tracks the last value passed to OmniboxEditModelChanged().
+  bool user_input_in_progress_;
+
   // Model object for UI that cares about search state.
   SearchModel model_;
-
-  // Lazily created web contents for NTP.
-  scoped_ptr<content::WebContents> ntp_web_contents_;
 
   content::NotificationRegistrar registrar_;
 

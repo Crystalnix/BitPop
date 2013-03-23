@@ -1,11 +1,14 @@
 <!DOCTYPE HTML>
-<html>
+<html i18n-values=".style.fontFamily: fontfamily;">
 <!--
 Copyright (c) 2012 The Chromium Authors. All rights reserved.
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
-  <head i18n-values="dir:textdirection;">
+  <head>
+    <!-- Don't use automatic scaling on mobile -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0,
+                                   maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="main.css">
     <link rel="stylesheet" href="status_view.css">
     <link rel="stylesheet" href="events_view.css">
@@ -27,6 +30,7 @@ found in the LICENSE file.
     <include src="spdy_view.html"/>
     <include src="http_pipeline_view.html"/>
     <include src="http_cache_view.html"/>
+    <include src="bandwidth_view.html"/>
     <include src="prerender_view.html"/>
     <include src="service_providers_view.html"/>
     <include src="import_view.html"/>

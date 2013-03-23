@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "chrome/browser/chromeos/cros/cellular_data_plan.h"
+#include "base/time.h"
 #include "chrome/browser/chromeos/cros/network_ip_config.h"
 
 namespace base {
@@ -60,11 +60,6 @@ typedef base::Callback<void(
     const std::string& path,
     const std::string& key,
     const base::Value& value)> NetworkPropertiesWatcherCallback;
-
-// Callback for data plan update watchers.
-typedef base::Callback<void(
-    const std::string& modem_service_path,
-    CellularDataPlanVector* data_plan_vector)> DataPlanUpdateWatcherCallback;
 
 // Callback for methods that initiate an operation and return no data.
 typedef base::Callback<void(
@@ -134,11 +129,7 @@ void CrosSetNetworkManagerProperty(const std::string& property,
 void CrosDeleteServiceFromProfile(const std::string& profile_path,
                                   const std::string& service_path);
 
-// Requests an update of the data plans. A callback will be received by any
-// object that invoked MonitorCellularDataPlan when up to date data is ready.
-void CrosRequestCellularDataPlanUpdate(const std::string& modem_service_path);
-
-// Sets up monitoring of the PropertyChanged signal on the flimflam manager.
+// Sets up monitoring of the PropertyChanged signal on the shill manager.
 // The provided |callback| will be called whenever a manager property changes.
 CrosNetworkWatcher* CrosMonitorNetworkManagerProperties(
     const NetworkPropertiesWatcherCallback& callback);
@@ -152,10 +143,6 @@ CrosNetworkWatcher* CrosMonitorNetworkServiceProperties(
 CrosNetworkWatcher* CrosMonitorNetworkDeviceProperties(
     const NetworkPropertiesWatcherCallback& callback,
     const std::string& device_path);
-
-// Sets up monitoring of the cellular data plan updates from Cashew.
-CrosNetworkWatcher* CrosMonitorCellularDataPlan(
-    const DataPlanUpdateWatcherCallback& callback);
 
 // Similar to MonitorNetworkManagerProperties for a specified network device.
 CrosNetworkWatcher* CrosMonitorSMS(const std::string& modem_device_path,
@@ -215,7 +202,7 @@ void CrosRequestNetworkServiceDisconnect(const std::string& service_path);
 void CrosRequestRemoveNetworkService(const std::string& service_path);
 
 // Requests a scan of services of |type|.
-// |type| should be is a string recognized by flimflam's Manager API.
+// |type| should be is a string recognized by shill's Manager API.
 void CrosRequestNetworkScan(const std::string& network_type);
 
 // Requests enabling or disabling a device.
@@ -263,20 +250,25 @@ void CrosRequestCellularRegister(const std::string& device_path,
 // Returns false on failure and true on success.
 bool CrosSetOfflineMode(bool offline);
 
+// Gets a list of all the NetworkIPConfigs using a given device path,
+// and returns the information via callback.
+void CrosListIPConfigs(const std::string& device_path,
+                       const NetworkGetIPConfigsCallback& callback);
+
+// DEPRECATED, DO NOT USE: Use the asynchronous CrosListIPConfigs, above,
+// instead.
 // Gets a list of all the NetworkIPConfigs using a given device path.
-// Optionally, you can get ipconfig-paths and the hardware address.
-// Pass NULL as |ipconfig_paths| and |hardware_address| if you are not
-// interested in these values.
-bool CrosListIPConfigs(const std::string& device_path,
-                       NetworkIPConfigVector* ipconfig_vector,
-                       std::vector<std::string>* ipconfig_paths,
-                       std::string* hardware_address);
+// Optionally, you can get ipconfig-paths and the hardware address. Pass NULL as
+// |ipconfig_paths| and |hardware_address| if you are not interested in these
+// values.
+bool CrosListIPConfigsAndBlock(const std::string& device_path,
+                               NetworkIPConfigVector* ipconfig_vector,
+                               std::vector<std::string>* ipconfig_paths,
+                               std::string* hardware_address);
 
-// Adds a IPConfig of the given type to the device
-bool CrosAddIPConfig(const std::string& device_path, IPConfigType type);
-
-// Removes an existing IP Config
-bool CrosRemoveIPConfig(const std::string& ipconfig_path);
+// Refreshes the IP config |ipconfig_path| to pick up changes in
+// configuration, and renew the DHCP lease, if any.
+void CrosRequestIPConfigRefresh(const std::string& ipconfig_path);
 
 // Reads out the results of the last wifi scan. These results are not
 // pre-cached in the library, so the call may block whilst the results are
@@ -288,6 +280,23 @@ bool CrosGetWifiAccessPoints(WifiAccessPointVector* result);
 
 // Configures the network service specified by |properties|.
 void CrosConfigureService(const base::DictionaryValue& properties);
+
+// Converts a |prefix_length| to a netmask. (for IPv4 only)
+// e.g. a |prefix_length| of 24 is converted to a netmask of "255.255.255.0".
+// Invalid prefix lengths will return the empty string.
+std::string CrosPrefixLengthToNetmask(int32 prefix_length);
+
+// Converts a |netmask| to a prefixlen. (for IPv4 only)
+// e.g. a |netmask| of 255.255.255.0 is converted to a prefixlen of 24
+int32 CrosNetmaskToPrefixLength(const std::string& netmask);
+
+// Changes the active cellular carrier.
+void CrosSetCarrier(const std::string& device_path,
+                    const std::string& carrier,
+                    const NetworkOperationCallback& callback);
+
+// Resets the device.
+void CrosReset(const std::string& device_path);
 
 }  // namespace chromeos
 

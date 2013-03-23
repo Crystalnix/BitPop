@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// BookmarkCodec is responsible for encoding and decoding the BookmarkModel
-// into JSON values. The encoded values are written to disk via the
-// BookmarkService.
-
 #ifndef CHROME_BROWSER_BOOKMARKS_BOOKMARK_CODEC_H_
 #define CHROME_BROWSER_BOOKMARKS_BOOKMARK_CODEC_H_
 
@@ -25,9 +21,9 @@ class ListValue;
 class Value;
 }
 
-// BookmarkCodec is responsible for encoding/decoding bookmarks into JSON
-// values. BookmarkCodec is used by BookmarkService.
-
+// BookmarkCodec is responsible for encoding and decoding the BookmarkModel
+// into JSON values. The encoded values are written to disk via the
+// BookmarkStorage.
 class BookmarkCodec {
  public:
   // Creates an instance of the codec. During decoding, if the IDs in the file
@@ -45,11 +41,10 @@ class BookmarkCodec {
 
   // Encodes the bookmark bar and other folders returning the JSON value. It's
   // up to the caller to delete the returned object.
-  // This method is public for use by StarredURLDatabase in migrating the
-  // bookmarks out of the database.
   base::Value* Encode(const BookmarkNode* bookmark_bar_node,
-                const BookmarkNode* other_folder_node,
-                const BookmarkNode* mobile_folder_node);
+                      const BookmarkNode* other_folder_node,
+                      const BookmarkNode* mobile_folder_node,
+                      const std::string& model_meta_info);
 
   // Decodes the previously encoded value to the specified nodes as well as
   // setting |max_node_id| to the greatest node id. Returns true on success,
@@ -72,6 +67,9 @@ class BookmarkCodec {
   // user.
   const std::string& stored_checksum() const { return stored_checksum_; }
 
+  // Return meta info of bookmark model root.
+  const std::string& model_meta_info() const { return model_meta_info_; }
+
   // Returns whether the IDs were reassigned during decoding. Always returns
   // false after encoding.
   bool ids_reassigned() const { return ids_reassigned_; }
@@ -90,6 +88,7 @@ class BookmarkCodec {
   static const char* kURLKey;
   static const char* kDateModifiedKey;
   static const char* kChildrenKey;
+  static const char* kMetaInfo;
 
   // Possible values for kTypeKey.
   static const char* kTypeURL;
@@ -166,6 +165,9 @@ class BookmarkCodec {
 
   // Maximum ID assigned when decoding data.
   int64 maximum_id_;
+
+  // Meta info set on bookmark model root.
+  std::string model_meta_info_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkCodec);
 };

@@ -13,8 +13,16 @@
 #include "base/compiler_specific.h"
 #include "content/public/browser/content_browser_client.h"
 
+#if defined(OS_ANDROID)
+#include "base/memory/scoped_ptr.h"
+#endif
+
 namespace content {
 class QuotaPermissionContext;
+}
+
+namespace extensions {
+class Extension;
 }
 
 class PrefService;
@@ -34,17 +42,25 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::WebContents* web_contents,
       content::RenderViewHostDelegateView** render_view_host_delegate_view)
           OVERRIDE;
-  virtual std::string GetStoragePartitionIdForChildProcess(
+  virtual std::string GetStoragePartitionIdForSite(
       content::BrowserContext* browser_context,
-      int child_process_id) OVERRIDE;
+      const GURL& site) OVERRIDE;
+  virtual bool IsValidStoragePartitionId(
+      content::BrowserContext* browser_context,
+      const std::string& partition_id) OVERRIDE;
+  virtual void GetStoragePartitionConfigForSite(
+      content::BrowserContext* browser_context,
+      const GURL& site,
+      bool can_be_default,
+      std::string* partition_domain,
+      std::string* partition_name,
+      bool* in_memory) OVERRIDE;
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
   virtual void RenderViewHostCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderProcessHostCreated(
       content::RenderProcessHost* host) OVERRIDE;
-  virtual void BrowserChildProcessHostCreated(
-      content::BrowserChildProcessHost* host) OVERRIDE;
   virtual content::WebUIControllerFactory* GetWebUIControllerFactory() OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
                                        const GURL& effective_url) OVERRIDE;
@@ -135,9 +151,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) OVERRIDE;
-  virtual void AddNewCertificate(
+  virtual void AddCertificate(
       net::URLRequest* request,
-      net::X509Certificate* cert,
+      net::CertificateMimeType cert_type,
+      const void* cert_data,
+      size_t cert_size,
       int render_process_id,
       int render_view_id) OVERRIDE;
   virtual content::MediaObserver* GetMediaObserver() OVERRIDE;
@@ -188,14 +206,21 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void ClearCookies(content::RenderViewHost* rvh) OVERRIDE;
   virtual FilePath GetDefaultDownloadDirectory() OVERRIDE;
   virtual std::string GetDefaultDownloadName() OVERRIDE;
-  virtual bool AllowPepperSocketAPI(content::BrowserContext* browser_context,
-                                    const GURL& url) OVERRIDE;
-  virtual bool AllowPepperPrivateFileAPI() OVERRIDE;
+  virtual void DidCreatePpapiPlugin(
+      content::BrowserPpapiHost* browser_host) OVERRIDE;
+  virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
+      int plugin_process_id) OVERRIDE;
+  virtual bool AllowPepperSocketAPI(
+      content::BrowserContext* browser_context,
+      const GURL& url,
+      const content::SocketPermissionRequest& params) OVERRIDE;
+  virtual FilePath GetHyphenDictionaryDirectory() OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(
       const CommandLine& command_line,
-      base::GlobalDescriptors::Mapping* mappings) OVERRIDE;
+      int child_process_id,
+      std::vector<content::FileDescriptorInfo>* mappings) OVERRIDE;
 #endif
 #if defined(OS_WIN)
   virtual const wchar_t* GetResourceDllName() OVERRIDE;

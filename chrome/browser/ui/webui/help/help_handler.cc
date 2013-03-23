@@ -23,6 +23,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
@@ -32,8 +33,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "v8/include/v8.h"
-#include "webkit/glue/user_agent.h"
 #include "webkit/glue/webkit_glue.h"
+#include "webkit/user_agent/user_agent_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "base/file_util_proxy.h"
@@ -44,10 +45,6 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
-#endif
-
-#if defined(OS_MACOSX)
-#include "chrome/browser/ui/cocoa/obsolete_os.h"
 #endif
 
 using base::ListValue;
@@ -91,7 +88,7 @@ bool CanChangeReleaseChannel() {
       return false;
     // Get the currently logged in user and strip the domain part only.
     std::string domain = "";
-    std::string user = chromeos::UserManager::Get()->GetLoggedInUser().email();
+    std::string user = chromeos::UserManager::Get()->GetLoggedInUser()->email();
     size_t at_pos = user.find('@');
     if (at_pos != std::string::npos && at_pos + 1 < user.length())
       domain = user.substr(user.find('@') + 1);
@@ -101,10 +98,10 @@ bool CanChangeReleaseChannel() {
   return false;
 }
 
-// Pointer to a |StringValue| holding the date of the last update to Chromium
+// Pointer to a |StringValue| holding the date of the build date to Chromium
 // OS. Because this value is obtained by reading a file, it is cached here to
 // prevent the need to read from the file system multiple times unnecessarily.
-Value* g_last_updated_string = NULL;
+Value* g_build_date_string = NULL;
 
 #endif  // defined(OS_CHROMEOS)
 
@@ -154,10 +151,11 @@ void HelpHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
     { "stable", IDS_ABOUT_PAGE_CHANNEL_STABLE },
     { "beta", IDS_ABOUT_PAGE_CHANNEL_BETA },
     { "dev", IDS_ABOUT_PAGE_CHANNEL_DEVELOPMENT },
+    { "channel-changed", IDS_ABOUT_PAGE_CHANNEL_CHANGED },
     { "webkit", IDS_WEBKIT },
     { "userAgent", IDS_ABOUT_VERSION_USER_AGENT },
     { "commandLine", IDS_ABOUT_VERSION_COMMAND_LINE },
-    { "lastUpdated", IDS_ABOUT_VERSION_LAST_UPDATED },
+    { "buildDate", IDS_ABOUT_VERSION_BUILD_DATE },
 #endif
 #if defined(OS_MACOSX)
     { "promote", IDS_ABOUT_CHROME_PROMOTE_UPDATER },
@@ -169,13 +167,6 @@ void HelpHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
     localized_strings->SetString(resources[i].name,
                                  l10n_util::GetStringUTF16(resources[i].ids));
   }
-
-#if defined(OS_MACOSX)
-  localized_strings->SetString("updateObsoleteOS",
-                               chrome::LocalizedObsoleteOSString());
-  localized_strings->SetString("updateObsoleteOSURL",
-                               chrome::kMacLeopardObsoleteURL);
-#endif
 
   localized_strings->SetString(
       "browserVersion",
@@ -257,19 +248,21 @@ void HelpHandler::Observe(int type, const content::NotificationSource& source,
 void HelpHandler::OnPageLoaded(const ListValue* args) {
 #if defined(OS_CHROMEOS)
   // Version information is loaded from a callback
-  loader_.GetVersion(&consumer_, base::Bind(&HelpHandler::OnOSVersion,
-                                            base::Unretained(this)),
-                     chromeos::VersionLoader::VERSION_FULL);
-  loader_.GetFirmware(&consumer_, base::Bind(&HelpHandler::OnOSFirmware,
-                                             base::Unretained(this)));
+  loader_.GetVersion(
+      chromeos::VersionLoader::VERSION_FULL,
+      base::Bind(&HelpHandler::OnOSVersion, base::Unretained(this)),
+      &tracker_);
+  loader_.GetFirmware(
+      base::Bind(&HelpHandler::OnOSFirmware, base::Unretained(this)),
+      &tracker_);
 
   scoped_ptr<base::Value> can_change_channel_value(
       base::Value::CreateBooleanValue(CanChangeReleaseChannel()));
   web_ui()->CallJavascriptFunction(
       "help.HelpPage.updateEnableReleaseChannel", *can_change_channel_value);
 
-  if (g_last_updated_string == NULL) {
-    // If |g_last_updated_string| is |NULL|, the date has not yet been assigned.
+  if (g_build_date_string == NULL) {
+    // If |g_build_date_string| is |NULL|, the date has not yet been assigned.
     // Get the date of the last lsb-release file modification.
     base::FileUtilProxy::GetFileInfo(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
@@ -277,8 +270,8 @@ void HelpHandler::OnPageLoaded(const ListValue* args) {
         base::Bind(&HelpHandler::ProcessLsbFileInfo,
                    weak_factory_.GetWeakPtr()));
   } else {
-    web_ui()->CallJavascriptFunction("help.HelpPage.setLastUpdated",
-                                     *g_last_updated_string);
+    web_ui()->CallJavascriptFunction("help.HelpPage.setBuildDate",
+                                     *g_build_date_string);
   }
 #endif  // defined(OS_CHROMEOS)
 
@@ -292,13 +285,6 @@ void HelpHandler::OnPageLoaded(const ListValue* args) {
 #if defined(OS_CHROMEOS)
   version_updater_->GetReleaseChannel(
       base::Bind(&HelpHandler::OnReleaseChannel, base::Unretained(this)));
-#endif
-
-#if defined(OS_MACOSX)
-  scoped_ptr<base::Value> is_os_obsolete(
-      base::Value::CreateBooleanValue(chrome::IsOSObsoleteOrNearlySo()));
-  web_ui()->CallJavascriptFunction("help.HelpPage.setObsoleteOS",
-                                   *is_os_obsolete);
 #endif
 }
 
@@ -315,14 +301,14 @@ void HelpHandler::RelaunchNow(const ListValue* args) {
 
 void HelpHandler::OpenFeedbackDialog(const ListValue* args) {
   DCHECK(args->empty());
-  Browser* browser = browser::FindBrowserWithWebContents(
+  Browser* browser = chrome::FindBrowserWithWebContents(
       web_ui()->GetWebContents());
   chrome::OpenFeedbackDialog(browser);
 }
 
 void HelpHandler::OpenHelpPage(const base::ListValue* args) {
   DCHECK(args->empty());
-  Browser* browser = browser::FindBrowserWithWebContents(
+  Browser* browser = chrome::FindBrowserWithWebContents(
       web_ui()->GetWebContents());
   chrome::ShowHelp(browser, chrome::HELP_SOURCE_WEBUI);
 }
@@ -344,6 +330,9 @@ void HelpHandler::SetReleaseTrack(const ListValue* args) {
   if (chromeos::UserManager::Get()->IsCurrentUserOwner()) {
     chromeos::CrosSettings::Get()->SetString(chromeos::kReleaseChannel,
                                              channel);
+    // Check for update after switching release channel.
+    version_updater_->CheckForUpdate(base::Bind(&HelpHandler::SetUpdateStatus,
+                                                base::Unretained(this)));
   }
 }
 
@@ -410,15 +399,13 @@ void HelpHandler::SetPromotionState(VersionUpdater::PromotionState state) {
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_CHROMEOS)
-void HelpHandler::OnOSVersion(chromeos::VersionLoader::Handle handle,
-                              const std::string& version) {
+void HelpHandler::OnOSVersion(const std::string& version) {
   scoped_ptr<Value> version_string(Value::CreateStringValue(version));
   web_ui()->CallJavascriptFunction("help.HelpPage.setOSVersion",
                                    *version_string);
 }
 
-void HelpHandler::OnOSFirmware(chromeos::VersionLoader::Handle handle,
-                               const std::string& firmware) {
+void HelpHandler::OnOSFirmware(const std::string& firmware) {
   scoped_ptr<Value> firmware_string(Value::CreateStringValue(firmware));
   web_ui()->CallJavascriptFunction("help.HelpPage.setOSFirmware",
                                    *firmware_string);
@@ -434,27 +421,27 @@ void HelpHandler::ProcessLsbFileInfo(
     base::PlatformFileError error, const base::PlatformFileInfo& file_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // If |g_last_updated_string| is not |NULL|, then the file's information has
+  // If |g_build_date_string| is not |NULL|, then the file's information has
   // already been retrieved by another tab.
-  if (g_last_updated_string == NULL) {
+  if (g_build_date_string == NULL) {
     base::Time time;
     if (error == base::PLATFORM_FILE_OK) {
-      // Retrieves the approximate time at which Chrome OS was last updated.
+      // Retrieves the time at which the Chrome OS build was created.
       // Each time a new build is created, /etc/lsb-release is modified with the
       // new version numbers of the release.
       time = file_info.last_modified;
     } else {
-      // If the time of the last update cannot be retrieved, return and do not
-      // display the "Last Updated" section.
+      // If the time of the build cannot be retrieved, return and do not
+      // display the "Build Date" section.
       return;
     }
 
     // Note that this string will be internationalized.
-    string16 last_updated = base::TimeFormatFriendlyDate(time);
-    g_last_updated_string = Value::CreateStringValue(last_updated);
+    string16 build_date = base::TimeFormatFriendlyDate(time);
+    g_build_date_string = Value::CreateStringValue(build_date);
   }
 
-  web_ui()->CallJavascriptFunction("help.HelpPage.setLastUpdated",
-                                   *g_last_updated_string);
+  web_ui()->CallJavascriptFunction("help.HelpPage.setBuildDate",
+                                   *g_build_date_string);
 }
 #endif // defined(OS_CHROMEOS)

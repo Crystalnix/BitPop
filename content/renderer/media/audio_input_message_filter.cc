@@ -11,6 +11,8 @@
 #include "content/common/media/audio_messages.h"
 #include "ipc/ipc_logging.h"
 
+namespace content {
+
 AudioInputMessageFilter* AudioInputMessageFilter::filter_ = NULL;
 
 AudioInputMessageFilter::AudioInputMessageFilter()
@@ -165,6 +167,12 @@ void AudioInputMessageFilter::CreateStream(int stream_id,
       stream_id, params, device_id, automatic_gain_control));
 }
 
+void AudioInputMessageFilter::AssociateStreamWithConsumer(
+    int stream_id, int render_view_id) {
+  Send(new AudioInputHostMsg_AssociateStreamWithConsumer(
+      stream_id, render_view_id));
+}
+
 void AudioInputMessageFilter::StartDevice(int stream_id, int session_id) {
   Send(new AudioInputHostMsg_StartDevice(stream_id, session_id));
 }
@@ -180,3 +188,5 @@ void AudioInputMessageFilter::CloseStream(int stream_id) {
 void AudioInputMessageFilter::SetVolume(int stream_id, double volume) {
   Send(new AudioInputHostMsg_SetVolume(stream_id, volume));
 }
+
+}  // namespace content

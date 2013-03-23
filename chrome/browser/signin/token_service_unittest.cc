@@ -16,8 +16,8 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
-#include "chrome/common/net/gaia/mock_url_fetcher_factory.h"
+#include "google_apis/gaia/gaia_constants.h"
+#include "google_apis/gaia/mock_url_fetcher_factory.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 
 using content::BrowserThread;
@@ -119,7 +119,7 @@ void TokenServiceTestHarness::WaitForDBLoadCompletion() {
   done.Wait();
 
   // Notifications should be returned from the DB thread onto the UI thread.
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 }
 
 class TokenServiceTest : public TokenServiceTestHarness {

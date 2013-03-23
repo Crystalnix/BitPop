@@ -7,9 +7,9 @@
 
 #include <string>
 
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_temp_dir.h"
 #include "base/timer.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,7 +37,6 @@ class SpecialStoragePolicy;
 
 class CommandLine;
 class ExtensionSpecialStoragePolicy;
-class FaviconService;
 class HostContentSettingsMap;
 class PrefService;
 class ProfileDependencyManager;
@@ -58,6 +57,49 @@ class TestingProfile : public Profile {
   // Default constructor that cannot be used with multi-profiles.
   TestingProfile();
 
+  // Helper class for building an instance of TestingProfile (allows injecting
+  // mocks for various services prior to profile initialization).
+  // TODO(atwilson): Remove non-default constructors and various setters in
+  // favor of using the Builder API.
+  class Builder {
+   public:
+    Builder();
+    ~Builder();
+
+    // Sets a Delegate to be called back when the Profile is fully initialized.
+    // This causes the final initialization to be performed via a task so the
+    // caller must run a MessageLoop. Caller maintains ownership of the Delegate
+    // and must manage its lifetime so it continues to exist until profile
+    // initialization is complete.
+    void SetDelegate(Delegate* delegate);
+
+    // Sets the ExtensionSpecialStoragePolicy to be returned by
+    // GetExtensionSpecialStoragePolicy().
+    void SetExtensionSpecialStoragePolicy(
+        scoped_refptr<ExtensionSpecialStoragePolicy> policy);
+
+    // Sets the path to the directory to be used to hold profile data.
+    void SetPath(const FilePath& path);
+
+    // Sets the PrefService to be used by this profile.
+    void SetPrefService(scoped_ptr<PrefService> prefs);
+
+    // Creates the TestingProfile using previously-set settings.
+    scoped_ptr<TestingProfile> Build();
+
+   private:
+    // If true, Build() has already been called.
+    bool build_called_;
+
+    // Various staging variables where values are held until Build() is invoked.
+    scoped_ptr<PrefService> pref_service_;
+    scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy_;
+    FilePath path_;
+    Delegate* delegate_;
+
+    DISALLOW_COPY_AND_ASSIGN(Builder);
+  };
+
   // Multi-profile aware constructor that takes the path to a directory managed
   // for this profile. This constructor is meant to be used by
   // TestingProfileManager::CreateTestingProfile. If you need to create multi-
@@ -70,6 +112,13 @@ class TestingProfile : public Profile {
   // for this profile and a delegate. This constructor is meant to be used
   // for unittesting the ProfileManager.
   TestingProfile(const FilePath& path, Delegate* delegate);
+
+  // Full constructor allowing the setting of all possible instance data.
+  // Callers should use Builder::Build() instead of invoking this constructor.
+  TestingProfile(const FilePath& path,
+                 Delegate* delegate,
+                 scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy,
+                 scoped_ptr<PrefService> prefs);
 
   virtual ~TestingProfile();
 
@@ -112,6 +161,10 @@ class TestingProfile : public Profile {
   // CreateBookmarkModel.
   void BlockUntilBookmarkModelLoaded();
 
+  // Blocks until the HistoryService finishes restoring its in-memory cache.
+  // This is NOT invoked from CreateHistoryService.
+  void BlockUntilHistoryIndexIsRefreshed();
+
   // Blocks until TopSites finishes loading.
   void BlockUntilTopSitesLoaded();
 
@@ -119,6 +172,7 @@ class TestingProfile : public Profile {
 
   // content::BrowserContext
   virtual FilePath GetPath() OVERRIDE;
+  virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
   virtual bool IsOffTheRecord() const OVERRIDE;
   virtual content::DownloadManagerDelegate*
       GetDownloadManagerDelegate() OVERRIDE;
@@ -138,7 +192,6 @@ class TestingProfile : public Profile {
       GetGeolocationPermissionContext() OVERRIDE;
   virtual content::SpeechRecognitionPreferences*
       GetSpeechRecognitionPreferences() OVERRIDE;
-  virtual bool DidLastSessionExitCleanly() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   virtual TestingProfile* AsTestingProfile() OVERRIDE;
@@ -151,22 +204,18 @@ class TestingProfile : public Profile {
   virtual GAIAInfoUpdateService* GetGAIAInfoUpdateService() OVERRIDE;
   virtual bool HasOffTheRecordProfile() OVERRIDE;
   virtual Profile* GetOriginalProfile() OVERRIDE;
-  virtual VisitedLinkMaster* GetVisitedLinkMaster() OVERRIDE;
   virtual ExtensionService* GetExtensionService() OVERRIDE;
-  virtual extensions::UserScriptMaster* GetUserScriptMaster() OVERRIDE;
-  virtual ExtensionProcessManager* GetExtensionProcessManager() OVERRIDE;
-  virtual extensions::EventRouter* GetExtensionEventRouter() OVERRIDE;
   void SetExtensionSpecialStoragePolicy(
       ExtensionSpecialStoragePolicy* extension_special_storage_policy);
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() OVERRIDE;
-  virtual FaviconService* GetFaviconService(ServiceAccessType access) OVERRIDE;
-  virtual HistoryService* GetHistoryService(ServiceAccessType access) OVERRIDE;
-  virtual HistoryService* GetHistoryServiceWithoutCreating() OVERRIDE;
   // The CookieMonster will only be returned if a Context has been created. Do
   // this by calling CreateRequestContext(). See the note at GetRequestContext
   // for more information.
   net::CookieMonster* GetCookieMonster();
+
+  virtual policy::ManagedModePolicyProvider*
+      GetManagedModePolicyProvider() OVERRIDE;
   virtual policy::PolicyService* GetPolicyService() OVERRIDE;
   // Sets the profile's PrefService. If a pref service hasn't been explicitly
   // set GetPrefs creates one, so normally you need not invoke this. If you need
@@ -182,11 +231,18 @@ class TestingProfile : public Profile {
   // down the IO thread to avoid leaks).
   void ResetRequestContext();
 
-  virtual net::URLRequestContextGetter* GetRequestContextForMedia() OVERRIDE;
+  virtual net::URLRequestContextGetter* GetMediaRequestContext() OVERRIDE;
+  virtual net::URLRequestContextGetter* GetMediaRequestContextForRenderProcess(
+      int renderer_child_id) OVERRIDE;
   virtual net::URLRequestContextGetter*
       GetRequestContextForExtensions() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContextForIsolatedApp(
-      const std::string& app_id) OVERRIDE;
+  virtual net::URLRequestContextGetter*
+      GetMediaRequestContextForStoragePartition(
+          const FilePath& partition_path,
+          bool in_memory) OVERRIDE;
+  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
+      const FilePath& partition_path,
+      bool in_memory) OVERRIDE;
   virtual net::SSLConfigService* GetSSLConfigService() OVERRIDE;
   virtual HostContentSettingsMap* GetHostContentSettingsMap() OVERRIDE;
   virtual std::wstring GetName();
@@ -200,16 +256,16 @@ class TestingProfile : public Profile {
                                    std::wstring* output_string) {}
   virtual void MergeResourceInteger(int message_id, int* output_value) {}
   virtual void MergeResourceBoolean(int message_id, bool* output_value) {}
-  virtual BookmarkModel* GetBookmarkModel() OVERRIDE;
   virtual bool IsSameProfile(Profile *p) OVERRIDE;
   virtual base::Time GetStartTime() const OVERRIDE;
   virtual ProtocolHandlerRegistry* GetProtocolHandlerRegistry() OVERRIDE;
-  virtual void MarkAsCleanShutdown() OVERRIDE {}
   virtual void InitPromoResources() OVERRIDE {}
 
   virtual FilePath last_selected_directory() OVERRIDE;
   virtual void set_last_selected_directory(const FilePath& path) OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
+  virtual void SetExitType(ExitType exit_type) OVERRIDE {}
+  virtual ExitType GetLastSessionExitType() OVERRIDE;
 #if defined(OS_CHROMEOS)
   virtual void SetupChromeOSEnterpriseExtensionObserver() OVERRIDE {
   }
@@ -230,7 +286,9 @@ class TestingProfile : public Profile {
   void BlockUntilHistoryProcessesPendingRequests();
 
   virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
-  virtual void ClearNetworkingHistorySince(base::Time time) OVERRIDE;
+  virtual void ClearNetworkingHistorySince(
+      base::Time time,
+      const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
 
   virtual PrefService* GetOffTheRecordPrefs() OVERRIDE;
@@ -242,23 +300,20 @@ class TestingProfile : public Profile {
   TestingPrefService* testing_prefs_;
 
  private:
+  // Creates a temporary directory for use by this profile.
+  void CreateTempProfileDir();
+
   // Common initialization between the two constructors.
   void Init();
 
   // Finishes initialization when a profile is created asynchronously.
   void FinishInit();
 
-  // Destroys favicon service if it has been created.
-  void DestroyFaviconService();
-
   // Creates a TestingPrefService and associates it with the TestingProfile.
   void CreateTestingPrefService();
 
   virtual base::Callback<ChromeURLDataManagerBackend*(void)>
       GetChromeURLDataManagerBackendGetter() const OVERRIDE;
-
-  // The favicon service. Only created if CreateFaviconService is invoked.
-  scoped_ptr<FaviconService> favicon_service_;
 
   // The policy service. Lazily created as a stub.
   scoped_ptr<policy::PolicyService> policy_service_;
@@ -292,7 +347,7 @@ class TestingProfile : public Profile {
   // We use a temporary directory to store testing profile data. In a multi-
   // profile environment, this is invalid and the directory is managed by the
   // TestingProfileManager.
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   // The path to this profile. This will be valid in either of the two above
   // cases.
   FilePath profile_path_;

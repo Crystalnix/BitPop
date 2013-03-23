@@ -11,7 +11,7 @@
 #include "chrome/browser/notifications/balloon_host.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/panels/docked_panel_strip.h"
+#include "chrome/browser/ui/panels/docked_panel_collection.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -45,7 +45,7 @@ BalloonCollectionImpl::BalloonCollectionImpl()
       added_as_message_loop_observer_(false)
 #endif
 {
-  registrar_.Add(this, chrome::NOTIFICATION_PANEL_STRIP_UPDATED,
+  registrar_.Add(this, chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED,
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_PANEL_CHANGED_EXPANSION_STATE,
                  content::NotificationService::AllSources());
@@ -100,6 +100,10 @@ bool BalloonCollectionImpl::RemoveBySourceOrigin(const GURL& origin) {
   return base_.CloseAllBySourceOrigin(origin);
 }
 
+bool BalloonCollectionImpl::RemoveByProfile(Profile* profile) {
+  return base_.CloseAllByProfile(profile);
+}
+
 void BalloonCollectionImpl::RemoveAll() {
   base_.CloseAll();
 }
@@ -137,7 +141,7 @@ void BalloonCollectionImpl::OnBalloonClosed(Balloon* source) {
 
   Balloons::const_iterator it = balloons.begin();
   if (layout_.RequiresOffsets()) {
-    gfx::Point offset;
+    gfx::Vector2d offset;
     bool apply_offset = false;
     while (it != balloons.end()) {
       if (*it == source) {
@@ -182,7 +186,7 @@ void BalloonCollectionImpl::Observe(
     const content::NotificationDetails& details) {
   gfx::Rect bounds;
   switch (type) {
-    case chrome::NOTIFICATION_PANEL_STRIP_UPDATED:
+    case chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED:
     case chrome::NOTIFICATION_PANEL_CHANGED_EXPANSION_STATE:
       layout_.enable_computing_panel_offset();
       if (layout_.ComputeOffsetToMoveAbovePanels())
@@ -218,7 +222,7 @@ gfx::Rect BalloonCollectionImpl::GetBalloonsBoundingBox() const {
   for (iter = balloons.begin(); iter != balloons.end(); ++iter) {
     gfx::Rect balloon_box = gfx::Rect((*iter)->GetPosition(),
                                       (*iter)->GetViewSize());
-    bounds = bounds.Union(balloon_box);
+    bounds.Union(balloon_box);
   }
 
   return bounds;
@@ -249,7 +253,7 @@ void BalloonCollectionImpl::CancelOffsets() {
   for (Balloons::const_iterator it = balloons.begin();
        it != balloons.end();
        ++it)
-    (*it)->set_offset(gfx::Point(0, 0));
+    (*it)->set_offset(gfx::Vector2d());
 
   PositionBalloons(true);
 }
@@ -369,7 +373,8 @@ gfx::Point BalloonCollectionImpl::Layout::OffScreenLocation() const {
       break;
     case VERTICALLY_FROM_TOP_RIGHT:
     case VERTICALLY_FROM_BOTTOM_RIGHT:
-      location.Offset(-kBalloonMaxWidth, kBalloonMaxHeight);
+      location.Offset(-kBalloonMaxWidth - BalloonView::GetHorizontalMargin(),
+                      kBalloonMaxHeight);
       break;
     default:
       NOTREACHED();
@@ -412,14 +417,14 @@ bool BalloonCollectionImpl::Layout::ComputeOffsetToMoveAbovePanels() {
   if (!need_to_compute_panel_offset_)
     return false;
 
-  const DockedPanelStrip::Panels& panels =
-      PanelManager::GetInstance()->docked_strip()->panels();
+  const DockedPanelCollection::Panels& panels =
+      PanelManager::GetInstance()->docked_collection()->panels();
   int offset_to_move_above_panels = 0;
 
   // The offset is the maximum height of panels that could overlap with the
   // balloons.
   if (NeedToMoveAboveLeftSidePanels()) {
-    for (DockedPanelStrip::Panels::const_reverse_iterator iter =
+    for (DockedPanelCollection::Panels::const_reverse_iterator iter =
              panels.rbegin();
          iter != panels.rend(); ++iter) {
       // No need to check panels beyond the area occupied by the balloons.
@@ -431,7 +436,7 @@ bool BalloonCollectionImpl::Layout::ComputeOffsetToMoveAbovePanels() {
         offset_to_move_above_panels = current_height;
     }
   } else if (NeedToMoveAboveRightSidePanels()) {
-    for (DockedPanelStrip::Panels::const_iterator iter = panels.begin();
+    for (DockedPanelCollection::Panels::const_iterator iter = panels.begin();
          iter != panels.end(); ++iter) {
       // No need to check panels beyond the area occupied by the balloons.
       if ((*iter)->GetBounds().right() <=
@@ -464,9 +469,11 @@ bool BalloonCollectionImpl::Layout::RefreshSystemMetrics() {
 #if defined(OS_MACOSX)
   gfx::Rect new_work_area = GetMacWorkArea();
 #else
-  gfx::Rect new_work_area = gfx::Screen::GetPrimaryDisplay().work_area();
+  // TODO(scottmg): NativeScreen is wrong. http://crbug.com/133312
+  gfx::Rect new_work_area =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area();
 #endif
-  if (!work_area_.Equals(new_work_area)) {
+  if (work_area_ != new_work_area) {
     work_area_.SetRect(new_work_area.x(), new_work_area.y(),
                        new_work_area.width(), new_work_area.height());
     changed = true;

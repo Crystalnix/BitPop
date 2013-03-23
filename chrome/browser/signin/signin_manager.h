@@ -23,13 +23,15 @@
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/common/net/gaia/gaia_auth_consumer.h"
-#include "chrome/common/net/gaia/google_service_auth_error.h"
+#include "chrome/browser/signin/about_signin_internals.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "google_apis/gaia/gaia_auth_consumer.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 
+class CookieSettings;
 class GaiaAuthFetcher;
 class Profile;
 class PrefService;
@@ -46,6 +48,13 @@ struct GoogleServiceSigninSuccessDetails {
   std::string password;
 };
 
+// Details for the Notification type NOTIFICATION_GOOGLE_SIGNED_OUT.
+struct GoogleServiceSignoutDetails {
+  explicit GoogleServiceSignoutDetails(const std::string& in_username)
+      : username(in_username) {}
+  std::string username;
+};
+
 class SigninManager : public GaiaAuthConsumer,
                       public content::NotificationObserver,
                       public ProfileKeyedService {
@@ -53,6 +62,11 @@ class SigninManager : public GaiaAuthConsumer,
   // Returns true if the cookie policy for the given profile allows cookies
   // for the Google signin domain.
   static bool AreSigninCookiesAllowed(Profile* profile);
+  static bool AreSigninCookiesAllowed(CookieSettings* cookie_settings);
+
+  // Returns true if the username is allowed based on the policy string.
+  static bool IsAllowedUsername(const std::string& username,
+                                const std::string& policy);
 
   SigninManager();
   virtual ~SigninManager();
@@ -124,6 +138,10 @@ class SigninManager : public GaiaAuthConsumer,
   // GetUserInfo call.
   void OnGetUserInfoKeyNotFound(const std::string& key);
 
+  // Set the profile preference to turn off one-click sign-in so that it won't
+  // ever show it again in this profile (even if the user tries a new account).
+  static void DisableOneClickSignIn(Profile* profile);
+
   // GaiaAuthConsumer
   virtual void OnClientLoginSuccess(const ClientLoginResult& result) OVERRIDE;
   virtual void OnClientLoginFailure(
@@ -139,6 +157,13 @@ class SigninManager : public GaiaAuthConsumer,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  AboutSigninInternals* about_signin_internals();
+
+ protected:
+  // Weak pointer to parent profile (protected so FakeSigninManager can access
+  // it).
+  Profile* profile_;
 
  private:
   enum SigninType {
@@ -173,14 +198,14 @@ class SigninManager : public GaiaAuthConsumer,
   void HandleAuthError(const GoogleServiceAuthError& error,
                        bool clear_transient_data);
 
-  Profile* profile_;
-
   // ClientLogin identity.
   std::string possibly_invalid_username_;
   std::string password_;  // This is kept empty whenever possible.
   bool had_two_factor_error_;
 
   void CleanupNotificationRegistration();
+
+  void OnGoogleServicesUsernamePatternChanged();
 
   // Result of the last client login, kept pending the lookup of the
   // canonical email.
@@ -203,6 +228,16 @@ class SigninManager : public GaiaAuthConsumer,
   // to one of the StartSigninXXX methods and when the sign in is either
   // successful or not.
   SigninType type_;
+
+  // Temporarily saves the oauth2 refresh and access tokens when signing in
+  // with credentials.  These will be passed to TokenService so that it does
+  // not need to mint new ones.
+  ClientOAuthResult temp_oauth_login_tokens_;
+
+  // A class that encapsulates information relevant to the
+  // about:signin-internals page and takes care of communication
+  // with the UI front-end.
+  AboutSigninInternals about_signin_internals_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninManager);
 };

@@ -19,6 +19,10 @@ namespace extensions {
 class Extension;
 }
 
+namespace web_intents {
+class NativeServiceRegistry;
+}
+
 // Handles storing and retrieving of web intents services in the web database.
 // The registry provides filtering logic to retrieve specific types of services.
 class WebIntentsRegistry : public ProfileKeyedService {
@@ -84,7 +88,7 @@ class WebIntentsRegistry : public ProfileKeyedService {
   void GetIntentServicesForExtensionFilter(const string16& action,
                                            const string16& type,
                                            const std::string& extension_id,
-                                           const QueryCallback& callback);
+                                           IntentServiceList* services);
 
   // Record the given default service entry.
   virtual void RegisterDefaultIntentService(
@@ -94,6 +98,9 @@ class WebIntentsRegistry : public ProfileKeyedService {
   // the |action|, |type|, and |url_pattern| of |default_service|.
   virtual void UnregisterDefaultIntentService(
       const DefaultWebIntentService& default_service);
+
+  // Delete all default service entries associated with |service_url|.
+  virtual void UnregisterServiceDefaults(const GURL& service_url);
 
   // Requests the best default intent service for the given invocation
   // parameters.
@@ -108,7 +115,6 @@ class WebIntentsRegistry : public ProfileKeyedService {
   // WebIntentsRegistry.
   friend class WebIntentsRegistryFactory;
   friend class WebIntentsRegistryTest;
-  friend class WebIntentsModelTest;
   FRIEND_TEST_ALL_PREFIXES(WebIntentsRegistryTest, CollapseIntents);
 
   WebIntentsRegistry();
@@ -143,12 +149,6 @@ class WebIntentsRegistry : public ProfileKeyedService {
       const DefaultQueryCallback& callback,
       const WDTypedResult* result);
 
-  // Implementation of GetIntentServicesForExtensionFilter.
-  void DoGetIntentServicesForExtensionFilter(
-      const QueryParams& params,
-      const std::string& extension_id,
-      const QueryCallback& callback);
-
   const extensions::Extension* ExtensionForURL(const std::string& url);
 
   // Adds a query to the list of pending queries.
@@ -170,6 +170,9 @@ class WebIntentsRegistry : public ProfileKeyedService {
   // destroyed (i.e. |extension_service_|), so |extension_service_| is valid
   // for the lifetime of the WebIntentsRegistry object.
   ExtensionServiceInterface* extension_service_;
+
+  // Registry used to obtain list of supported native services.
+  scoped_ptr<web_intents::NativeServiceRegistry> native_services_;
 
   DISALLOW_COPY_AND_ASSIGN(WebIntentsRegistry);
 };

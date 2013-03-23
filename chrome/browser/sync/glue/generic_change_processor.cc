@@ -27,9 +27,11 @@ namespace browser_sync {
 GenericChangeProcessor::GenericChangeProcessor(
     DataTypeErrorHandler* error_handler,
     const base::WeakPtr<syncer::SyncableService>& local_service,
+    const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
     syncer::UserShare* user_share)
     : ChangeProcessor(error_handler),
       local_service_(local_service),
+      merge_result_(merge_result),
       share_handle_(user_share) {
   DCHECK(CalledOnValidThread());
 }
@@ -40,9 +42,9 @@ GenericChangeProcessor::~GenericChangeProcessor() {
 
 void GenericChangeProcessor::ApplyChangesFromSyncModel(
     const syncer::BaseTransaction* trans,
+    int64 model_version,
     const syncer::ImmutableChangeRecordList& changes) {
   DCHECK(CalledOnValidThread());
-  DCHECK(running());
   DCHECK(syncer_changes_.empty());
   for (syncer::ChangeRecordList::const_iterator it =
            changes.Get().begin(); it != changes.Get().end(); ++it) {
@@ -77,8 +79,6 @@ void GenericChangeProcessor::ApplyChangesFromSyncModel(
 
 void GenericChangeProcessor::CommitChangesFromSyncModel() {
   DCHECK(CalledOnValidThread());
-  if (!running())
-    return;
   if (syncer_changes_.empty())
     return;
   if (!local_service_) {
@@ -131,6 +131,17 @@ syncer::SyncError GenericChangeProcessor::GetSyncDataForType(
     sync_child_id = sync_child_node.GetSuccessorId();
   }
   return syncer::SyncError();
+}
+
+int GenericChangeProcessor::GetSyncCountForType(syncer::ModelType type) {
+  syncer::ReadTransaction trans(FROM_HERE, share_handle());
+  syncer::ReadNode root(&trans);
+  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
+      syncer::BaseNode::INIT_OK)
+    return 0;
+
+  // Subtract one to account for type's root node.
+  return root.GetTotalNodeCount() - 1;
 }
 
 namespace {
@@ -269,6 +280,10 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
         NOTREACHED();
         return error;
       }
+      if (merge_result_.get()) {
+        merge_result_->set_num_items_deleted(
+            merge_result_->num_items_deleted() + 1);
+      }
     } else if (change.change_type() == syncer::SyncChange::ACTION_ADD) {
       // TODO(sync): Handle other types of creation (custom parents, folders,
       // etc.).
@@ -339,6 +354,10 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
       }
       sync_node.SetTitle(UTF8ToWide(change.sync_data().GetTitle()));
       sync_node.SetEntitySpecifics(change.sync_data().GetSpecifics());
+      if (merge_result_.get()) {
+        merge_result_->set_num_items_added(
+            merge_result_->num_items_added() + 1);
+      }
     } else if (change.change_type() == syncer::SyncChange::ACTION_UPDATE) {
       // TODO(zea): consider having this logic for all possible changes?
       syncer::BaseNode::InitByLookupResult result =
@@ -376,7 +395,7 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
           return error;
         } else {
           syncer::Cryptographer* crypto = trans.GetCryptographer();
-          syncer::ModelTypeSet encrypted_types(crypto->GetEncryptedTypes());
+          syncer::ModelTypeSet encrypted_types(trans.GetEncryptedTypes());
           const sync_pb::EntitySpecifics& specifics =
               sync_node.GetEntry()->Get(syncer::syncable::SPECIFICS);
           CHECK(specifics.has_encrypted());
@@ -424,12 +443,16 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
             return error;
           }
         }
-      } else {
-        sync_node.SetTitle(UTF8ToWide(change.sync_data().GetTitle()));
-        sync_node.SetEntitySpecifics(change.sync_data().GetSpecifics());
-        // TODO(sync): Support updating other parts of the sync node (title,
-        // successor, parent, etc.).
       }
+
+      sync_node.SetTitle(UTF8ToWide(change.sync_data().GetTitle()));
+      sync_node.SetEntitySpecifics(change.sync_data().GetSpecifics());
+      if (merge_result_.get()) {
+        merge_result_->set_num_items_modified(
+            merge_result_->num_items_modified() + 1);
+      }
+      // TODO(sync): Support updating other parts of the sync node (title,
+      // successor, parent, etc.).
     } else {
       syncer::SyncError error(
           FROM_HERE,
@@ -475,17 +498,13 @@ bool GenericChangeProcessor::CryptoReadyIfNecessary(syncer::ModelType type) {
   DCHECK_NE(type, syncer::UNSPECIFIED);
   // We only access the cryptographer while holding a transaction.
   syncer::ReadTransaction trans(FROM_HERE, share_handle());
-  const syncer::ModelTypeSet encrypted_types = GetEncryptedTypes(&trans);
+  const syncer::ModelTypeSet encrypted_types = trans.GetEncryptedTypes();
   return !encrypted_types.Has(type) ||
          trans.GetCryptographer()->is_ready();
 }
 
 void GenericChangeProcessor::StartImpl(Profile* profile) {
   DCHECK(CalledOnValidThread());
-}
-
-void GenericChangeProcessor::StopImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 syncer::UserShare* GenericChangeProcessor::share_handle() const {

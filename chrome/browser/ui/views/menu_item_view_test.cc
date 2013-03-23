@@ -4,6 +4,7 @@
 
 #include "base/callback.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/base/view_event_test_base.h"
 #include "ui/ui_controls/ui_controls.h"
@@ -216,7 +217,8 @@ class MenuItemViewTestInsert : public MenuItemViewTestBase {
                                           1000,
                                           ASCIIToUTF16("inserted item"),
                                           gfx::ImageSkia(),
-                                          views::MenuItemView::NORMAL);
+                                          views::MenuItemView::NORMAL,
+                                          ui::NORMAL_SEPARATOR);
     ASSERT_TRUE(inserted_item_);
     menu_->ChildrenChanged();
 
@@ -326,7 +328,8 @@ class MenuItemViewTestInsertWithSubmenu : public MenuItemViewTestBase {
                                           1000,
                                           ASCIIToUTF16("inserted item"),
                                           gfx::ImageSkia(),
-                                          views::MenuItemView::NORMAL);
+                                          views::MenuItemView::NORMAL,
+                                          ui::NORMAL_SEPARATOR);
     ASSERT_TRUE(inserted_item_);
     menu_->ChildrenChanged();
 

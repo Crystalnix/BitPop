@@ -4,6 +4,7 @@
 
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/base/view_event_test_base.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -15,7 +16,6 @@ class ButtonDropDownDragTest : public ViewEventTestBase,
  public:
   ButtonDropDownDragTest()
       : button_(NULL),
-        ALLOW_THIS_IN_INITIALIZER_LIST(menu_model_(this)),
         menu_shown_(false),
         menu_closed_(false) {
   }
@@ -25,7 +25,7 @@ class ButtonDropDownDragTest : public ViewEventTestBase,
 
   // ViewEventTestBase implementation.
   virtual void SetUp() OVERRIDE {
-    button_ = new views::ButtonDropDown(NULL, &menu_model_);
+    button_ = new views::ButtonDropDown(NULL, new ui::SimpleMenuModel(this));
 
     ViewEventTestBase::SetUp();
   }
@@ -125,7 +125,6 @@ class ButtonDropDownDragTest : public ViewEventTestBase,
 
  private:
   views::ButtonDropDown* button_;
-  ui::SimpleMenuModel menu_model_;
   bool menu_shown_;
   bool menu_closed_;
 };

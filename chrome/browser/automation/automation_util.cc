@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
@@ -17,15 +19,16 @@
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/restore_tab_helper.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/view_type_utils.h"
 #include "chrome/common/automation_id.h"
 #include "chrome/common/extensions/extension.h"
@@ -39,9 +42,24 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/existing_user_controller.h"
+#include "chrome/browser/chromeos/login/login_display.h"
+#include "chrome/browser/chromeos/login/login_display_host.h"
+#include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/chromeos/login/webui_login_display_host.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
+#endif
+
 using content::BrowserThread;
 using content::RenderViewHost;
 using content::WebContents;
+
+#if defined(OS_CHROMEOS)
+using chromeos::ExistingUserController;
+using chromeos::User;
+using chromeos::UserManager;
+#endif
 
 namespace {
 
@@ -149,6 +167,42 @@ WebContents* GetWebContentsAt(int browser_index, int tab_index) {
     return NULL;
   return chrome::GetWebContentsAt(browser, tab_index);
 }
+
+#if defined(OS_CHROMEOS)
+Profile* GetCurrentProfileOnChromeOS(std::string* error_message) {
+  const UserManager* user_manager = UserManager::Get();
+  if (!user_manager) {
+    *error_message = "No user manager.";
+    return NULL;
+  }
+  if (!user_manager->IsUserLoggedIn()) {
+    ExistingUserController* controller =
+        ExistingUserController::current_controller();
+    if (!controller) {
+      *error_message = "Cannot get controller though user is not logged in.";
+      return NULL;
+    }
+    chromeos::WebUILoginDisplayHost* webui_login_display_host =
+        static_cast<chromeos::WebUILoginDisplayHost*>(
+            controller->login_display_host());
+    content::WebUI* web_ui = webui_login_display_host->GetOobeUI()->web_ui();
+    if (!web_ui) {
+      *error_message = "Unable to get webui from login display host.";
+      return NULL;
+    }
+    return Profile::FromWebUI(web_ui);
+  } else {
+    ash::Shell* shell = ash::Shell::GetInstance();
+    if (!shell || !shell->delegate()) {
+      *error_message = "Unable to get shell delegate.";
+      return NULL;
+    }
+    return Profile::FromBrowserContext(
+        shell->delegate()->GetCurrentBrowserContext());
+  }
+  return NULL;
+}
+#endif  // defined(OS_CHROMEOS)
 
 Browser* GetBrowserForTab(WebContents* tab) {
   BrowserList::const_iterator browser_iter = BrowserList::begin();
@@ -408,10 +462,11 @@ bool SendErrorIfModalDialogActive(AutomationProvider* provider,
   return active;
 }
 
-AutomationId GetIdForTab(const TabContents* tab) {
-  return AutomationId(
-      AutomationId::kTypeTab,
-      base::IntToString(tab->restore_tab_helper()->session_id().id()));
+AutomationId GetIdForTab(const WebContents* tab) {
+  const SessionTabHelper* session_tab_helper =
+      SessionTabHelper::FromWebContents(tab);
+  return AutomationId(AutomationId::kTypeTab,
+                      base::IntToString(session_tab_helper->session_id().id()));
 }
 
 AutomationId GetIdForExtensionView(
@@ -427,6 +482,9 @@ AutomationId GetIdForExtensionView(
       break;
     case chrome::VIEW_TYPE_EXTENSION_INFOBAR:
       type = AutomationId::kTypeExtensionInfobar;
+      break;
+    case chrome::VIEW_TYPE_APP_SHELL:
+      type = AutomationId::kTypeAppShell;
       break;
     default:
       type = AutomationId::kTypeInvalid;
@@ -454,21 +512,25 @@ bool GetTabForId(const AutomationId& id, WebContents** tab) {
   for (; iter != BrowserList::end(); ++iter) {
     Browser* browser = *iter;
     for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
-      TabContents* tab_contents = chrome::GetTabContentsAt(browser, tab_index);
+      WebContents* web_contents =
+          browser->tab_strip_model()->GetWebContentsAt(tab_index);
+      SessionTabHelper* session_tab_helper =
+          SessionTabHelper::FromWebContents(web_contents);
       if (base::IntToString(
-              tab_contents->restore_tab_helper()->session_id().id()) ==
-                  id.id()) {
-        *tab = tab_contents->web_contents();
+              session_tab_helper->session_id().id()) == id.id()) {
+        *tab = web_contents;
         return true;
       }
       if (preview_controller) {
-        TabContents* preview_tab_contents =
-            preview_controller->GetPrintPreviewForTab(tab_contents);
-        if (preview_tab_contents) {
+        WebContents* print_preview_contents =
+            preview_controller->GetPrintPreviewForTab(web_contents);
+        if (print_preview_contents) {
+          SessionTabHelper* preview_session_tab_helper =
+              SessionTabHelper::FromWebContents(print_preview_contents);
           std::string preview_id = base::IntToString(
-              preview_tab_contents->restore_tab_helper()->session_id().id());
+              preview_session_tab_helper->session_id().id());
           if (preview_id == id.id()) {
-            *tab = preview_tab_contents->web_contents();
+            *tab = print_preview_contents;
             return true;
           }
         }
@@ -485,7 +547,7 @@ bool GetExtensionRenderViewForId(
     Profile* profile,
     RenderViewHost** rvh) {
   ExtensionProcessManager* extension_mgr =
-      profile->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(profile)->process_manager();
   const ExtensionProcessManager::ViewSet view_set =
       extension_mgr->GetAllViews();
   for (ExtensionProcessManager::ViewSet::const_iterator iter = view_set.begin();
@@ -517,6 +579,7 @@ bool GetRenderViewForId(
     case AutomationId::kTypeExtensionPopup:
     case AutomationId::kTypeExtensionBgPage:
     case AutomationId::kTypeExtensionInfobar:
+    case AutomationId::kTypeAppShell:
       if (!GetExtensionRenderViewForId(id, profile, rvh))
         return false;
       break;
@@ -532,7 +595,8 @@ bool GetExtensionForId(
     const extensions::Extension** extension) {
   if (id.type() != AutomationId::kTypeExtension)
     return false;
-  ExtensionService* service = profile->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile)->
+      extension_service();
   const extensions::Extension* installed_extension =
       service->GetInstalledExtension(id.id());
   if (installed_extension)
@@ -548,7 +612,8 @@ bool DoesObjectWithIdExist(const AutomationId& id, Profile* profile) {
     }
     case AutomationId::kTypeExtensionPopup:
     case AutomationId::kTypeExtensionBgPage:
-    case AutomationId::kTypeExtensionInfobar: {
+    case AutomationId::kTypeExtensionInfobar:
+    case AutomationId::kTypeAppShell: {
       RenderViewHost* rvh;
       return GetExtensionRenderViewForId(id, profile, &rvh);
     }

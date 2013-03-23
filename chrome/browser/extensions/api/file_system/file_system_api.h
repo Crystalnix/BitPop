@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_EXTENSIONS_API_FILE_SYSTEM_FILE_SYSTEM_API_H_
 
 #include "chrome/browser/extensions/extension_function.h"
+#include "chrome/common/extensions/api/file_system.h"
 #include "ui/base/dialogs/select_file_dialog.h"
 
 namespace extensions {
@@ -45,39 +46,52 @@ class FileSystemEntryFunction : public AsyncExtensionFunction {
   void HandleWritableFileError();
 };
 
-class FileSystemGetWritableFileEntryFunction : public FileSystemEntryFunction {
+class FileSystemGetWritableEntryFunction : public FileSystemEntryFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fileSystem.getWritableFileEntry");
+  DECLARE_EXTENSION_FUNCTION_NAME("fileSystem.getWritableEntry");
 
  protected:
-  virtual ~FileSystemGetWritableFileEntryFunction() {}
+  virtual ~FileSystemGetWritableEntryFunction() {}
   virtual bool RunImpl() OVERRIDE;
 };
 
-class FileSystemIsWritableFileEntryFunction : public SyncExtensionFunction {
+class FileSystemIsWritableEntryFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fileSystem.isWritableFileEntry");
+  DECLARE_EXTENSION_FUNCTION_NAME("fileSystem.isWritableEntry");
 
  protected:
-  virtual ~FileSystemIsWritableFileEntryFunction() {}
+  virtual ~FileSystemIsWritableEntryFunction() {}
   virtual bool RunImpl() OVERRIDE;
 };
 
-class FileSystemChooseFileFunction : public FileSystemEntryFunction {
+class FileSystemChooseEntryFunction : public FileSystemEntryFunction {
  public:
   // Allow picker UI to be skipped in testing.
   static void SkipPickerAndAlwaysSelectPathForTest(FilePath* path);
   static void SkipPickerAndAlwaysCancelForTest();
   static void StopSkippingPickerForTest();
 
-  DECLARE_EXTENSION_FUNCTION_NAME("fileSystem.chooseFile");
+  DECLARE_EXTENSION_FUNCTION_NAME("fileSystem.chooseEntry");
+
+  typedef std::vector<linked_ptr<extensions::api::file_system::AcceptOption> >
+      AcceptOptions;
+
+  static void BuildFileTypeInfo(
+      ui::SelectFileDialog::FileTypeInfo* file_type_info,
+      const FilePath::StringType& suggested_extension,
+      const AcceptOptions* accepts,
+      const bool* acceptsAllTypes);
+  static void BuildSuggestion(const std::string* opt_name,
+                              FilePath* suggested_name,
+                              FilePath::StringType* suggested_extension);
 
  protected:
   class FilePicker;
 
-  virtual ~FileSystemChooseFileFunction() {}
+  virtual ~FileSystemChooseEntryFunction() {}
   virtual bool RunImpl() OVERRIDE;
   bool ShowPicker(const FilePath& suggested_path,
+                  const ui::SelectFileDialog::FileTypeInfo& file_type_info,
                   ui::SelectFileDialog::Type picker_type,
                   EntryType entry_type);
 

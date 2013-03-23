@@ -4,9 +4,9 @@
 
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/observer_list.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/value_conversions.h"
@@ -16,7 +16,6 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/safe_browsing/download_protection_service.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_switch_utils.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_pref_service.h"
@@ -31,16 +30,17 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::DownloadItem;
-using safe_browsing::DownloadProtectionService;
 using ::testing::AtMost;
 using ::testing::Invoke;
 using ::testing::Return;
 using ::testing::ReturnPointee;
 using ::testing::ReturnRef;
 using ::testing::ReturnRefOfCopy;
+using ::testing::SetArgPointee;
 using ::testing::WithArg;
 using ::testing::_;
+using content::DownloadItem;
+using safe_browsing::DownloadProtectionService;
 
 namespace {
 
@@ -134,7 +134,7 @@ struct DownloadTestCase {
   TestCaseExpectIntermediate  expected_intermediate;
 };
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
 // DownloadProtectionService with mock methods. Since the SafeBrowsingService is
 // set to NULL, it is not safe to call any non-mocked methods other than
 // SetEnabled() and enabled().
@@ -160,7 +160,7 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
  public:
   explicit TestChromeDownloadManagerDelegate(Profile* profile)
       : ChromeDownloadManagerDelegate(profile) {
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
     download_protection_service_.reset(new TestDownloadProtectionService());
     download_protection_service_->SetEnabled(true);
 #endif
@@ -168,7 +168,7 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
 
   virtual safe_browsing::DownloadProtectionService*
       GetDownloadProtectionService() OVERRIDE {
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
     return download_protection_service_.get();
 #else
     return NULL;
@@ -208,7 +208,7 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
                     const FilePath&,
                     const FileSelectedCallback&));
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
   // A TestDownloadProtectionService* is convenient for setting up mocks.
   TestDownloadProtectionService* test_download_protection_service() {
     return download_protection_service_.get();
@@ -218,7 +218,7 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
  private:
   ~TestChromeDownloadManagerDelegate() {}
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
   scoped_ptr<TestDownloadProtectionService> download_protection_service_;
 #endif
 };
@@ -280,7 +280,7 @@ class ChromeDownloadManagerDelegateTest :
                               const FilePath& intermediate_path);
 
   TestingPrefService* pref_service_;
-  ScopedTempDir test_download_dir_;
+  base::ScopedTempDir test_download_dir_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   scoped_refptr<content::MockDownloadManager> download_manager_;
@@ -293,6 +293,9 @@ ChromeDownloadManagerDelegateTest::ChromeDownloadManagerDelegateTest()
       ui_thread_(content::BrowserThread::UI, &message_loop_),
       file_thread_(content::BrowserThread::FILE, &message_loop_),
       download_manager_(new content::MockDownloadManager) {
+  EXPECT_CALL(*download_manager_, GetAllDownloads(_)).WillRepeatedly(Return());
+  EXPECT_CALL(*download_manager_, AddObserver(_)).WillRepeatedly(Return());
+  EXPECT_CALL(*download_manager_, RemoveObserver(_)).WillRepeatedly(Return());
 }
 
 void ChromeDownloadManagerDelegateTest::SetUp() {
@@ -300,16 +303,20 @@ void ChromeDownloadManagerDelegateTest::SetUp() {
 
   CHECK(profile());
   delegate_ = new TestChromeDownloadManagerDelegate(profile());
+  EXPECT_CALL(*download_manager_.get(), GetAllDownloads(_))
+      .WillRepeatedly(Return());
+  EXPECT_CALL(*download_manager_.get(), AddObserver(_))
+      .WillRepeatedly(Return());
   delegate_->SetDownloadManager(download_manager_.get());
   pref_service_ = profile()->GetTestingPrefService();
-  contents()->SetDelegate(&web_contents_delegate_);
+  web_contents()->SetDelegate(&web_contents_delegate_);
 
   ASSERT_TRUE(test_download_dir_.CreateUniqueTempDir());
   SetDefaultDownloadPath(test_download_dir_.path());
 }
 
 void ChromeDownloadManagerDelegateTest::TearDown() {
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
   delegate_->Shutdown();
   ChromeRenderViewHostTestHarness::TearDown();
 }
@@ -317,6 +324,9 @@ void ChromeDownloadManagerDelegateTest::TearDown() {
 void ChromeDownloadManagerDelegateTest::VerifyAndClearExpectations() {
   ::testing::Mock::VerifyAndClearExpectations(delegate_);
   ::testing::Mock::VerifyAndClearExpectations(download_manager_);
+  EXPECT_CALL(*download_manager_, RemoveObserver(_)).WillRepeatedly(Return());
+  EXPECT_CALL(*download_manager_, GetAllDownloads(_))
+      .WillRepeatedly(Return());
 }
 
 content::MockDownloadItem*
@@ -338,10 +348,14 @@ content::MockDownloadItem*
   ON_CALL(*item, IsTemporary())
       .WillByDefault(Return(false));
   ON_CALL(*item, GetWebContents())
-      .WillByDefault(Return(contents()));
+      .WillByDefault(Return(web_contents()));
   EXPECT_CALL(*item, GetId())
       .WillRepeatedly(Return(id));
-  EXPECT_CALL(*download_manager_, GetActiveDownloadItem(id))
+  EXPECT_CALL(*item, GetState())
+      .WillRepeatedly(Return(DownloadItem::IN_PROGRESS));
+  EXPECT_CALL(*item, AddObserver(_)).WillRepeatedly(Return());
+  EXPECT_CALL(*item, RemoveObserver(_)).WillRepeatedly(Return());
+  EXPECT_CALL(*download_manager_, GetDownload(id))
       .WillRepeatedly(Return(item));
   return item;
 }
@@ -376,8 +390,12 @@ void ChromeDownloadManagerDelegateTest::RunTestCaseWithDownloadItem(
       .WillRepeatedly(ReturnRef(forced_file_path));
   EXPECT_CALL(*item, GetMimeType())
       .WillRepeatedly(Return(test_case.mime_type));
+  std::vector<DownloadItem*> items;
+  items.push_back(item);
+  EXPECT_CALL(*download_manager_, GetAllDownloads(_))
+      .WillRepeatedly(SetArgPointee<0>(items));
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
   // Results of SafeBrowsing URL check.
   DownloadProtectionService::DownloadCheckResult url_check_result =
       (test_case.danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL) ?
@@ -397,13 +415,13 @@ void ChromeDownloadManagerDelegateTest::RunTestCaseWithDownloadItem(
                 IsSupportedDownload(InfoMatchingURL(download_url)))
         .WillOnce(Return(maybe_dangerous));
   }
-#else // ENABLE_SAFE_BROWSING
+#else // FULL_SAFE_BROWSING
   // If safe browsing is not enabled, then these tests would fail. If such a
   // test was added, then fail early.
   EXPECT_NE(content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL, test_case.danger_type);
   EXPECT_NE(content::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT,
             test_case.danger_type);
-#endif // !ENABLE_SAFE_BROWSING
+#endif // !FULL_SAFE_BROWSING
 
   DownloadItem::TargetDisposition initial_disposition =
       (test_case.test_type == SAVE_AS) ?
@@ -433,7 +451,7 @@ void ChromeDownloadManagerDelegateTest::RunTestCaseWithDownloadItem(
       item,
       base::Bind(&ChromeDownloadManagerDelegateTest::DownloadTargetVerifier,
                  factory.GetWeakPtr(), base::Unretained(&test_case))));
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
   VerifyAndClearExpectations();
 }
 
@@ -571,7 +589,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_Basic) {
       EXPECT_CRDOWNLOAD
     },
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
     // These test cases are only applicable if safe browsing is enabled. Without
     // it, these are equivalent to FORCED/SAFE and SAFE_AS/SAFE respectively.
     {
@@ -608,7 +626,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_Basic) {
   RunTestCases(kBasicTestCases, arraysize(kBasicTestCases));
 }
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
 // The SafeBrowsing URL check is performed early. Make sure that a download item
 // that has been marked as DANGEROUS_URL behaves correctly.
 TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_DangerousURL) {
@@ -701,7 +719,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_DangerousURL) {
 
   RunTestCases(kDangerousURLTestCases, arraysize(kDangerousURLTestCases));
 }
-#endif  // ENABLE_SAFE_BROWSING
+#endif  // FULL_SAFE_BROWSING
 
 // These test cases are run with "Prompt for download" user preference set to
 // true. Even with the preference set, some of these downloads should not cause
@@ -769,7 +787,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_PromptAlways) {
       EXPECT_CRDOWNLOAD
     },
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
     // If safe browsing is disabled, this case is equivalent to AUTOMATIC/SAFE
     // since the download isn't marked as dangerous when we are going to prompt
     // the user.
@@ -894,42 +912,6 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
   // Run the first test case again. Since the last download path was cleared,
   // this test case should behave identically to the first time it was run.
   RunTestCases(kLastSavePathTestCases, 1);
-}
-
-TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_WebIntents) {
-  const DownloadTestCase kWebIntentsTestCases[] = {
-    {
-      // 1: A file which would be dangerous, but is handled by web intents.
-      // The name will be unaltered (the actual save name will have the
-      // .webintents extension).
-      AUTOMATIC,
-      content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
-      "http://example.com/feed.exe", "application/rss+xml",
-      FILE_PATH_LITERAL(""),
-
-      FILE_PATH_LITERAL("feed.exe.webintents"),
-      FILE_PATH_LITERAL(""),
-      DownloadItem::TARGET_DISPOSITION_OVERWRITE,
-
-      EXPECT_CRDOWNLOAD
-    },
-
-    {
-      // 2: A download with a forced path won't be handled by web intents.
-      FORCED,
-      content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
-      "http://example.com/feed.exe", "application/rss+xml",
-      FILE_PATH_LITERAL("forced.feed.exe"),
-
-      FILE_PATH_LITERAL("forced.feed.exe"),
-      FILE_PATH_LITERAL(""),
-      DownloadItem::TARGET_DISPOSITION_OVERWRITE,
-
-      EXPECT_CRDOWNLOAD
-    },
-  };
-
-  RunTestCases(kWebIntentsTestCases, arraysize(kWebIntentsTestCases));
 }
 
 // TODO(asanka): Add more tests.

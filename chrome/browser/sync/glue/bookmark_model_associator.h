@@ -57,7 +57,9 @@ class BookmarkModelAssociator
   // node.  After successful completion, the models should be identical and
   // corresponding. Returns true on success.  On failure of this step, we
   // should abort the sync operation and report an error to the user.
-  virtual syncer::SyncError AssociateModels() OVERRIDE;
+  virtual syncer::SyncError AssociateModels(
+      syncer::SyncMergeResult* local_merge_result,
+      syncer::SyncMergeResult* syncer_merge_result) OVERRIDE;
 
   virtual syncer::SyncError DisassociateModels() OVERRIDE;
 
@@ -110,14 +112,11 @@ class BookmarkModelAssociator
   // Persists all dirty associations.
   void PersistAssociations();
 
-  // Loads the persisted associations into in-memory maps.
-  // If the persisted associations are out-of-date due to some reason, returns
-  // false; otherwise returns true.
-  bool LoadAssociations();
-
   // Matches up the bookmark model and the sync model to build model
   // associations.
-  syncer::SyncError BuildAssociations();
+  syncer::SyncError BuildAssociations(
+      syncer::SyncMergeResult* local_merge_result,
+      syncer::SyncMergeResult* syncer_merge_result);
 
   // Associate a top-level node of the bookmark model with a permanent node in
   // the sync domain.  Such permanent nodes are identified by a tag that is
@@ -133,6 +132,10 @@ class BookmarkModelAssociator
   bool NodesMatch(const BookmarkNode* bookmark,
                   const syncer::BaseNode* sync_node) const;
 
+  // Check whether bookmark model and sync model are synced by comparing
+  // their transaction versions.
+  void CheckModelSyncState() const;
+
   BookmarkModel* bookmark_model_;
   syncer::UserShare* user_share_;
   DataTypeErrorHandler* unrecoverable_error_handler_;
@@ -146,8 +149,6 @@ class BookmarkModelAssociator
   // guarantees no invocations can occur if |this| has been deleted. (This
   // allows this class to be non-refcounted).
   base::WeakPtrFactory<BookmarkModelAssociator> weak_factory_;
-
-  int number_of_new_sync_nodes_created_at_association_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkModelAssociator);
 };

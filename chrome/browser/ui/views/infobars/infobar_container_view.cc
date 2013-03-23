@@ -11,8 +11,13 @@
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 
-InfoBarContainerView::InfoBarContainerView(Delegate* delegate)
-    : InfoBarContainer(delegate) {
+// static
+const char InfoBarContainerView::kViewClassName[] = "InfoBarContainerView";
+
+InfoBarContainerView::InfoBarContainerView(
+    Delegate* delegate,
+    chrome::search::SearchModel* search_model)
+    : InfoBarContainer(delegate, search_model) {
   set_id(VIEW_ID_INFO_BAR_CONTAINER);
 }
 
@@ -26,6 +31,10 @@ gfx::Size InfoBarContainerView::GetPreferredSize() {
   int total_height;
   GetVerticalOverlap(&total_height);
   return gfx::Size(0, total_height);
+}
+
+std::string InfoBarContainerView::GetClassName() const {
+  return kViewClassName;
 }
 
 void InfoBarContainerView::Layout() {

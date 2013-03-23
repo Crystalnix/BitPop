@@ -6,9 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "chrome/browser/sessions/restore_tab_helper.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/tab_contents/retargeting_details.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
@@ -67,12 +66,13 @@ void ExtensionTabIdMap::TabObserver::Observe(
     const content::NotificationDetails& details) {
   switch (type) {
     case content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED: {
-      WebContents* contents = content::Source<WebContents>(source).ptr();
-      TabContents* tab = TabContents::FromWebContents(contents);
-      if (!tab)
-        break;
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
+      SessionTabHelper* session_tab_helper =
+          SessionTabHelper::FromWebContents(web_contents);
+      if (!session_tab_helper)
+        return;
       RenderViewHost* host = content::Details<RenderViewHost>(details).ptr();
-      // TODO(mpcmoplete): How can we tell if window_id is bogus? It may not
+      // TODO(mpcomplete): How can we tell if window_id is bogus? It may not
       // have been set yet.
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
@@ -80,40 +80,44 @@ void ExtensionTabIdMap::TabObserver::Observe(
               &ExtensionTabIdMap::SetTabAndWindowId,
               base::Unretained(ExtensionTabIdMap::GetInstance()),
               host->GetProcess()->GetID(), host->GetRoutingID(),
-              tab->restore_tab_helper()->session_id().id(),
-              tab->restore_tab_helper()->window_id().id()));
+              session_tab_helper->session_id().id(),
+              session_tab_helper->window_id().id()));
       break;
     }
     case chrome::NOTIFICATION_TAB_PARENTED: {
-      TabContents* tab =
-          content::Source<TabContents>(source).ptr();
-      RenderViewHost* host = tab->web_contents()->GetRenderViewHost();
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
+      SessionTabHelper* session_tab_helper =
+          SessionTabHelper::FromWebContents(web_contents);
+      if (!session_tab_helper)
+        return;
+      RenderViewHost* host = web_contents->GetRenderViewHost();
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
           base::Bind(
               &ExtensionTabIdMap::SetTabAndWindowId,
               base::Unretained(ExtensionTabIdMap::GetInstance()),
               host->GetProcess()->GetID(), host->GetRoutingID(),
-              tab->restore_tab_helper()->session_id().id(),
-              tab->restore_tab_helper()->window_id().id()));
+              session_tab_helper->session_id().id(),
+              session_tab_helper->window_id().id()));
       break;
     }
     case chrome::NOTIFICATION_RETARGETING: {
       RetargetingDetails* retargeting_details =
           content::Details<RetargetingDetails>(details).ptr();
-      WebContents* contents = retargeting_details->target_web_contents;
-      TabContents* tab = TabContents::FromWebContents(contents);
-      if (!tab)
-        break;
-      RenderViewHost* host = contents->GetRenderViewHost();
+      WebContents* web_contents = retargeting_details->target_web_contents;
+      SessionTabHelper* session_tab_helper =
+          SessionTabHelper::FromWebContents(web_contents);
+      if (!session_tab_helper)
+        return;
+      RenderViewHost* host = web_contents->GetRenderViewHost();
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
           base::Bind(
               &ExtensionTabIdMap::SetTabAndWindowId,
               base::Unretained(ExtensionTabIdMap::GetInstance()),
               host->GetProcess()->GetID(), host->GetRoutingID(),
-              tab->restore_tab_helper()->session_id().id(),
-              tab->restore_tab_helper()->window_id().id()));
+              session_tab_helper->session_id().id(),
+              session_tab_helper->window_id().id()));
       break;
     }
     case content::NOTIFICATION_RENDER_VIEW_HOST_DELETED: {

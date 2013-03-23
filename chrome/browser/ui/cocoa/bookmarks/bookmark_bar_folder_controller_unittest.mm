@@ -168,8 +168,8 @@ class BookmarkBarFolderControllerTest : public CocoaProfileTest {
     // Make parent frame for bookmark bar then open it.
     NSRect frame = [[test_window() contentView] frame];
     frame = NSMakeRect(frame.origin.x,
-                       frame.size.height - bookmarks::kNTPBookmarkBarHeight,
-                       frame.size.width, bookmarks::kNTPBookmarkBarHeight);
+                       frame.size.height - chrome::kNTPBookmarkBarHeight,
+                       frame.size.width, chrome::kNTPBookmarkBarHeight);
     NSView* fakeToolbarView = [[[NSView alloc] initWithFrame:frame]
                                 autorelease];
     [[test_window() contentView] addSubview:fakeToolbarView];
@@ -688,9 +688,8 @@ class BookmarkBarFolderControllerMenuTest : public CocoaProfileTest {
     [[test_window() contentView] addSubview:parent_view_];
 
     // Make sure it's open so certain things aren't no-ops.
-    [bar updateAndShowNormalBar:YES
-                showDetachedBar:NO
-                  withAnimation:NO];
+    [bar updateState:BookmarkBar::SHOW
+          changeType:BookmarkBar::DONT_ANIMATE_STATE_CHANGE];
   }
 };
 

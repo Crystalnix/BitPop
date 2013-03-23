@@ -8,11 +8,12 @@
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/browser/ui/toolbar/test_toolbar_model.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/image/image.h"
 
 using content::WebContents;
 
@@ -20,10 +21,9 @@ namespace {
 
 class TestingOmniboxView : public OmniboxView {
  public:
-  TestingOmniboxView() {}
+  explicit TestingOmniboxView(ToolbarModel* model)
+      : OmniboxView(NULL, NULL, model, NULL) {}
 
-  virtual OmniboxEditModel* model() OVERRIDE { return NULL; }
-  virtual const OmniboxEditModel* model() const OVERRIDE { return NULL; }
   virtual void SaveStateToTab(WebContents* tab) OVERRIDE {}
   virtual void Update(const WebContents* tab_for_state_restoring) OVERRIDE {}
   virtual void OpenMatch(const AutocompleteMatch& match,
@@ -31,9 +31,6 @@ class TestingOmniboxView : public OmniboxView {
                          const GURL& alternate_nav_url,
                          size_t selected_line) OVERRIDE {}
   virtual string16 GetText() const OVERRIDE { return string16(); }
-  virtual bool IsEditingOrEmpty() const OVERRIDE { return true; }
-  virtual int GetIcon() const OVERRIDE { return 0; }
-  virtual void SetUserText(const string16& text) OVERRIDE {}
   virtual void SetUserText(const string16& text,
                            const string16& display_text,
                            bool update_popup) OVERRIDE {}
@@ -48,8 +45,8 @@ class TestingOmniboxView : public OmniboxView {
   virtual void SelectAll(bool reversed) OVERRIDE {}
   virtual void RevertAll() OVERRIDE {}
   virtual void UpdatePopup() OVERRIDE {}
-  virtual void ClosePopup() OVERRIDE {}
   virtual void SetFocus() OVERRIDE {}
+  virtual void ApplyCaretVisibility() OVERRIDE {}
   virtual void OnTemporaryTextMaybeChanged(
       const string16& display_text,
       bool save_original_selection) OVERRIDE {}
@@ -64,9 +61,7 @@ class TestingOmniboxView : public OmniboxView {
   virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE {
     return NULL;
   }
-  virtual CommandUpdater* GetCommandUpdater() OVERRIDE { return NULL; }
-  virtual void SetInstantSuggestion(const string16& input,
-                                    bool animate_to_complete) OVERRIDE {}
+  virtual void SetInstantSuggestion(const string16& input) OVERRIDE {}
   virtual string16 GetInstantSuggestion() const OVERRIDE { return string16(); }
   virtual int TextWidth() const OVERRIDE { return 0; }
   virtual bool IsImeComposing() const OVERRIDE { return false; }
@@ -76,12 +71,15 @@ class TestingOmniboxView : public OmniboxView {
     return entry_width;
   }
   virtual views::View* AddToView(views::View* parent) OVERRIDE { return NULL; }
-  virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE {
+  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE {
     return 0;
   }
   virtual gfx::Font GetFont() { return gfx::Font(); }
   virtual int WidthOfTextAfterCursor() { return 0; }
 #endif
+
+  virtual int GetOmniboxTextLength() const OVERRIDE { return 0; }
+  virtual void EmphasizeURLComponents() OVERRIDE { }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestingOmniboxView);
@@ -99,10 +97,10 @@ class TestingOmniboxEditController : public OmniboxEditController {
   virtual void OnInputInProgress(bool in_progress) OVERRIDE {}
   virtual void OnKillFocus() OVERRIDE {}
   virtual void OnSetFocus() OVERRIDE {}
-  virtual SkBitmap GetFavicon() const OVERRIDE { return SkBitmap(); }
+  virtual gfx::Image GetFavicon() const OVERRIDE { return gfx::Image(); }
   virtual string16 GetTitle() const OVERRIDE { return string16(); }
   virtual InstantController* GetInstant() OVERRIDE { return NULL; }
-  virtual TabContents* GetTabContents() const OVERRIDE {
+  virtual WebContents* GetWebContents() const OVERRIDE {
     return NULL;
   }
 
@@ -112,7 +110,13 @@ class TestingOmniboxEditController : public OmniboxEditController {
 
 }  // namespace
 
-class AutocompleteEditTest : public ::testing::Test {};
+class AutocompleteEditTest : public ::testing::Test {
+ public:
+   TestToolbarModel* toolbar_model() { return &toolbar_model_; }
+
+  private:
+   TestToolbarModel toolbar_model_;
+};
 
 // Tests various permutations of AutocompleteModel::AdjustTextForCopy.
 TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
@@ -124,42 +128,51 @@ TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
     const char* expected_output;
     const bool write_url;
     const char* expected_url;
+    const bool extracted_search_terms;
   } input[] = {
     // Test that http:// is inserted if all text is selected.
-    { "a.de/b", 0, true, "a.de/b", "http://a.de/b", true, "http://a.de/b" },
+    { "a.de/b", 0, true, "a.de/b", "http://a.de/b", true, "http://a.de/b",
+      false },
 
     // Test that http:// is inserted if the host is selected.
-    { "a.de/b", 0, false, "a.de/", "http://a.de/", true, "http://a.de/" },
+    { "a.de/b", 0, false, "a.de/", "http://a.de/", true, "http://a.de/",
+      false },
 
     // Tests that http:// is inserted if the path is modified.
-    { "a.de/b", 0, false, "a.de/c", "http://a.de/c", true, "http://a.de/c" },
+    { "a.de/b", 0, false, "a.de/c", "http://a.de/c", true, "http://a.de/c",
+      false },
 
     // Tests that http:// isn't inserted if the host is modified.
-    { "a.de/b", 0, false, "a.com/b", "a.com/b", false, "" },
+    { "a.de/b", 0, false, "a.com/b", "a.com/b", false, "", false },
 
     // Tests that http:// isn't inserted if the start of the selection is 1.
-    { "a.de/b", 1, false, "a.de/b", "a.de/b", false, "" },
+    { "a.de/b", 1, false, "a.de/b", "a.de/b", false, "", false },
 
     // Tests that http:// isn't inserted if a portion of the host is selected.
-    { "a.de/", 0, false, "a.d", "a.d", false, "" },
+    { "a.de/", 0, false, "a.d", "a.d", false, "", false },
 
     // Tests that http:// isn't inserted for an https url after the user nukes
     // https.
-    { "https://a.com/", 0, false, "a.com/", "a.com/", false, "" },
+    { "https://a.com/", 0, false, "a.com/", "a.com/", false, "", false },
 
     // Tests that http:// isn't inserted if the user adds to the host.
-    { "a.de/", 0, false, "a.de.com/", "a.de.com/", false, "" },
+    { "a.de/", 0, false, "a.de.com/", "a.de.com/", false, "", false },
 
     // Tests that we don't get double http if the user manually inserts http.
-    { "a.de/", 0, false, "http://a.de/", "http://a.de/", true, "http://a.de/" },
+    { "a.de/", 0, false, "http://a.de/", "http://a.de/", true, "http://a.de/",
+      false },
 
     // Makes sure intranet urls get 'http://' prefixed to them.
-    { "b/foo", 0, true, "b/foo", "http://b/foo", true, "http://b/foo" },
+    { "b/foo", 0, true, "b/foo", "http://b/foo", true, "http://b/foo", false },
 
     // Verifies a search term 'foo' doesn't end up with http.
-    { "www.google.com/search?", 0, false, "foo", "foo", false, "" },
+    { "www.google.com/search?", 0, false, "foo", "foo", false, "", false },
+
+    // Makes sure extracted search terms are not modified.
+    { "www.google.com/webhp?", 0, true, "hello world", "hello world", false,
+      "", true },
   };
-  TestingOmniboxView view;
+  TestingOmniboxView view(toolbar_model());
   TestingOmniboxEditController controller;
   TestingProfile profile;
   // NOTE: The TemplateURLService must be created before the
@@ -173,6 +186,9 @@ TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(input); ++i) {
     model.UpdatePermanentText(ASCIIToUTF16(input[i].perm_text));
+
+    toolbar_model()->set_replace_search_url_with_search_terms(
+        input[i].extracted_search_terms);
 
     string16 result = ASCIIToUTF16(input[i].input);
     GURL url;

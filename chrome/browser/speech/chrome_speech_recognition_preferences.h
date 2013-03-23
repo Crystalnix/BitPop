@@ -9,17 +9,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
-#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/speech_recognition_preferences.h"
 
 class PrefService;
 
-namespace base{
+namespace base {
 class ListValue;
 }
 
@@ -33,18 +32,11 @@ class ListValue;
 // even when a Profile is not available (or has been shutdown).
 
 class ChromeSpeechRecognitionPreferences
-    : public content::SpeechRecognitionPreferences,
-      public content::NotificationObserver {
+    : public content::SpeechRecognitionPreferences {
  public:
   static void InitializeFactory();
   static scoped_refptr<ChromeSpeechRecognitionPreferences> GetForProfile(
       Profile* profile);
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
 
   // content::SpeechRecognitionPreferences implementation.
   // Called by both Content (on IO thread) and Chrome (on UI thread).
@@ -79,9 +71,9 @@ class ChromeSpeechRecognitionPreferences
     virtual ProfileKeyedService* BuildServiceInstanceFor(Profile* profile)
         const OVERRIDE;
     virtual void RegisterUserPrefs(PrefService* prefs) OVERRIDE;
-    virtual bool ServiceRedirectedInIncognito() OVERRIDE { return false; }
-    virtual bool ServiceIsNULLWhileTesting() OVERRIDE { return true; }
-    virtual bool ServiceIsCreatedWithProfile() OVERRIDE { return false; }
+    virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+    virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
+    virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
 
     DISALLOW_COPY_AND_ASSIGN(Factory);
   };
@@ -112,7 +104,8 @@ class ChromeSpeechRecognitionPreferences
   virtual ~ChromeSpeechRecognitionPreferences();
 
   void DetachFromProfile();
-  void ReloadPreference(const std::string& key);
+  void ReloadFilterProfanities();
+  void ReloadNotificationsShown();
 
   Profile* profile_;  // NULL when detached.
   scoped_ptr<PrefChangeRegistrar> pref_change_registrar_;

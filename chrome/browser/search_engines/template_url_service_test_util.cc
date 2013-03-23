@@ -5,9 +5,9 @@
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 
 #include "base/bind.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/google/google_url_tracker.h"
@@ -22,6 +22,10 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/google/google_util_chromeos.h"
+#endif
 
 using content::BrowserThread;
 
@@ -70,7 +74,7 @@ class TemplateURLServiceTestingProfile : public TestingProfile {
 
  private:
   scoped_refptr<WebDataService> service_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread io_thread_;
 };
@@ -175,6 +179,10 @@ void TemplateURLServiceTestUtil::SetUp() {
       TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
           profile_.get(), TestingTemplateURLService::Build));
   service->AddObserver(this);
+
+#if defined(OS_CHROMEOS)
+  google_util::chromeos::ClearBrandForCurrentSession();
+#endif
 }
 
 void TemplateURLServiceTestUtil::TearDown() {
@@ -185,7 +193,7 @@ void TemplateURLServiceTestUtil::TearDown() {
   UIThreadSearchTermsData::SetGoogleBaseURL(std::string());
 
   // Flush the message loop to make application verifiers happy.
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 }
 
 void TemplateURLServiceTestUtil::OnTemplateURLServiceChanged() {
@@ -312,5 +320,5 @@ void TemplateURLServiceTestUtil::StartIOThread() {
 }
 
 void TemplateURLServiceTestUtil::PumpLoop() {
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 }

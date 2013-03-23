@@ -46,14 +46,12 @@ describes this manifest in detail):
 {
   "name": "Hello World!",
   "description": "My first packaged app.",
-  "manifest_version": 2,
   "version": "0.1",
   "app": {
     "background": {
       "scripts": ["background.js"]
     }
   },
-  "permissions": ["experimental", "app.window"],
   "icons": { "16": "calculator-16.png", "128": "calculator-128.png" }
 }
 </pre>
@@ -72,7 +70,7 @@ with the following content:
 </p>
 
 <pre>
-chrome.experimental.app.onLaunched.addListener(function() {
+chrome.app.runtime.onLaunched.addListener(function() {
   chrome.app.window.create('window.html', {
     'width': 400,
     'height': 500
@@ -140,8 +138,8 @@ so that you can try them out:
 <p>
 To load your app,
 bring up the apps and extensions management page
-by clicking the wrench icon
-<img src="{{static}}/images/toolsmenu.gif" width="29" height="29" alt=""
+by clicking the settings icon
+<img src="{{static}}/images/hotdogmenu.png" width="29" height="29" alt=""
         style="margin-top:0" />
 and choosing <b>Tools > Extensions</b>.
 </p>

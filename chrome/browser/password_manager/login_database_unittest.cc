@@ -6,16 +6,16 @@
 
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/login_database.h"
 #include "chrome/common/chrome_paths.h"
-#include "webkit/forms/password_form.h"
+#include "content/public/common/password_form.h"
 
-using webkit::forms::PasswordForm;
+using content::PasswordForm;
 
 class LoginDatabaseTest : public testing::Test {
  protected:
@@ -25,7 +25,7 @@ class LoginDatabaseTest : public testing::Test {
   }
 
   FilePath file_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 };
 
 TEST_F(LoginDatabaseTest, Logins) {

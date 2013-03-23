@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
-#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/content_settings_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/glue/window_open_disposition.h"
@@ -24,7 +23,6 @@ class GURL;
 class LocationBar;
 class Profile;
 class StatusBubble;
-class TabContents;
 class TemplateURL;
 #if !defined(OS_MACOSX)
 class ToolbarView;
@@ -36,6 +34,7 @@ class PasswordGenerator;
 namespace content {
 class WebContents;
 struct NativeWebKeyboardEvent;
+struct PasswordForm;
 struct SSLStatus;
 }
 
@@ -47,17 +46,6 @@ namespace gfx {
 class Rect;
 class Size;
 }
-
-namespace webkit {
-namespace forms {
-struct PasswordForm;
-}
-}
-
-enum DevToolsDockSide {
-  DEVTOOLS_DOCK_SIDE_BOTTOM = 0,
-  DEVTOOLS_DOCK_SIDE_RIGHT = 1
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserWindow interface
@@ -86,9 +74,6 @@ class BrowserWindow : public BaseWindow {
   // Browser::OnWindowDidShow should be called after showing the window.
   // virtual void Show() = 0;
 
-  // No BrowserWindow supports this BaseWindow function.
-  virtual void SetDraggableRegion(SkRegion* region) OVERRIDE {}
-
   //////////////////////////////////////////////////////////////////////////////
   // Browser specific methods:
 
@@ -112,9 +97,6 @@ class BrowserWindow : public BaseWindow {
   // changed.
   virtual void UpdateDevTools() = 0;
 
-  // Requests that the docked dev tools window changes its dock mode.
-  virtual void SetDevToolsDockSide(DevToolsDockSide side) = 0;
-
   // Update any loading animations running in the window. |should_animate| is
   // true if there are tabs loading and the animations should continue, false
   // if there are no active loads and the animations should end.
@@ -123,14 +105,11 @@ class BrowserWindow : public BaseWindow {
   // Sets the starred state for the current tab.
   virtual void SetStarredState(bool is_starred) = 0;
 
-  // Sets the zoom icon state for the current tab.
-  virtual void SetZoomIconState(ZoomController::ZoomIconState state) = 0;
-
-  // Sets the zoom icon tooltip zoom percentage for the current tab.
-  virtual void SetZoomIconTooltipPercent(int zoom_percent) = 0;
-
-  // Show zoom bubble for the current tab.
-  virtual void ShowZoomBubble(int zoom_percent) = 0;
+  // Called to force the zoom state to for the active tab to be recalculated.
+  // |can_show_bubble| is true when a user presses the zoom up or down keyboard
+  // shortcuts and will be false in other cases (e.g. switching tabs, "clicking"
+  // + or - in the wrench menu to change zoom).
+  virtual void ZoomChangedForActiveTab(bool can_show_bubble) = 0;
 
   // Accessors for fullscreen mode state.
   virtual void EnterFullscreen(const GURL& url,
@@ -163,7 +142,7 @@ class BrowserWindow : public BaseWindow {
   virtual void UpdateReloadStopState(bool is_loading, bool force) = 0;
 
   // Updates the toolbar with the state for the specified |contents|.
-  virtual void UpdateToolbar(TabContents* contents,
+  virtual void UpdateToolbar(content::WebContents* contents,
                              bool should_restore_state) = 0;
 
   // Focuses the toolbar (for accessibility).
@@ -230,6 +209,10 @@ class BrowserWindow : public BaseWindow {
   // |already_bookmarked| is true if the url is already bookmarked.
   virtual void ShowBookmarkBubble(const GURL& url, bool already_bookmarked) = 0;
 
+  // Shows the bookmark prompt.
+  // TODO(yosin): Make ShowBookmarkPrompt pure virtual.
+  virtual void ShowBookmarkPrompt() {}
+
   // Shows the Chrome To Mobile bubble.
   virtual void ShowChromeToMobileBubble() = 0;
 
@@ -285,7 +268,7 @@ class BrowserWindow : public BaseWindow {
   // that page/frame.  If |show_history| is true, a section showing how many
   // times that URL has been visited is added to the page info.
   virtual void ShowWebsiteSettings(Profile* profile,
-                                   TabContents* tab_contents,
+                                   content::WebContents* web_contents,
                                    const GURL& url,
                                    const content::SSLStatus& ssl,
                                    bool show_history) = 0;
@@ -311,7 +294,6 @@ class BrowserWindow : public BaseWindow {
   virtual void ShowCreateChromeAppShortcutsDialog(Profile* profile,
       const extensions::Extension* app) = 0;
 
-
   // Clipboard commands applied to the whole browser window.
   virtual void Cut() = 0;
   virtual void Copy() = 0;
@@ -330,16 +312,13 @@ class BrowserWindow : public BaseWindow {
   virtual bool InPresentationMode() = 0;
 #endif
 
-  // Invoked when instant's tab contents should be shown.
-  virtual void ShowInstant(TabContents* preview) = 0;
-
-  // Invoked when the instant's tab contents should be hidden.
-  virtual void HideInstant() = 0;
-
-  // Returns the desired bounds for instant in screen coordinates. Note that if
-  // instant isn't currently visible this returns the bounds instant would be
+  // Returns the desired bounds for Instant in screen coordinates. Note that if
+  // Instant isn't currently visible this returns the bounds Instant would be
   // placed at.
   virtual gfx::Rect GetInstantBounds() = 0;
+
+  // Checks if an Instant's tab contents is being shown.
+  virtual bool IsInstantTabShowing() = 0;
 
   // Return the correct disposition for a popup window based on |bounds|.
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
@@ -347,6 +326,12 @@ class BrowserWindow : public BaseWindow {
 
   // Construct a FindBar implementation for the |browser|.
   virtual FindBar* CreateFindBar() = 0;
+
+  // Updates the |top_y| where the top of the constrained window should be
+  // positioned. When implemented, the method returns true and the value of
+  // |top_y| is non-negative. When not implemented, the method returns false and
+  // the value of |top_y| is not defined.
+  virtual bool GetConstrainedWindowTopY(int* top_y) = 0;
 
   // Invoked when the preferred size of the contents in current tab has been
   // changed. We might choose to update the window size to accomodate this
@@ -374,13 +359,11 @@ class BrowserWindow : public BaseWindow {
   // Show bubble for password generation positioned relative to |rect|. The
   // subclasses implementing this interface do not own the |password_generator|
   // object which is passed to generate the password. |form| is the form that
-  // contains the password field that the bubble will be associated with. A
-  // stub implementation is provided since this feature is currently not
-  // available on mac.
+  // contains the password field that the bubble will be associated with.
   virtual void ShowPasswordGenerationBubble(
       const gfx::Rect& rect,
-      autofill::PasswordGenerator* password_generator,
-      const webkit::forms::PasswordForm& form) {}
+      const content::PasswordForm& form,
+      autofill::PasswordGenerator* password_generator) = 0;
 
  protected:
   friend void browser::CloseAllBrowsers();

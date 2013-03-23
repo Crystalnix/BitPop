@@ -27,7 +27,6 @@ class BrowserWindowGtk;
 class CustomDrawButton;
 class DraggedTabControllerGtk;
 class GtkThemeService;
-class TabContents;
 
 namespace gfx {
 class Image;
@@ -109,29 +108,31 @@ class TabStripGtk : public TabStripModelObserver,
 
  protected:
   // TabStripModelObserver implementation:
-  virtual void TabInsertedAt(TabContents* contents,
+  virtual void TabInsertedAt(content::WebContents* contents,
                              int index,
                              bool foreground) OVERRIDE;
-  virtual void TabDetachedAt(TabContents* contents, int index) OVERRIDE;
-  virtual void TabMoved(TabContents* contents,
+  virtual void TabDetachedAt(content::WebContents* contents,
+                             int index) OVERRIDE;
+  virtual void TabMoved(content::WebContents* contents,
                         int from_index,
                         int to_index) OVERRIDE;
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
   virtual void TabSelectionChanged(
       TabStripModel* tab_strip_model,
       const TabStripSelectionModel& old_model) OVERRIDE;
-  virtual void TabChangedAt(TabContents* contents, int index,
+  virtual void TabChangedAt(content::WebContents* contents,
+                            int index,
                             TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
-  virtual void TabMiniStateChanged(TabContents* contents,
+  virtual void TabMiniStateChanged(content::WebContents* contents,
                                    int index) OVERRIDE;
-  virtual void TabBlockedStateChanged(TabContents* contents,
+  virtual void TabBlockedStateChanged(content::WebContents* contents,
                                       int index) OVERRIDE;
 
   // TabGtk::TabDelegate implementation:

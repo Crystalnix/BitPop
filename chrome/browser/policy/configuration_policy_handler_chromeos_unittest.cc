@@ -4,9 +4,9 @@
 
 #include "chrome/browser/policy/configuration_policy_handler_chromeos.h"
 
+#include "base/prefs/pref_value_map.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/prefs/pref_value_map.h"
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
 #include "chrome/common/pref_names.h"
 #include "policy/policy_constants.h"
@@ -18,7 +18,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, Empty) {
   PolicyMap policy_map;
   NetworkConfigurationPolicyHandler handler(
       key::kOpenNetworkConfiguration,
-      chromeos::NetworkUIData::ONC_SOURCE_USER_POLICY);
+      chromeos::onc::ONC_SOURCE_USER_POLICY);
   PolicyErrorMap errors;
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.GetErrors(key::kOpenNetworkConfiguration).empty());
@@ -30,8 +30,9 @@ TEST(NetworkConfigurationPolicyHandlerTest, ValidONC) {
       "  \"NetworkConfigurations\": [{"
       "    \"GUID\": \"{485d6076-dd44-6b6d-69787465725f5045}\","
       "    \"Type\": \"WiFi\","
+      "    \"Name\": \"some name\","
       "    \"WiFi\": {"
-      "      \"Security\": \"WEP\","
+      "      \"Security\": \"WEP-PSK\","
       "      \"SSID\": \"ssid\","
       "      \"Passphrase\": \"pass\","
       "    }"
@@ -45,7 +46,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, ValidONC) {
                  Value::CreateStringValue(kTestONC));
   NetworkConfigurationPolicyHandler handler(
       key::kOpenNetworkConfiguration,
-      chromeos::NetworkUIData::ONC_SOURCE_USER_POLICY);
+      chromeos::onc::ONC_SOURCE_USER_POLICY);
   PolicyErrorMap errors;
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.GetErrors(key::kOpenNetworkConfiguration).empty());
@@ -59,7 +60,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, WrongType) {
                  Value::CreateBooleanValue(false));
   NetworkConfigurationPolicyHandler handler(
       key::kOpenNetworkConfiguration,
-      chromeos::NetworkUIData::ONC_SOURCE_USER_POLICY);
+      chromeos::onc::ONC_SOURCE_USER_POLICY);
   PolicyErrorMap errors;
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.GetErrors(key::kOpenNetworkConfiguration).empty());
@@ -74,7 +75,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, JSONParseError) {
                  Value::CreateStringValue(kTestONC));
   NetworkConfigurationPolicyHandler handler(
       key::kOpenNetworkConfiguration,
-      chromeos::NetworkUIData::ONC_SOURCE_USER_POLICY);
+      chromeos::onc::ONC_SOURCE_USER_POLICY);
   PolicyErrorMap errors;
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.GetErrors(key::kOpenNetworkConfiguration).empty());
@@ -86,8 +87,9 @@ TEST(NetworkConfigurationPolicyHandlerTest, Sanitization) {
       "  \"NetworkConfigurations\": [{"
       "    \"GUID\": \"{485d6076-dd44-6b6d-69787465725f5045}\","
       "    \"Type\": \"WiFi\","
+      "    \"Name\": \"some name\","
       "    \"WiFi\": {"
-      "      \"Security\": \"WEP\","
+      "      \"Security\": \"WEP-PSK\","
       "      \"SSID\": \"ssid\","
       "      \"Passphrase\": \"pass\","
       "    }"
@@ -101,7 +103,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, Sanitization) {
                  Value::CreateStringValue(kTestONC));
   NetworkConfigurationPolicyHandler handler(
       key::kOpenNetworkConfiguration,
-      chromeos::NetworkUIData::ONC_SOURCE_USER_POLICY);
+      chromeos::onc::ONC_SOURCE_USER_POLICY);
   PolicyErrorMap errors;
   handler.PrepareForDisplaying(&policy_map);
   const Value* sanitized = policy_map.GetValue(key::kOpenNetworkConfiguration);

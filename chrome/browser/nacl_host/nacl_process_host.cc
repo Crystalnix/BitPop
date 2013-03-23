@@ -10,7 +10,9 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
@@ -18,7 +20,9 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_info_map.h"
+#include "chrome/browser/io_thread.h"
 #include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
 #include "chrome/common/chrome_constants.h"
@@ -31,11 +35,17 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_child_process_host.h"
+#include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/child_process_host.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/url_pattern.h"
+#include "ipc/ipc_channel.h"
 #include "ipc/ipc_switches.h"
 #include "native_client/src/shared/imc/nacl_imc.h"
 #include "net/base/net_util.h"
+#include "net/base/tcp_listen_socket.h"
+#include "ppapi/proxy/ppapi_messages.h"
 
 #if defined(OS_POSIX)
 #include <fcntl.h>
@@ -44,8 +54,8 @@
 #elif defined(OS_WIN)
 #include <windows.h>
 
-#include "base/threading/thread.h"
 #include "base/process_util.h"
+#include "base/threading/thread.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/browser/nacl_host/nacl_broker_service_win.h"
 #include "chrome/common/nacl_debug_exception_handler_win.h"
@@ -55,6 +65,7 @@
 using content::BrowserThread;
 using content::ChildProcessData;
 using content::ChildProcessHost;
+using ppapi::proxy::SerializedHandle;
 
 namespace {
 
@@ -105,6 +116,14 @@ bool ShareHandleToSelLdr(
   return true;
 }
 
+ppapi::PpapiPermissions GetNaClPermissions(uint32 permission_bits) {
+  // Only allow NaCl plugins to request certain permissions. We don't want
+  // a compromised renderer to be able to start a nacl plugin with e.g. Flash
+  // permissions which may expand the surface area of the sandbox.
+  uint32 masked_bits = permission_bits & ppapi::PERMISSION_DEV;
+  return ppapi::PpapiPermissions::GetForCommandLine(masked_bits);
+}
+
 }  // namespace
 
 struct NaClProcessHost::NaClInternal {
@@ -114,8 +133,21 @@ struct NaClProcessHost::NaClInternal {
 
 // -----------------------------------------------------------------------------
 
-NaClProcessHost::NaClProcessHost(const GURL& manifest_url, bool off_the_record)
+NaClProcessHost::PluginListener::PluginListener(NaClProcessHost* host)
+    : host_(host) {
+}
+
+bool NaClProcessHost::PluginListener::OnMessageReceived(
+    const IPC::Message& msg) {
+  return host_->OnUntrustedMessageForwarded(msg);
+}
+
+NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
+                                 int render_view_id,
+                                 uint32 permission_bits,
+                                 bool off_the_record)
     : manifest_url_(manifest_url),
+      permissions_(GetNaClPermissions(permission_bits)),
 #if defined(OS_WIN)
       process_launched_by_broker_(false),
 #elif defined(OS_LINUX)
@@ -128,7 +160,11 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url, bool off_the_record)
       internal_(new NaClInternal()),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       enable_exception_handling_(false),
-      off_the_record_(off_the_record) {
+      enable_debug_stub_(false),
+      off_the_record_(off_the_record),
+      enable_ipc_proxy_(false),
+      ALLOW_THIS_IN_INITIALIZER_LIST(ipc_plugin_listener_(this)),
+      render_view_id_(render_view_id) {
   process_.reset(content::BrowserChildProcessHost::Create(
       content::PROCESS_TYPE_NACL_LOADER, this));
 
@@ -145,9 +181,15 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url, bool off_the_record)
       getenv("NACL_UNTRUSTED_EXCEPTION_HANDLING") != NULL) {
     enable_exception_handling_ = true;
   }
+  enable_debug_stub_ = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableNaClDebug);
 
-  enable_ipc_proxy_ = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableNaClIPCProxy);
+  enable_ipc_proxy_ = !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableNaClSRPCProxy);
+  // If render_view_id == 0 we do not need PPAPI, so we can skip
+  // PPAPI IPC proxy channel creation, etc.
+  if (!render_view_id_)
+    enable_ipc_proxy_ = false;
 }
 
 NaClProcessHost::~NaClProcessHost() {
@@ -194,6 +236,18 @@ void NaClProcessHost::EarlyStartup() {
   // under us by autoupdate.
   NaClBrowser::GetInstance()->EnsureIrtAvailable();
 #endif
+  CommandLine* cmd = CommandLine::ForCurrentProcess();
+  UMA_HISTOGRAM_BOOLEAN(
+      "NaCl.nacl-gdb",
+      !cmd->GetSwitchValuePath(switches::kNaClGdb).empty());
+  UMA_HISTOGRAM_BOOLEAN(
+      "NaCl.nacl-gdb-script",
+      !cmd->GetSwitchValuePath(switches::kNaClGdbScript).empty());
+  UMA_HISTOGRAM_BOOLEAN(
+      "NaCl.enable-nacl-debug",
+      cmd->HasSwitch(switches::kEnableNaClDebug));
+  NaClBrowser::GetInstance()->SetDebugPatterns(
+      cmd->GetSwitchValueASCII(switches::kNaClDebugMask));
 }
 
 void NaClProcessHost::Launch(
@@ -429,7 +483,8 @@ void NaClProcessHost::OnNaClGdbAttached() {
 FilePath NaClProcessHost::GetManifestPath() {
   const extensions::Extension* extension = extension_info_map_->extensions()
       .GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url_));
-  if (extension != NULL && manifest_url_.SchemeIs(chrome::kExtensionScheme)) {
+  if (extension != NULL &&
+      manifest_url_.SchemeIs(extensions::kExtensionScheme)) {
     std::string path = manifest_url_.path();
     TrimString(path, "/", &path);  // Remove first slash
     return extension->path().AppendASCII(path);
@@ -605,14 +660,48 @@ bool NaClProcessHost::ReplyToRenderer(
   }
 #endif
 
+  const ChildProcessData& data = process_->GetData();
   ChromeViewHostMsg_LaunchNaCl::WriteReplyParams(
-      reply_msg_, handles_for_renderer, channel_handle);
+      reply_msg_, handles_for_renderer,
+      channel_handle, base::GetProcId(data.handle), data.id);
   chrome_render_message_filter_->Send(reply_msg_);
   chrome_render_message_filter_ = NULL;
   reply_msg_ = NULL;
   internal_->sockets_for_renderer.clear();
   return true;
 }
+
+// TCP port we chose for NaCl debug stub. It can be any other number.
+static const int kDebugStubPort = 4014;
+
+#if defined(OS_POSIX)
+SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
+  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
+  SocketDescriptor s;
+  // We allocate currently unused TCP port for debug stub tests. The port
+  // number is passed to the test via debug stub port listener.
+  if (nacl_browser->HasGdbDebugStubPortListener()) {
+    int port;
+    s = net::TCPListenSocket::CreateAndBindAnyPort("127.0.0.1", &port);
+    if (s != net::TCPListenSocket::kInvalidSocket) {
+      nacl_browser->FireGdbDebugStubPortOpened(port);
+    }
+  } else {
+    s = net::TCPListenSocket::CreateAndBind("127.0.0.1", kDebugStubPort);
+  }
+  if (s == net::TCPListenSocket::kInvalidSocket) {
+    LOG(ERROR) << "failed to open socket for debug stub";
+    return net::TCPListenSocket::kInvalidSocket;
+  }
+  if (listen(s, 1)) {
+    LOG(ERROR) << "listen() failed on debug stub socket";
+    if (HANDLE_EINTR(close(s)) < 0)
+      PLOG(ERROR) << "failed to close debug stub socket";
+    return net::TCPListenSocket::kInvalidSocket;
+  }
+  return s;
+}
+#endif
 
 bool NaClProcessHost::StartNaClExecution() {
   NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
@@ -622,8 +711,8 @@ bool NaClProcessHost::StartNaClExecution() {
   params.validation_cache_key = nacl_browser->GetValidationCacheKey();
   params.version = chrome::VersionInfo().CreateVersionString();
   params.enable_exception_handling = enable_exception_handling_;
-  params.enable_debug_stub =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableNaClDebug);
+  params.enable_debug_stub = enable_debug_stub_ &&
+      NaClBrowser::GetInstance()->URLMatchesDebugPatterns(manifest_url_);
   params.enable_ipc_proxy = enable_ipc_proxy_;
 
   base::PlatformFile irt_file = nacl_browser->IrtFile();
@@ -665,6 +754,16 @@ bool NaClProcessHost::StartNaClExecution() {
   params.handles.push_back(memory_fd);
 #endif
 
+#if defined(OS_POSIX)
+  if (params.enable_debug_stub) {
+    SocketDescriptor server_bound_socket = GetDebugStubSocketHandle();
+    if (server_bound_socket != net::TCPListenSocket::kInvalidSocket) {
+      params.debug_stub_server_bound_socket =
+          nacl::FileDescriptor(server_bound_socket, true);
+    }
+  }
+#endif
+
   process_->Send(new NaClProcessMsg_Start(params));
 
   internal_->sockets_for_sel_ldr.clear();
@@ -679,10 +778,60 @@ bool NaClProcessHost::SendStart() {
   return StartNaClExecution();
 }
 
+// This method is called when NaClProcessHostMsg_PpapiChannelCreated is
+// received or PpapiHostMsg_ChannelCreated is forwarded by our plugin
+// listener.
 void NaClProcessHost::OnPpapiChannelCreated(
     const IPC::ChannelHandle& channel_handle) {
   DCHECK(enable_ipc_proxy_);
-  ReplyToRenderer(channel_handle);
+  // If the proxy channel is null, this must be the initial NaCl-Browser IPC
+  // channel.
+  if (!ipc_proxy_channel_.get()) {
+    ipc_proxy_channel_.reset(
+        new IPC::ChannelProxy(channel_handle,
+                              IPC::Channel::MODE_CLIENT,
+                              &ipc_plugin_listener_,
+                              base::MessageLoopProxy::current()));
+    // Create the browser ppapi host and enable PPAPI message dispatching to the
+    // browser process.
+    ppapi_host_.reset(content::BrowserPpapiHost::CreateExternalPluginProcess(
+        ipc_proxy_channel_.get(), //process_.get(),  // sender
+        permissions_,
+        process_->GetData().handle,
+        ipc_proxy_channel_.get(),
+        chrome_render_message_filter_->GetHostResolver(),
+        chrome_render_message_filter_->render_process_id(),
+        render_view_id_));
+
+    // Send a message to create the NaCl-Renderer channel. The handle is just
+    // a place holder.
+    ipc_proxy_channel_->Send(
+        new PpapiMsg_CreateNaClChannel(
+            chrome_render_message_filter_->render_process_id(),
+            permissions_,
+            chrome_render_message_filter_->off_the_record(),
+            SerializedHandle(SerializedHandle::CHANNEL_HANDLE,
+                             IPC::InvalidPlatformFileForTransit())));
+  } else if (reply_msg_) {
+    // Otherwise, this must be a renderer channel.
+    ReplyToRenderer(channel_handle);
+  } else {
+    // Attempt to open more than 1 renderer channel is not supported.
+    // Shut down the NaCl process.
+    process_->GetHost()->ForceShutdown();
+  }
+}
+
+bool NaClProcessHost::OnUntrustedMessageForwarded(const IPC::Message& msg) {
+  // Handle messages that have been forwarded from our PluginListener.
+  // These messages come from untrusted code so should be handled with care.
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(NaClProcessHost, msg)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_ChannelCreated,
+                        OnPpapiChannelCreated)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
 }
 
 bool NaClProcessHost::StartWithLaunchedProcess() {
@@ -735,9 +884,9 @@ void NaClProcessHost::OnAttachDebugExceptionHandler(const std::string& info,
 
 bool NaClProcessHost::AttachDebugExceptionHandler(const std::string& info,
                                                   IPC::Message* reply_msg) {
-  if (!enable_exception_handling_) {
+  if (!enable_exception_handling_ && !enable_debug_stub_) {
     DLOG(ERROR) <<
-        "Exception handling requested by NaCl process when not enabled";
+        "Debug exception handler requested by NaCl process when not enabled";
     return false;
   }
   if (debug_exception_handler_requested_) {

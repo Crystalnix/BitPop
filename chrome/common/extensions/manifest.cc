@@ -11,8 +11,8 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension_error_utils.h"
-#include "chrome/common/extensions/features/simple_feature_provider.h"
+#include "chrome/common/extensions/features/base_feature_provider.h"
+#include "extensions/common/error_utils.h"
 
 namespace errors = extension_manifest_errors;
 namespace keys = extension_manifest_keys;
@@ -33,7 +33,7 @@ Manifest::Manifest(Extension::Location location,
     } else if (value_->Get(keys::kPlatformAppBackground, NULL)) {
       type_ = Extension::TYPE_PLATFORM_APP;
     } else {
-      type_ = Extension::TYPE_PACKAGED_APP;
+      type_ = Extension::TYPE_LEGACY_PACKAGED_APP;
     }
   } else {
     type_ = Extension::TYPE_EXTENSION;
@@ -60,7 +60,7 @@ void Manifest::ValidateManifest(
   // checking to let developers know when they screw up.
 
   std::set<std::string> feature_names =
-      SimpleFeatureProvider::GetManifestFeatures()->GetAllFeatureNames();
+      BaseFeatureProvider::GetManifestFeatures()->GetAllFeatureNames();
   for (std::set<std::string>::iterator feature_name = feature_names.begin();
        feature_name != feature_names.end(); ++feature_name) {
     // Use Get instead of HasKey because the former uses path expansion.
@@ -68,20 +68,19 @@ void Manifest::ValidateManifest(
       continue;
 
     Feature* feature =
-        SimpleFeatureProvider::GetManifestFeatures()->GetFeature(*feature_name);
+        BaseFeatureProvider::GetManifestFeatures()->GetFeature(*feature_name);
     Feature::Availability result = feature->IsAvailableToManifest(
         extension_id_, type_, Feature::ConvertLocation(location_),
         GetManifestVersion());
-    if (result != Feature::IS_AVAILABLE)
+    if (!result.is_available())
       warnings->push_back(Extension::InstallWarning(
-          Extension::InstallWarning::FORMAT_TEXT,
-          feature->GetErrorMessage(result)));
+          Extension::InstallWarning::FORMAT_TEXT, result.message()));
   }
 
   // Also generate warnings for keys that are not features.
   for (DictionaryValue::key_iterator key = value_->begin_keys();
       key != value_->end_keys(); ++key) {
-    if (!SimpleFeatureProvider::GetManifestFeatures()->GetFeature(*key)) {
+    if (!BaseFeatureProvider::GetManifestFeatures()->GetFeature(*key)) {
       warnings->push_back(Extension::InstallWarning(
           Extension::InstallWarning::FORMAT_TEXT,
           base::StringPrintf("Unrecognized manifest key '%s'.",
@@ -146,7 +145,9 @@ bool Manifest::Equals(const Manifest* other) const {
 }
 
 int Manifest::GetManifestVersion() const {
-  int manifest_version = 1;  // default to version 1 if no version is specified
+  // Platform apps were launched after manifest version 2 was the preferred
+  // version, so they default to that.
+  int manifest_version = type_ == Extension::TYPE_PLATFORM_APP ? 2 : 1;
   value_->GetInteger(keys::kManifestVersion, &manifest_version);
   return manifest_version;
 }
@@ -166,13 +167,13 @@ bool Manifest::CanAccessPath(const std::string& path) const {
 
 bool Manifest::CanAccessKey(const std::string& key) const {
   Feature* feature =
-      SimpleFeatureProvider::GetManifestFeatures()->GetFeature(key);
+      BaseFeatureProvider::GetManifestFeatures()->GetFeature(key);
   if (!feature)
     return true;
 
-  return Feature::IS_AVAILABLE == feature->IsAvailableToManifest(
+  return feature->IsAvailableToManifest(
       extension_id_, type_, Feature::ConvertLocation(location_),
-      GetManifestVersion());
+      GetManifestVersion()).is_available();
 }
 
 }  // namespace extensions

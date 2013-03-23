@@ -8,9 +8,12 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
+#include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
@@ -155,7 +158,7 @@ bool CollectPCIVideoCardInfo(content::GPUInfo* gpu_info) {
 
 namespace gpu_info_collector {
 
-bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
+bool CollectContextGraphicsInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
@@ -166,14 +169,18 @@ bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
   return CollectGraphicsInfoGL(gpu_info);
 }
 
-bool CollectPreliminaryGraphicsInfo(content::GPUInfo* gpu_info) {
+bool CollectBasicGraphicsInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
-  return CollectPCIVideoCardInfo(gpu_info);
-}
+  std::string model_name;
+  int32 model_major = 0, model_minor = 0;
+  base::mac::ParseModelIdentifier(base::mac::GetModelIdentifier(),
+                                  &model_name, &model_major, &model_minor);
+  ReplaceChars(model_name, " ", "_", &gpu_info->machine_model);
+  gpu_info->machine_model += " " + base::IntToString(model_major) +
+                             "." + base::IntToString(model_minor);
 
-bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
-  return CollectPreliminaryGraphicsInfo(gpu_info);
+  return CollectPCIVideoCardInfo(gpu_info);
 }
 
 bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
@@ -189,6 +196,11 @@ bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
     return false;
   gpu_info->driver_version = gl_version_string.substr(pos + 1);
   return true;
+}
+
+void MergeGPUInfo(content::GPUInfo* basic_gpu_info,
+                  const content::GPUInfo& context_gpu_info) {
+  MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
 }
 
 }  // namespace gpu_info_collector

@@ -10,15 +10,12 @@
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
 #include "content/public/common/speech_recognition_grammar.h"
+#include "content/public/common/speech_recognition_result.h"
 
 namespace content {
-struct SpeechRecognitionResult;
-struct SpeechRecognitionError;
-}
-
-namespace speech {
 
 class AudioChunk;
+struct SpeechRecognitionError;
 
 // This interface models the basic contract that a speech recognition engine,
 // either working locally or relying on a remote web-service, must obey.
@@ -38,10 +35,10 @@ class SpeechRecognitionEngine {
     // Called whenever a result is retrieved. It might be issued several times,
     // (e.g., in the case of continuous speech recognition engine
     // implementations).
-    virtual void OnSpeechRecognitionEngineResult(
-        const content::SpeechRecognitionResult& result) = 0;
+    virtual void OnSpeechRecognitionEngineResults(
+        const SpeechRecognitionResults& results) = 0;
     virtual void OnSpeechRecognitionEngineError(
-        const content::SpeechRecognitionError& error) = 0;
+        const SpeechRecognitionError& error) = 0;
 
    protected:
     virtual ~Delegate() {}
@@ -53,8 +50,10 @@ class SpeechRecognitionEngine {
     ~Config();
 
     std::string language;
-    content::SpeechRecognitionGrammarArray grammars;
+    SpeechRecognitionGrammarArray grammars;
     bool filter_profanities;
+    bool continuous;
+    bool interim_results;
     uint32 max_hypotheses;
     std::string hardware_info;
     std::string origin_url;
@@ -108,6 +107,6 @@ class SpeechRecognitionEngine {
 typedef SpeechRecognitionEngine::Delegate SpeechRecognitionEngineDelegate;
 typedef SpeechRecognitionEngine::Config SpeechRecognitionEngineConfig;
 
-}  // namespace speech
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_SPEECH_SPEECH_RECOGNITION_ENGINE_H_

@@ -8,6 +8,8 @@
 #include "base/compiler_specific.h"
 #include "webkit/glue/clipboard_client.h"
 
+namespace content {
+
 // An implementation of ClipboardClient that gets and sends data over IPC.
 class RendererClipboardClient : public webkit_glue::ClipboardClient {
  public:
@@ -36,7 +38,11 @@ class RendererClipboardClient : public webkit_glue::ClipboardClient {
   virtual void ReadCustomData(ui::Clipboard::Buffer buffer,
                               const string16& type,
                               string16* data) OVERRIDE;
+  virtual void ReadData(const ui::Clipboard::FormatType& format,
+                        std::string* data) OVERRIDE;
   virtual WriteContext* CreateWriteContext() OVERRIDE;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_RENDERER_CLIPBOARD_CLIENT_H_

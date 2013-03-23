@@ -15,14 +15,15 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
-JavaBridgeDispatcher::JavaBridgeDispatcher(
-    content::RenderView* render_view)
+namespace content {
+
+JavaBridgeDispatcher::JavaBridgeDispatcher(RenderView* render_view)
     : RenderViewObserver(render_view) {
 }
 
-void JavaBridgeDispatcher::EnsureChannelIsSetUp() {
+bool JavaBridgeDispatcher::EnsureChannelIsSetUp() {
   if (channel_.get()) {
-    return;
+    return true;
   }
 
   IPC::ChannelHandle channel_handle;
@@ -30,6 +31,7 @@ void JavaBridgeDispatcher::EnsureChannelIsSetUp() {
 
   channel_ = JavaBridgeChannel::GetJavaBridgeChannel(
       channel_handle, ChildProcess::current()->io_message_loop_proxy());
+  return channel_.get();
 }
 
 JavaBridgeDispatcher::~JavaBridgeDispatcher() {
@@ -68,7 +70,10 @@ void JavaBridgeDispatcher::OnAddNamedObject(
     const NPVariant_Param& variant_param) {
   DCHECK_EQ(variant_param.type, NPVARIANT_PARAM_SENDER_OBJECT_ROUTING_ID);
 
-  EnsureChannelIsSetUp();
+  if (!EnsureChannelIsSetUp()) {
+    // It's possible for |channel_| to be NULL if the RenderView is going away.
+    return;
+  }
 
   // This creates an NPObject, wrapped as an NPVariant. Pass 0 for the for
   // containing window, as this is only used by plugins to pump the window
@@ -99,3 +104,5 @@ void JavaBridgeDispatcher::OnRemoveNamedObject(const string16& name) {
   WebKit::WebBindings::releaseObject(NPVARIANT_TO_OBJECT(iter->second));
   objects_.erase(iter);
 }
+
+}  // namespace content

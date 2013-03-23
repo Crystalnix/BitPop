@@ -5,11 +5,14 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/test_extension_system.h"
 #import "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_installed_bubble_controller.h"
@@ -51,6 +54,10 @@ class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
     ASSERT_TRUE(browser());
     window_ = browser()->window()->GetNativeWindow();
     icon_ = LoadTestIcon();
+    CommandLine command_line(CommandLine::NO_PROGRAM);
+    extension_service_ = static_cast<extensions::TestExtensionSystem*>(
+        extensions::ExtensionSystem::Get(profile()))->CreateExtensionService(
+            &command_line, FilePath(), false);
   }
 
   // Load test icon from extension test directory.
@@ -99,12 +106,17 @@ class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
     }
 
     std::string error;
-    return Extension::Create(path, Extension::INVALID, extension_input_value,
-                             Extension::NO_FLAGS, &error);
+    scoped_refptr<Extension> extension =
+        Extension::Create(path, Extension::INVALID, extension_input_value,
+                          Extension::NO_FLAGS, &error);
+    extension_service_->AddExtension(extension);
+    return extension;
   }
 
   // Required to initialize the extension installed bubble.
   NSWindow* window_;  // weak, owned by CocoaProfileTest.
+
+  ExtensionService* extension_service_;
 
   // Skeleton extension to be tested; reinitialized for each test.
   scoped_refptr<Extension> extension_;
@@ -154,7 +166,7 @@ TEST_F(ExtensionInstalledBubbleControllerTest, PageActionTest) {
             msg2Frame.origin.y + msg2Frame.size.height +
             extension_installed_bubble::kInnerVerticalMargin);
 
-  [controller setPageActionRemoved:YES];
+  [controller setPageActionPreviewShowing:NO];
   [controller close];
 }
 
@@ -176,9 +188,10 @@ TEST_F(ExtensionInstalledBubbleControllerTest, BrowserActionTest) {
   int height = [controller calculateWindowHeight];
   // Height should equal the vertical padding + height of all messages.
   int correctHeight = 2 * extension_installed_bubble::kOuterVerticalMargin +
-      extension_installed_bubble::kInnerVerticalMargin +
+      2 * extension_installed_bubble::kInnerVerticalMargin +
       [controller getExtensionInstalledMsgFrame].size.height +
-      [controller getExtensionInstalledInfoMsgFrame].size.height;
+      [controller getExtensionInstalledInfoMsgFrame].size.height +
+      [controller getExtraInfoMsgFrame].size.height;
   EXPECT_EQ(height, correctHeight);
 
   [controller setMessageFrames:height];
@@ -186,11 +199,15 @@ TEST_F(ExtensionInstalledBubbleControllerTest, BrowserActionTest) {
   // Bottom message should start kOuterVerticalMargin pixels above window edge.
   EXPECT_EQ(msg3Frame.origin.y,
       extension_installed_bubble::kOuterVerticalMargin);
+  NSRect msg2Frame = [controller getExtraInfoMsgFrame];
+  // Pageaction message should be kInnerVerticalMargin pixels above bottom msg.
+  EXPECT_EQ(NSMinY(msg2Frame),
+            NSMaxY(msg3Frame) +
+                extension_installed_bubble::kInnerVerticalMargin);
   NSRect msg1Frame = [controller getExtensionInstalledMsgFrame];
-  // Top message should start kInnerVerticalMargin pixels above top of
-  //  extensionInstalled message, because page action message is hidden.
-  EXPECT_EQ(msg1Frame.origin.y,
-            msg3Frame.origin.y + msg3Frame.size.height +
+  // Top message should be kInnerVerticalMargin pixels above BrowserAction msg.
+  EXPECT_EQ(NSMinY(msg1Frame),
+            NSMaxY(msg2Frame) +
                 extension_installed_bubble::kInnerVerticalMargin);
 
   [controller close];

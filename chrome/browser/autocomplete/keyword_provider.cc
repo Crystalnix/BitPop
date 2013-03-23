@@ -13,6 +13,7 @@
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -45,7 +46,8 @@ class KeywordProvider::ScopedEndExtensionKeywordMode {
 
 KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
                                  Profile* profile)
-    : AutocompleteProvider(listener, profile, "Keyword"),
+    : AutocompleteProvider(listener, profile,
+          AutocompleteProvider::TYPE_KEYWORD),
       model_(NULL),
       current_input_id_(0) {
   // Extension suggestions always come from the original profile, since that's
@@ -63,7 +65,7 @@ KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
 
 KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
                                  TemplateURLService* model)
-    : AutocompleteProvider(listener, NULL, "Keyword"),
+    : AutocompleteProvider(listener, NULL, AutocompleteProvider::TYPE_KEYWORD),
       model_(model),
       current_input_id_(0) {
 }
@@ -174,11 +176,13 @@ string16 KeywordProvider::GetKeywordForText(
 
   // Don't provide a keyword for inactive/disabled extension keywords.
   if (template_url->IsExtensionKeyword()) {
-    const extensions::Extension* extension = profile_->GetExtensionService()->
+    ExtensionService* extension_service =
+        extensions::ExtensionSystem::Get(profile_)->extension_service();
+    const extensions::Extension* extension = extension_service->
         GetExtensionById(template_url->GetExtensionId(), false);
     if (!extension ||
         (profile_->IsOffTheRecord() &&
-        !profile_->GetExtensionService()->IsIncognitoEnabled(extension->id())))
+        !extension_service->IsIncognitoEnabled(extension->id())))
       return string16();
   }
 
@@ -250,7 +254,8 @@ void KeywordProvider::Start(const AutocompleteInput& input,
     // Prune any extension keywords that are disallowed in incognito mode (if
     // we're incognito), or disabled.
     if (profile_ && template_url->IsExtensionKeyword()) {
-      ExtensionService* service = profile_->GetExtensionService();
+      ExtensionService* service = extensions::ExtensionSystem::Get(profile_)->
+          extension_service();
       const extensions::Extension* extension = service->GetExtensionById(
           template_url->GetExtensionId(), false);
       bool enabled =

@@ -27,8 +27,6 @@
 #include "chrome/browser/download/download_extensions.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/time_format.h"
@@ -52,12 +50,6 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
-#if defined(OS_WIN)
-#include <shobjidl.h>
-
-#include "base/win/windows_version.h"
-#endif
-
 #if defined(TOOLKIT_VIEWS)
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
@@ -68,12 +60,9 @@
 
 #if defined(TOOLKIT_GTK)
 #include "chrome/browser/ui/gtk/custom_drag.h"
-#include "chrome/browser/ui/gtk/unity_service.h"
 #endif  // defined(TOOLKIT_GTK)
 
 #if defined(OS_WIN) && !defined(USE_AURA)
-#include "base/win/scoped_comptr.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "ui/base/dragdrop/drag_source.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #endif
@@ -85,28 +74,6 @@
 #endif
 
 namespace {
-
-// Returns a string constant to be used as the |danger_type| value in
-// CreateDownloadItemValue().  We only return strings for DANGEROUS_FILE,
-// DANGEROUS_URL, DANGEROUS_CONTENT, and UNCOMMON_CONTENT because the
-// |danger_type| value is only defined if the value of |state| is |DANGEROUS|.
-const char* GetDangerTypeString(content::DownloadDangerType danger_type) {
-  switch (danger_type) {
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE:
-      return "DANGEROUS_FILE";
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
-      return "DANGEROUS_URL";
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
-      return "DANGEROUS_CONTENT";
-    case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT:
-      return "UNCOMMON_CONTENT";
-    default:
-      // We shouldn't be returning a danger type string if it is
-      // NOT_DANGEROUS or MAYBE_DANGEROUS_CONTENT.
-      NOTREACHED();
-      return "";
-  }
-}
 
 // Get the opacity based on |animation_progress|, with values in [0.0, 1.0].
 // Range of return value is [0, 255].
@@ -171,7 +138,7 @@ bool DownloadPathIsDangerous(const FilePath& download_path) {
   return false;
 #else
   FilePath desktop_dir;
-  if (!PathService::Get(chrome::DIR_USER_DESKTOP, &desktop_dir)) {
+  if (!PathService::Get(base::DIR_USER_DESKTOP, &desktop_dir)) {
     NOTREACHED();
     return false;
   }
@@ -188,6 +155,61 @@ gfx::ImageSkia* g_foreground_16 = NULL;
 gfx::ImageSkia* g_background_16 = NULL;
 gfx::ImageSkia* g_foreground_32 = NULL;
 gfx::ImageSkia* g_background_32 = NULL;
+
+void PaintCustomDownloadProgress(gfx::Canvas* canvas,
+                                 const gfx::ImageSkia& background_image,
+                                 const gfx::ImageSkia& foreground_image,
+                                 int image_size,
+                                 const gfx::Rect& bounds,
+                                 int start_angle,
+                                 int percent_done) {
+  // Draw the background progress image.
+  canvas->DrawImageInt(background_image,
+                       bounds.x(),
+                       bounds.y());
+
+  // Layer the foreground progress image in an arc proportional to the download
+  // progress. The arc grows clockwise, starting in the midnight position, as
+  // the download progresses. However, if the download does not have known total
+  // size (the server didn't give us one), then we just spin an arc around until
+  // we're done.
+  float sweep_angle = 0.0;
+  float start_pos = static_cast<float>(kStartAngleDegrees);
+  if (percent_done < 0) {
+    sweep_angle = kUnknownAngleDegrees;
+    start_pos = static_cast<float>(start_angle);
+  } else if (percent_done > 0) {
+    sweep_angle = static_cast<float>(kMaxDegrees / 100.0 * percent_done);
+  }
+
+  // Set up an arc clipping region for the foreground image. Don't bother using
+  // a clipping region if it would round to 360 (really 0) degrees, since that
+  // would eliminate the foreground completely and be quite confusing (it would
+  // look like 0% complete when it should be almost 100%).
+  canvas->Save();
+  if (sweep_angle < static_cast<float>(kMaxDegrees - 1)) {
+    SkRect oval;
+    oval.set(SkIntToScalar(bounds.x()),
+             SkIntToScalar(bounds.y()),
+             SkIntToScalar(bounds.x() + image_size),
+             SkIntToScalar(bounds.y() + image_size));
+    SkPath path;
+    path.arcTo(oval,
+               SkFloatToScalar(start_pos),
+               SkFloatToScalar(sweep_angle), false);
+    path.lineTo(SkIntToScalar(bounds.x() + image_size / 2),
+                SkIntToScalar(bounds.y() + image_size / 2));
+
+    // gfx::Canvas::ClipPath does not provide for anti-aliasing.
+    canvas->sk_canvas()->clipPath(path, SkRegion::kIntersect_Op, true);
+  }
+
+  canvas->DrawImageInt(foreground_image,
+                       bounds.x(),
+                       bounds.y());
+  canvas->Restore();
+}
+
 
 void PaintDownloadProgress(gfx::Canvas* canvas,
 #if defined(TOOLKIT_VIEWS)
@@ -235,46 +257,9 @@ void PaintDownloadProgress(gfx::Canvas* canvas,
                        bounds.x(),
                        bounds.y());
 
-  // Layer the foreground progress image in an arc proportional to the download
-  // progress. The arc grows clockwise, starting in the midnight position, as
-  // the download progresses. However, if the download does not have known total
-  // size (the server didn't give us one), then we just spin an arc around until
-  // we're done.
-  float sweep_angle = 0.0;
-  float start_pos = static_cast<float>(kStartAngleDegrees);
-  if (percent_done < 0) {
-    sweep_angle = kUnknownAngleDegrees;
-    start_pos = static_cast<float>(start_angle);
-  } else if (percent_done > 0) {
-    sweep_angle = static_cast<float>(kMaxDegrees / 100.0 * percent_done);
-  }
-
-  // Set up an arc clipping region for the foreground image. Don't bother using
-  // a clipping region if it would round to 360 (really 0) degrees, since that
-  // would eliminate the foreground completely and be quite confusing (it would
-  // look like 0% complete when it should be almost 100%).
-  canvas->Save();
-  if (sweep_angle < static_cast<float>(kMaxDegrees - 1)) {
-    SkRect oval;
-    oval.set(SkIntToScalar(bounds.x()),
-             SkIntToScalar(bounds.y()),
-             SkIntToScalar(bounds.x() + kProgressIconSize),
-             SkIntToScalar(bounds.y() + kProgressIconSize));
-    SkPath path;
-    path.arcTo(oval,
-               SkFloatToScalar(start_pos),
-               SkFloatToScalar(sweep_angle), false);
-    path.lineTo(SkIntToScalar(bounds.x() + kProgressIconSize / 2),
-                SkIntToScalar(bounds.y() + kProgressIconSize / 2));
-
-    // gfx::Canvas::ClipPath does not provide for anti-aliasing.
-    canvas->sk_canvas()->clipPath(path, SkRegion::kIntersect_Op, true);
-  }
-
-  canvas->DrawImageInt(*foreground,
-                       bounds.x(),
-                       bounds.y());
-  canvas->Restore();
+  PaintCustomDownloadProgress(canvas, *background, *foreground,
+                              kProgressIconSize, bounds, start_angle,
+                              percent_done);
 }
 
 void PaintDownloadComplete(gfx::Canvas* canvas,
@@ -303,10 +288,8 @@ void PaintDownloadComplete(gfx::Canvas* canvas,
 
   // Start at full opacity, then loop back and forth five times before ending
   // at zero opacity.
-  canvas->SaveLayerAlpha(GetOpacity(animation_progress), complete_bounds);
-  canvas->sk_canvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
-  canvas->DrawImageInt(*complete, complete_bounds.x(), complete_bounds.y());
-  canvas->Restore();
+  canvas->DrawImageInt(*complete, complete_bounds.x(), complete_bounds.y(),
+                       GetOpacity(animation_progress));
 }
 
 void PaintDownloadInterrupted(gfx::Canvas* canvas,
@@ -335,10 +318,8 @@ void PaintDownloadInterrupted(gfx::Canvas* canvas,
 
   // Start at zero opacity, then loop back and forth five times before ending
   // at full opacity.
-  canvas->SaveLayerAlpha(GetOpacity(1.0 - animation_progress), complete_bounds);
-  canvas->sk_canvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
-  canvas->DrawImageInt(*complete, complete_bounds.x(), complete_bounds.y());
-  canvas->Restore();
+  canvas->DrawImageInt(*complete, complete_bounds.x(), complete_bounds.y(),
+                       GetOpacity(1.0 - animation_progress));
 }
 
 // Load a language dependent height so that the dangerous download confirmation
@@ -396,12 +377,18 @@ void DragDownload(const DownloadItem* download,
   if (!root_window || !aura::client::GetDragDropClient(root_window))
     return;
 
-  gfx::Point location = gfx::Screen::GetCursorScreenPoint();
-  aura::client::GetDragDropClient(root_window)->StartDragAndDrop(data, location,
-      ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK);
+  gfx::Point location = gfx::Screen::GetScreenFor(view)->GetCursorScreenPoint();
+  // TODO(varunjain): Properly determine and send DRAG_EVENT_SOURCE below.
+  aura::client::GetDragDropClient(root_window)->StartDragAndDrop(
+      data,
+      root_window,
+      view,
+      location,
+      ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK,
+      ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE);
 #else  // We are on WIN without AURA
   // We cannot use Widget::RunShellDrag on WIN since the |view| is backed by a
-  // TabContentsViewWin, not a NativeWidgetWin.
+  // WebContentsViewWin, not a NativeWidgetWin.
   scoped_refptr<ui::DragSource> drag_source(new ui::DragSource);
   // Run the drag and drop loop
   DWORD effects;
@@ -430,90 +417,6 @@ void DragDownload(const DownloadItem* download,
   DownloadItemDrag::BeginDrag(download, icon);
 }
 #endif  // USE_X11
-
-DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
-  DictionaryValue* file_value = new DictionaryValue();
-
-  file_value->SetInteger("started",
-      static_cast<int>(download->GetStartTime().ToTimeT()));
-  file_value->SetString("since_string",
-      TimeFormat::RelativeDate(download->GetStartTime(), NULL));
-  file_value->SetString("date_string",
-      base::TimeFormatShortDate(download->GetStartTime()));
-  file_value->SetInteger("id", id);
-
-  FilePath download_path(download->GetTargetFilePath());
-  file_value->Set("file_path", base::CreateFilePathValue(download_path));
-  file_value->SetString("file_url",
-                        net::FilePathToFileURL(download_path).spec());
-
-  // Keep file names as LTR.
-  string16 file_name = download->GetFileNameToReportUser().LossyDisplayName();
-  file_name = base::i18n::GetDisplayStringInLTRDirectionality(file_name);
-  file_value->SetString("file_name", file_name);
-  file_value->SetString("url", download->GetURL().spec());
-  file_value->SetBoolean("otr", download->IsOtr());
-  file_value->SetInteger("total", static_cast<int>(download->GetTotalBytes()));
-  file_value->SetBoolean("file_externally_removed",
-                         download->GetFileExternallyRemoved());
-
-  if (download->IsInProgress()) {
-    if (download->GetSafetyState() == DownloadItem::DANGEROUS) {
-      file_value->SetString("state", "DANGEROUS");
-      // These are the only danger states we expect to see (and the UI is
-      // equipped to handle):
-      DCHECK(download->GetDangerType() ==
-                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE ||
-             download->GetDangerType() ==
-                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
-             download->GetDangerType() ==
-                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
-             download->GetDangerType() ==
-                 content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT);
-      const char* danger_type_value =
-          GetDangerTypeString(download->GetDangerType());
-      file_value->SetString("danger_type", danger_type_value);
-    } else if (download->IsPaused()) {
-      file_value->SetString("state", "PAUSED");
-    } else {
-      file_value->SetString("state", "IN_PROGRESS");
-    }
-
-    file_value->SetString("progress_status_text",
-        GetProgressStatusText(download));
-
-    file_value->SetInteger("percent",
-        static_cast<int>(download->PercentComplete()));
-    file_value->SetInteger("received",
-        static_cast<int>(download->GetReceivedBytes()));
-  } else if (download->IsInterrupted()) {
-    file_value->SetString("state", "INTERRUPTED");
-
-    file_value->SetString("progress_status_text",
-        GetProgressStatusText(download));
-
-    file_value->SetInteger("percent",
-        static_cast<int>(download->PercentComplete()));
-    file_value->SetInteger("received",
-        static_cast<int>(download->GetReceivedBytes()));
-    file_value->SetString("last_reason_text",
-        BaseDownloadItemModel::InterruptReasonMessage(
-            download->GetLastReason()));
-  } else if (download->IsCancelled()) {
-    file_value->SetString("state", "CANCELLED");
-  } else if (download->IsComplete()) {
-    if (download->GetSafetyState() == DownloadItem::DANGEROUS)
-      file_value->SetString("state", "DANGEROUS");
-    else
-      file_value->SetString("state", "COMPLETE");
-  } else if (download->GetState() == DownloadItem::REMOVING) {
-    file_value->SetString("state", "REMOVING");
-  } else {
-    NOTREACHED() << "state undefined";
-  }
-
-  return file_value;
-}
 
 string16 GetProgressStatusText(DownloadItem* download) {
   int64 total = download->GetTotalBytes();
@@ -555,53 +458,6 @@ string16 GetProgressStatusText(DownloadItem* download) {
   return l10n_util::GetStringFUTF16(IDS_DOWNLOAD_TAB_PROGRESS_STATUS,
                                     speed_text, amount, time_remaining);
 }
-
-#if !defined(OS_MACOSX)
-void UpdateAppIconDownloadProgress(int download_count,
-                                   bool progress_known,
-                                   float progress) {
-#if defined(USE_AURA)
-  // TODO(davemoore) Implement once UX for download is decided <104742>
-#elif defined(OS_WIN)
-  // Taskbar progress bar is only supported on Win7.
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return;
-
-  base::win::ScopedComPtr<ITaskbarList3> taskbar;
-  HRESULT result = taskbar.CreateInstance(CLSID_TaskbarList, NULL,
-                                          CLSCTX_INPROC_SERVER);
-  if (FAILED(result)) {
-    VLOG(1) << "Failed creating a TaskbarList object: " << result;
-    return;
-  }
-
-  result = taskbar->HrInit();
-  if (FAILED(result)) {
-    LOG(ERROR) << "Failed initializing an ITaskbarList3 interface.";
-    return;
-  }
-
-  // Iterate through all the browser windows, and draw the progress bar.
-  for (BrowserList::const_iterator browser_iterator = BrowserList::begin();
-      browser_iterator != BrowserList::end(); browser_iterator++) {
-    Browser* browser = *browser_iterator;
-    BrowserWindow* window = browser->window();
-    if (!window)
-      continue;
-    HWND frame = window->GetNativeWindow();
-    if (download_count == 0 || progress == 1.0f)
-      taskbar->SetProgressState(frame, TBPF_NOPROGRESS);
-    else if (!progress_known)
-      taskbar->SetProgressState(frame, TBPF_INDETERMINATE);
-    else
-      taskbar->SetProgressValue(frame, static_cast<int>(progress * 100), 100);
-  }
-#elif defined(TOOLKIT_GTK)
-  unity::SetDownloadCount(download_count);
-  unity::SetProgressFraction(progress);
-#endif
-}
-#endif
 
 FilePath GetCrDownloadPath(const FilePath& suggested_path) {
   return FilePath(suggested_path.value() + FILE_PATH_LITERAL(".crdownload"));

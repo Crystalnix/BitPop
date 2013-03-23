@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/run_loop.h"
-#include "base/scoped_temp_dir.h"
+#include "base/string_util.h"
 #include "base/test/test_file_util.h"
 #include "chrome/app/chrome_main_delegate.h"
 #include "chrome/common/chrome_switches.h"
@@ -34,7 +34,7 @@
 
 const char kEmptyTestName[] = "InProcessBrowserTest.Empty";
 
-class ChromeTestLauncherDelegate : public test_launcher::TestLauncherDelegate {
+class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
  public:
   ChromeTestLauncherDelegate() {}
   virtual ~ChromeTestLauncherDelegate() {}
@@ -43,42 +43,12 @@ class ChromeTestLauncherDelegate : public test_launcher::TestLauncherDelegate {
     return kEmptyTestName;
   }
 
-  virtual bool Run(int argc, char** argv, int* return_code) OVERRIDE {
-#if defined(OS_WIN) || defined(OS_LINUX)
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    bool launch_chrome =
-        command_line->HasSwitch(switches::kProcessType) ||
-        command_line->HasSwitch(ChromeTestSuite::kLaunchAsBrowser);
-#endif
-#if defined(OS_WIN)
-    if (launch_chrome) {
-      sandbox::SandboxInterfaceInfo sandbox_info = {0};
-      content::InitializeSandboxInfo(&sandbox_info);
-      ChromeMainDelegate chrome_main_delegate;
-      *return_code = content::ContentMain(GetModuleHandle(NULL),
-                                          &sandbox_info,
-                                          &chrome_main_delegate);
-      return true;
-    }
-#elif defined(OS_LINUX)
-    if (launch_chrome) {
-      ChromeMainDelegate chrome_main_delegate;
-      *return_code = content::ContentMain(argc,
-                                          const_cast<const char**>(argv),
-                                          &chrome_main_delegate);
-      return true;
-    }
-#endif  // defined(OS_WIN)
-
-    return false;
-  }
-
   virtual int RunTestSuite(int argc, char** argv) OVERRIDE {
     return ChromeTestSuite(argc, argv).Run();
   }
 
   virtual bool AdjustChildProcessCommandLine(
-      CommandLine* command_line) OVERRIDE {
+      CommandLine* command_line, const FilePath& temp_data_dir) OVERRIDE {
     CommandLine new_command_line(command_line->GetProgram());
     CommandLine::SwitchMap switches = command_line->GetSwitches();
 
@@ -90,20 +60,7 @@ class ChromeTestLauncherDelegate : public test_launcher::TestLauncherDelegate {
       new_command_line.AppendSwitchNative((*iter).first, (*iter).second);
     }
 
-    // Clean up previous temp dir.
-    // We Take() the directory and delete it ourselves so that the next
-    // CreateUniqueTempDir will succeed even if deleting the directory fails.
-    if (!temp_dir_.path().empty() &&
-        !file_util::DieFileDie(temp_dir_.Take(), true)) {
-      LOG(ERROR) << "Error deleting previous temp profile directory";
-    }
-
-    // Create a new user data dir and pass it to the child.
-    if (!temp_dir_.CreateUniqueTempDir() || !temp_dir_.IsValid()) {
-      LOG(ERROR) << "Error creating temp profile directory";
-      return false;
-    }
-    new_command_line.AppendSwitchPath(switches::kUserDataDir, temp_dir_.path());
+    new_command_line.AppendSwitchPath(switches::kUserDataDir, temp_data_dir);
 
     // file:// access for ChromeOS.
     new_command_line.AppendSwitch(switches::kAllowFileAccess);
@@ -132,9 +89,19 @@ class ChromeTestLauncherDelegate : public test_launcher::TestLauncherDelegate {
 #endif
   }
 
- private:
-  ScopedTempDir temp_dir_;
+ protected:
+  virtual content::ContentMainDelegate* CreateContentMainDelegate() OVERRIDE {
+#if defined(OS_WIN) || defined (OS_LINUX)
+    return new ChromeMainDelegate();
+#else
+    // This delegate is only guaranteed to link on linux and windows, so just
+    // bail out if we are on any other platform.
+    NOTREACHED();
+    return NULL;
+#endif
+  }
 
+ private:
 #if !defined(USE_AURA) && defined(TOOLKIT_VIEWS)
   std::stack<linked_ptr<views::AcceleratorHandler> > handlers_;
 #endif
@@ -143,9 +110,14 @@ class ChromeTestLauncherDelegate : public test_launcher::TestLauncherDelegate {
 };
 
 int main(int argc, char** argv) {
+// http://crbug.com/163931 Disabled until browser_tests ready on Linux Aura.
+#if defined(OS_LINUX) && defined(USE_AURA) && !defined(OS_CHROMEOS)
+  return 0;
+#endif
+
 #if defined(OS_MACOSX)
   chrome_browser_application_mac::RegisterBrowserCrApp();
 #endif
   ChromeTestLauncherDelegate launcher_delegate;
-  return test_launcher::LaunchTests(&launcher_delegate, argc, argv);
+  return content::LaunchTests(&launcher_delegate, argc, argv);
 }

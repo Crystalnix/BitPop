@@ -9,6 +9,13 @@
 void ConstrainedWindow::FocusConstrainedWindow() {
 }
 
+void ConstrainedWindow::PulseConstrainedWindow() {
+}
+
+bool ConstrainedWindow::CanShowConstrainedWindow() {
+  return true;
+}
+
 gfx::NativeWindow ConstrainedWindow::GetNativeWindow() {
   NOTREACHED();
   return NULL;

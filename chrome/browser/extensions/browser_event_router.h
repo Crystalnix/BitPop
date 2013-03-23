@@ -35,37 +35,37 @@ class BrowserEventRouter : public TabStripModelObserver,
   explicit BrowserEventRouter(Profile* profile);
   virtual ~BrowserEventRouter();
 
-  // Must be called once. Subsequent calls have no effect.
-  void Init();
-
   // chrome::BrowserListObserver
   virtual void OnBrowserAdded(Browser* browser) OVERRIDE;
   virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
   virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE;
 
   // TabStripModelObserver
-  virtual void TabInsertedAt(TabContents* contents, int index,
+  virtual void TabInsertedAt(content::WebContents* contents, int index,
                              bool active) OVERRIDE;
   virtual void TabClosingAt(TabStripModel* tab_strip_model,
-                            TabContents* contents,
+                            content::WebContents* contents,
                             int index) OVERRIDE;
-  virtual void TabDetachedAt(TabContents* contents, int index) OVERRIDE;
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void TabDetachedAt(content::WebContents* contents,
+                             int index) OVERRIDE;
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
   virtual void TabSelectionChanged(
       TabStripModel* tab_strip_model,
       const TabStripSelectionModel& old_model) OVERRIDE;
-  virtual void TabMoved(TabContents* contents, int from_index,
+  virtual void TabMoved(content::WebContents* contents,
+                        int from_index,
                         int to_index) OVERRIDE;
-  virtual void TabChangedAt(TabContents* contents, int index,
+  virtual void TabChangedAt(content::WebContents* contents,
+                            int index,
                             TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
-  virtual void TabPinnedStateChanged(TabContents* contents,
+  virtual void TabPinnedStateChanged(content::WebContents* contents,
                                      int index) OVERRIDE;
   virtual void TabStripEmpty() OVERRIDE;
 
@@ -85,11 +85,6 @@ class BrowserEventRouter : public TabStripModelObserver,
   void BrowserActionExecuted(const ExtensionAction& browser_action,
                              Browser* browser);
 
-  // A keyboard shortcut resulted in an extension command.
-  void CommandExecuted(Profile* profile,
-                       const std::string& extension_id,
-                       const std::string& command);
-
   // content::NotificationObserver.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -107,26 +102,20 @@ class BrowserEventRouter : public TabStripModelObserver,
   // so we avoid duplication by dropping events destined for other profiles.
   void DispatchEvent(Profile* profile,
                      const char* event_name,
-                     const std::string& json_args,
+                     scoped_ptr<base::ListValue> args,
                      EventRouter::UserGestureState user_gesture);
 
   void DispatchEventToExtension(Profile* profile,
                                 const std::string& extension_id,
                                 const char* event_name,
-                                const std::string& json_args,
+                                scoped_ptr<base::ListValue> event_args,
                                 EventRouter::UserGestureState user_gesture);
 
-  void DispatchEventsAcrossIncognito(Profile* profile,
-                                     const char* event_name,
-                                     const std::string& json_args,
-                                     const std::string& cross_incognito_args);
-
-  void DispatchEventWithTab(Profile* profile,
-                            const std::string& extension_id,
-                            const char* event_name,
-                            const content::WebContents* web_contents,
-                            bool active,
-                            EventRouter::UserGestureState user_gesture);
+  void DispatchEventsAcrossIncognito(
+      Profile* profile,
+      const char* event_name,
+      scoped_ptr<base::ListValue> event_args,
+      scoped_ptr<base::ListValue> cross_incognito_args);
 
   void DispatchSimpleBrowserEvent(Profile* profile,
                                   const int window_id,
@@ -159,8 +148,6 @@ class BrowserEventRouter : public TabStripModelObserver,
   void UnregisterForTabNotifications(content::WebContents* contents);
 
   content::NotificationRegistrar registrar_;
-
-  bool initialized_;
 
   // Maintain some information about known tabs, so we can:
   //
@@ -205,7 +192,7 @@ class BrowserEventRouter : public TabStripModelObserver,
   // event to send based on what the extension wants.
   void ExtensionActionExecuted(Profile* profile,
                                const ExtensionAction& extension_action,
-                               TabContents* tab_contents);
+                               content::WebContents* web_contents);
 
   std::map<int, TabEntry> tab_entries_;
 

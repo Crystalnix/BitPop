@@ -5,7 +5,6 @@
 #include "content/test/content_browser_test.h"
 
 #include "base/command_line.h"
-#include "base/debug/stack_trace.h"
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
@@ -27,6 +26,11 @@
 
 namespace content {
 
+IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MANUAL_ShouldntRun) {
+  // Ensures that tests with MANUAL_ prefix don't run automatically.
+  ASSERT_TRUE(false);
+}
+
 ContentBrowserTest::ContentBrowserTest() {
 #if defined(OS_MACOSX)
   // See comment in InProcessBrowserTest::InProcessBrowserTest().
@@ -37,7 +41,7 @@ ContentBrowserTest::ContentBrowserTest() {
       FILE_PATH_LITERAL("Content Shell.app/Contents/MacOS/Content Shell"));
   CHECK(PathService::Override(base::FILE_EXE, content_shell_path));
 #endif
-  CreateTestServer("content/test/data");
+  CreateTestServer(FilePath(FILE_PATH_LITERAL("content/test/data")));
 }
 
 ContentBrowserTest::~ContentBrowserTest() {
@@ -50,19 +54,13 @@ void ContentBrowserTest::SetUp() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   command_line->AppendSwitch(switches::kContentBrowserTest);
 
-#if defined(OS_LINUX)
-  // http://crbug.com/139209
-  command_line->AppendSwitch(switches::kDisableGpuProcessPrelaunch);
-#endif
-
   SetUpCommandLine(command_line);
 
   // Single-process mode is not set in BrowserMain, so process it explicitly,
   // and set up renderer.
   if (command_line->HasSwitch(switches::kSingleProcess)) {
-    RenderProcessHost::set_run_renderer_in_process(true);
     single_process_renderer_client_.reset(new ShellContentRendererClient);
-    content::GetContentClient()->set_renderer_for_testing(
+    GetContentClient()->set_renderer_for_testing(
         single_process_renderer_client_.get());
   }
 
@@ -78,6 +76,12 @@ void ContentBrowserTest::SetUp() {
                                  subprocess_path);
 #endif
 
+  // NOTE: should be kept in sync with
+  // chrome/browser/resources/software_rendering_list.json
+#if !defined(OS_WIN) && !defined(OS_CHROMEOS)
+  command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
+#endif
+
   BrowserTestBase::SetUp();
 }
 
@@ -87,23 +91,11 @@ void ContentBrowserTest::TearDown() {
   shell_main_delegate_.reset();
 }
 
-#if defined(OS_POSIX)
-// On SIGTERM (sent by the runner on timeouts), dump a stack trace (to make
-// debugging easier) and also exit with a known error code (so that the test
-// framework considers this a failure -- http://crbug.com/57578).
-static void DumpStackTraceSignalHandler(int signal) {
-  base::debug::StackTrace().PrintBacktrace();
-  _exit(128 + signal);
-}
-#endif  // defined(OS_POSIX)
-
 void ContentBrowserTest::RunTestOnMainThreadLoop() {
-  CHECK_EQ(Shell::windows().size(), 1u);
-  shell_ = Shell::windows()[0];
-
-#if defined(OS_POSIX)
-  signal(SIGTERM, DumpStackTraceSignalHandler);
-#endif  // defined(OS_POSIX)
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    CHECK_EQ(Shell::windows().size(), 1u);
+    shell_ = Shell::windows()[0];
+  }
 
 #if defined(OS_MACOSX)
   // On Mac, without the following autorelease pool, code which is directly
@@ -117,7 +109,7 @@ void ContentBrowserTest::RunTestOnMainThreadLoop() {
 #endif
 
   // Pump startup related events.
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
 
 #if defined(OS_MACOSX)
   pool.Recycle();

@@ -4,19 +4,28 @@
 
 #include "chrome/browser/debugger/browser_list_tabcontents_provider.h"
 
+#include "base/path_service.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
 #include "grit/devtools_discovery_page_resources.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::DevToolsHttpHandlerDelegate;
+using content::RenderViewHost;
 
-BrowserListTabContentsProvider::BrowserListTabContentsProvider() {
+BrowserListTabContentsProvider::BrowserListTabContentsProvider(
+    Profile* profile)
+    : profile_(profile) {
 }
 
 BrowserListTabContentsProvider::~BrowserListTabContentsProvider() {
@@ -34,24 +43,54 @@ std::string BrowserListTabContentsProvider::GetDiscoveryPageHTML() {
     if (ts) {
       // TopSites updates itself after a delay. Ask TopSites to update itself
       // when we're about to show the remote debugging landing page.
-      content::BrowserThread::PostTask(
-          content::BrowserThread::UI,
-          FROM_HERE,
-          base::Bind(&history::TopSites::SyncWithHistory,
-                     base::Unretained(ts)));
+      ts->SyncWithHistory();
     }
   }
   return ResourceBundle::GetSharedInstance().GetRawDataResource(
-      IDR_DEVTOOLS_DISCOVERY_PAGE_HTML,
-      ui::SCALE_FACTOR_NONE).as_string();
+      IDR_DEVTOOLS_DISCOVERY_PAGE_HTML).as_string();
 }
 
 bool BrowserListTabContentsProvider::BundlesFrontendResources() {
-  // We'd like front-end to be served from the WebUI via proxy, hence
-  // pretend we don't have it bundled.
-  return false;
+  return true;
 }
 
-std::string BrowserListTabContentsProvider::GetFrontendResourcesBaseURL() {
-  return "chrome-devtools://devtools/";
+FilePath BrowserListTabContentsProvider::GetDebugFrontendDir() {
+#if defined(DEBUG_DEVTOOLS)
+  FilePath inspector_dir;
+  PathService::Get(chrome::DIR_INSPECTOR, &inspector_dir);
+  return inspector_dir;
+#else
+  return FilePath();
+#endif
+}
+
+std::string BrowserListTabContentsProvider::GetPageThumbnailData(
+    const GURL& url) {
+  for (BrowserList::const_iterator it = BrowserList::begin(),
+       end = BrowserList::end(); it != end; ++it) {
+    Profile* profile = (*it)->profile();
+    history::TopSites* top_sites = profile->GetTopSites();
+    if (!top_sites)
+      continue;
+    scoped_refptr<base::RefCountedMemory> data;
+    if (top_sites->GetPageThumbnail(url, &data))
+      return std::string(
+          reinterpret_cast<const char*>(data->front()), data->size());
+  }
+
+  return std::string();
+}
+
+RenderViewHost* BrowserListTabContentsProvider::CreateNewTarget() {
+  if (BrowserList::empty())
+    chrome::NewEmptyWindow(profile_);
+
+  if (BrowserList::empty())
+    return NULL;
+
+  content::WebContents* web_contents = chrome::AddSelectedTabWithURL(
+      *BrowserList::begin(),
+      GURL(chrome::kAboutBlankURL),
+      content::PAGE_TRANSITION_LINK);
+  return web_contents->GetRenderViewHost();
 }

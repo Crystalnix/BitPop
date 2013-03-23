@@ -9,9 +9,8 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/prefs/public/pref_member.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/prefs/pref_member.h"
-#include "content/public/browser/notification_observer.h"
 
 class PrefService;
 
@@ -24,7 +23,7 @@ class InputMethodManager;
 // is first initialized, it will initialize the OS settings to what's stored in
 // the preferences. These include touchpad settings, etc.
 // When the preferences change, we change the settings to reflect the new value.
-class Preferences : public content::NotificationObserver {
+class Preferences {
  public:
   Preferences();
   explicit Preferences(
@@ -37,17 +36,15 @@ class Preferences : public content::NotificationObserver {
   // This method will initialize Chrome OS settings to values in user prefs.
   void Init(PrefService* prefs);
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   void InitUserPrefsForTesting(PrefService* prefs);
   void SetInputMethodListForTesting();
 
  private:
   // Initializes all member prefs.
   void InitUserPrefs(PrefService* prefs);
+
+  // Callback method for preference changes.
+  void OnPreferenceChanged(const std::string& pref_name);
 
   // This will set the OS settings when the preference changes.
   // If this method is called with NULL, it will set all OS settings to what's
@@ -98,24 +95,30 @@ class Preferences : public content::NotificationObserver {
   input_method::InputMethodManager* input_method_manager_;
 
   BooleanPrefMember tap_to_click_enabled_;
+  BooleanPrefMember tap_dragging_enabled_;
   BooleanPrefMember three_finger_click_enabled_;
+  BooleanPrefMember three_finger_swipe_enabled_;
   BooleanPrefMember natural_scroll_;
   BooleanPrefMember vert_edge_scroll_enabled_;
   BooleanPrefMember accessibility_enabled_;
+  BooleanPrefMember screen_magnifier_enabled_;
+  DoublePrefMember screen_magnifier_scale_;
   IntegerPrefMember speed_factor_;
   IntegerPrefMember mouse_sensitivity_;
   IntegerPrefMember touchpad_sensitivity_;
   BooleanPrefMember primary_mouse_button_right_;
   BooleanPrefMember use_24hour_clock_;
-  BooleanPrefMember disable_gdata_;
-  BooleanPrefMember disable_gdata_over_cellular_;
-  BooleanPrefMember disable_gdata_hosted_files_;
+  BooleanPrefMember disable_drive_;
+  BooleanPrefMember disable_drive_over_cellular_;
+  BooleanPrefMember disable_drive_hosted_files_;
+  FilePathPrefMember download_default_directory_;
 
   // Input method preferences.
   StringPrefMember preferred_languages_;
   StringPrefMember preload_engines_;
   StringPrefMember current_input_method_;
   StringPrefMember previous_input_method_;
+  StringPrefMember filtered_extension_imes_;
 
   BooleanPrefMember chewing_boolean_prefs_[
       language_prefs::kNumChewingBooleanPrefs];
@@ -143,8 +146,6 @@ class Preferences : public content::NotificationObserver {
   IntegerPrefMember xkb_auto_repeat_interval_pref_;
 
   BooleanPrefMember enable_screen_lock_;
-
-  IntegerPrefMember secondary_display_layout_;
 
   BooleanPrefMember enable_drm_;
 

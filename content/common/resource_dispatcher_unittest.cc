@@ -13,6 +13,7 @@
 #include "content/common/resource_dispatcher.h"
 #include "content/common/resource_messages.h"
 #include "content/public/common/resource_response.h"
+#include "net/base/net_errors.h"
 #include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -68,9 +69,10 @@ class TestRequestCallback : public ResourceLoaderBridge::Peer {
   }
 
   virtual void OnCompletedRequest(
-      const net::URLRequestStatus& status,
+      int error_code,
+      bool was_ignored_by_handler,
       const std::string& security_info,
-      const base::TimeTicks& completion_time) OVERRIDE {
+      const base::TimeTicks& completion_time) {
     EXPECT_FALSE(complete_);
     complete_ = true;
   }
@@ -132,12 +134,11 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
       base::SharedMemoryHandle dup_handle;
       EXPECT_TRUE(shared_mem.GiveToProcess(
           base::Process::Current().handle(), &dup_handle));
-      dispatcher_->OnReceivedData(
-          message_queue_[0],
-          request_id,
-          dup_handle,
-          test_page_contents_len,
-          test_page_contents_len);
+      dispatcher_->OnSetDataBuffer(message_queue_[0], request_id, dup_handle,
+                                   test_page_contents_len);
+      dispatcher_->OnReceivedData(message_queue_[0], request_id, 0,
+                                  test_page_contents_len,
+                                  test_page_contents_len);
 
       message_queue_.erase(message_queue_.begin());
 
@@ -246,7 +247,7 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
     set_defer_loading(true);
 
     ResourceResponseHead response_head;
-    response_head.status.set_status(net::URLRequestStatus::SUCCESS);
+    response_head.error_code = net::OK;
 
     dispatcher_->OnMessageReceived(
         ResourceMsg_ReceivedResponse(0, 0, response_head));
@@ -258,7 +259,9 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
                                               &duplicated_handle));
 
     dispatcher_->OnMessageReceived(
-        ResourceMsg_DataReceived(0, 0, duplicated_handle, 100, 100));
+        ResourceMsg_SetDataBuffer(0, 0, duplicated_handle, 100));
+    dispatcher_->OnMessageReceived(
+        ResourceMsg_DataReceived(0, 0, 0, 100, 100));
 
     set_defer_loading(false);
   }
@@ -292,9 +295,10 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
   }
 
   virtual void OnCompletedRequest(
-      const net::URLRequestStatus& status,
+      int error_code,
+      bool was_ignored_by_handler,
       const std::string& security_info,
-      const base::TimeTicks& completion_time) OVERRIDE {
+      const base::TimeTicks& completion_time) {
   }
 
  protected:
@@ -333,7 +337,7 @@ TEST_F(DeferredResourceLoadingTest, DeferredLoadTest) {
   InitMessages();
 
   // Dispatch deferred messages.
-  message_loop.RunAllPending();
+  message_loop.RunUntilIdle();
   delete bridge;
 }
 
@@ -378,7 +382,8 @@ class TimeConversionTest : public ResourceDispatcherTest,
   }
 
   virtual void OnCompletedRequest(
-      const net::URLRequestStatus& status,
+      int error_code,
+      bool was_ignored_by_handler,
       const std::string& security_info,
       const base::TimeTicks& completion_time) OVERRIDE {
   }
@@ -392,7 +397,7 @@ class TimeConversionTest : public ResourceDispatcherTest,
 // TODO(simonjam): Enable this when 10829031 lands.
 TEST_F(TimeConversionTest, DISABLED_ProperlyInitialized) {
   ResourceResponseHead response_head;
-  response_head.status.set_status(net::URLRequestStatus::SUCCESS);
+  response_head.error_code = net::OK;
   response_head.request_start = base::TimeTicks::FromInternalValue(5);
   response_head.response_start = base::TimeTicks::FromInternalValue(15);
   response_head.load_timing.base_time = base::Time::Now();
@@ -409,7 +414,7 @@ TEST_F(TimeConversionTest, DISABLED_ProperlyInitialized) {
 
 TEST_F(TimeConversionTest, PartiallyInitialized) {
   ResourceResponseHead response_head;
-  response_head.status.set_status(net::URLRequestStatus::SUCCESS);
+  response_head.error_code = net::OK;
   response_head.request_start = base::TimeTicks::FromInternalValue(5);
   response_head.response_start = base::TimeTicks::FromInternalValue(15);
 
@@ -421,7 +426,7 @@ TEST_F(TimeConversionTest, PartiallyInitialized) {
 
 TEST_F(TimeConversionTest, NotInitialized) {
   ResourceResponseHead response_head;
-  response_head.status.set_status(net::URLRequestStatus::SUCCESS);
+  response_head.error_code = net::OK;
 
   PerformTest(response_head);
 

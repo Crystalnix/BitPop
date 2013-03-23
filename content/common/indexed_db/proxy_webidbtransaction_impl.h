@@ -14,22 +14,26 @@ class WebIDBTransactionCallbacks;
 class WebString;
 }
 
+namespace content {
+
 class RendererWebIDBTransactionImpl : public WebKit::WebIDBTransaction {
  public:
-  explicit RendererWebIDBTransactionImpl(int32 idb_transaction_id);
+  explicit RendererWebIDBTransactionImpl(int32 ipc_transaction_id);
   virtual ~RendererWebIDBTransactionImpl();
 
-  virtual WebKit::WebIDBObjectStore* objectStore(const WebKit::WebString& name,
+  virtual WebKit::WebIDBObjectStore* objectStore(long long object_store_id,
                                                  WebKit::WebExceptionCode&);
   virtual void commit();
   virtual void abort();
   virtual void didCompleteTaskEvents();
   virtual void setCallbacks(WebKit::WebIDBTransactionCallbacks*);
 
-  int id() const { return idb_transaction_id_; }
+  int ipc_id() const { return ipc_transaction_id_; }
 
  private:
-  int32 idb_transaction_id_;
+  int32 ipc_transaction_id_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_INDEXED_DB_PROXY_WEBIDBTRANSACTION_IMPL_H_

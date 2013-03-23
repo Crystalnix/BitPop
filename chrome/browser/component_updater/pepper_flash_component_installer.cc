@@ -18,11 +18,12 @@
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/version.h"
 #include "build/build_config.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
-#include "chrome/browser/plugin_prefs.h"
+#include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/common/pepper_flash.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -70,10 +71,6 @@ const char kPepperFlashArch[] =
     "???";
 #endif
 
-// The Pepper Flash plugins are in a directory with this name.
-const FilePath::CharType kPepperFlashBaseDirectory[] =
-    FILE_PATH_LITERAL("PepperFlash");
-
 // If we don't have a Pepper Flash component, this is the version we claim.
 const char kNullVersion[] = "0.0.0.0";
 
@@ -81,10 +78,11 @@ const char kNullVersion[] = "0.0.0.0";
 // <profile>\AppData\Local\Google\Chrome\User Data\PepperFlash\.
 FilePath GetPepperFlashBaseDirectory() {
   FilePath result;
-  PathService::Get(chrome::DIR_USER_DATA, &result);
-  return result.Append(kPepperFlashBaseDirectory);
+  PathService::Get(chrome::DIR_COMPONENT_UPDATED_PEPPER_FLASH_PLUGIN, &result);
+  return result;
 }
 
+#if defined(GOOGLE_CHROME_BUILD)
 // Pepper Flash plugins have the version encoded in the path itself
 // so we need to enumerate the directories to find the full path.
 // On success, |latest_dir| returns something like:
@@ -119,6 +117,7 @@ bool GetPepperFlashDirectory(FilePath* latest_dir,
   }
   return found;
 }
+#endif
 
 // Returns true if the Pepper |interface_name| is implemented  by this browser.
 // It does not check if the interface is proxied.
@@ -165,21 +164,39 @@ bool MakePepperFlashPluginInfo(const FilePath& flash_path,
   return true;
 }
 
-// If it is a |fresh_install| we enable or disable it by default in some
-// configurations. See IsPepperFlashEnabledByDefault() for more information.
+bool IsPepperFlash(const webkit::WebPluginInfo& plugin) {
+  // We try to recognize Pepper Flash by the following criteria:
+  // * It is a Pepper plug-in.
+  // * It has the special Flash permissions.
+  return webkit::IsPepperPlugin(plugin) &&
+         (plugin.pepper_permissions & ppapi::PERMISSION_FLASH);
+}
+
 void RegisterPepperFlashWithChrome(const FilePath& path,
-                                   const Version& version,
-                                   bool fresh_install) {
+                                   const Version& version) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   content::PepperPluginInfo plugin_info;
   if (!MakePepperFlashPluginInfo(path, version, true, &plugin_info))
     return;
-  bool enable_by_default = IsPepperFlashEnabledByDefault();
-  if (fresh_install)
-    PluginPrefs::EnablePluginGlobally(enable_by_default, plugin_info.path,
-                                      base::Bind(&base::DoNothing));
 
-  bool add_to_front = enable_by_default;
+  std::vector<webkit::WebPluginInfo> plugins;
+  PluginService::GetInstance()->GetInternalPlugins(&plugins);
+  for (std::vector<webkit::WebPluginInfo>::const_iterator it = plugins.begin();
+       it != plugins.end(); ++it) {
+    if (!IsPepperFlash(*it))
+      continue;
+
+    // If the version we're trying to register is older than the existing one,
+    // don't do it.
+    if (version.IsOlderThan(UTF16ToUTF8(it->version)))
+      return;
+
+    // If the version is newer, remove the old one first.
+    PluginService::GetInstance()->UnregisterInternalPlugin(it->path);
+    break;
+  }
+
+  bool add_to_front = IsPepperFlashEnabledByDefault();
   PluginService::GetInstance()->RegisterInternalPlugin(
       plugin_info.ToWebPluginInfo(), add_to_front);
   PluginService::GetInstance()->RefreshPlugins();
@@ -267,7 +284,7 @@ bool PepperFlashComponentInstaller::Install(base::DictionaryValue* manifest,
   path = path.Append(chrome::kPepperFlashPluginFilename);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&RegisterPepperFlashWithChrome, path, version, true));
+      base::Bind(&RegisterPepperFlashWithChrome, path, version));
   return true;
 }
 
@@ -312,6 +329,7 @@ bool CheckPepperFlashManifest(base::DictionaryValue* manifest,
 
 namespace {
 
+#if defined(GOOGLE_CHROME_BUILD)
 void FinishPepperFlashUpdateRegistration(ComponentUpdateService* cus,
                                          const Version& version) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -342,7 +360,7 @@ void StartPepperFlashUpdateRegistration(ComponentUpdateService* cus) {
     if (file_util::PathExists(path)) {
       BrowserThread::PostTask(
           BrowserThread::UI, FROM_HERE,
-          base::Bind(&RegisterPepperFlashWithChrome, path, version, false));
+          base::Bind(&RegisterPepperFlashWithChrome, path, version));
     } else {
       version = Version(kNullVersion);
     }
@@ -358,6 +376,7 @@ void StartPepperFlashUpdateRegistration(ComponentUpdateService* cus) {
     file_util::Delete(*iter, true);
   }
 }
+#endif  // defined(GOOGLE_CHROME_BUILD)
 
 }  // namespace
 

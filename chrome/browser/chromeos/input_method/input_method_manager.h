@@ -7,25 +7,27 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
-#include "base/logging.h"  // for NOTIMPLEMENTED()
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/input_method/input_method_config.h"
 #include "chrome/browser/chromeos/input_method/input_method_descriptor.h"
 #include "chrome/browser/chromeos/input_method/input_method_property.h"
-#include "chrome/browser/chromeos/input_method/input_method_util.h"
 
 namespace ui {
 class Accelerator;
 }  // namespace ui
 
 namespace chromeos {
+class InputMethodEngine;
 namespace input_method {
 
+class InputMethodUtil;
 class XKeyboard;
 
 // This class manages input methodshandles.  Classes can add themselves as
 // observers. Clients can get an instance of this library class by:
-// InputMethodManager::GetInstance().
+// GetInputMethodManager().
 class InputMethodManager {
  public:
   enum State {
@@ -71,17 +73,15 @@ class InputMethodManager {
   virtual void RemoveCandidateWindowObserver(
       CandidateWindowObserver* observer) = 0;
 
-  // Sets the current browser status.
-  virtual void SetState(State new_state) = 0;
-
   // Returns all input methods that are supported, including ones not active.
-  // Caller has to delete the returned list. This function never returns NULL.
-  // Note that input method extensions are NOT included in the result.
-  virtual InputMethodDescriptors* GetSupportedInputMethods() const = 0;
+  // This function never returns NULL. Note that input method extensions are NOT
+  // included in the result.
+  virtual scoped_ptr<InputMethodDescriptors>
+      GetSupportedInputMethods() const = 0;
 
   // Returns the list of input methods we can select (i.e. active) including
-  // extension input methods. Caller has to delete the returned list.
-  virtual InputMethodDescriptors* GetActiveInputMethods() const = 0;
+  // extension input methods.
+  virtual scoped_ptr<InputMethodDescriptors> GetActiveInputMethods() const = 0;
 
   // Returns the number of active input methods including extension input
   // methods.
@@ -116,14 +116,22 @@ class InputMethodManager {
                                     const std::string& config_name,
                                     const InputMethodConfigValue& value) = 0;
 
-  // Adds an input method extension.
+  // Adds an input method extension. This function does not takes ownership of
+  // |instance|.
   virtual void AddInputMethodExtension(const std::string& id,
                                        const std::string& name,
                                        const std::vector<std::string>& layouts,
-                                       const std::string& language) = 0;
+                                       const std::string& language,
+                                       InputMethodEngine* instance) = 0;
 
   // Removes an input method extension.
   virtual void RemoveInputMethodExtension(const std::string& id) = 0;
+
+  // Returns a list of descriptors for all Input Method Extensions.
+  virtual void GetInputMethodExtensions(InputMethodDescriptors* result) = 0;
+
+  // Sets the list of extension IME ids which should not be enabled.
+  virtual void SetFilteredExtensionImes(std::vector<std::string>* ids) = 0;
 
   // Gets the descriptor of the input method which is currently selected.
   virtual InputMethodDescriptor GetCurrentInputMethod() const = 0;
@@ -147,24 +155,6 @@ class InputMethodManager {
   // Switches to an input method (or keyboard layout) which is associated with
   // the |accelerator|.
   virtual bool SwitchInputMethod(const ui::Accelerator& accelerator) = 0;
-
-  // Sets the global instance. Must be called before any calls to GetInstance().
-  // We explicitly initialize and shut down the global object, rather than
-  // making it a Singleton, to ensure clean startup and shutdown.
-  static void Initialize();
-
-  // Similar to Initialize(), but can inject an alternative
-  // InputMethodManager such as MockInputMethodManager for testing.
-  // The injected object will be owned by the internal pointer and deleted
-  // by Shutdown().
-  static void InitializeForTesting(InputMethodManager* mock_manager);
-
-  // Destroys the global instance.
-  static void Shutdown();
-
-  // Gets the global instance. Initialize() or InitializeForTesting() must be
-  // called first.
-  static InputMethodManager* GetInstance();
 };
 
 }  // namespace input_method

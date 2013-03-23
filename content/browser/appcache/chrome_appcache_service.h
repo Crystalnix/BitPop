@@ -16,9 +16,12 @@
 
 class FilePath;
 
+namespace net {
+class URLRequestContextGetter;
+}
+
 namespace content {
 class ResourceContext;
-}
 
 struct ChromeAppCacheServiceDeleter;
 
@@ -43,7 +46,8 @@ class CONTENT_EXPORT ChromeAppCacheService
 
   void InitializeOnIOThread(
       const FilePath& cache_path,  // may be empty to use in-memory structures
-      content::ResourceContext* resource_context,
+      ResourceContext* resource_context,
+      net::URLRequestContextGetter* request_context_getter,
       scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy);
 
   // AppCachePolicy overrides
@@ -63,7 +67,7 @@ class CONTENT_EXPORT ChromeAppCacheService
 
   void DeleteOnCorrectThread() const;
 
-  content::ResourceContext* resource_context_;
+  ResourceContext* resource_context_;
   FilePath cache_path_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeAppCacheService);
@@ -74,5 +78,7 @@ struct ChromeAppCacheServiceDeleter {
     service->DeleteOnCorrectThread();
   }
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_APPCACHE_CHROME_APPCACHE_SERVICE_H_

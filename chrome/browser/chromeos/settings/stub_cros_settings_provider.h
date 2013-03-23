@@ -7,8 +7,8 @@
 
 #include <string>
 
+#include "base/prefs/pref_value_map.h"
 #include "chrome/browser/chromeos/settings/cros_settings_provider.h"
-#include "chrome/browser/prefs/pref_value_map.h"
 
 namespace chromeos {
 
@@ -26,7 +26,6 @@ class StubCrosSettingsProvider : public CrosSettingsProvider {
   virtual TrustedStatus PrepareTrustedValues(
       const base::Closure& callback) OVERRIDE;
   virtual bool HandlesSetting(const std::string& path) const OVERRIDE;
-  virtual void Reload() OVERRIDE;
 
  private:
   // CrosSettingsProvider implementation:

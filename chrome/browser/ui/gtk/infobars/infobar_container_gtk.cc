@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "base/message_loop.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
+#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
@@ -22,9 +22,11 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_utils_gtk.h"
 
-InfoBarContainerGtk::InfoBarContainerGtk(InfoBarContainer::Delegate* delegate,
-                                         Profile* profile)
-    : InfoBarContainer(delegate),
+InfoBarContainerGtk::InfoBarContainerGtk(
+    InfoBarContainer::Delegate* delegate,
+    chrome::search::SearchModel* search_model,
+    Profile* profile)
+    : InfoBarContainer(delegate, search_model),
       profile_(profile),
       container_(gtk_vbox_new(FALSE, 0)) {
   gtk_widget_show(widget());
@@ -177,12 +179,14 @@ void InfoBarContainerGtk::PaintArrowOn(GtkWidget* widget,
   grad_colors[0] = source->ConvertGetColor(&InfoBarGtk::GetTopColor);
   grad_colors[1] = source->ConvertGetColor(&InfoBarGtk::GetBottomColor);
 
-  SkShader* gradient_shader = SkGradientShader::CreateLinear(
-      grad_points, grad_colors, NULL, 2, SkShader::kMirror_TileMode);
-  paint.setShader(gradient_shader);
-  gradient_shader->unref();
+  skia::RefPtr<SkShader> gradient_shader = skia::AdoptRef(
+      SkGradientShader::CreateLinear(
+          grad_points, grad_colors, NULL, 2, SkShader::kMirror_TileMode));
+  paint.setShader(gradient_shader.get());
 
-  skia::PlatformCanvasPaint canvas(expose, false);
+  gfx::CanvasSkiaPaint canvas_paint(expose, false);
+  SkCanvas& canvas = *canvas_paint.sk_canvas();
+
   canvas.drawPath(path, paint);
 
   paint.setShader(NULL);

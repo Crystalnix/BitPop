@@ -31,9 +31,8 @@
 
 using WebKit::WebDragOperation;
 using WebKit::WebDragOperationsMask;
-using content::RenderWidgetHost;
-using content::WebContents;
 
+namespace content {
 namespace {
 
 // Called when the mouse leaves the widget. We notify our delegate.
@@ -62,7 +61,7 @@ gboolean OnMouseScroll(GtkWidget* widget, GdkEventScroll* event,
     return FALSE;
   }
 
-  content::WebContentsDelegate* delegate = web_contents->GetDelegate();
+  WebContentsDelegate* delegate = web_contents->GetDelegate();
   if (!delegate)
     return FALSE;
 
@@ -77,8 +76,6 @@ gboolean OnMouseScroll(GtkWidget* widget, GdkEventScroll* event,
 
 }  // namespace
 
-namespace content {
-
 WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
@@ -90,7 +87,7 @@ WebContentsView* CreateWebContentsView(
 
 WebContentsViewGtk::WebContentsViewGtk(
     WebContentsImpl* web_contents,
-    content::WebContentsViewDelegate* delegate)
+    WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       expanded_(gtk_expanded_container_new()),
       delegate_(delegate) {
@@ -101,7 +98,7 @@ WebContentsViewGtk::WebContentsViewGtk(
                    G_CALLBACK(OnChildSizeRequestThunk), this);
 
   gtk_widget_show(expanded_.get());
-  drag_source_.reset(new content::WebDragSourceGtk(web_contents));
+  drag_source_.reset(new WebDragSourceGtk(web_contents));
 
   if (delegate_.get())
     delegate_->Initialize(expanded_.get(), &focus_store_);
@@ -111,7 +108,8 @@ WebContentsViewGtk::~WebContentsViewGtk() {
   expanded_.Destroy();
 }
 
-void WebContentsViewGtk::CreateView(const gfx::Size& initial_size) {
+void WebContentsViewGtk::CreateView(
+    const gfx::Size& initial_size, gfx::NativeView context) {
   requested_size_ = initial_size;
 }
 
@@ -143,7 +141,7 @@ RenderWidgetHostView* WebContentsViewGtk::CreateViewForWidget(
   InsertIntoContentArea(content_view);
 
   // Renderer target DnD.
-  drag_dest_.reset(new content::WebDragDestGtk(web_contents_, content_view));
+  drag_dest_.reset(new WebDragDestGtk(web_contents_, content_view));
 
   if (delegate_.get())
     drag_dest_->set_delegate(delegate_->GetDragDestDelegate());
@@ -213,7 +211,7 @@ void WebContentsViewGtk::SizeContents(const gfx::Size& size) {
     rwhv->SetSize(size);
 }
 
-void WebContentsViewGtk::RenderViewCreated(content::RenderViewHost* host) {
+void WebContentsViewGtk::RenderViewCreated(RenderViewHost* host) {
 }
 
 void WebContentsViewGtk::Focus() {
@@ -240,13 +238,6 @@ void WebContentsViewGtk::RestoreFocus() {
     gtk_widget_grab_focus(focus_store_.widget());
   else
     SetInitialFocus();
-}
-
-bool WebContentsViewGtk::IsDoingDrag() const {
-  return false;
-}
-
-void WebContentsViewGtk::CancelDragAndCloseTab() {
 }
 
 WebDropData* WebContentsViewGtk::GetDropData() const {
@@ -291,7 +282,7 @@ void WebContentsViewGtk::GotFocus() {
 void WebContentsViewGtk::TakeFocus(bool reverse) {
   if (!web_contents_->GetDelegate())
     return;
-  if (!web_contents_->GetDelegate()->TakeFocus(reverse)) {
+  if (!web_contents_->GetDelegate()->TakeFocus(web_contents_, reverse)) {
     gtk_widget_child_focus(GTK_WIDGET(GetTopLevelNativeWindow()),
         reverse ? GTK_DIR_TAB_BACKWARD : GTK_DIR_TAB_FORWARD);
   }
@@ -328,9 +319,10 @@ gboolean WebContentsViewGtk::OnFocus(GtkWidget* widget,
 }
 
 void WebContentsViewGtk::ShowContextMenu(
-    const content::ContextMenuParams& params) {
+    const ContextMenuParams& params,
+    ContextMenuSourceType type) {
   if (delegate_.get())
-    delegate_->ShowContextMenu(params);
+    delegate_->ShowContextMenu(params, type);
   else
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }
@@ -351,7 +343,8 @@ void WebContentsViewGtk::ShowPopupMenu(const gfx::Rect& bounds,
 void WebContentsViewGtk::StartDragging(const WebDropData& drop_data,
                                        WebDragOperationsMask ops,
                                        const gfx::ImageSkia& image,
-                                       const gfx::Point& image_offset) {
+                                       const gfx::Vector2d& image_offset,
+                                       const DragEventSourceInfo& event_info) {
   DCHECK(GetContentNativeView());
 
   RenderWidgetHostViewGtk* view_gtk = static_cast<RenderWidgetHostViewGtk*>(

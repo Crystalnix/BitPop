@@ -32,7 +32,9 @@ const int kMinUpdateIntervalSeconds = 5;
 GAIAInfoUpdateService::GAIAInfoUpdateService(Profile* profile)
     : profile_(profile) {
   PrefService* prefs = profile_->GetPrefs();
-  username_pref_.Init(prefs::kGoogleServicesUsername, prefs, this);
+  username_pref_.Init(prefs::kGoogleServicesUsername, prefs,
+                      base::Bind(&GAIAInfoUpdateService::OnUsernameChanged,
+                                 base::Unretained(this)));
 
   last_updated_ = base::Time::FromInternalValue(
       prefs->GetInt64(prefs::kProfileGAIAInfoUpdateTime));
@@ -76,11 +78,11 @@ bool GAIAInfoUpdateService::ShouldUseGAIAProfileInfo(Profile* profile) {
 }
 
 // static
-void GAIAInfoUpdateService::RegisterUserPrefs(PrefService* prefs) {
+void GAIAInfoUpdateService::RegisterUserPrefs(PrefServiceBase* prefs) {
   prefs->RegisterInt64Pref(
-      prefs::kProfileGAIAInfoUpdateTime, 0, PrefService::UNSYNCABLE_PREF);
+      prefs::kProfileGAIAInfoUpdateTime, 0, PrefServiceBase::UNSYNCABLE_PREF);
   prefs->RegisterStringPref(
-      prefs::kProfileGAIAInfoPictureURL, "", PrefService::UNSYNCABLE_PREF);
+      prefs::kProfileGAIAInfoPictureURL, "", PrefServiceBase::UNSYNCABLE_PREF);
 }
 
 bool GAIAInfoUpdateService::NeedsProfilePicture() const {
@@ -154,7 +156,8 @@ void GAIAInfoUpdateService::OnProfileDownloadSuccess(
 }
 
 void GAIAInfoUpdateService::OnProfileDownloadFailure(
-    ProfileDownloader* downloader) {
+    ProfileDownloader* downloader,
+    ProfileDownloaderDelegate::FailureReason reason) {
   profile_image_downloader_.reset();
 
   // Save the last updated time.
@@ -162,19 +165,6 @@ void GAIAInfoUpdateService::OnProfileDownloadFailure(
   profile_->GetPrefs()->SetInt64(prefs::kProfileGAIAInfoUpdateTime,
                                  last_updated_.ToInternalValue());
   ScheduleNextUpdate();
-}
-
-void GAIAInfoUpdateService::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_PREF_CHANGED) {
-    std::string* name = content::Details<std::string>(details).ptr();
-    if (prefs::kGoogleServicesUsername == *name)
-      OnUsernameChanged();
-  } else {
-    NOTREACHED();
-  }
 }
 
 void GAIAInfoUpdateService::OnUsernameChanged() {

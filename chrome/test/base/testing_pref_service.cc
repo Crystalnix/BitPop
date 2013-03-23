@@ -4,14 +4,14 @@
 
 #include "chrome/test/base/testing_pref_service.h"
 
+#include "base/prefs/default_pref_store.h"
+#include "base/prefs/testing_pref_store.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
-#include "chrome/browser/prefs/default_pref_store.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_notifier_impl.h"
 #include "chrome/browser/prefs/pref_value_store.h"
-#include "chrome/browser/prefs/testing_pref_store.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -85,7 +85,7 @@ void TestingPrefServiceBase::RemoveRecommendedPref(const char* path) {
 const Value* TestingPrefServiceBase::GetPref(TestingPrefStore* pref_store,
                                              const char* path) const {
   const Value* res;
-  return pref_store->GetValue(path, &res) == PrefStore::READ_OK ? res : NULL;
+  return pref_store->GetValue(path, &res) ? res : NULL;
 }
 
 void TestingPrefServiceBase::SetPref(TestingPrefStore* pref_store,

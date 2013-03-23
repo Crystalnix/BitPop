@@ -19,11 +19,20 @@
 #include "chrome/common/net/url_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "googleurl/src/gurl.h"
-#include "googleurl/src/url_parse.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/mac/keystone_glue.h"
+#elif defined(OS_CHROMEOS)
+#include "chrome/browser/google/google_util_chromeos.h"
+#endif
+
+#if defined(GOOGLE_CHROME_BUILD)
+#include "chrome/browser/google/linkdoctor_internal/linkdoctor_internal.h"
+#endif
+
+#ifndef LINKDOCTOR_SERVER_REQUEST_URL
+#define LINKDOCTOR_SERVER_REQUEST_URL ""
 #endif
 
 namespace {
@@ -46,12 +55,21 @@ bool HasQueryParameter(const std::string& str) {
   return false;
 }
 
+bool gUseMockLinkDoctorBaseURLForTesting = false;
+
 }  // anonymous namespace
 
 namespace google_util {
 
-const char kLinkDoctorBaseURL[] =
-    "http://linkhelp.clients.google.com/tbproxy/lh/fixurl";
+GURL LinkDoctorBaseURL() {
+  if (gUseMockLinkDoctorBaseURLForTesting)
+    return GURL("http://mock.linkdoctor.url/for?testing");
+  return GURL(LINKDOCTOR_SERVER_REQUEST_URL);
+}
+
+void SetMockLinkDoctorBaseURLForTesting() {
+  gUseMockLinkDoctorBaseURLForTesting = true;
+}
 
 BrandForTesting::BrandForTesting(const std::string& brand) : brand_(brand) {
   DCHECK(brand_for_testing == NULL);
@@ -124,6 +142,8 @@ bool GetBrand(std::string* brand) {
 
 #if defined(OS_MACOSX)
   brand->assign(keystone_glue::BrandCode());
+#elif defined(OS_CHROMEOS)
+  brand->assign(google_util::chromeos::GetBrand());
 #else
   brand->clear();
 #endif
@@ -137,15 +157,32 @@ bool GetReactivationBrand(std::string* brand) {
 
 #endif
 
-bool IsGoogleDomainUrl(const std::string& url, SubdomainPermission permission) {
+bool IsGoogleDomainUrl(const std::string& url,
+                       SubdomainPermission subdomain_permission,
+                       PortPermission port_permission) {
   GURL original_url(url);
-  return original_url.is_valid() && original_url.port().empty() &&
-      (original_url.SchemeIs("http") || original_url.SchemeIs("https")) &&
-      google_util::IsGoogleHostname(original_url.host(), permission);
+  if (!original_url.is_valid() ||
+      !(original_url.SchemeIs("http") || original_url.SchemeIs("https")))
+    return false;
+
+  // If we have the Instant URL overridden with a command line flag, accept
+  // its domain/port combination as well.
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kInstantURL)) {
+    GURL custom_instant_url(
+        command_line.GetSwitchValueASCII(switches::kInstantURL));
+    if (original_url.host() == custom_instant_url.host() &&
+        original_url.port() == custom_instant_url.port())
+      return true;
+  }
+
+  return (original_url.port().empty() ||
+      port_permission == ALLOW_NON_STANDARD_PORTS) &&
+      google_util::IsGoogleHostname(original_url.host(), subdomain_permission);
 }
 
 bool IsGoogleHostname(const std::string& host,
-                      SubdomainPermission permission) {
+                      SubdomainPermission subdomain_permission) {
   size_t tld_length =
       net::RegistryControlledDomainService::GetRegistryLength(host, false);
   if ((tld_length == 0) || (tld_length == std::string::npos))
@@ -153,7 +190,7 @@ bool IsGoogleHostname(const std::string& host,
   std::string host_minus_tld(host, 0, host.length() - tld_length);
   if (LowerCaseEqualsASCII(host_minus_tld, "google."))
     return true;
-  if (permission == ALLOW_SUBDOMAIN)
+  if (subdomain_permission == ALLOW_SUBDOMAIN)
     return EndsWith(host_minus_tld, ".google.", false);
   return LowerCaseEqualsASCII(host_minus_tld, "www.google.");
 }
@@ -162,7 +199,7 @@ bool IsGoogleHomePageUrl(const std::string& url) {
   GURL original_url(url);
 
   // First check to see if this has a Google domain.
-  if (!IsGoogleDomainUrl(url, DISALLOW_SUBDOMAIN))
+  if (!IsGoogleDomainUrl(url, DISALLOW_SUBDOMAIN, DISALLOW_NON_STANDARD_PORTS))
     return false;
 
   // Make sure the path is a known home page path.
@@ -179,7 +216,7 @@ bool IsGoogleSearchUrl(const std::string& url) {
   GURL original_url(url);
 
   // First check to see if this has a Google domain.
-  if (!IsGoogleDomainUrl(url, DISALLOW_SUBDOMAIN))
+  if (!IsGoogleDomainUrl(url, DISALLOW_SUBDOMAIN, DISALLOW_NON_STANDARD_PORTS))
     return false;
 
   // Make sure the path is a known search path.
@@ -209,7 +246,7 @@ bool IsInstantExtendedAPIGoogleSearchUrl(const std::string& url) {
   if (!IsGoogleSearchUrl(url))
     return false;
 
-  const std::string embedded_search_key = "espv";
+  const std::string embedded_search_key = kInstantExtendedAPIParam;
 
   url_parse::Parsed parsed_url;
   url_parse::ParseStandardURL(url.c_str(), url.length(), &parsed_url);

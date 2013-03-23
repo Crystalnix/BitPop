@@ -10,6 +10,14 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
+#if !defined(OS_WIN) && !defined(USE_AURA)
+// static
+int BalloonView::GetHorizontalMargin() {
+  // TODO: implement for linux (non-aura) and mac.
+  return 0;
+}
+#endif
+
 Balloon::Balloon(const Notification& notification, Profile* profile,
                  BalloonCollection* collection)
     : profile_(profile),
@@ -58,6 +66,10 @@ void Balloon::OnClick() {
 void Balloon::OnClose(bool by_user) {
   notification_->Close(by_user);
   collection_->OnBalloonClosed(this);
+}
+
+void Balloon::OnButtonClick(int button_index) {
+  notification_->ButtonClick(button_index);
 }
 
 void Balloon::CloseByScript() {

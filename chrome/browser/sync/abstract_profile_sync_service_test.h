@@ -22,21 +22,11 @@ class ProfileSyncService;
 class TestProfileSyncService;
 
 namespace syncer {
-class TestIdFactory;
-}  // namespace syncer
-
-namespace syncer {
 struct UserShare;
 }  //  namespace syncer
 
 class ProfileSyncServiceTestHelper {
  public:
-  static const std::string GetTagForType(syncer::ModelType model_type);
-
-  static bool CreateRoot(syncer::ModelType model_type,
-                         syncer::UserShare* service,
-                         syncer::TestIdFactory* ids);
-
   static syncer::ImmutableChangeRecordList MakeSingletonChangeRecordList(
       int64 node_id, syncer::ChangeRecord::Action action);
 
@@ -66,7 +56,7 @@ class AbstractProfileSyncServiceTest : public testing::Test {
   content::TestBrowserThread file_thread_;
   content::TestBrowserThread io_thread_;
   TokenService* token_service_;
-  scoped_ptr<TestProfileSyncService> service_;
+  TestProfileSyncService* sync_service_;
 };
 
 class CreateRootHelper {

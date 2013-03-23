@@ -4,15 +4,20 @@
 
 #include "chrome/browser/nacl_host/nacl_browser.h"
 
+#include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
+#include "base/string_split.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/url_pattern.h"
+#include "googleurl/src/gurl.h"
 
 namespace {
 
@@ -30,13 +35,14 @@ enum ValidationCacheStatus {
   CACHE_MAX
 };
 
-// Determine the name of the IRT file based on the architecture.
-#define NACL_IRT_FILE_NAME(arch_string) \
-  (FILE_PATH_LITERAL("nacl_irt_")       \
-   FILE_PATH_LITERAL(arch_string)       \
-   FILE_PATH_LITERAL(".nexe"))
-
 const FilePath::StringType NaClIrtName() {
+  FilePath::StringType irt_name;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableNaClSRPCProxy))
+    irt_name.append(FILE_PATH_LITERAL("nacl_irt_srpc_"));
+  else
+    irt_name.append(FILE_PATH_LITERAL("nacl_irt_"));
+
 #if defined(ARCH_CPU_X86_FAMILY)
 #if defined(ARCH_CPU_X86_64)
   bool is64 = true;
@@ -46,15 +52,23 @@ const FilePath::StringType NaClIrtName() {
 #else
   bool is64 = false;
 #endif
-  return is64 ? NACL_IRT_FILE_NAME("x86_64") : NACL_IRT_FILE_NAME("x86_32");
+  if (is64)
+    irt_name.append(FILE_PATH_LITERAL("x86_64"));
+  else
+    irt_name.append(FILE_PATH_LITERAL("x86_32"));
+
 #elif defined(ARCH_CPU_ARMEL)
   // TODO(mcgrathr): Eventually we'll need to distinguish arm32 vs thumb2.
   // That may need to be based on the actual nexe rather than a static
   // choice, which would require substantial refactoring.
-  return NACL_IRT_FILE_NAME("arm");
+  irt_name.append(FILE_PATH_LITERAL("arm"));
+#elif defined(ARCH_CPU_MIPSEL)
+  irt_name.append(FILE_PATH_LITERAL("mips32"));
 #else
 #error Add support for your architecture to NaCl IRT file selection
 #endif
+  irt_name.append(FILE_PATH_LITERAL(".nexe"));
+  return irt_name;
 }
 
 bool CheckEnvVar(const char* name, bool default_value) {
@@ -100,6 +114,8 @@ NaClBrowser::NaClBrowser()
       irt_platform_file_(base::kInvalidPlatformFileValue),
       irt_filepath_(),
       irt_state_(NaClResourceUninitialized),
+      debug_patterns_(),
+      inverse_debug_patterns_(false),
       validation_cache_file_path_(),
       validation_cache_is_enabled_(
           CheckEnvVar("NACL_VALIDATION_CACHE",
@@ -196,6 +212,70 @@ void NaClBrowser::OnIrtOpened(base::PlatformFileError error_code,
   }
   irt_state_ = NaClResourceReady;
   CheckWaiting();
+}
+
+void NaClBrowser::SetDebugPatterns(std::string debug_patterns) {
+  if (!debug_patterns.empty() && debug_patterns[0] == '!') {
+    inverse_debug_patterns_ = true;
+    debug_patterns.erase(0, 1);
+  }
+  if (debug_patterns.empty()) {
+    return;
+  }
+  std::vector<std::string> patterns;
+  base::SplitString(debug_patterns, ',', &patterns);
+  for (std::vector<std::string>::iterator iter = patterns.begin();
+       iter != patterns.end(); ++iter) {
+    URLPattern pattern;
+    if (pattern.Parse(*iter) == URLPattern::PARSE_SUCCESS) {
+      // If URL pattern has scheme equal to *, Parse method resets valid
+      // schemes mask to http and https only, so we need to reset it after
+      // Parse to include chrome-extension scheme that can be used by NaCl
+      // manifest files.
+      pattern.SetValidSchemes(URLPattern::SCHEME_ALL);
+      debug_patterns_.push_back(pattern);
+    }
+  }
+}
+
+bool NaClBrowser::URLMatchesDebugPatterns(GURL manifest_url) {
+  // Empty patterns are forbidden so we ignore them.
+  if (debug_patterns_.empty()) {
+    return true;
+  }
+  bool matches = false;
+  for (std::vector<URLPattern>::iterator iter = debug_patterns_.begin();
+       iter != debug_patterns_.end(); ++iter) {
+    if (iter->MatchesURL(manifest_url)) {
+      matches = true;
+      break;
+    }
+  }
+  if (inverse_debug_patterns_) {
+    return !matches;
+  } else {
+    return matches;
+  }
+}
+
+void NaClBrowser::FireGdbDebugStubPortOpened(int port) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(debug_stub_port_listener_, port));
+}
+
+bool NaClBrowser::HasGdbDebugStubPortListener() {
+  return !debug_stub_port_listener_.is_null();
+}
+
+void NaClBrowser::SetGdbDebugStubPortListener(
+    base::Callback<void(int)> listener) {
+  debug_stub_port_listener_ = listener;
+}
+
+void NaClBrowser::ClearGdbDebugStubPortListener() {
+  debug_stub_port_listener_.Reset();
 }
 
 void NaClBrowser::InitValidationCacheFilePath() {

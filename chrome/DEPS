@@ -1,5 +1,7 @@
 include_rules = [
   "+ash",
+  "+base/prefs",
+  "+cc",
   "+crypto",
   "+gpu",
   "+jni",
@@ -26,7 +28,6 @@ include_rules = [
   "+content/public/test",
   "+content/test/gpu",
   "+content/test/net",
-  "+content/test/browser_test_base.h",  # http://crbug.com/90448
 
   # Don't allow inclusion of these other libs we shouldn't be calling directly.
   "-webkit",
@@ -37,12 +38,6 @@ include_rules = [
   # Allow inclusion of WebKit API files.
   "+third_party/WebKit/Source/Platform/chromium",
   "+third_party/WebKit/Source/WebKit/chromium",
-  "+webkit/appcache",
-  "+webkit/blob",
-  "+webkit/chromeos/fileapi",
-  "+webkit/database",
-  "+webkit/fileapi",
-  "+webkit/quota",
 
   # Allow inclusion of third-party code:
   "+third_party/hunspell",

@@ -8,7 +8,6 @@
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -106,12 +105,15 @@ void ContentSettingBlockedImageModel::UpdateFromWebContents(
 
   // If a content type is blocked by default and was accessed, display the
   // accessed icon.
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
   TabSpecificContentSettings* content_settings =
-      tab_contents->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents);
+  if (!content_settings)
+    return;
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
   if (!content_settings->IsContentBlocked(get_content_settings_type())) {
     if (!content_settings->IsContentAccessed(get_content_settings_type()) ||
-        (tab_contents->profile()->GetHostContentSettingsMap()->
+        (profile->GetHostContentSettingsMap()->
             GetDefaultContentSetting(get_content_settings_type(), NULL) !=
                 CONTENT_SETTING_BLOCK))
       return;
@@ -143,7 +145,9 @@ void ContentSettingGeolocationImageModel::UpdateFromWebContents(
   if (!web_contents)
     return;
   TabSpecificContentSettings* content_settings =
-      TabContents::FromWebContents(web_contents)->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents);
+  if (!content_settings)
+    return;
   const GeolocationSettingsState& settings_state = content_settings->
       geolocation_settings_state();
   if (settings_state.state_map().empty())
@@ -176,7 +180,9 @@ void ContentSettingRPHImageModel::UpdateFromWebContents(
     return;
 
   TabSpecificContentSettings* content_settings =
-      TabContents::FromWebContents(web_contents)->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents);
+  if (!content_settings)
+    return;
   if (content_settings->pending_protocol_handler().IsEmpty())
     return;
 

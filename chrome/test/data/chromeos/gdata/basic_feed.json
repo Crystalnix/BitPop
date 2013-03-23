@@ -116,6 +116,9 @@
             "src": "https://file_content_url/",
             "type": "audio/mpeg"
          },
+         "docs$changestamp": {
+            "value": "654321"
+         },
          "docs$filename": {
             "$t": "filename.m4a"
          },
@@ -148,7 +151,7 @@
             "$t": "892721"
          },
          "gd$resourceId": {
-            "$t": "file:subdirectory_file_1_id"
+            "$t": "file:5_file_resource_id"
          },
          "id": {
             "$t": "2_file_id"

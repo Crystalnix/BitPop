@@ -81,10 +81,14 @@ function MetadataCache() {
    * @private
    */
   this.lastBatchStart_ = new Date();
+
+  // Holds the directories known to contain files with stale metadata
+  // as URL to bool map.
+  this.directoriesWithStaleMetadata_ = {};
 }
 
 /**
- * Observer type: it will be notified if the url changed is exactlt the same
+ * Observer type: it will be notified if the url changed is exactly the same
  * as the url passed.
  */
 MetadataCache.EXACT = 0;
@@ -296,8 +300,10 @@ MetadataCache.prototype.getCached = function(items, type) {
  * @param {Array.<Object>} values List of corresponding metadata values.
  */
 MetadataCache.prototype.set = function(items, type, values) {
-  if (!(items instanceof Array))
+  if (!(items instanceof Array)) {
     items = [items];
+    values = [values];
+  }
 
   this.startBatchUpdates();
   for (var index = 0; index < items.length; index++) {
@@ -473,8 +479,8 @@ MetadataCache.prototype.evict_ = function() {
 MetadataCache.prototype.itemToUrl_ = function(item) {
   if (typeof(item) == 'string')
     return item;
-  else
-    return item.toURL();
+
+  return item._URL_ || (item._URL_ = item.toURL());
 };
 
 /**
@@ -499,13 +505,45 @@ MetadataCache.prototype.mergeProperties_ = function(url, data) {
   if (data == null) return;
   var properties = this.cache_[url].properties;
   for (var type in data) {
-    if (data.hasOwnProperty(type)) {
+    if (data.hasOwnProperty(type) && !properties.hasOwnProperty(type)) {
       properties[type] = data[type];
       this.notifyObservers_(url, type);
     }
   }
 };
 
+/**
+ * Ask the GData service to re-fetch the metadata. Ignores sequential requests.
+ * @param {string} url Directory URL.
+ */
+MetadataCache.prototype.refreshDirectory = function(url) {
+  // Skip if the current directory is now being refreshed.
+  if (this.directoriesWithStaleMetadata_[url] || !FileType.isOnGDrive(url))
+    return;
+
+  this.directoriesWithStaleMetadata_[url] = true;
+  chrome.fileBrowserPrivate.requestDirectoryRefresh(url);
+};
+
+/**
+ * Ask the GData service to re-fetch the metadata.
+ * @param {string} fileURL File URL.
+ */
+MetadataCache.prototype.refreshFileMetadata = function(fileURL) {
+  if (!FileType.isOnGDrive(fileURL))
+    return;
+  // TODO(kaznacheev) This does not really work with GData search.
+  var url = fileURL.substr(0, fileURL.lastIndexOf('/'));
+  this.refreshDirectory(url);
+};
+
+/**
+ * Resumes refreshes by resreshDirectory.
+ * @param {string} url Directory URL.
+ */
+MetadataCache.prototype.resumeRefresh = function(url) {
+  delete this.directoriesWithStaleMetadata_[url];
+};
 
 /**
  * Base class for metadata providers.
@@ -692,23 +730,31 @@ GDataProvider.prototype.callApi_ = function() {
   this.callbacks_ = [];
   var self = this;
 
-  chrome.fileBrowserPrivate.getGDataFileProperties(urls, function(props) {
+  chrome.fileBrowserPrivate.getDriveFileProperties(urls, function(props) {
     for (var index = 0; index < urls.length; index++) {
-      callbacks[index](self.convert_(props[index]));
+      callbacks[index](self.convert_(props[index], urls[index]));
     }
   });
 };
 
 /**
- * @param {GDataFileProperties} data GData file properties.
+ * @param {DriveFileProperties} data Drive file properties.
+ * @param {string} url File url.
  * @return {boolean} True if the file is available offline.
  */
-GDataProvider.isAvailableOffline = function(data) {
-  return data.isPresent;
+GDataProvider.isAvailableOffline = function(data, url) {
+  if (data.isPresent)
+    return true;
+
+  if (!data.isHosted)
+    return false;
+
+  var subtype = FileType.getType(url).subtype;
+  return subtype == 'doc' || subtype == 'sheet';
 };
 
 /**
- * @param {GDataFileProperties} data GData file properties.
+ * @param {DriveFileProperties} data Drive file properties.
  * @return {boolean} True if opening the file does not require downloading it
  *    via a metered connection.
  */
@@ -719,21 +765,23 @@ GDataProvider.isAvailableWhenMetered = function(data) {
 /**
  * Converts API metadata to internal format.
  * @param {Object} data Metadata from API call.
+ * @param {string} url File url.
  * @return {Object} Metadata in internal format.
  * @private
  */
-GDataProvider.prototype.convert_ = function(data) {
+GDataProvider.prototype.convert_ = function(data, url) {
   var result = {};
   result.gdata = {
     present: data.isPresent,
     pinned: data.isPinned,
     hosted: data.isHosted,
     dirty: data.isDirty,
-    availableOffline: GDataProvider.isAvailableOffline(data),
+    availableOffline: GDataProvider.isAvailableOffline(data, url),
     availableWhenMetered: GDataProvider.isAvailableWhenMetered(data),
     contentUrl: (data.contentUrl || '').replace(/\?.*$/gi, ''),
     editUrl: data.editUrl || '',
-    driveApps: data.driveApps || []
+    driveApps: data.driveApps || [],
+    contentMimeType: data.contentMimeType || ''
   };
 
   if (!data.isPresent) {
@@ -744,7 +792,7 @@ GDataProvider.prototype.convert_ = function(data) {
 
   if ('thumbnailUrl' in data) {
     result.thumbnail = {
-      url: data.thumbnailUrl.replace(/s220/, 's320'),
+      url: data.thumbnailUrl.replace(/s220/, 's500'),
       transform: null
     };
   }
@@ -776,7 +824,13 @@ function ContentProvider() {
       path.substring(0, path.lastIndexOf('/') + 1) +
       'js/metadata/metadata_dispatcher.js';
 
-  this.dispatcher_ = new Worker(workerPath);
+  if (ContentProvider.USE_SHARED_WORKER) {
+    this.dispatcher_ = new SharedWorker(workerPath).port;
+    this.dispatcher_.start();
+  } else {
+    this.dispatcher_ = new Worker(workerPath);
+  }
+
   this.dispatcher_.onmessage = this.onMessage_.bind(this);
   this.dispatcher_.postMessage({verb: 'init'});
 
@@ -788,6 +842,13 @@ function ContentProvider() {
   // Note that simultaneous requests for same url are handled in MetadataCache.
   this.callbacks_ = {};
 }
+
+/**
+ * Flag defining which kind of a worker to use.
+ * TODO(kaznacheev): Observe for some time and remove if SharedWorker does not
+ * cause any problems.
+ */
+ContentProvider.USE_SHARED_WORKER = true;
 
 ContentProvider.prototype = {
   __proto__: MetadataProvider.prototype
@@ -843,7 +904,7 @@ ContentProvider.prototype.onMessage_ = function(event) {
       'on' + data.verb.substr(0, 1).toUpperCase() + data.verb.substr(1) + '_';
 
   if (!(methodName in this)) {
-    console.log('Unknown message from metadata reader: ' + data.verb, data);
+    console.error('Unknown message from metadata reader: ' + data.verb, data);
     return;
   }
 
@@ -928,7 +989,8 @@ ContentProvider.prototype.onResult_ = function(url, metadata) {
  * @private
  */
 ContentProvider.prototype.onError_ = function(url, step, error, metadata) {
-  console.warn('metadata: ' + url + ': ' + step + ': ' + error);
+  if (MetadataCache.log)  // Avoid log spam by default.
+    console.warn('metadata: ' + url + ': ' + step + ': ' + error);
   metadata = metadata || {};
   // Prevent asking for thumbnail again.
   metadata.thumbnailURL = '';
@@ -941,5 +1003,6 @@ ContentProvider.prototype.onError_ = function(url, step, error, metadata) {
  * @private
  */
 ContentProvider.prototype.onLog_ = function(arglist) {
-  console.log.apply(console, ['metadata:'].concat(arglist));
+  if (MetadataCache.log)  // Avoid log spam by default.
+    console.log.apply(console, ['metadata:'].concat(arglist));
 };

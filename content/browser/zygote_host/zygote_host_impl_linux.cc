@@ -11,15 +11,15 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/pickle.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket.h"
 #include "base/process_util.h"
 #include "base/string_number_conversions.h"
@@ -39,8 +39,10 @@
 #include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
 #endif
 
+namespace content {
+
 // static
-content::ZygoteHost* content::ZygoteHost::GetInstance() {
+ZygoteHost* ZygoteHost::GetInstance() {
   return ZygoteHostImpl::GetInstance();
 }
 
@@ -82,7 +84,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
 #endif
   base::FileHandleMappingVector fds_to_map;
-  fds_to_map.push_back(std::make_pair(fds[1], content::kZygoteSocketPairFd));
+  fds_to_map.push_back(std::make_pair(fds[1], kZygoteSocketPairFd));
 
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kZygoteCmdPrefix)) {
@@ -102,17 +104,18 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     switches::kDisableSeccompSandbox,
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableSeccompSandbox,
+
     // Zygote process needs to know what resources to have loaded when it
     // becomes a renderer process.
     switches::kForceDeviceScaleFactor,
-    switches::kLoad2xResources,
+    switches::kTouchOptimizedUI,
+
     switches::kNoSandbox,
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches,
                             arraysize(kForwardSwitches));
 
-  content::GetContentClient()->browser()->AppendExtraCommandLineSwitches(
-      &cmd_line, -1);
+  GetContentClient()->browser()->AppendExtraCommandLineSwitches(&cmd_line, -1);
 
   sandbox_binary_ = sandbox_cmd.c_str();
 
@@ -140,22 +143,21 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
                  << sandbox_binary_ << " is owned by root and has mode 4755.";
     }
   } else {
-    LOG(WARNING) << "Running without the SUID sandbox! See "
-        "http://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
+    LOG(ERROR) << "Running without the SUID sandbox! See "
+        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
         "for more information on developing with the sandbox on.";
   }
 
   // Start up the sandbox host process and get the file descriptor for the
   // renderers to talk to it.
   const int sfd = RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
-  fds_to_map.push_back(std::make_pair(sfd, content::kZygoteRendererSocketFd));
+  fds_to_map.push_back(std::make_pair(sfd, kZygoteRendererSocketFd));
 
   int dummy_fd = -1;
   if (using_suid_sandbox_) {
     dummy_fd = socket(PF_UNIX, SOCK_DGRAM, 0);
     CHECK(dummy_fd >= 0);
-    fds_to_map.push_back(std::make_pair(dummy_fd,
-                                        content::kZygoteIdFd));
+    fds_to_map.push_back(std::make_pair(dummy_fd, kZygoteIdFd));
   }
 
   base::ProcessHandle process = -1;
@@ -170,12 +172,12 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     // But first, wait for the zygote to tell us it's running.
     // The sending code is in content/browser/zygote_main_linux.cc.
     std::vector<int> fds_vec;
-    const int kExpectedLength = sizeof(content::kZygoteHelloMessage);
+    const int kExpectedLength = sizeof(kZygoteHelloMessage);
     char buf[kExpectedLength];
     const ssize_t len = UnixDomainSocket::RecvMsg(fds[0], buf, sizeof(buf),
                                                   &fds_vec);
     CHECK(len == kExpectedLength) << "Incorrect zygote magic length";
-    CHECK(0 == strcmp(buf, content::kZygoteHelloMessage))
+    CHECK(0 == strcmp(buf, kZygoteHelloMessage))
         << "Incorrect zygote hello";
 
     std::string inode_output;
@@ -209,12 +211,25 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   control_fd_ = fds[0];
 
   Pickle pickle;
-  pickle.WriteInt(content::kZygoteCommandGetSandboxStatus);
-  std::vector<int> empty_fds;
-  if (!UnixDomainSocket::SendMsg(control_fd_, pickle.data(), pickle.size(),
-                                 empty_fds))
+  pickle.WriteInt(kZygoteCommandGetSandboxStatus);
+  if (!SendMessage(pickle, NULL))
     LOG(FATAL) << "Cannot communicate with zygote";
   // We don't wait for the reply. We'll read it in ReadReply.
+}
+
+bool ZygoteHostImpl::SendMessage(const Pickle& data,
+                                 const std::vector<int>* fds) {
+  CHECK(data.size() <= kZygoteMaxMessageLength)
+      << "Trying to send too-large message to zygote (sending " << data.size()
+      << " bytes, max is " << kZygoteMaxMessageLength << ")";
+  CHECK(!fds || fds->size() <= UnixDomainSocket::kMaxFileDescriptors)
+      << "Trying to send message with too many file descriptors to zygote "
+      << "(sending " << fds->size() << ", max is "
+      << UnixDomainSocket::kMaxFileDescriptors << ")";
+
+  return UnixDomainSocket::SendMsg(control_fd_,
+                                   data.data(), data.size(),
+                                   fds ? *fds : std::vector<int>());
 }
 
 ssize_t ZygoteHostImpl::ReadReply(void* buf, size_t buf_len) {
@@ -235,12 +250,12 @@ ssize_t ZygoteHostImpl::ReadReply(void* buf, size_t buf_len) {
 
 pid_t ZygoteHostImpl::ForkRequest(
     const std::vector<std::string>& argv,
-    const base::GlobalDescriptors::Mapping& mapping,
+    const std::vector<FileDescriptorInfo>& mapping,
     const std::string& process_type) {
   DCHECK(init_);
   Pickle pickle;
 
-  pickle.WriteInt(content::kZygoteCommandFork);
+  pickle.WriteInt(kZygoteCommandFork);
   pickle.WriteString(process_type);
   pickle.WriteInt(argv.size());
   for (std::vector<std::string>::const_iterator
@@ -250,17 +265,26 @@ pid_t ZygoteHostImpl::ForkRequest(
   pickle.WriteInt(mapping.size());
 
   std::vector<int> fds;
-  for (base::GlobalDescriptors::Mapping::const_iterator
+  // Scoped pointers cannot be stored in containers, so we have to use a
+  // linked_ptr.
+  std::vector<linked_ptr<file_util::ScopedFD> > autodelete_fds;
+  for (std::vector<FileDescriptorInfo>::const_iterator
        i = mapping.begin(); i != mapping.end(); ++i) {
-    pickle.WriteUInt32(i->first);
-    fds.push_back(i->second);
+    pickle.WriteUInt32(i->id);
+    fds.push_back(i->fd.fd);
+    if (i->fd.auto_close) {
+      // Auto-close means we need to close the FDs after they habe been passed
+      // to the other process.
+      linked_ptr<file_util::ScopedFD> ptr(
+          new file_util::ScopedFD(&(fds.back())));
+      autodelete_fds.push_back(ptr);
+    }
   }
 
   pid_t pid;
   {
     base::AutoLock lock(control_lock_);
-    if (!UnixDomainSocket::SendMsg(control_fd_, pickle.data(), pickle.size(),
-                                   fds))
+    if (!SendMessage(pickle, &fds))
       return base::kNullProcessHandle;
 
     // Read the reply, which pickles the PID and an optional UMA enumeration.
@@ -419,33 +443,33 @@ void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
   DCHECK(init_);
   Pickle pickle;
 
-  pickle.WriteInt(content::kZygoteCommandReap);
+  pickle.WriteInt(kZygoteCommandReap);
   pickle.WriteInt(process);
-
-  if (HANDLE_EINTR(write(control_fd_, pickle.data(), pickle.size())) < 0)
-    PLOG(ERROR) << "write";
+  if (!SendMessage(pickle, NULL))
+    LOG(ERROR) << "Failed to send Reap message to zygote";
 }
 
 base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
     base::ProcessHandle handle,
+    bool known_dead,
     int* exit_code) {
   DCHECK(init_);
   Pickle pickle;
-  pickle.WriteInt(content::kZygoteCommandGetTerminationStatus);
+  pickle.WriteInt(kZygoteCommandGetTerminationStatus);
+  pickle.WriteBool(known_dead);
   pickle.WriteInt(handle);
 
   // Set this now to handle the early termination cases.
   if (exit_code)
-    *exit_code = content::RESULT_CODE_NORMAL_EXIT;
+    *exit_code = RESULT_CODE_NORMAL_EXIT;
 
   static const unsigned kMaxMessageLength = 128;
   char buf[kMaxMessageLength];
   ssize_t len;
   {
     base::AutoLock lock(control_lock_);
-    if (HANDLE_EINTR(write(control_fd_, pickle.data(), pickle.size())) < 0)
-      PLOG(ERROR) << "write";
-
+    if (!SendMessage(pickle, NULL))
+      LOG(ERROR) << "Failed to send GetTerminationStatus message to zygote";
     len = ReadReply(buf, sizeof(buf));
   }
 
@@ -485,3 +509,5 @@ int ZygoteHostImpl::GetSandboxStatus() const {
     return sandbox_status_;
   return 0;
 }
+
+}  // namespace content

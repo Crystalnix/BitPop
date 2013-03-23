@@ -49,10 +49,10 @@ class ReloadButton : public views::ButtonDropDown,
 
   // Overridden from views::ButtonListener:
   virtual void ButtonPressed(views::Button* /* button */,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // Overridden from views::View:
-  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
                               string16* tooltip) const OVERRIDE;
   virtual std::string GetClassName() const OVERRIDE;
@@ -106,7 +106,7 @@ class ReloadButton : public views::ButtonDropDown,
   // The parent class's images_ member is used for the current images,
   // and this array is used to hold the alternative images.
   // We swap between the two when changing mode.
-  gfx::ImageSkia alternate_images_[BS_COUNT];
+  gfx::ImageSkia alternate_images_[STATE_COUNT];
 
   // TESTING ONLY
   // True if we should pretend the button is hovered.

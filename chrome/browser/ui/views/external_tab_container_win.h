@@ -31,7 +31,6 @@ class AutomationProvider;
 class Browser;
 class Profile;
 class TabContentsContainer;
-class TabContents;
 class RenderViewContextMenuViews;
 struct NavigationInfo;
 
@@ -76,7 +75,7 @@ class ExternalTabContainerWin : public ExternalTabContainer,
                     DWORD style,
                     bool load_requests_via_automation,
                     bool handle_top_level_requests,
-                    TabContents* existing_tab_contents,
+                    content::WebContents* existing_contents,
                     const GURL& initial_url,
                     const GURL& referrer,
                     bool infobars_enabled,
@@ -86,10 +85,10 @@ class ExternalTabContainerWin : public ExternalTabContainer,
                             AutomationResourceMessageFilter* filter,
                             gfx::NativeWindow parent_window) OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual TabContents* GetTabContents() OVERRIDE;
   virtual gfx::NativeView GetExternalTabNativeView() const OVERRIDE;
   virtual void SetTabHandle(int handle) OVERRIDE;
   virtual int GetTabHandle() const OVERRIDE;
+  virtual bool ExecuteContextMenuCommand(int command) OVERRIDE;
   virtual void RunUnloadHandlers(IPC::Message* reply_message) OVERRIDE;
   virtual void ProcessUnhandledAccelerator(const MSG& msg) OVERRIDE;
   virtual void FocusThroughTabTraversal(bool reverse,
@@ -115,7 +114,8 @@ class ExternalTabContainerWin : public ExternalTabContainer,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
-                              bool user_gesture) OVERRIDE;
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void CloseContents(content::WebContents* source) OVERRIDE;
   virtual void MoveContents(content::WebContents* source,
                             const gfx::Rect& pos) OVERRIDE;
@@ -124,24 +124,24 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   virtual void UpdateTargetURL(content::WebContents* source, int32 page_id,
                                const GURL& url) OVERRIDE;
   virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
-  virtual gfx::NativeWindow GetFrameNativeWindow() OVERRIDE;
   virtual void WebContentsCreated(content::WebContents* source_contents,
                                   int64 source_frame_id,
                                   const GURL& target_url,
                                   content::WebContents* new_contents) OVERRIDE;
   virtual bool PreHandleKeyboardEvent(
+      content::WebContents* source,
       const content::NativeWebKeyboardEvent& event,
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
+      content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual bool TakeFocus(bool reverse) OVERRIDE;
+  virtual bool TakeFocus(content::WebContents* source, bool reverse) OVERRIDE;
   virtual bool CanDownload(content::RenderViewHost* render_view_host,
                            int request_id,
                            const std::string& request_method) OVERRIDE;
   virtual bool OnGoToEntryOffset(int offset) OVERRIDE;
   virtual bool HandleContextMenu(
       const content::ContextMenuParams& params) OVERRIDE;
-  virtual bool ExecuteContextMenuCommand(int command) OVERRIDE;
   virtual void BeforeUnloadFired(content::WebContents* tab,
                                  bool proceed,
                                  bool* proceed_to_fire_unload) OVERRIDE;
@@ -178,6 +178,11 @@ class ExternalTabContainerWin : public ExternalTabContainer,
       content::WebContents* web_contents,
       const content::MediaStreamRequest* request,
       const content::MediaResponseCallback& callback) OVERRIDE;
+  virtual bool RequestPpapiBrokerPermission(
+      content::WebContents* web_contents,
+      const GURL& url,
+      const FilePath& plugin_path,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
 
   void RegisterRenderViewHost(content::RenderViewHost* render_view_host);
   void UnregisterRenderViewHost(content::RenderViewHost* render_view_host);
@@ -219,14 +224,20 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   virtual bool DrawInfoBarArrows(int* x) const OVERRIDE;
 
   // Overridden from BlockedContentTabHelperDelegate:
-  virtual TabContents* GetConstrainingTabContents(TabContents* source) OVERRIDE;
+  virtual content::WebContents* GetConstrainingWebContents(
+      content::WebContents* source) OVERRIDE;
 
  protected:
   virtual ~ExternalTabContainerWin();
 
   // Overridden from views::NativeWidgetWin:
-  virtual LRESULT OnCreate(LPCREATESTRUCT create_struct);
-  virtual void OnDestroy();
+  virtual bool PreHandleMSG(UINT message,
+                            WPARAM w_param,
+                            LPARAM l_param,
+                            LRESULT* result) OVERRIDE;
+  virtual void PostHandleMSG(UINT message,
+                             WPARAM w_param,
+                             LPARAM l_param) OVERRIDE;
   virtual void OnFinalMessage(HWND window);
 
   bool InitNavigationInfo(NavigationInfo* nav_info,
@@ -257,7 +268,7 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   // ExternalTabContainerWin.
   void SetupExternalTabView();
 
-  scoped_ptr<TabContents> tab_contents_;
+  scoped_ptr<content::WebContents> web_contents_;
   scoped_refptr<AutomationProvider> automation_;
 
   content::NotificationRegistrar registrar_;

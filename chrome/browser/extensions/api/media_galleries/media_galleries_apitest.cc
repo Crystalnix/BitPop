@@ -3,30 +3,20 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
-#include "base/path_service.h"
+#include "base/stringprintf.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/platform_app_browsertest_util.h"
-#include "chrome/common/chrome_paths.h"
+#include "chrome/browser/media_gallery/media_galleries_test_util.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/browser/render_view_host.h"
 
-#if defined(OS_LINUX)
-#include <fstream>
-
-#include "base/environment.h"
-#include "base/scoped_temp_dir.h"
-#endif
+using extensions::PlatformAppBrowserTest;
 
 namespace {
-
-class ExperimentalMediaGalleriesAppBrowserTest : public PlatformAppBrowserTest {
- public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    PlatformAppBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
-  }
-};
 
 class ExperimentalMediaGalleriesApiTest : public ExtensionApiTest {
  public:
@@ -36,62 +26,48 @@ class ExperimentalMediaGalleriesApiTest : public ExtensionApiTest {
   }
 };
 
-class EnsurePictureDirectoryExists {
- public:
-  EnsurePictureDirectoryExists() {
-    Init();
+class PlatformAppMediaGalleriesBrowserTest : public PlatformAppBrowserTest {
+ protected:
+  // Since ExtensionTestMessageListener does not work with RunPlatformAppTest(),
+  // This helper method can be used to run additional media gallery tests.
+  void RunSecondTestPhase(int expected_galleries) {
+    const extensions::Extension* extension = GetSingleLoadedExtension();
+    extensions::ExtensionHost* host =
+        extensions::ExtensionSystem::Get(browser()->profile())->
+            process_manager()->GetBackgroundHostForExtension(extension->id());
+    ASSERT_TRUE(host);
+
+    static const char kTestGalleries[] = "testGalleries(%d)";
+    ResultCatcher catcher;
+    host->render_view_host()->ExecuteJavascriptInWebFrame(
+        string16(),
+        ASCIIToUTF16(base::StringPrintf(kTestGalleries, expected_galleries)));
+    EXPECT_TRUE(catcher.GetNextResult()) << message_;
   }
-
- private:
-  void Init() {
-#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
-    return;
-#elif defined(OS_LINUX)
-    // On Linux, the picture directory probably doesn't exist by default,
-    // so we override the settings to point to a tempdir.
-    ASSERT_TRUE(xdg_dir_.CreateUniqueTempDir());
-
-    FilePath config_file(xdg_dir_.path().Append("user-dirs.dirs"));
-    std::ofstream file;
-    file.open(config_file.value().c_str());
-    ASSERT_TRUE(file.is_open());
-    file << "XDG_PICTURES_DIR=\"" << xdg_dir_.path().value() << "\"";
-    file.close();
-
-    scoped_ptr<base::Environment> env(base::Environment::Create());
-    env->SetVar("XDG_CONFIG_HOME", xdg_dir_.path().value());
-#else
-    FilePath pictures_path;
-    ASSERT_TRUE(PathService::Get(chrome::DIR_USER_PICTURES, &pictures_path));
-    ASSERT_TRUE(file_util::DirectoryExists(pictures_path));
-#endif
-  }
-
-#if defined(OS_LINUX)
-  ScopedTempDir xdg_dir_;
-#endif
 };
-
 
 }  // namespace
 
-IN_PROC_BROWSER_TEST_F(ExperimentalMediaGalleriesAppBrowserTest, NoGalleries) {
+IN_PROC_BROWSER_TEST_F(PlatformAppMediaGalleriesBrowserTest, NoGalleries) {
+  chrome::EnsureMediaDirectoriesExists media_directories;
   ASSERT_TRUE(RunPlatformAppTest("api_test/media_galleries/no_galleries"))
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExperimentalMediaGalleriesAppBrowserTest,
+IN_PROC_BROWSER_TEST_F(PlatformAppMediaGalleriesBrowserTest,
                        MediaGalleriesRead) {
-  EnsurePictureDirectoryExists picture_directory;
+  chrome::EnsureMediaDirectoriesExists media_directories;
   ASSERT_TRUE(RunPlatformAppTest("api_test/media_galleries/read_access"))
       << message_;
+  RunSecondTestPhase(media_directories.num_galleries());
 }
 
-IN_PROC_BROWSER_TEST_F(ExperimentalMediaGalleriesAppBrowserTest,
+IN_PROC_BROWSER_TEST_F(PlatformAppMediaGalleriesBrowserTest,
                        MediaGalleriesNoAccess) {
-  EnsurePictureDirectoryExists picture_directory;
+  chrome::EnsureMediaDirectoriesExists media_directories;
   ASSERT_TRUE(RunPlatformAppTest("api_test/media_galleries/no_access"))
       << message_;
+  RunSecondTestPhase(media_directories.num_galleries());
 }
 
 IN_PROC_BROWSER_TEST_F(ExperimentalMediaGalleriesApiTest,

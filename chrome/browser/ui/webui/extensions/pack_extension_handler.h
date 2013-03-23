@@ -9,14 +9,14 @@
 
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
-#include "chrome/browser/plugin_data_remover_helper.h"
+#include "chrome/browser/plugins/plugin_data_remover_helper.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "ui/base/dialogs/select_file_dialog.h"
 
 // Clear browser data handler page UI handler.
 class PackExtensionHandler : public content::WebUIMessageHandler,
                              public ui::SelectFileDialog::Listener,
-                             public PackExtensionJob::Client {
+                             public extensions::PackExtensionJob::Client {
  public:
   PackExtensionHandler();
   virtual ~PackExtensionHandler();
@@ -55,7 +55,7 @@ class PackExtensionHandler : public content::WebUIMessageHandler,
   void ShowAlert(const std::string& message);
 
   // Used to package the extension.
-  scoped_refptr<PackExtensionJob> pack_job_;
+  scoped_refptr<extensions::PackExtensionJob> pack_job_;
 
   // Returned by the SelectFileDialog machinery. Used to initiate the selection
   // dialog.

@@ -5,7 +5,7 @@
 body {
   -webkit-user-select: none;
   background: black;
-  font-family: Chrome Droid Sans,Droid Sans Fallback,sans-serif;
+  font-family: Noto Sans UI,Droid Sans Fallback,sans-serif;
   font-size: 84%;
   margin: 0;
   overflow: hidden;
@@ -54,6 +54,10 @@ video {
 
 #video-player:not([tools]) .tool {
   opacity: 0;
+}
+
+#video-player:not([tools]) {
+  cursor: none;
 }
 
 .tool {

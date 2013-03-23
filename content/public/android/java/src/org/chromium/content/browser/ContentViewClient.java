@@ -7,15 +7,10 @@ package org.chromium.content.browser;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Rect;
-import android.graphics.RectF;
 import android.util.Log;
 import android.view.ActionMode;
 import android.view.KeyEvent;
 
-import org.chromium.base.AccessedByNative;
-import org.chromium.base.CalledByNative;
-import org.chromium.base.JNINamespace;
 import org.chromium.content.browser.SelectActionModeCallback.ActionHandler;
 
 import java.net.URISyntaxException;
@@ -33,127 +28,28 @@ import java.net.URISyntaxException;
  *  over to WebView.
  */
 public class ContentViewClient {
-
     // Tag used for logging.
     private static final String TAG = "ContentViewClient";
-
-    // Native class pointer which will be set by nativeInit()
-    @AccessedByNative
-    private int mNativeClazz = 0;
-
-    // These ints must match up to the native values in content_view_client.h.
-    // Generic error
-    public static final int ERROR_UNKNOWN = -1;
-    // Server or proxy hostname lookup failed
-    public static final int ERROR_HOST_LOOKUP = -2;
-    // Unsupported authentication scheme (not basic or digest)
-    public static final int ERROR_UNSUPPORTED_AUTH_SCHEME = -3;
-    // User authentication failed on server
-    public static final int ERROR_AUTHENTICATION = -4;
-    // User authentication failed on proxy
-    public static final int ERROR_PROXY_AUTHENTICATION = -5;
-    // Failed to connect to the server
-    public static final int ERROR_CONNECT = -6;
-    // Failed to read or write to the server
-    public static final int ERROR_IO = -7;
-    // Connection timed out
-    public static final int ERROR_TIMEOUT = -8;
-    // Too many redirects
-    public static final int ERROR_REDIRECT_LOOP = -9;
-    // Unsupported URI scheme
-    public static final int ERROR_UNSUPPORTED_SCHEME = -10;
-    // Failed to perform SSL handshake
-    public static final int ERROR_FAILED_SSL_HANDSHAKE = -11;
-    // Malformed URL
-    public static final int ERROR_BAD_URL = -12;
-    // Generic file error
-    public static final int ERROR_FILE = -13;
-    // File not found
-    public static final int ERROR_FILE_NOT_FOUND = -14;
-    // Too many requests during this load
-    public static final int ERROR_TOO_MANY_REQUESTS = -15;
-
-    @CalledByNative
-    public void openNewTab(String url, boolean incognito) {
-    }
-
-    @CalledByNative
-    public boolean addNewContents(int nativeSourceWebContents, int nativeWebContents,
-                                  int disposition, Rect initialPosition, boolean userGesture) {
-        return false;
-    }
-
-    @CalledByNative
-    public void closeContents() {
-    }
-
-    @CalledByNative
-    public void onUrlStarredChanged(boolean starred) {
-    }
-
-    @CalledByNative
-    public void onPageStarted(String url) {
-    }
-
-    @CalledByNative
-    public void onPageFinished(String url) {
-    }
-
-    @CalledByNative
-    public void onLoadStarted() {
-    }
-
-    @CalledByNative
-    public void onLoadStopped() {
-    }
-
-    @CalledByNative
-    public void onReceivedError(int errorCode, String description, String failingUrl) {
-    }
-
-    @CalledByNative
-    public void onMainFrameCommitted(String url, String baseUrl) {
-    }
-
-    @CalledByNative
-    public void onTabHeaderStateChanged() {
-    }
-
-    @CalledByNative
-    public void onLoadProgressChanged(double progress) {
-    }
 
     public void onUpdateTitle(String title) {
     }
 
-    @CalledByNative
-    public void onUpdateUrl(String url) {
+    /**
+      * Lets client listen on the scaling changes on delayed, throttled
+      * and best-effort basis. Used for WebView.onScaleChanged.
+      */
+    public void onScaleChanged(float oldScale, float newScale) {
     }
 
-    @CalledByNative
-    public void onReceiveFindMatchRects(int version, float[] rect_data,
-                                        RectF activeRect) {
+    /**
+     * Notifies the client that the position of the top controls has changed.
+     * @param topControlsOffsetY The Y offset of the top controls.
+     * @param contentOffsetY The Y offset of the content.
+     */
+    public void onOffsetsForFullscreenChanged(float topControlsOffsetY, float contentOffsetY) {
     }
 
-    @CalledByNative
-    public void onInterstitialShown() {
-    }
-
-    @CalledByNative
-    public void onInterstitialHidden() {
-    }
-
-    @CalledByNative
-    public boolean takeFocus(boolean reverse) {
-        return false;
-    }
-
-    public void onTabCrash(int pid) {
-    }
-
-    @CalledByNative
-    public boolean shouldOverrideUrlLoading(String url) {
-        return false;
+    public void onTabCrash() {
     }
 
     public boolean shouldOverrideKeyEvent(KeyEvent event) {
@@ -194,44 +90,6 @@ public class ContentViewClient {
     // Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
     // in a page.
     public void onImeEvent() {
-    }
-
-    public void onUnhandledKeyEvent(KeyEvent event) {
-        // TODO(bulach): we probably want to re-inject the KeyEvent back into
-        // the system. Investigate if this is at all possible.
-    }
-
-    @CalledByNative
-    void handleKeyboardEvent(KeyEvent event) {
-        onUnhandledKeyEvent(event);
-    }
-
-    @CalledByNative
-    public void runFileChooser(FileChooserParams params) {
-    }
-
-    // Return true if the client will handle the JS alert.
-    @CalledByNative
-    public boolean  onJsAlert(String url, String Message) {
-        return false;
-    }
-
-    // Return true if the client will handle the JS before unload dialog.
-    @CalledByNative
-    public boolean onJsBeforeUnload(String url, String message) {
-        return false;
-    }
-
-    // Return true if the client will handle the JS confirmation prompt.
-    @CalledByNative
-    public boolean onJsConfirm(String url, String message) {
-        return false;
-    }
-
-    // Return true if the client will handle the JS prompt dialog.
-    @CalledByNative
-    public boolean onJsPrompt(String url, String message, String defaultValue) {
-        return false;
     }
 
     /**
@@ -280,20 +138,20 @@ public class ContentViewClient {
     /**
      * Called when a new content intent is requested to be started.
      */
-    public void onStartContentIntent(Context context, String contentUrl) {
+    public void onStartContentIntent(Context context, String intentUrl) {
         Intent intent;
         // Perform generic parsing of the URI to turn it into an Intent.
         try {
-            intent = Intent.parseUri(contentUrl, Intent.URI_INTENT_SCHEME);
+            intent = Intent.parseUri(intentUrl, Intent.URI_INTENT_SCHEME);
         } catch (URISyntaxException ex) {
-            Log.w(TAG, "Bad URI " + contentUrl + ": " + ex.getMessage());
+            Log.w(TAG, "Bad URI " + intentUrl + ": " + ex.getMessage());
             return;
         }
 
         try {
             context.startActivity(intent);
         } catch (ActivityNotFoundException ex) {
-            Log.w(TAG, "No application can handle " + contentUrl);
+            Log.w(TAG, "No application can handle " + intentUrl);
         }
     }
 }

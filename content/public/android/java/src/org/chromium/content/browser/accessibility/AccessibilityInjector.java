@@ -4,20 +4,27 @@
 
 package org.chromium.content.browser.accessibility;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.SystemClock;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.util.Log;
 import android.view.View;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
 
+import com.googlecode.eyesfree.braille.selfbraille.SelfBrailleClient;
+import com.googlecode.eyesfree.braille.selfbraille.WriteData;
+
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.chromium.content.browser.ContentViewCore;
+import org.chromium.content.browser.JavascriptInterface;
+import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.content.common.CommandLine;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -25,14 +32,14 @@ import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Responsible for accessibility injection and management of a {@link ContentViewCore}.
  */
-public class AccessibilityInjector {
+public class AccessibilityInjector extends WebContentsObserverAndroid {
+    private static final String TAG = AccessibilityInjector.class.getSimpleName();
+
     // The ContentView this injector is responsible for managing.
     protected ContentViewCore mContentViewCore;
 
@@ -47,6 +54,12 @@ public class AccessibilityInjector {
     protected boolean mInjectedScriptEnabled;
     protected boolean mScriptInjected;
 
+    private final String mAccessibilityScreenReaderUrl;
+
+    // To support building against the JELLY_BEAN and not JELLY_BEAN_MR1 SDK we need to add this
+    // constant here.
+    private static final int FEEDBACK_BRAILLE = 0x00000020;
+
     // constants for determining script injection strategy
     private static final int ACCESSIBILITY_SCRIPT_INJECTION_UNDEFINED = -1;
     private static final int ACCESSIBILITY_SCRIPT_INJECTION_OPTED_OUT = 0;
@@ -55,7 +68,7 @@ public class AccessibilityInjector {
     private static final String ALIAS_ACCESSIBILITY_JS_INTERFACE_2 = "accessibility2";
 
     // Template for JavaScript that injects a screen-reader.
-    private static final String ACCESSIBILITY_SCREEN_READER_URL =
+    private static final String DEFAULT_ACCESSIBILITY_SCREEN_READER_URL =
             "https://ssl.gstatic.com/accessibility/javascript/android/chromeandroidvox.js";
 
     private static final String ACCESSIBILITY_SCREEN_READER_JAVASCRIPT_TEMPLATE =
@@ -80,8 +93,11 @@ public class AccessibilityInjector {
      * @return An instance of a {@link AccessibilityInjector}.
      */
     public static AccessibilityInjector newInstance(ContentViewCore view) {
-        // TODO(dtrainor): Upstream JellyBean version of AccessibilityInjector when SDK is 16.
-        return new AccessibilityInjector(view);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+            return new AccessibilityInjector(view);
+        } else {
+            return new JellyBeanAccessibilityInjector(view);
+        }
     }
 
     /**
@@ -89,7 +105,11 @@ public class AccessibilityInjector {
      * @param view The ContentViewCore that this AccessibilityInjector manages.
      */
     protected AccessibilityInjector(ContentViewCore view) {
+        super(view);
         mContentViewCore = view;
+
+        mAccessibilityScreenReaderUrl = CommandLine.getInstance().getSwitchValue(
+                CommandLine.ACCESSIBILITY_JAVASCRIPT_URL, DEFAULT_ACCESSIBILITY_SCREEN_READER_URL);
     }
 
     /**
@@ -131,8 +151,9 @@ public class AccessibilityInjector {
     /**
      * Handles adding or removing accessibility related Java objects ({@link TextToSpeech} and
      * {@link Vibrator}) interfaces from Javascript.  This method should be called at a time when it
-     * is safe to add or remove these interfaces, specifically when the {@link ContentView} is first
-     * initialized or right before the {@link ContentView} is about to navigate to a URL or reload.
+     * is safe to add or remove these interfaces, specifically when the {@link ContentViewCore} is
+     * first initialized or right before the {@link ContentViewCore} is about to navigate to a URL
+     * or reload.
      * <p>
      * If this method is called at other times, the interfaces might not be correctly removed,
      * meaning that Javascript can still access these Java objects that may have been already
@@ -150,9 +171,16 @@ public class AccessibilityInjector {
      * Checks whether or not touch to explore is enabled on the system.
      */
     public boolean accessibilityIsAvailable() {
+        // Need to make sure we actually have a service running that requires injecting
+        // this script.
+        List<AccessibilityServiceInfo> services =
+                getAccessibilityManager().getEnabledAccessibilityServiceList(
+                        FEEDBACK_BRAILLE | AccessibilityServiceInfo.FEEDBACK_SPOKEN);
+
         return getAccessibilityManager().isEnabled() &&
                 mContentViewCore.getContentSettings() != null &&
-                mContentViewCore.getContentSettings().getJavaScriptEnabled();
+                mContentViewCore.getContentSettings().getJavaScriptEnabled() &&
+                services.size() > 0;
     }
 
     /**
@@ -181,8 +209,14 @@ public class AccessibilityInjector {
      * accessibility script as not being injected.  This way we can properly ignore incoming
      * accessibility gesture events.
      */
-    public void onPageLoadStarted() {
+    @Override
+    public void didStartLoading(String url) {
         mScriptInjected = false;
+    }
+
+    @Override
+    public void didStopLoading(String url) {
+        injectAccessibilityScriptIntoPage();
     }
 
     /**
@@ -237,15 +271,16 @@ public class AccessibilityInjector {
         if (context != null) {
             // Enabled, we should try to add if we have to.
             if (mTextToSpeech == null) {
-                mTextToSpeech = new TextToSpeechWrapper(context);
+                mTextToSpeech = new TextToSpeechWrapper(mContentViewCore.getContainerView(),
+                        context);
                 mContentViewCore.addJavascriptInterface(mTextToSpeech,
-                        ALIAS_ACCESSIBILITY_JS_INTERFACE, false);
+                        ALIAS_ACCESSIBILITY_JS_INTERFACE);
             }
 
             if (mVibrator == null) {
                 mVibrator = new VibratorWrapper(context);
                 mContentViewCore.addJavascriptInterface(mVibrator,
-                        ALIAS_ACCESSIBILITY_JS_INTERFACE_2, false);
+                        ALIAS_ACCESSIBILITY_JS_INTERFACE_2);
             }
         }
     }
@@ -287,7 +322,7 @@ public class AccessibilityInjector {
 
     private String getScreenReaderInjectingJs() {
         return String.format(ACCESSIBILITY_SCREEN_READER_JAVASCRIPT_TEMPLATE,
-                ACCESSIBILITY_SCREEN_READER_URL);
+                mAccessibilityScreenReaderUrl);
     }
 
     private AccessibilityManager getAccessibilityManager() {
@@ -314,17 +349,20 @@ public class AccessibilityInjector {
             mVibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public boolean hasVibrator() {
             return mVibrator.hasVibrator();
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public void vibrate(long milliseconds) {
             milliseconds = Math.min(milliseconds, MAX_VIBRATE_DURATION_MS);
             mVibrator.vibrate(milliseconds);
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public void vibrate(long[] pattern, int repeat) {
             for (int i = 0; i < pattern.length; ++i) {
@@ -336,6 +374,7 @@ public class AccessibilityInjector {
             mVibrator.vibrate(pattern, repeat);
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public void cancel() {
             mVibrator.cancel();
@@ -347,29 +386,54 @@ public class AccessibilityInjector {
      */
     private static class TextToSpeechWrapper {
         private TextToSpeech mTextToSpeech;
+        private SelfBrailleClient mSelfBrailleClient;
+        private View mView;
 
-        public TextToSpeechWrapper(Context context) {
+        public TextToSpeechWrapper(View view, Context context) {
+            mView = view;
             mTextToSpeech = new TextToSpeech(context, null, null);
+            mSelfBrailleClient = new SelfBrailleClient(context, CommandLine.getInstance().hasSwitch(
+                    CommandLine.ACCESSIBILITY_DEBUG_BRAILLE_SERVICE));
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public boolean isSpeaking() {
             return mTextToSpeech.isSpeaking();
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public int speak(String text, int queueMode, HashMap<String, String> params) {
             return mTextToSpeech.speak(text, queueMode, params);
         }
 
+        @JavascriptInterface
         @SuppressWarnings("unused")
         public int stop() {
             return mTextToSpeech.stop();
         }
 
+        @JavascriptInterface
+        @SuppressWarnings("unused")
+        public void braille(String jsonString) {
+            try {
+                JSONObject jsonObj = new JSONObject(jsonString);
+
+                WriteData data = WriteData.forView(mView);
+                data.setText(jsonObj.getString("text"));
+                data.setSelectionStart(jsonObj.getInt("startIndex"));
+                data.setSelectionEnd(jsonObj.getInt("endIndex"));
+                mSelfBrailleClient.write(data);
+            } catch (JSONException ex) {
+                Log.w(TAG, "Error parsing JS JSON object", ex);
+            }
+        }
+
         @SuppressWarnings("unused")
         protected void shutdownInternal() {
             mTextToSpeech.shutdown();
+            mSelfBrailleClient.shutdown();
         }
     }
 }

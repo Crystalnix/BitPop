@@ -5,60 +5,67 @@
 #ifndef CONTENT_PUBLIC_BROWSER_BROWSER_CONTEXT_H_
 #define CONTENT_PUBLIC_BROWSER_BROWSER_CONTEXT_H_
 
+#include "base/callback_forward.h"
 #include "base/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
-
-namespace appcache {
-class AppCacheService;
-}
-
-namespace fileapi {
-class FileSystemContext;
-}
 
 namespace net {
 class URLRequestContextGetter;
 }
 
 namespace quota {
-class QuotaManager;
 class SpecialStoragePolicy;
 }
 
-namespace webkit_database {
-class DatabaseTracker;
-}
-
 class FilePath;
+class GURL;
 
 namespace content {
 
-class DOMStorageContext;
 class DownloadManager;
 class DownloadManagerDelegate;
 class GeolocationPermissionContext;
 class IndexedDBContext;
 class ResourceContext;
+class SiteInstance;
 class SpeechRecognitionPreferences;
+class StoragePartition;
 
 // This class holds the context needed for a browsing session.
 // It lives on the UI thread. All these methods must only be called on the UI
 // thread.
 class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
  public:
+  // Used in ForEachStoragePartition(). The first argument is the partition id.
+  // The second argument is the StoragePartition object for that partition id.
+  typedef base::Callback<void(StoragePartition*)> StoragePartitionCallback;
+
   static DownloadManager* GetDownloadManager(BrowserContext* browser_context);
-  static quota::QuotaManager* GetQuotaManager(BrowserContext* browser_context);
-  static DOMStorageContext* GetDefaultDOMStorageContext(
-      BrowserContext* browser_context);
-  static DOMStorageContext* GetDOMStorageContext(
-      BrowserContext* browser_context, int renderer_child_id);
-  static IndexedDBContext* GetIndexedDBContext(BrowserContext* browser_context);
-  static webkit_database::DatabaseTracker* GetDatabaseTracker(
-      BrowserContext* browser_context);
-  static appcache::AppCacheService* GetAppCacheService(
-      BrowserContext* browser_context);
-  static fileapi::FileSystemContext* GetFileSystemContext(
+
+  static content::StoragePartition* GetStoragePartition(
+      BrowserContext* browser_context, SiteInstance* site_instance);
+  static content::StoragePartition* GetStoragePartitionForSite(
+      BrowserContext* browser_context, const GURL& site);
+  static void ForEachStoragePartition(
+      BrowserContext* browser_context,
+      const StoragePartitionCallback& callback);
+  static void AsyncObliterateStoragePartition(
+      BrowserContext* browser_context,
+      const GURL& site,
+      const base::Closure& on_gc_required);
+
+  // This function clears the contents of |active_paths| but does not take
+  // ownership of the pointer.
+  static void GarbageCollectStoragePartitions(
+      BrowserContext* browser_context,
+      scoped_ptr<base::hash_set<FilePath> > active_paths,
+      const base::Closure& done);
+
+  // DON'T USE THIS. GetDefaultStoragePartition() is going away.
+  // Use GetStoragePartition() instead. Ask ajwong@ if you have problems.
+  static content::StoragePartition* GetDefaultStoragePartition(
       BrowserContext* browser_context);
 
   // Ensures that the corresponding ResourceContext is initialized. Normally the
@@ -87,20 +94,33 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns the request context information associated with this context.  Call
   // this only on the UI thread, since it can send notifications that should
   // happen on the UI thread.
+  // TODO(creis): Remove this version in favor of the one below.
   virtual net::URLRequestContextGetter* GetRequestContext() = 0;
 
   // Returns the request context appropriate for the given renderer. If the
   // renderer process doesn't have an associated installed app, or if the
   // installed app's is_storage_isolated() returns false, this is equivalent to
   // calling GetRequestContext().
-  // TODO(creis): After isolated app storage is no longer an experimental
-  // feature, consider making this the default contract for GetRequestContext.
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) = 0;
 
+  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
+      const FilePath& partition_path,
+      bool in_memory) = 0;
+
+  // Returns the default request context for media resources associated with
+  // this context.
+  // TODO(creis): Remove this version in favor of the one below.
+  virtual net::URLRequestContextGetter* GetMediaRequestContext() = 0;
+
   // Returns the request context for media resources associated with this
-  // context.
-  virtual net::URLRequestContextGetter* GetRequestContextForMedia() = 0;
+  // context and renderer process.
+  virtual net::URLRequestContextGetter* GetMediaRequestContextForRenderProcess(
+      int renderer_child_id) = 0;
+  virtual net::URLRequestContextGetter*
+      GetMediaRequestContextForStoragePartition(
+          const FilePath& partition_path,
+          bool in_memory) = 0;
 
   // Returns the resource context.
   virtual ResourceContext* GetResourceContext() = 0;
@@ -118,10 +138,6 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // ref counted class, so callers should take a reference if needed. It's valid
   // to return NULL.
   virtual SpeechRecognitionPreferences* GetSpeechRecognitionPreferences() = 0;
-
-  // Returns true if the last time this context was open it was exited cleanly.
-  // This doesn't belong here; http://crbug.com/90737
-  virtual bool DidLastSessionExitCleanly() = 0;
 
   // Returns a special storage policy implementation, or NULL.
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;

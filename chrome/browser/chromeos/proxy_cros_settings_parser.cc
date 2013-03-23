@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,7 +56,7 @@ namespace {
 base::Value* CreateServerHostValue(
     const ProxyConfigServiceImpl::ProxyConfig::ManualProxy& proxy) {
   return proxy.server.is_valid() ?
-         base::Value::CreateStringValue(proxy.server.host_port_pair().host()) :
+         new base::StringValue(proxy.server.host_port_pair().host()) :
          NULL;
 }
 
@@ -286,8 +286,6 @@ void SetProxyPrefValue(Profile* profile,
 bool GetProxyPrefValue(Profile* profile,
                        const std::string& path,
                        base::Value** out_value) {
-  bool found = false;
-  bool managed = false;
   std::string controlled_by;
   base::Value* data = NULL;
   chromeos::ProxyConfigServiceImpl* config_service =
@@ -300,22 +298,16 @@ bool GetProxyPrefValue(Profile* profile,
     if (config.mode ==
             chromeos::ProxyConfigServiceImpl::ProxyConfig::MODE_PAC_SCRIPT &&
         config.automatic_proxy.pac_url.is_valid()) {
-      data =
-          base::Value::CreateStringValue(config.automatic_proxy.pac_url.spec());
+      data = new base::StringValue(config.automatic_proxy.pac_url.spec());
     }
-    found = true;
   } else if (path == kProxySingleHttp) {
     data = CreateServerHostValue(config.single_proxy);
-    found = true;
   } else if (path == kProxySingleHttpPort) {
     data = CreateServerPortValue(config.single_proxy);
-    found = true;
   } else if (path == kProxyHttpUrl) {
     data = CreateServerHostValue(config.http_proxy);
-    found = true;
   } else if (path == kProxyHttpsUrl) {
     data = CreateServerHostValue(config.https_proxy);
-    found = true;
   } else if (path == kProxyType) {
     if (config.mode ==
         chromeos::ProxyConfigServiceImpl::ProxyConfig::MODE_AUTO_DETECT ||
@@ -331,68 +323,60 @@ bool GetProxyPrefValue(Profile* profile,
       data = base::Value::CreateIntegerValue(1);
     }
     switch (config.state) {
-       case ProxyPrefs::CONFIG_POLICY:
-         controlled_by = "policyManagedPrefsBannerText";
-         break;
-       case ProxyPrefs::CONFIG_EXTENSION:
-         controlled_by = "extensionManagedPrefsBannerText";
-         break;
-       case ProxyPrefs::CONFIG_OTHER_PRECEDE:
-         controlled_by = "unmodifiablePrefsBannerText";
-         break;
-       default:
-         if (!config.user_modifiable)
-           controlled_by = "enableSharedProxiesBannerText";
-         break;
+      case ProxyPrefs::CONFIG_POLICY:
+        controlled_by = "policy";
+        break;
+      case ProxyPrefs::CONFIG_EXTENSION:
+        controlled_by = "extension";
+        break;
+      case ProxyPrefs::CONFIG_OTHER_PRECEDE:
+        controlled_by = "other";
+        break;
+      default:
+        if (!config.user_modifiable)
+          controlled_by = "shared";
+        break;
     }
-    found = true;
   } else if (path == kProxySingle) {
     data = base::Value::CreateBooleanValue(config.mode ==
         chromeos::ProxyConfigServiceImpl::ProxyConfig::MODE_SINGLE_PROXY);
-    found = true;
   } else if (path == kProxyFtpUrl) {
     data = CreateServerHostValue(config.ftp_proxy);
-    found = true;
   } else if (path == kProxySocks) {
     data = CreateServerHostValue(config.socks_proxy);
-    found = true;
   } else if (path == kProxyHttpPort) {
     data = CreateServerPortValue(config.http_proxy);
-    found = true;
   } else if (path == kProxyHttpsPort) {
     data = CreateServerPortValue(config.https_proxy);
-    found = true;
   } else if (path == kProxyFtpPort) {
     data = CreateServerPortValue(config.ftp_proxy);
-    found = true;
   } else if (path == kProxySocksPort) {
     data = CreateServerPortValue(config.socks_proxy);
-    found = true;
   } else if (path == kProxyIgnoreList) {
     ListValue* list =  new ListValue();
     net::ProxyBypassRules::RuleList bypass_rules = config.bypass_rules.rules();
     for (size_t x = 0; x < bypass_rules.size(); x++) {
-      list->Append(base::Value::CreateStringValue(bypass_rules[x]->ToString()));
+      list->Append(new base::StringValue(bypass_rules[x]->ToString()));
     }
-    *out_value = list;
-    return true;
-  }
-  if (found) {
-    DictionaryValue* dict = new DictionaryValue;
-    if (!data)
-      data = base::Value::CreateStringValue("");
-    dict->Set("value", data);
-    dict->SetBoolean("managed", managed);
-    if (path == kProxyType) {
-      dict->SetString("controlledBy", controlled_by);
-      dict->SetBoolean("disabled", !config.user_modifiable);
-    }
-    *out_value = dict;
-    return true;
+    data = list;
   } else {
     *out_value = NULL;
     return false;
   }
+
+  // Decorate pref value as CoreOptionsHandler::CreateValueForPref() does.
+  DictionaryValue* dict = new DictionaryValue;
+  if (!data)
+    data = new base::StringValue("");
+  dict->Set("value", data);
+  if (path == kProxyType) {
+    dict->SetString("controlledBy", controlled_by);
+    dict->SetBoolean("disabled", !config.user_modifiable);
+  } else {
+    dict->SetBoolean("disabled", false);
+  }
+  *out_value = dict;
+  return true;
 }
 
 }  // namespace proxy_cros_settings_parser

@@ -12,18 +12,22 @@ MockUserManager::~MockUserManager() {
   delete user_;
 }
 
-const User& MockUserManager::GetLoggedInUser() const {
-  return *user_;
+const User* MockUserManager::GetLoggedInUser() const {
+  return user_;
 }
 
-User& MockUserManager::GetLoggedInUser() {
-  return *user_;
+User* MockUserManager::GetLoggedInUser() {
+  return user_;
+}
+
+UserImageManager* MockUserManager::GetUserImageManager() {
+  return user_image_manager_.get();
 }
 
 // Creates a new User instance.
 void MockUserManager::SetLoggedInUser(const std::string& email) {
   delete user_;
-  user_ = new User(email);
+  user_ = User::CreateRegularUser(email);
 }
 
 ScopedMockUserManagerEnabler::ScopedMockUserManagerEnabler() {

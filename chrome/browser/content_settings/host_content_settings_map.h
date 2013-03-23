@@ -14,13 +14,13 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/synchronization/lock.h"
 #include "base/tuple.h"
 #include "chrome/browser/content_settings/content_settings_observer.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/common/content_settings.h"
-#include "chrome/common/content_settings_types.h"
 #include "chrome/common/content_settings_pattern.h"
+#include "chrome/common/content_settings_types.h"
 
 namespace base {
 class Value;
@@ -39,9 +39,9 @@ class HostContentSettingsMap
       public base::RefCountedThreadSafe<HostContentSettingsMap> {
  public:
   enum ProviderType {
-    PLATFORM_APP_PROVIDER = 0,
+    INTERNAL_EXTENSION_PROVIDER = 0,
     POLICY_PROVIDER,
-    EXTENSION_PROVIDER,
+    CUSTOM_EXTENSION_PROVIDER,
     PREF_PROVIDER,
     DEFAULT_PROVIDER,
     NUM_PROVIDER_TYPES,
@@ -50,10 +50,12 @@ class HostContentSettingsMap
   HostContentSettingsMap(PrefService* prefs,
                          bool incognito);
 
+#if defined(ENABLE_EXTENSIONS)
   // In some cases, the ExtensionService is not available at the time the
   // HostContentSettingsMap is constructed. In these cases, we register the
   // service once it's available.
   void RegisterExtensionService(ExtensionService* extension_service);
+#endif
 
   static void RegisterUserPrefs(PrefService* prefs);
 
@@ -186,6 +188,16 @@ class HostContentSettingsMap
   static bool ShouldAllowAllContent(const GURL& primary_url,
                                     const GURL& secondary_url,
                                     ContentSettingsType content_type);
+
+  // Returns the ProviderType associated with the given source string.
+  // TODO(estade): I regret adding this. At the moment there are no legitimate
+  // uses. We should stick to ProviderType rather than string so we don't have
+  // to convert backwards.
+  static ProviderType GetProviderTypeFromSource(const std::string& source);
+
+  bool is_off_the_record() const {
+    return is_off_the_record_;
+  }
 
  private:
   friend class base::RefCountedThreadSafe<HostContentSettingsMap>;

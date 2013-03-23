@@ -6,7 +6,6 @@
 
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/rand_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webdata/autofill_table.h"
@@ -80,17 +79,12 @@ bool MergeTimestamps(const sync_pb::AutofillSpecifics& autofill,
   }
 }
 
-bool ShouldCullSyncedData() {
-  // To set probability to 10% - set it to 0.1, 5% to 0.05, etc.
-  static double kCullingProbability = 0.0;
-  return (base::RandDouble() < kCullingProbability);
-}
-
 }  // namespace
 
 AutocompleteSyncableService::AutocompleteSyncableService(
     WebDataService* web_data_service)
-    : web_data_service_(web_data_service) {
+    : web_data_service_(web_data_service),
+      cull_expired_entries_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   DCHECK(web_data_service_);
   notification_registrar_.Add(
@@ -103,11 +97,12 @@ AutocompleteSyncableService::~AutocompleteSyncableService() {
 }
 
 AutocompleteSyncableService::AutocompleteSyncableService()
-    : web_data_service_(NULL) {
+    : web_data_service_(NULL),
+      cull_expired_entries_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 }
 
-syncer::SyncError AutocompleteSyncableService::MergeDataAndStartSyncing(
+syncer::SyncMergeResult AutocompleteSyncableService::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
     scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
@@ -118,12 +113,14 @@ syncer::SyncError AutocompleteSyncableService::MergeDataAndStartSyncing(
   DCHECK(error_handler.get());
   VLOG(1) << "Associating Autocomplete: MergeDataAndStartSyncing";
 
+  syncer::SyncMergeResult merge_result(type);
   error_handler_ = error_handler.Pass();
   std::vector<AutofillEntry> entries;
   if (!LoadAutofillData(&entries)) {
-    return error_handler_->CreateAndUploadError(
+    merge_result.set_error(error_handler_->CreateAndUploadError(
         FROM_HERE,
-        "Could not get the autocomplete data from WebDatabase.");
+        "Could not get the autocomplete data from WebDatabase."));
+    return merge_result;
   }
 
   AutocompleteEntryMap new_db_entries;
@@ -146,9 +143,10 @@ syncer::SyncError AutocompleteSyncableService::MergeDataAndStartSyncing(
   }
 
   if (!SaveChangesToWebData(new_synced_entries)) {
-    return error_handler_->CreateAndUploadError(
+    merge_result.set_error(error_handler_->CreateAndUploadError(
         FROM_HERE,
-        "Failed to update webdata.");
+        "Failed to update webdata."));
+    return merge_result;
   }
 
   WebDataService::NotifyOfMultipleAutofillChanges(web_data_service_);
@@ -162,16 +160,15 @@ syncer::SyncError AutocompleteSyncableService::MergeDataAndStartSyncing(
                            CreateSyncData(*(i->second.second))));
   }
 
-  if (ShouldCullSyncedData()) {
+  if (cull_expired_entries_) {
     // This will schedule a deletion operation on the DB thread, which will
     // trigger a notification to propagate the deletion to Sync.
     web_data_service_->RemoveExpiredFormElements();
   }
 
-  syncer::SyncError error =
-      sync_processor_->ProcessSyncChanges(FROM_HERE, new_changes);
-
-  return error;
+  merge_result.set_error(
+      sync_processor_->ProcessSyncChanges(FROM_HERE, new_changes));
+  return merge_result;
 }
 
 void AutocompleteSyncableService::StopSyncing(syncer::ModelType type) {
@@ -271,7 +268,7 @@ syncer::SyncError AutocompleteSyncableService::ProcessSyncChanges(
 
   WebDataService::NotifyOfMultipleAutofillChanges(web_data_service_);
 
-  if (ShouldCullSyncedData()) {
+  if (cull_expired_entries_) {
     // This will schedule a deletion operation on the DB thread, which will
     // trigger a notification to propagate the deletion to Sync.
     web_data_service_->RemoveExpiredFormElements();
@@ -442,6 +439,12 @@ void AutocompleteSyncableService::ActOnChanges(
                   << " Failed processing change:"
                   << " Error:" << error.message();
   }
+}
+
+void AutocompleteSyncableService::UpdateCullSetting(
+    bool cull_expired_entries) {
+  DCHECK(CalledOnValidThread());
+  cull_expired_entries_ = cull_expired_entries;
 }
 
 syncer::SyncData AutocompleteSyncableService::CreateSyncData(

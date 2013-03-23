@@ -33,14 +33,23 @@ bool GetUserDownloadsDirectory(FilePath* result) {
   return true;
 }
 
+bool GetUserMusicDirectory(FilePath* result) {
+  NOTIMPLEMENTED();
+  return false;
+}
+
 bool GetUserPicturesDirectory(FilePath* result) {
   NOTIMPLEMENTED();
   return false;
 }
 
-bool GetUserDesktop(FilePath* result) {
-  NOTIMPLEMENTED() << "Android doesn't support GetUserDesktop";
+bool GetUserVideosDirectory(FilePath* result) {
+  NOTIMPLEMENTED();
   return false;
+}
+
+bool ProcessNeedsProfileDir(const std::string& process_type) {
+  return true;
 }
 
 }  // namespace chrome

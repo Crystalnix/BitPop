@@ -7,18 +7,18 @@
 
 #include "content/common/content_export.h"
 
-#if defined(TOOLKIT_GTK)
-typedef struct _GdkEventKey GdkEventKey;
-#endif  // defined(TOOLKIT_GTK)
+namespace content {
+
+struct NativeWebKeyboardEvent;
 
 class CONTENT_EXPORT KeyboardListener {
  public:
-#if defined(TOOLKIT_GTK)
-  virtual bool HandleKeyPressEvent(GdkEventKey* event) = 0;
-#endif  // defined(TOOLKIT_GTK)
+  virtual bool HandleKeyPressEvent(const NativeWebKeyboardEvent& event) = 0;
 
  protected:
   virtual ~KeyboardListener() {}
 };
+
+}  // content
 
 #endif  // CONTENT_PUBLIC_BROWSER_KEYBOARD_LISTENER_H_

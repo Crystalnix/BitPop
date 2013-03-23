@@ -4,12 +4,8 @@
 
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/tabs/dock_info.h"
-#include "ui/gfx/rect.h"
-
-using content::SiteInstance;
+#include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 
 TestTabStripModelDelegate::TestTabStripModelDelegate() {
 }
@@ -17,35 +13,27 @@ TestTabStripModelDelegate::TestTabStripModelDelegate() {
 TestTabStripModelDelegate::~TestTabStripModelDelegate() {
 }
 
-TabContents* TestTabStripModelDelegate::AddBlankTab(bool foreground) {
-  return NULL;
-}
-
-TabContents* TestTabStripModelDelegate::AddBlankTabAt(int index,
-                                                      bool foreground) {
-  return NULL;
+void TestTabStripModelDelegate::AddBlankTabAt(int index, bool foreground) {
 }
 
 Browser* TestTabStripModelDelegate::CreateNewStripWithContents(
-    TabContents* contents,
+    const std::vector<NewStripContents>& contentses,
     const gfx::Rect& window_bounds,
     const DockInfo& dock_info,
     bool maximize) {
   return NULL;
 }
 
-int TestTabStripModelDelegate::GetDragActions() const {
-  return 0;
+void TestTabStripModelDelegate::WillAddWebContents(
+    content::WebContents* contents) {
+  // Required to determine reloadability of tabs.
+  CoreTabHelper::CreateForWebContents(contents);
+  // Required to determine if tabs are app tabs.
+  extensions::TabHelper::CreateForWebContents(contents);
 }
 
-TabContents* TestTabStripModelDelegate::CreateTabContentsForURL(
-      const GURL& url,
-      const content::Referrer& referrer,
-      Profile* profile,
-      content::PageTransition transition,
-      bool defer_load,
-      SiteInstance* instance) const {
-  return NULL;
+int TestTabStripModelDelegate::GetDragActions() const {
+  return 0;
 }
 
 bool TestTabStripModelDelegate::CanDuplicateContentsAt(int index) {
@@ -58,11 +46,12 @@ void TestTabStripModelDelegate::DuplicateContentsAt(int index) {
 void TestTabStripModelDelegate::CloseFrameAfterDragSession() {
 }
 
-void TestTabStripModelDelegate::CreateHistoricalTab(TabContents* contents) {
+void TestTabStripModelDelegate::CreateHistoricalTab(
+    content::WebContents* contents) {
 }
 
 bool TestTabStripModelDelegate::RunUnloadListenerBeforeClosing(
-    TabContents* contents) {
+    content::WebContents* contents) {
   return true;
 }
 

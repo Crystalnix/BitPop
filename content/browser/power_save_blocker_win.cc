@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/browser/power_save_blocker.h"
+#include "content/browser/power_save_blocker_impl.h"
 
 #include <windows.h>
 
@@ -12,6 +12,7 @@
 #include "base/win/windows_version.h"
 #include "content/public/browser/browser_thread.h"
 
+namespace content {
 namespace {
 
 int g_blocker_count[2];
@@ -79,7 +80,7 @@ void DeletePowerRequest(POWER_REQUEST_TYPE type, HANDLE handle) {
   DCHECK(success);
 }
 
-void ApplySimpleBlock(content::PowerSaveBlocker::PowerSaveBlockerType type,
+void ApplySimpleBlock(PowerSaveBlocker::PowerSaveBlockerType type,
                       int delta) {
   g_blocker_count[type] += delta;
   DCHECK_GE(g_blocker_count[type], 0);
@@ -88,7 +89,7 @@ void ApplySimpleBlock(content::PowerSaveBlocker::PowerSaveBlockerType type,
     return;
 
   DWORD this_flag = 0;
-  if (type == content::PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension)
+  if (type == PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension)
     this_flag |= ES_SYSTEM_REQUIRED;
   else
     this_flag |= ES_DISPLAY_REQUIRED;
@@ -104,12 +105,10 @@ void ApplySimpleBlock(content::PowerSaveBlocker::PowerSaveBlockerType type,
   SetThreadExecutionState(flags);
 }
 
-}  // namespace.
+}  // namespace
 
-namespace content {
-
-class PowerSaveBlocker::Delegate
-    : public base::RefCountedThreadSafe<PowerSaveBlocker::Delegate> {
+class PowerSaveBlockerImpl::Delegate
+    : public base::RefCountedThreadSafe<PowerSaveBlockerImpl::Delegate> {
  public:
   Delegate(PowerSaveBlockerType type, const std::string& reason)
       : type_(type), reason_(reason) {}
@@ -132,7 +131,7 @@ class PowerSaveBlocker::Delegate
   DISALLOW_COPY_AND_ASSIGN(Delegate);
 };
 
-void PowerSaveBlocker::Delegate::ApplyBlock() {
+void PowerSaveBlockerImpl::Delegate::ApplyBlock() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (base::win::GetVersion() < base::win::VERSION_WIN7)
     return ApplySimpleBlock(type_, 1);
@@ -140,7 +139,7 @@ void PowerSaveBlocker::Delegate::ApplyBlock() {
   handle_.Set(CreatePowerRequest(RequestType(), reason_));
 }
 
-void PowerSaveBlocker::Delegate::RemoveBlock() {
+void PowerSaveBlockerImpl::Delegate::RemoveBlock() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (base::win::GetVersion() < base::win::VERSION_WIN7)
     return ApplySimpleBlock(type_, -1);
@@ -148,7 +147,7 @@ void PowerSaveBlocker::Delegate::RemoveBlock() {
   DeletePowerRequest(RequestType(), handle_.Take());
 }
 
-POWER_REQUEST_TYPE PowerSaveBlocker::Delegate::RequestType() {
+POWER_REQUEST_TYPE PowerSaveBlockerImpl::Delegate::RequestType() {
   if (type_ == kPowerSaveBlockPreventDisplaySleep)
     return PowerRequestDisplayRequired;
 
@@ -158,15 +157,15 @@ POWER_REQUEST_TYPE PowerSaveBlocker::Delegate::RequestType() {
   return PowerRequestExecutionRequired;
 }
 
-PowerSaveBlocker::PowerSaveBlocker(PowerSaveBlockerType type,
-                                   const std::string& reason)
+PowerSaveBlockerImpl::PowerSaveBlockerImpl(PowerSaveBlockerType type,
+                                           const std::string& reason)
     : delegate_(new Delegate(type, reason)) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&Delegate::ApplyBlock, delegate_));
 }
 
-PowerSaveBlocker::~PowerSaveBlocker() {
+PowerSaveBlockerImpl::~PowerSaveBlockerImpl() {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&Delegate::RemoveBlock, delegate_));

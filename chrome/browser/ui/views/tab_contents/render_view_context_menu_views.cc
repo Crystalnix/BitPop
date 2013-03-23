@@ -36,16 +36,22 @@ RenderViewContextMenuViews::~RenderViewContextMenuViews() {
 #if !defined(OS_WIN)
 // static
 RenderViewContextMenuViews* RenderViewContextMenuViews::Create(
-    content::WebContents* tab_contents,
+    content::WebContents* web_contents,
     const content::ContextMenuParams& params) {
-  return new RenderViewContextMenuViews(tab_contents, params);
+  return new RenderViewContextMenuViews(web_contents, params);
 }
 #endif  // OS_WIN
 
-void RenderViewContextMenuViews::RunMenuAt(views::Widget* parent,
-                                           const gfx::Point& point) {
+void RenderViewContextMenuViews::RunMenuAt(
+    views::Widget* parent,
+    const gfx::Point& point,
+    content::ContextMenuSourceType type) {
+  views::MenuItemView::AnchorPosition anchor_position =
+      type == content::CONTEXT_MENU_SOURCE_TOUCH ?
+          views::MenuItemView::BOTTOMCENTER : views::MenuItemView::TOPLEFT;
   if (menu_runner_->RunMenuAt(parent, NULL, gfx::Rect(point, gfx::Size()),
-          views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS) ==
+      anchor_position, views::MenuRunner::HAS_MNEMONICS |
+          views::MenuRunner::CONTEXT_MENU) ==
       views::MenuRunner::MENU_DELETED)
     return;
 }

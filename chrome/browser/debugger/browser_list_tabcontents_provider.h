@@ -12,22 +12,23 @@
 #include "base/compiler_specific.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
 
-namespace content {
-class WebContents;
-}
+class Profile;
 
 class BrowserListTabContentsProvider
     : public content::DevToolsHttpHandlerDelegate {
  public:
-  BrowserListTabContentsProvider();
+  explicit BrowserListTabContentsProvider(Profile* profile);
   virtual ~BrowserListTabContentsProvider();
 
   // DevToolsHttpProtocolHandler::Delegate overrides.
   virtual std::string GetDiscoveryPageHTML() OVERRIDE;
   virtual bool BundlesFrontendResources() OVERRIDE;
-  virtual std::string GetFrontendResourcesBaseURL() OVERRIDE;
+  virtual FilePath GetDebugFrontendDir() OVERRIDE;
+  virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE;
+  virtual content::RenderViewHost* CreateNewTarget() OVERRIDE;
 
  private:
+  Profile* profile_;
   DISALLOW_COPY_AND_ASSIGN(BrowserListTabContentsProvider);
 };
 

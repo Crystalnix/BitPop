@@ -11,9 +11,13 @@ html[oobe=old] #gaia-signin {
 }
 
 #signin-right {
-  font-size: 12px;
   top: 60px;
   width: 200px;
+}
+
+#signin-right,
+#enterprise-info-container {
+  font-size: 12px;
 }
 
 html[oobe=old] #signin-right {
@@ -43,6 +47,10 @@ html[oobe=new] #signin-right {
   -webkit-margin-start: 30px;
 }
 
+html[oobe=new] .no-right-panel #signin-right {
+  display: none;
+}
+
 .signin-text {
   color: #666;
   margin-top: 20px;
@@ -52,6 +60,12 @@ html[oobe=new] #signin-right {
   color: rgb(37, 79, 155);
   cursor: pointer;
   text-decoration: none;
+}
+
+.signin-link:focus {
+  -webkit-transition: outline-color 200ms;
+  /* Note: May use 1px solid here. */
+  outline-color: rgb(77, 144, 254);
 }
 
 #signin-frame {
@@ -69,20 +83,8 @@ html[oobe=new] #signin-frame {
   border-right: 1px solid lightgray;
 }
 
-#gaia-loading {
-  -webkit-box-align: center;
-  -webkit-box-pack: center;
-  bottom: 0;
-  display: -webkit-box;
-  left: 0;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
-#gaia-loading .spinner {
-  height: 32px;
-  width: 32px;
+html[oobe=new] .no-right-panel #signin-frame {
+  border: none;
 }
 
 /* Position to be aligned with the login box in iframe  */
@@ -92,4 +94,16 @@ html[oobe=new] #signin-frame {
   top: 77px;
   visibility: hidden;
   z-index: -1;
+}
+
+#enterprise-info-container {
+  bottom: 10px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  text-align: center;
+}
+
+#enterprise-info-container #enterprise-info {
+  display: inline-block;
 }

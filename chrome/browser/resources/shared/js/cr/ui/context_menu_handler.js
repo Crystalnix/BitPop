@@ -31,12 +31,18 @@ cr.define('cr.ui', function() {
      */
     showMenu: function(e, menu) {
       this.menu_ = menu;
+      menu.updateCommands(e.currentTarget);
       menu.hidden = false;
+      menu.contextElement = e.currentTarget;
 
       // when the menu is shown we steal all keyboard events.
       var doc = menu.ownerDocument;
       doc.addEventListener('keydown', this, true);
       doc.addEventListener('mousedown', this, true);
+      // Note: this should be listening for focus, as in menu_button.js, but
+      // as per crbug.com/162190 this indirectly causes odd behaviour.
+      // Since the context menu is currently not keyboard-accessible, blur
+      // is sufficient for now.
       doc.addEventListener('blur', this, true);
       doc.defaultView.addEventListener('resize', this);
       menu.addEventListener('contextmenu', this);
@@ -53,6 +59,7 @@ cr.define('cr.ui', function() {
         return;
 
       menu.hidden = true;
+      menu.contextElement = null;
       var doc = menu.ownerDocument;
       doc.removeEventListener('keydown', this, true);
       doc.removeEventListener('mousedown', this, true);

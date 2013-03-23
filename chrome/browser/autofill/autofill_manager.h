@@ -17,35 +17,43 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/string16.h"
 #include "base/time.h"
+#include "chrome/browser/api/sync/profile_sync_service_observer.h"
+#include "chrome/browser/autofill/autocomplete_history_manager.h"
 #include "chrome/browser/autofill/autofill_download.h"
 #include "chrome/browser/autofill/field_types.h"
 #include "chrome/browser/autofill/form_structure.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/ssl_status.h"
 
 class AutofillExternalDelegate;
 class AutofillField;
 class AutofillProfile;
 class AutofillMetrics;
 class CreditCard;
+class FormGroup;
+class GURL;
 class PersonalDataManager;
 class PrefService;
 class ProfileSyncService;
-class TabContents;
 
+struct FormData;
+struct FormFieldData;
+struct PasswordFormFillData;
 struct ViewHostMsg_FrameNavigate_Params;
 
 namespace autofill {
+class AutofillManagerDelegate;
 class PasswordGenerator;
 }
 
 namespace content {
 class RenderViewHost;
+class WebContents;
+
+struct PasswordForm;
 }
 
 namespace gfx {
@@ -56,43 +64,31 @@ namespace IPC {
 class Message;
 }
 
-namespace webkit {
-namespace forms {
-struct FormData;
-struct FormField;
-struct PasswordForm;
-struct PasswordFormFillData;
-}
-}
-
 // Manages saving and restoring the user's personal information entered into web
 // forms.
-class AutofillManager : public content::NotificationObserver,
-                        public content::WebContentsObserver,
+class AutofillManager : public content::WebContentsObserver,
                         public AutofillDownloadManager::Observer,
                         public ProfileSyncServiceObserver,
                         public base::RefCounted<AutofillManager> {
  public:
-  explicit AutofillManager(TabContents* tab_contents);
+  static void CreateForWebContentsAndDelegate(
+      content::WebContents* contents,
+      autofill::AutofillManagerDelegate* delegate);
+  static AutofillManager* FromWebContents(content::WebContents* contents);
 
   // Registers our Enable/Disable Autofill pref.
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefServiceBase* prefs);
 
-  // Set our external delegate.
-  // TODO(jrg): consider passing delegate into the ctor.  That won't
-  // work if the delegate has a pointer to the AutofillManager, but
-  // future directions may not need such a pointer.
-  void SetExternalDelegate(AutofillExternalDelegate* delegate) {
-    external_delegate_ = delegate;
-  }
+  // Set an external delegate.
+  void SetExternalDelegate(AutofillExternalDelegate* delegate);
 
   // Used to say if this class has an external delegate that it is using.
   bool HasExternalDelegate();
 
   // Called from our external delegate so they cannot be private.
   virtual void OnFillAutofillFormData(int query_id,
-                                      const webkit::forms::FormData& form,
-                                      const webkit::forms::FormField& field,
+                                      const FormData& form,
+                                      const FormFieldData& field,
                                       int unique_id);
   void OnDidShowAutofillSuggestions(bool is_new_popup);
   void OnDidFillAutofillFormData(const base::TimeTicks& timestamp);
@@ -100,15 +96,21 @@ class AutofillManager : public content::NotificationObserver,
   void OnDidPreviewAutofillFormData();
   void OnShowPasswordGenerationPopup(const gfx::Rect& bounds,
                                      int max_length,
-                                     const webkit::forms::PasswordForm& form);
+                                     const content::PasswordForm& form);
 
   // Remove the credit card or Autofill profile that matches |unique_id|
   // from the database.
   void RemoveAutofillProfileOrCreditCard(int unique_id);
 
+  // Remove the specified Autocomplete entry.
+  void RemoveAutocompleteEntry(const string16& name, const string16& value);
+
  protected:
   // Only test code should subclass AutofillManager.
   friend class base::RefCounted<AutofillManager>;
+
+  AutofillManager(content::WebContents* web_contents,
+                  autofill::AutofillManagerDelegate* delegate);
   virtual ~AutofillManager();
 
   // The string/int pair is composed of the guid string and variant index
@@ -117,7 +119,8 @@ class AutofillManager : public content::NotificationObserver,
   typedef std::pair<std::string, size_t> GUIDPair;
 
   // Test code should prefer to use this constructor.
-  AutofillManager(TabContents* tab_contents,
+  AutofillManager(content::WebContents* web_contents,
+                  autofill::AutofillManagerDelegate* delegate,
                   PersonalDataManager* personal_data);
 
   // Returns the value of the AutofillEnabled pref.
@@ -166,8 +169,12 @@ class AutofillManager : public content::NotificationObserver,
   // Processes the submitted |form|, saving any new Autofill data and uploading
   // the possible field types for the submitted fields to the crowdsouring
   // server.  Returns false if this form is not relevant for Autofill.
-  bool OnFormSubmitted(const webkit::forms::FormData& form,
+  bool OnFormSubmitted(const FormData& form,
                        const base::TimeTicks& timestamp);
+
+  // Tell the renderer the current interactive autocomplete failed somehow.
+  // Exposed for testing.
+  virtual void ReturnAutocompleteError();
 
  private:
   // content::WebContentsObserver:
@@ -176,6 +183,8 @@ class AutofillManager : public content::NotificationObserver,
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void WebContentsDestroyed(
+      content::WebContents* web_contents) OVERRIDE;
 
   // AutofillDownloadManager::Observer:
   virtual void OnLoadedServerPredictions(
@@ -187,10 +196,8 @@ class AutofillManager : public content::NotificationObserver,
   // Register as an observer with the sync service.
   void RegisterWithSyncService();
 
-  // content::NotificationObserver override
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Called when password generation preference state changes.
+  void OnPasswordGenerationEnabledChanged();
 
   // Determines what the current state of password generation is, and if it has
   // changed from |password_generation_enabled_|. If it has changed or if
@@ -199,24 +206,24 @@ class AutofillManager : public content::NotificationObserver,
   void UpdatePasswordGenerationState(content::RenderViewHost* host,
                                      bool new_renderer);
 
-  void OnFormsSeen(const std::vector<webkit::forms::FormData>& forms,
+  void OnFormsSeen(const std::vector<FormData>& forms,
                    const base::TimeTicks& timestamp);
-  void OnTextFieldDidChange(const webkit::forms::FormData& form,
-                            const webkit::forms::FormField& field,
+  void OnTextFieldDidChange(const FormData& form,
+                            const FormFieldData& field,
                             const base::TimeTicks& timestamp);
 
   // The |bounding_box| is a window relative value.
   void OnQueryFormFieldAutofill(int query_id,
-                                const webkit::forms::FormData& form,
-                                const webkit::forms::FormField& field,
+                                const FormData& form,
+                                const FormFieldData& field,
                                 const gfx::Rect& bounding_box,
                                 bool display_warning);
   void OnDidEndTextFieldEditing();
   void OnHideAutofillPopup();
   void OnAddPasswordFormMapping(
-      const webkit::forms::FormField& form,
-      const webkit::forms::PasswordFormFillData& fill_data);
-  void OnShowPasswordSuggestions(const webkit::forms::FormField& field,
+      const FormFieldData& form,
+      const PasswordFormFillData& fill_data);
+  void OnShowPasswordSuggestions(const FormFieldData& field,
                                  const gfx::Rect& bounds,
                                  const std::vector<string16>& suggestions);
   void OnSetDataList(const std::vector<string16>& values,
@@ -224,32 +231,36 @@ class AutofillManager : public content::NotificationObserver,
                      const std::vector<string16>& icons,
                      const std::vector<int>& unique_ids);
 
+  // Requests an interactive autocomplete UI be shown.
+  void OnRequestAutocomplete(const FormData& form,
+                             const GURL& frame_url,
+                             const content::SSLStatus& ssl_status);
+
+  // Passes return data for an OnRequestAutocomplete call back to the page.
+  void ReturnAutocompleteData(const FormStructure* result);
+
   // Fills |host| with the RenderViewHost for this tab.
   // Returns false if Autofill is disabled or if the host is unavailable.
-  bool GetHost(const std::vector<AutofillProfile*>& profiles,
-               const std::vector<CreditCard*>& credit_cards,
-               content::RenderViewHost** host) const WARN_UNUSED_RESULT;
+  bool GetHost(content::RenderViewHost** host) const WARN_UNUSED_RESULT;
 
-  // Unpacks |unique_id| and fills |profile| or |credit_card| with the
-  // appropriate data source.  Returns false if the unpacked id cannot be found.
+  // Unpacks |unique_id| and fills |form_group| and |variant| with the
+  // appropriate data source and variant index.  Returns false if the unpacked
+  // id cannot be found.
   bool GetProfileOrCreditCard(int unique_id,
-                              const std::vector<AutofillProfile*>& profiles,
-                              const std::vector<CreditCard*>& credit_cards,
-                              const AutofillProfile** profile,
-                              const CreditCard** credit_card,
+                              const FormGroup** form_group,
                               size_t* variant) const WARN_UNUSED_RESULT;
 
   // Fills |form_structure| cached element corresponding to |form|.
   // Returns false if the cached element was not found.
-  bool FindCachedForm(const webkit::forms::FormData& form,
+  bool FindCachedForm(const FormData& form,
                       FormStructure** form_structure) const WARN_UNUSED_RESULT;
 
   // Fills |form_structure| and |autofill_field| with the cached elements
   // corresponding to |form| and |field|.  This might have the side-effect of
   // updating the cache.  Returns false if the |form| is not autofillable, or if
   // it is not already present in the cache and the cache is full.
-  bool GetCachedFormAndField(const webkit::forms::FormData& form,
-                             const webkit::forms::FormField& field,
+  bool GetCachedFormAndField(const FormData& form,
+                             const FormFieldData& field,
                              FormStructure** form_structure,
                              AutofillField** autofill_field) WARN_UNUSED_RESULT;
 
@@ -257,7 +268,7 @@ class AutofillManager : public content::NotificationObserver,
   // |cached_form| should be a pointer to the existing version of the form, or
   // NULL if no cached version exists.  The updated form is then written into
   // |updated_form|.  Returns false if the cache could not be updated.
-  bool UpdateCachedForm(const webkit::forms::FormData& live_form,
+  bool UpdateCachedForm(const FormData& live_form,
                         const FormStructure* cached_form,
                         FormStructure** updated_form) WARN_UNUSED_RESULT;
 
@@ -265,7 +276,7 @@ class AutofillManager : public content::NotificationObserver,
   // value of |field| and returns the labels of the matching profiles. |labels|
   // is filled with the Profile label.
   void GetProfileSuggestions(FormStructure* form,
-                             const webkit::forms::FormField& field,
+                             const FormFieldData& field,
                              AutofillFieldType type,
                              std::vector<string16>* values,
                              std::vector<string16>* labels,
@@ -275,37 +286,15 @@ class AutofillManager : public content::NotificationObserver,
   // Returns a list of values from the stored credit cards that match |type| and
   // the value of |field| and returns the labels of the matching credit cards.
   void GetCreditCardSuggestions(FormStructure* form,
-                                const webkit::forms::FormField& field,
+                                const FormFieldData& field,
                                 AutofillFieldType type,
                                 std::vector<string16>* values,
                                 std::vector<string16>* labels,
                                 std::vector<string16>* icons,
                                 std::vector<int>* unique_ids) const;
 
-  // Set |field|'s value based on |type| and contents of the |credit_card|.
-  void FillCreditCardFormField(const CreditCard& credit_card,
-                               AutofillFieldType type,
-                               webkit::forms::FormField* field);
-
-  // Set |field|'s value based on |cached_field|'s type and contents of the
-  // |profile|. The |variant| parameter specifies which value in a multi-valued
-  // profile.
-  void FillFormField(const AutofillProfile& profile,
-                     const AutofillField& cached_field,
-                     size_t variant,
-                     webkit::forms::FormField* field);
-
-  // Set |field|'s value for phone number based on contents of the |profile|.
-  // The |cached_field| specifies the type of the phone and whether this is a
-  // phone prefix or suffix.  The |variant| parameter specifies which value in a
-  // multi-valued profile.
-  void FillPhoneNumberField(const AutofillProfile& profile,
-                            const AutofillField& cached_field,
-                            size_t variant,
-                            webkit::forms::FormField* field);
-
   // Parses the forms using heuristic matching and querying the Autofill server.
-  void ParseForms(const std::vector<webkit::forms::FormData>& forms);
+  void ParseForms(const std::vector<FormData>& forms);
 
   // Imports the form data, submitted by the user, into |personal_data_|.
   void ImportFormData(const FormStructure& submitted_form);
@@ -321,8 +310,7 @@ class AutofillManager : public content::NotificationObserver,
   void SendAutofillTypePredictions(
       const std::vector<FormStructure*>& forms) const;
 
-  // The owning TabContents.
-  TabContents* tab_contents_;
+  autofill::AutofillManagerDelegate* const manager_delegate_;
 
   // The personal data manager, used to save and load personal data to/from the
   // web database.  This is overridden by the AutofillManagerTest.
@@ -331,6 +319,7 @@ class AutofillManager : public content::NotificationObserver,
   PersonalDataManager* personal_data_;
 
   std::list<std::string> autofilled_form_signatures_;
+
   // Handles queries and uploads to Autofill servers.
   AutofillDownloadManager download_manager_;
 
@@ -339,6 +328,9 @@ class AutofillManager : public content::NotificationObserver,
   // default for the public constructor, and true by default for the test-only
   // constructors.
   bool disable_download_manager_requests_;
+
+  // Handles single-field autocomplete form data.
+  AutocompleteHistoryManager autocomplete_history_manager_;
 
   // For logging UMA metrics. Overridden by metrics tests.
   scoped_ptr<const AutofillMetrics> metric_logger_;
@@ -366,9 +358,6 @@ class AutofillManager : public content::NotificationObserver,
   bool password_generation_enabled_;
   // Listens for changes to the 'enabled' state for password generation.
   PrefChangeRegistrar registrar_;
-  // Listens for TabContents destruction to avoid using pointer during
-  // destruction.
-  content::NotificationRegistrar notification_registrar_;
 
   // To be passed to the password generation UI to generate the password.
   scoped_ptr<autofill::PasswordGenerator> password_generator_;
@@ -390,8 +379,12 @@ class AutofillManager : public content::NotificationObserver,
                            DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            DeterminePossibleFieldTypesForUploadStressTest);
+  FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
+                           DisabledAutofillDispatchesError);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AddressSuggestionsCount);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AutofillIsEnabledAtPageLoad);
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, DeveloperEngagement);
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, FormFillDuration);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
                            NoQualityMetricsForNonAutofillableForms);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, QualityMetrics);
@@ -404,7 +397,6 @@ class AutofillManager : public content::NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
                            UserHappinessFormLoadAndSubmission);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, UserHappinessFormInteraction);
-  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, FormFillDuration);
 
   DISALLOW_COPY_AND_ASSIGN(AutofillManager);
 };

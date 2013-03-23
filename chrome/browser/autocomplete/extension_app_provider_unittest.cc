@@ -11,6 +11,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class ExtensionAppProviderTest : public testing::Test {
@@ -21,7 +22,9 @@ class ExtensionAppProviderTest : public testing::Test {
     const GURL output[3];
   };
 
-  ExtensionAppProviderTest() : history_service_(NULL) { }
+  ExtensionAppProviderTest()
+      : ui_thread_(content::BrowserThread::UI, &message_loop_),
+        history_service_(NULL) { }
   virtual ~ExtensionAppProviderTest() { }
 
   virtual void SetUp() OVERRIDE;
@@ -31,6 +34,7 @@ class ExtensionAppProviderTest : public testing::Test {
 
  protected:
   MessageLoopForUI message_loop_;
+  content::TestBrowserThread ui_thread_;
   scoped_refptr<ExtensionAppProvider> app_provider_;
   scoped_ptr<TestingProfile> profile_;
   HistoryService* history_service_;
@@ -82,8 +86,8 @@ void ExtensionAppProviderTest::RunTest(
     int num_cases) {
   ACMatches matches;
   for (int i = 0; i < num_cases; ++i) {
-    AutocompleteInput input(keyword_cases[i].input, string16(), true,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(keyword_cases[i].input, string16::npos, string16(),
+                            true, false, true, AutocompleteInput::ALL_MATCHES);
     app_provider_->Start(input, false);
     EXPECT_TRUE(app_provider_->done());
     matches = app_provider_->matches();
@@ -131,7 +135,7 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
     { "Test\r\t\nTest", "TestTest" },
   };
 
-  AutocompleteInput input(ASCIIToUTF16("Test"), string16(),
+  AutocompleteInput input(ASCIIToUTF16("Test"), string16::npos, string16(),
                           true, true, true, AutocompleteInput::BEST_MATCH);
   string16 url(ASCIIToUTF16("http://example.com"));
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
@@ -145,4 +149,3 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
     EXPECT_EQ(ASCIIToUTF16(cases[i].match_contents), match.contents);
   }
 }
-

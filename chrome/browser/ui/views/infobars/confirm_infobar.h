@@ -25,8 +25,13 @@ class ConfirmInfoBar : public InfoBarView,
  public:
   ConfirmInfoBar(InfoBarTabHelper* owner, ConfirmInfoBarDelegate* delegate);
 
- private:
+ protected:
+  // TODO(rogerta): These only need to be protected due to the
+  // OneClickLoginInfoBar experiment and can be made private once that's
+  // removed.
   virtual ~ConfirmInfoBar();
+
+  views::TextButton* ok_button() { return ok_button_; }
 
   // InfoBarView:
   virtual void Layout() OVERRIDE;
@@ -34,12 +39,13 @@ class ConfirmInfoBar : public InfoBarView,
                                     View* parent,
                                     View* child) OVERRIDE;
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
   virtual int ContentMinimumWidth() const OVERRIDE;
 
   // views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
+ private:
   ConfirmInfoBarDelegate* GetDelegate();
 
   views::Label* label_;

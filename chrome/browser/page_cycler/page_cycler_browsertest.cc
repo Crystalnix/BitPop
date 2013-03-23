@@ -179,13 +179,13 @@ class PageCyclerCachedBrowserTest : public PageCyclerBrowserTest {
 
  private:
   // The directory storing the copy of the UserDataDir.
-  ScopedTempDir user_data_dir_;
+  base::ScopedTempDir user_data_dir_;
 };
 
 // Sanity check; iterate through a series of URLs and make sure there are no
 // errors.
 IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, BasicTest) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   RegisterForNotifications();
@@ -212,7 +212,7 @@ IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, UnvisitableURL) {
   const size_t kNumErrors = 1;
   const char kFakeURL[] = "http://www.pleasenoonehavethisurlanytimeinthenext"
                           "century.com/gibberish";
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   RegisterForNotifications();
@@ -247,7 +247,7 @@ IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, UnvisitableURL) {
 IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, InvalidURL) {
   const char kBadURL[] = "notarealurl";
 
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   RegisterForNotifications();
@@ -279,7 +279,7 @@ IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, InvalidURL) {
 
 // Test that PageCycler will remove a Chrome Error URL prior to running.
 IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, ChromeErrorURL) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   RegisterForNotifications();
@@ -311,20 +311,23 @@ IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, ChromeErrorURL) {
   ASSERT_FALSE(errors[0].compare(expected_error));
 }
 
-// Test that PageCycler will visit all the urls from a cache directory
-// successfully while in playback mode.
-#if defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS)
 // TODO(rdevlin.cronin): Perhaps page cycler isn't completely implemented on
 // ChromeOS?
-#else
+
+// Test that PageCycler will visit all the urls from a cache directory
+// successfully while in playback mode.
+#if defined(OS_LINUX)
+// Bug 159026: Fails on Linux in both debug and release mode.
+#define MAYBE_PlaybackMode DISABLED_PlaybackMode
+#elif (defined(OS_WIN) || defined(OS_MACOSX) ) && !defined(NDEBUG)
 // Bug 131333: This test fails on a XP debug bot since Build 17609.
-#if (defined(OS_WIN) || defined(OS_MACOSX)) && !defined(NDEBUG)
 #define MAYBE_PlaybackMode DISABLED_PlaybackMode
 #else
 #define MAYBE_PlaybackMode PlaybackMode
 #endif
 IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, MAYBE_PlaybackMode) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   RegisterForNotifications();
@@ -338,6 +341,11 @@ IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, MAYBE_PlaybackMode) {
   ASSERT_TRUE(file_util::PathExists(stats_file()));
   ASSERT_FALSE(file_util::PathExists(errors_file()));
 }
+#endif  // !defined(OS_CHROMEOS)
+
+#if !defined(OS_CHROMEOS)
+// TODO(rdevlin.cronin): Perhaps page cycler isn't completely implemented on
+// ChromeOS?
 
 // Test that PageCycler will have a cache miss if a URL is missing from the
 // cache directory while in playback mode.
@@ -350,22 +358,21 @@ IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, MAYBE_PlaybackMode) {
 IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, MAYBE_URLNotInCache) {
   const char kCacheMissURL[] = "http://www.images.google.com/";
 
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   RegisterForNotifications();
   InitFilePaths(temp.path());
 
-  std::string urls_string;
-  ASSERT_TRUE(file_util::ReadFileToString(urls_file(),
-                                          &urls_string));
+  // Only use a single URL that is not in cache. That's sufficient for the test
+  // scenario, and makes things faster than needlessly cycling through all the
+  // other URLs.
 
-  urls_string.append("\n").append(kCacheMissURL);
   FilePath new_urls_file = temp.path().AppendASCII("urls");
   ASSERT_FALSE(file_util::PathExists(new_urls_file));
 
-  ASSERT_TRUE(file_util::WriteFile(new_urls_file, urls_string.c_str(),
-                                   urls_string.size()));
+  ASSERT_TRUE(file_util::WriteFile(new_urls_file, kCacheMissURL,
+                                   sizeof(kCacheMissURL)));
 
   InitPageCycler(new_urls_file, errors_file(), stats_file());
   page_cycler()->Run();
@@ -384,4 +391,4 @@ IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, MAYBE_URLNotInCache) {
 
   ASSERT_FALSE(errors[0].compare(expected_error));
 }
-#endif
+#endif  // !defined(OS_CHROMEOS)

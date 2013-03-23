@@ -95,8 +95,6 @@ class HistogramUniquifier {
  public:
   static const char* name() {
     const char* kHistogramNames[] = {
-      "Sqlite.Cookie.Error",
-      "Sqlite.History.Error",
       "Sqlite.Thumbnail.Error",
       "Sqlite.Text.Error",
       "Sqlite.Web.Error"
@@ -107,24 +105,16 @@ class HistogramUniquifier {
 
 }  // namespace
 
-sql::ErrorDelegate* GetErrorHandlerForCookieDb() {
+sql::ErrorDelegate* GetErrorHandlerForThumbnailDb() {
   return new sql::DiagnosticErrorDelegate<HistogramUniquifier<0> >();
 }
 
-sql::ErrorDelegate* GetErrorHandlerForHistoryDb() {
+sql::ErrorDelegate* GetErrorHandlerForTextDb() {
   return new sql::DiagnosticErrorDelegate<HistogramUniquifier<1> >();
 }
 
-sql::ErrorDelegate* GetErrorHandlerForThumbnailDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<2> >();
-}
-
-sql::ErrorDelegate* GetErrorHandlerForTextDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<3> >();
-}
-
 sql::ErrorDelegate* GetErrorHandlerForWebDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<4> >();
+  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<2> >();
 }
 
 DiagnosticTest* MakeSqliteWebDbTest() {

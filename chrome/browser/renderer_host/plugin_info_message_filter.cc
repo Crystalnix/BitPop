@@ -5,10 +5,14 @@
 #include "chrome/browser/renderer_host/plugin_info_message_filter.h"
 
 #include "base/bind.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/plugins/plugin_finder.h"
+#include "chrome/browser/plugins/plugin_metadata.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/content_settings.h"
@@ -18,12 +22,10 @@
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/plugin_service_filter.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-#include "chrome/browser/plugin_finder.h"
-#include "chrome/browser/plugin_installer.h"
+#if defined(OS_WIN)
+#include "base/win/metro.h"
 #endif
 
 using content::PluginService;
@@ -35,11 +37,15 @@ PluginInfoMessageFilter::Context::Context(int render_process_id,
       resource_context_(profile->GetResourceContext()),
       host_content_settings_map_(profile->GetHostContentSettingsMap()) {
   allow_outdated_plugins_.Init(prefs::kPluginsAllowOutdated,
-                               profile->GetPrefs(), NULL);
-  allow_outdated_plugins_.MoveToThread(content::BrowserThread::IO);
+                               profile->GetPrefs());
+  allow_outdated_plugins_.MoveToThread(
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::IO));
   always_authorize_plugins_.Init(prefs::kPluginsAlwaysAuthorize,
-                                 profile->GetPrefs(), NULL);
-  always_authorize_plugins_.MoveToThread(content::BrowserThread::IO);
+                                 profile->GetPrefs());
+  always_authorize_plugins_.MoveToThread(
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::IO));
 }
 
 PluginInfoMessageFilter::Context::Context()
@@ -109,71 +115,55 @@ void PluginInfoMessageFilter::PluginsLoaded(
     const GetPluginInfo_Params& params,
     IPC::Message* reply_msg,
     const std::vector<WebPluginInfo>& plugins) {
-  ChromeViewHostMsg_GetPluginInfo_Status status;
-  WebPluginInfo plugin;
-  std::string actual_mime_type;
+  ChromeViewHostMsg_GetPluginInfo_Output output;
   // This also fills in |actual_mime_type|.
-  if (!context_.FindEnabledPlugin(params.render_view_id, params.url,
-                                  params.top_origin_url, params.mime_type,
-                                  &status, &plugin, &actual_mime_type)) {
-    ChromeViewHostMsg_GetPluginInfo::WriteReplyParams(
-        reply_msg, status, plugin, actual_mime_type);
-    Send(reply_msg);
-    return;
+  scoped_ptr<PluginMetadata> plugin_metadata;
+  if (context_.FindEnabledPlugin(params.render_view_id, params.url,
+                                 params.top_origin_url, params.mime_type,
+                                 &output.status, &output.plugin,
+                                 &output.actual_mime_type,
+                                 &plugin_metadata)) {
+    context_.DecidePluginStatus(params, output.plugin, plugin_metadata.get(),
+                                &output.status);
   }
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-  PluginFinder::Get(base::Bind(&PluginInfoMessageFilter::GotPluginFinder, this,
-                               params, reply_msg, plugin, actual_mime_type));
-#else
-  GotPluginFinder(params, reply_msg, plugin, actual_mime_type, NULL);
-#endif
-}
 
-void PluginInfoMessageFilter::GotPluginFinder(
-    const GetPluginInfo_Params& params,
-    IPC::Message* reply_msg,
-    const WebPluginInfo& plugin,
-    const std::string& actual_mime_type,
-    PluginFinder* plugin_finder) {
-  ChromeViewHostMsg_GetPluginInfo_Status status;
-  context_.DecidePluginStatus(params, plugin, plugin_finder, &status);
-  ChromeViewHostMsg_GetPluginInfo::WriteReplyParams(
-      reply_msg, status, plugin, actual_mime_type);
+  if (plugin_metadata) {
+    output.group_identifier = plugin_metadata->identifier();
+    output.group_name = plugin_metadata->name();
+  }
+
+  ChromeViewHostMsg_GetPluginInfo::WriteReplyParams(reply_msg, output);
   Send(reply_msg);
 }
 
 void PluginInfoMessageFilter::Context::DecidePluginStatus(
     const GetPluginInfo_Params& params,
     const WebPluginInfo& plugin,
-    PluginFinder* plugin_finder,
+    const PluginMetadata* plugin_metadata,
     ChromeViewHostMsg_GetPluginInfo_Status* status) const {
-  scoped_ptr<webkit::npapi::PluginGroup> group(
-      webkit::npapi::PluginList::Singleton()->GetPluginGroup(plugin));
+#if defined(OS_WIN)
+  if (plugin.type == WebPluginInfo::PLUGIN_TYPE_NPAPI &&
+      base::win::IsMetroProcess()) {
+    status->value =
+        ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
+    return;
+  }
+#endif
 
   ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
   bool uses_default_content_setting = true;
   // Check plug-in content settings. The primary URL is the top origin URL and
   // the secondary URL is the plug-in URL.
   GetPluginContentSetting(plugin, params.top_origin_url, params.url,
-                          group->identifier(), &plugin_setting,
+                          plugin_metadata->identifier(), &plugin_setting,
                           &uses_default_content_setting);
   DCHECK(plugin_setting != CONTENT_SETTING_DEFAULT);
 
+  PluginMetadata::SecurityStatus plugin_status =
+      plugin_metadata->GetSecurityStatus(plugin);
 #if defined(ENABLE_PLUGIN_INSTALLATION)
-#if defined(OS_LINUX)
-  // On Linux, unknown plugins require authorization.
-  PluginInstaller::SecurityStatus plugin_status =
-      PluginInstaller::SECURITY_STATUS_REQUIRES_AUTHORIZATION;
-#else
-  PluginInstaller::SecurityStatus plugin_status =
-      PluginInstaller::SECURITY_STATUS_UP_TO_DATE;
-#endif
-  PluginInstaller* installer =
-      plugin_finder->FindPluginWithIdentifier(group->identifier());
-  if (installer)
-    plugin_status = installer->GetSecurityStatus(plugin);
   // Check if the plug-in is outdated.
-  if (plugin_status == PluginInstaller::SECURITY_STATUS_OUT_OF_DATE &&
+  if (plugin_status == PluginMetadata::SECURITY_STATUS_OUT_OF_DATE &&
       !allow_outdated_plugins_.GetValue()) {
     if (allow_outdated_plugins_.IsManaged()) {
       status->value =
@@ -183,10 +173,11 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     }
     return;
   }
+#endif
 
   // Check if the plug-in requires authorization.
   if (plugin_status ==
-          PluginInstaller::SECURITY_STATUS_REQUIRES_AUTHORIZATION &&
+          PluginMetadata::SECURITY_STATUS_REQUIRES_AUTHORIZATION &&
       plugin.type != WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS &&
       plugin.type != WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS &&
       !always_authorize_plugins_.GetValue() &&
@@ -204,7 +195,6 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     status->value = ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
     return;
   }
-#endif
 
   if (plugin_setting == CONTENT_SETTING_ASK)
     status->value = ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay;
@@ -219,42 +209,46 @@ bool PluginInfoMessageFilter::Context::FindEnabledPlugin(
     const std::string& mime_type,
     ChromeViewHostMsg_GetPluginInfo_Status* status,
     WebPluginInfo* plugin,
-    std::string* actual_mime_type) const {
+    std::string* actual_mime_type,
+    scoped_ptr<PluginMetadata>* plugin_metadata) const {
   bool allow_wildcard = true;
   std::vector<WebPluginInfo> matching_plugins;
   std::vector<std::string> mime_types;
   PluginService::GetInstance()->GetPluginInfoArray(
       url, mime_type, allow_wildcard, &matching_plugins, &mime_types);
+  if (matching_plugins.empty()) {
+    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kNotFound;
+    return false;
+  }
+
   content::PluginServiceFilter* filter =
       PluginService::GetInstance()->GetFilter();
-  bool found = false;
-  for (size_t i = 0; i < matching_plugins.size(); ++i) {
-    bool enabled = !filter || filter->ShouldUsePlugin(render_process_id_,
-                                                      render_view_id,
-                                                      resource_context_,
-                                                      url,
-                                                      top_origin_url,
-                                                      &matching_plugins[i]);
-    if (!found || enabled) {
-      *plugin = matching_plugins[i];
-      *actual_mime_type = mime_types[i];
-      if (enabled) {
-        // We have found an enabled plug-in. Return immediately.
-        return true;
-      }
-      // We have found a plug-in, but it's disabled. Keep looking for an
-      // enabled one.
-      found = true;
+  size_t i = 0;
+  for (; i < matching_plugins.size(); ++i) {
+    if (!filter || filter->ShouldUsePlugin(render_process_id_,
+                                           render_view_id,
+                                           resource_context_,
+                                           url,
+                                           top_origin_url,
+                                           &matching_plugins[i])) {
+      break;
     }
   }
 
-  // If we're here and have previously found a plug-in, it must have been
-  // disabled.
-  if (found)
+  // If we broke out of the loop, we have found an enabled plug-in.
+  bool enabled = i < matching_plugins.size();
+  if (!enabled) {
+    // Otherwise, we only found disabled plug-ins, so we take the first one.
+    i = 0;
     status->value = ChromeViewHostMsg_GetPluginInfo_Status::kDisabled;
-  else
-    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kNotFound;
-  return false;
+  }
+
+  *plugin = matching_plugins[i];
+  *actual_mime_type = mime_types[i];
+  if (plugin_metadata)
+    *plugin_metadata = PluginFinder::GetInstance()->GetPluginMetadata(*plugin);
+
+  return enabled;
 }
 
 void PluginInfoMessageFilter::Context::GetPluginContentSetting(

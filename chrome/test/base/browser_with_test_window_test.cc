@@ -8,7 +8,6 @@
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/testing_profile.h"
@@ -41,7 +40,11 @@ void BrowserWithTestWindowTest::SetUp() {
   testing::Test::SetUp();
 
   set_profile(CreateProfile());
-  window_.reset(new TestBrowserWindow);
+
+  // Allow subclasses to specify a |window_| in their SetUp().
+  if (!window_.get())
+    window_.reset(new TestBrowserWindow);
+
   Browser::CreateParams params(profile());
   params.window = window_.get();
   browser_.reset(new Browser(params));
@@ -86,7 +89,7 @@ void BrowserWithTestWindowTest::AddTab(Browser* browser, const GURL& url) {
   params.tabstrip_index = 0;
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
-  CommitPendingLoad(&params.target_contents->web_contents()->GetController());
+  CommitPendingLoad(&params.target_contents->GetController());
 }
 
 void BrowserWithTestWindowTest::CommitPendingLoad(
@@ -147,7 +150,7 @@ void BrowserWithTestWindowTest::DestroyBrowserAndProfile() {
   if (browser_.get()) {
     // Make sure we close all tabs, otherwise Browser isn't happy in its
     // destructor.
-    chrome::CloseAllTabs(browser());
+    browser()->tab_strip_model()->CloseAllTabs();
     browser_.reset(NULL);
   }
   window_.reset(NULL);

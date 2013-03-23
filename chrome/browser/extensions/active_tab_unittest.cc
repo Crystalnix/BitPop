@@ -8,16 +8,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/active_tab_permission_manager.h"
+#include "chrome/browser/extensions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_builder.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/value_builder.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -52,28 +51,28 @@ scoped_refptr<const Extension> CreateTestExtension(
       .Build();
 }
 
-class ActiveTabTest : public TabContentsTestHarness {
+class ActiveTabTest : public ChromeRenderViewHostTestHarness {
  public:
   ActiveTabTest()
-      : extension(CreateTestExtension("deadbeef", true)),
+      : current_channel_(chrome::VersionInfo::CHANNEL_DEV),
+        extension(CreateTestExtension("deadbeef", true)),
         another_extension(CreateTestExtension("feedbeef", true)),
         extension_without_active_tab(CreateTestExtension("badbeef", false)),
-        ui_thread_(BrowserThread::UI, MessageLoop::current()) {
-  }
-
-  virtual void SetUp() {
-    TabContentsTestHarness::SetUp();
-    Feature::SetChannelForTesting(chrome::VersionInfo::CHANNEL_UNKNOWN);
-  }
+        ui_thread_(BrowserThread::UI, MessageLoop::current()) {}
 
  protected:
-  int tab_id() {
-    return SessionID::IdForTab(tab_contents());
+  virtual void SetUp() OVERRIDE {
+    ChromeRenderViewHostTestHarness::SetUp();
+    TabHelper::CreateForWebContents(web_contents());
   }
 
-  ActiveTabPermissionManager* active_tab_permission_manager() {
-    return tab_contents()->extension_tab_helper()->
-                           active_tab_permission_manager();
+  int tab_id() {
+    return SessionID::IdForTab(web_contents());
+  }
+
+  ActiveTabPermissionGranter* active_tab_permission_granter() {
+    return extensions::TabHelper::FromWebContents(web_contents())->
+        active_tab_permission_granter();
   }
 
   bool IsAllowed(const scoped_refptr<const Extension>& extension,
@@ -84,7 +83,7 @@ class ActiveTabTest : public TabContentsTestHarness {
   bool IsAllowed(const scoped_refptr<const Extension>& extension,
                  const GURL& url,
                  int tab_id) {
-    return extension->CanExecuteScriptOnPage(url, tab_id, NULL, NULL) &&
+    return extension->CanExecuteScriptOnPage(url, url, tab_id, NULL, NULL) &&
            extension->CanCaptureVisiblePage(url, tab_id, NULL) &&
            HasTabsPermission(extension, tab_id);
   }
@@ -98,7 +97,7 @@ class ActiveTabTest : public TabContentsTestHarness {
                  const GURL& url,
                  int tab_id) {
     // Note: can't check HasTabsPermission because it isn't URL specific.
-    return !extension->CanExecuteScriptOnPage(url, tab_id, NULL, NULL) &&
+    return !extension->CanExecuteScriptOnPage(url, url, tab_id, NULL, NULL) &&
            !extension->CanCaptureVisiblePage(url, tab_id, NULL);
   }
 
@@ -110,6 +109,11 @@ class ActiveTabTest : public TabContentsTestHarness {
                          int tab_id) {
     return extension->HasAPIPermissionForTab(tab_id, APIPermission::kTab);
   }
+
+  // Force the test to run in dev channel because the permission is only
+  // available in dev channel. Without declaring this first, the extensions
+  // below won't load due to manifest errors.
+  Feature::ScopedCurrentChannel current_channel_;
 
   // An extension with the activeTab permission.
   scoped_refptr<const Extension> extension;
@@ -137,8 +141,8 @@ TEST_F(ActiveTabTest, GrantToSinglePage) {
   EXPECT_FALSE(HasTabsPermission(another_extension));
   EXPECT_FALSE(HasTabsPermission(extension_without_active_tab));
 
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(
       extension_without_active_tab);
 
   // Granted to extension and extension_without_active_tab, but the latter
@@ -165,22 +169,22 @@ TEST_F(ActiveTabTest, GrantToSinglePage) {
   EXPECT_FALSE(HasTabsPermission(extension_without_active_tab));
 
   // But they should still be able to be granted again.
-  active_tab_permission_manager()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
 
   EXPECT_TRUE(IsAllowed(extension, google));
   EXPECT_TRUE(IsBlocked(another_extension, google));
   EXPECT_TRUE(IsBlocked(extension_without_active_tab, google));
 
   // And grant a few more times redundantly for good measure.
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
 
   EXPECT_TRUE(IsAllowed(extension, google));
   EXPECT_TRUE(IsAllowed(another_extension, google));
@@ -204,9 +208,9 @@ TEST_F(ActiveTabTest, GrantToSinglePage) {
 
   // Should be able to grant to multiple extensions at the same time (if they
   // have the activeTab permission, of course).
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
-  active_tab_permission_manager()->GrantIfRequested(
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(
       extension_without_active_tab);
 
   EXPECT_TRUE(IsBlocked(extension, google));
@@ -220,9 +224,9 @@ TEST_F(ActiveTabTest, GrantToSinglePage) {
   // Should be able to go back to URLs that were previously cleared.
   NavigateAndCommit(google);
 
-  active_tab_permission_manager()->GrantIfRequested(extension);
-  active_tab_permission_manager()->GrantIfRequested(another_extension);
-  active_tab_permission_manager()->GrantIfRequested(
+  active_tab_permission_granter()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(another_extension);
+  active_tab_permission_granter()->GrantIfRequested(
       extension_without_active_tab);
 
   EXPECT_TRUE(IsAllowed(extension, google));
@@ -239,9 +243,9 @@ TEST_F(ActiveTabTest, Uninstalling) {
   GURL google("http://www.google.com");
   NavigateAndCommit(google);
 
-  active_tab_permission_manager()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
 
-  EXPECT_TRUE(active_tab_permission_manager()->IsGranted(extension));
+  EXPECT_TRUE(active_tab_permission_granter()->IsGranted(extension));
   EXPECT_TRUE(IsAllowed(extension, google));
 
   // Uninstalling the extension should clear its tab permissions.
@@ -250,18 +254,19 @@ TEST_F(ActiveTabTest, Uninstalling) {
       extension_misc::UNLOAD_REASON_DISABLE);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_UNLOADED,
-      content::Source<Profile>(tab_contents()->profile()),
+      content::Source<Profile>(Profile::FromBrowserContext(
+          web_contents()->GetBrowserContext())),
       content::Details<UnloadedExtensionInfo>(&details));
 
-  EXPECT_FALSE(active_tab_permission_manager()->IsGranted(extension));
+  EXPECT_FALSE(active_tab_permission_granter()->IsGranted(extension));
   // Note: can't EXPECT_FALSE(IsAllowed) here because uninstalled extensions
   // are just that... considered to be uninstalled, and the manager might
   // just ignore them from here on.
 
   // Granting the extension again should give them back.
-  active_tab_permission_manager()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
 
-  EXPECT_TRUE(active_tab_permission_manager()->IsGranted(extension));
+  EXPECT_TRUE(active_tab_permission_granter()->IsGranted(extension));
   EXPECT_TRUE(IsAllowed(extension, google));
 }
 
@@ -269,7 +274,7 @@ TEST_F(ActiveTabTest, OnlyActiveTab) {
   GURL google("http://www.google.com");
   NavigateAndCommit(google);
 
-  active_tab_permission_manager()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
 
   EXPECT_TRUE(IsAllowed(extension, google, tab_id()));
   EXPECT_TRUE(IsBlocked(extension, google, tab_id() + 1));
@@ -280,7 +285,7 @@ TEST_F(ActiveTabTest, NavigateInPage) {
   GURL google("http://www.google.com");
   NavigateAndCommit(google);
 
-  active_tab_permission_manager()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
 
   // Perform an in-page navigation. The extension should not lose the temporary
   // permission.
@@ -297,7 +302,7 @@ TEST_F(ActiveTabTest, NavigateInPage) {
   EXPECT_FALSE(IsAllowed(extension, google_h1, tab_id()));
   EXPECT_FALSE(IsAllowed(extension, chromium, tab_id()));
 
-  active_tab_permission_manager()->GrantIfRequested(extension);
+  active_tab_permission_granter()->GrantIfRequested(extension);
 
   EXPECT_FALSE(IsAllowed(extension, google, tab_id()));
   EXPECT_FALSE(IsAllowed(extension, google_h1, tab_id()));

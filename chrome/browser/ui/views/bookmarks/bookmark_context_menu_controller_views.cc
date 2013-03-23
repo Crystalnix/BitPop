@@ -13,6 +13,7 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -67,8 +68,8 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
         content::RecordAction(
             UserMetricsAction("BookmarkBar_ContextMenu_OpenAllIncognito"));
       }
-      bookmark_utils::OpenAll(parent_widget_->GetNativeWindow(), navigator_,
-                              selection_, initial_disposition);
+      chrome::OpenAll(parent_widget_->GetNativeWindow(), navigator_,
+                      selection_, initial_disposition, profile_);
       bookmark_utils::RecordBookmarkLaunch(bookmark_utils::LAUNCH_CONTEXT_MENU);
       break;
     }
@@ -114,14 +115,13 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
           bookmark_utils::GetParentForNewNodes(parent_, selection_, &index);
       GURL url;
       string16 title;
-      bookmark_utils::GetURLAndTitleToBookmark(
-          chrome::GetActiveWebContents(browser_), &url, &title);
-      BookmarkEditor::Show(
-          parent_widget_->GetNativeWindow(),
-          profile_,
-          BookmarkEditor::EditDetails::AddNodeInFolder(
-              parent, index, url, title),
-          BookmarkEditor::SHOW_TREE);
+      chrome::GetURLAndTitleToBookmark(chrome::GetActiveWebContents(browser_),
+                                       &url, &title);
+      BookmarkEditor::Show(parent_widget_->GetNativeWindow(),
+                           profile_,
+                           BookmarkEditor::EditDetails::AddNodeInFolder(
+                               parent, index, url, title),
+                           BookmarkEditor::SHOW_TREE);
       break;
     }
 
@@ -141,7 +141,7 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
     }
 
     case IDC_BOOKMARK_BAR_ALWAYS_SHOW:
-      bookmark_utils::ToggleWhenVisible(profile_);
+      chrome::ToggleBookmarkBarWhenVisible(profile_);
       break;
 
     case IDC_BOOKMARK_MANAGER: {
@@ -184,7 +184,7 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
 }
 
 bool BookmarkContextMenuControllerViews::IsItemChecked(int id) const {
-  DCHECK(id == IDC_BOOKMARK_BAR_ALWAYS_SHOW);
+  DCHECK_EQ(IDC_BOOKMARK_BAR_ALWAYS_SHOW, id);
   return profile_->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar);
 }
 
@@ -201,14 +201,14 @@ bool BookmarkContextMenuControllerViews::IsCommandEnabled(int id) const {
              incognito_avail != IncognitoModePrefs::DISABLED;
 
     case IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO:
-      return HasURLs() &&
+      return chrome::HasBookmarkURLs(selection_) &&
              !profile_->IsOffTheRecord() &&
              incognito_avail != IncognitoModePrefs::DISABLED;
 
     case IDC_BOOKMARK_BAR_OPEN_ALL:
-      return HasURLs();
+      return chrome::HasBookmarkURLs(selection_);
     case IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW:
-      return HasURLs() &&
+      return chrome::HasBookmarkURLs(selection_) &&
              incognito_avail != IncognitoModePrefs::FORCED;
 
     case IDC_BOOKMARK_BAR_RENAME_FOLDER:
@@ -319,12 +319,4 @@ BookmarkModel* BookmarkContextMenuControllerViews::RemoveModelObserver() {
   model_->RemoveObserver(this);
   model_ = NULL;
   return model;
-}
-
-bool BookmarkContextMenuControllerViews::HasURLs() const {
-  for (size_t i = 0; i < selection_.size(); ++i) {
-    if (bookmark_utils::NodeHasURLs(selection_[i]))
-      return true;
-  }
-  return false;
 }

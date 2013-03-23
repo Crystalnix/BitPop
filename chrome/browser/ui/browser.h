@@ -15,17 +15,19 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/public/pref_member.h"
 #include "base/string16.h"
 #include "chrome/browser/debugger/devtools_toggle_action.h"
 #include "chrome/browser/event_disposition.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper_delegate.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/constrained_window_tab_helper_delegate.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/search/search_model_observer.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
@@ -34,6 +36,7 @@
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -53,7 +56,6 @@ class FindBarController;
 class FullscreenController;
 class PrefService;
 class Profile;
-class SkBitmap;
 class StatusBubble;
 class TabNavigation;
 class TabStripModel;
@@ -65,6 +67,7 @@ class BrowserCommandController;
 class BrowserInstantController;
 class UnloadController;
 namespace search {
+struct Mode;
 class SearchDelegate;
 class SearchModel;
 }
@@ -81,6 +84,7 @@ class WindowController;
 }
 
 namespace gfx {
+class Image;
 class Point;
 }
 
@@ -103,7 +107,8 @@ class Browser : public TabStripModelObserver,
                 public ZoomObserver,
                 public content::PageNavigator,
                 public content::NotificationObserver,
-                public ui::SelectFileDialog::Listener {
+                public ui::SelectFileDialog::Listener,
+                public chrome::search::SearchModelObserver {
  public:
   // SessionService::WindowType mirrors these values.  If you add to this
   // enum, look at SessionService::WindowType to see if it needs to be
@@ -155,9 +160,14 @@ class Browser : public TabStripModelObserver,
   };
 
   struct CreateParams {
-    CreateParams();
+    // Deprecated: please use the form taking |host_desktop_type| below.
     explicit CreateParams(Profile* profile);
     CreateParams(Type type, Profile* profile);
+
+    CreateParams(Profile* profile, chrome::HostDesktopType host_desktop_type);
+    CreateParams(Type type,
+                 Profile* profile,
+                 chrome::HostDesktopType host_desktop_type);
 
     static CreateParams CreateForApp(Type type,
                                      const std::string& app_name,
@@ -171,6 +181,9 @@ class Browser : public TabStripModelObserver,
 
     // The associated profile.
     Profile* profile;
+
+    // The host desktop the browser is created on.
+    chrome::HostDesktopType host_desktop_type;
 
     // The application name that is also the name of the window to the shell.
     // This name should be set when:
@@ -218,6 +231,9 @@ class Browser : public TabStripModelObserver,
   }
   bool is_session_restore() const {
     return is_session_restore_;
+  }
+  chrome::HostDesktopType host_desktop_type() const {
+    return host_desktop_type_;
   }
 
   // Accessors ////////////////////////////////////////////////////////////////
@@ -271,7 +287,7 @@ class Browser : public TabStripModelObserver,
   // State Storage and Retrieval for UI ///////////////////////////////////////
 
   // Gets the Favicon of the page in the selected tab.
-  SkBitmap GetCurrentPageIcon() const;
+  gfx::Image GetCurrentPageIcon() const;
 
   // Gets the title of the window based on the selected tab's title.
   string16 GetWindowTitleForCurrentTab() const;
@@ -400,7 +416,7 @@ class Browser : public TabStripModelObserver,
 
   // Called by chrome::Navigate() when a navigation has occurred in a tab in
   // this Browser. Updates the UI for the start of this navigation.
-  void UpdateUIForNavigationInTab(TabContents* contents,
+  void UpdateUIForNavigationInTab(content::WebContents* contents,
                                   content::PageTransition transition,
                                   bool user_initiated);
 
@@ -411,34 +427,38 @@ class Browser : public TabStripModelObserver,
       const content::OpenURLParams& params) OVERRIDE;
 
   // Overridden from TabStripModelObserver:
-  virtual void TabInsertedAt(TabContents* contents,
+  virtual void TabInsertedAt(content::WebContents* contents,
                              int index,
                              bool foreground) OVERRIDE;
   virtual void TabClosingAt(TabStripModel* tab_strip_model,
-                            TabContents* contents,
+                            content::WebContents* contents,
                             int index) OVERRIDE;
-  virtual void TabDetachedAt(TabContents* contents, int index) OVERRIDE;
-  virtual void TabDeactivated(TabContents* contents) OVERRIDE;
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void TabDetachedAt(content::WebContents* contents,
+                             int index) OVERRIDE;
+  virtual void TabDeactivated(content::WebContents* contents) OVERRIDE;
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
-  virtual void TabMoved(TabContents* contents,
+  virtual void TabMoved(content::WebContents* contents,
                         int from_index,
                         int to_index) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
-  virtual void TabPinnedStateChanged(TabContents* contents,
+  virtual void TabPinnedStateChanged(content::WebContents* contents,
                                      int index) OVERRIDE;
   virtual void TabStripEmpty() OVERRIDE;
 
   // Overridden from content::WebContentsDelegate:
+  virtual bool CanOverscrollContent() const OVERRIDE;
   virtual bool PreHandleKeyboardEvent(
+      content::WebContents* source,
       const content::NativeWebKeyboardEvent& event,
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
+      content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
 
   // Figure out if there are tabs that have beforeunload handlers.
@@ -460,6 +480,12 @@ class Browser : public TabStripModelObserver,
   // Show the first run search engine bubble on the location bar.
   void ShowFirstRunBubble();
 
+  // If necessary, update the bookmark bar state according to the instant
+  // preview state: when instant preview shows suggestions and bookmark bar is
+  // still showing attached, start the animation to hide it.
+  void MaybeUpdateBookmarkBarStateForInstantPreview(
+      const chrome::search::Mode& mode);
+
   FullscreenController* fullscreen_controller() {
     return fullscreen_controller_.get();
   }
@@ -470,12 +496,16 @@ class Browser : public TabStripModelObserver,
 
  private:
   friend class BrowserTest;
+  friend class FullscreenControllerInteractiveTest;
   friend class FullscreenControllerTest;
   FRIEND_TEST_ALL_PREFIXES(AppModeTest, EnableAppModeTest);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, NoTabsInPopups);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, ConvertTabToAppShortcut);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, OpenAppWindowLikeNtp);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, AppIdSwitch);
+  FRIEND_TEST_ALL_PREFIXES(BrowserWithTestWindowTest,
+                           IsReservedCommandOrKeyIsApp);
+  FRIEND_TEST_ALL_PREFIXES(BrowserWithTestWindowTest, AppFullScreen);
   FRIEND_TEST_ALL_PREFIXES(FullscreenControllerTest,
                            TabEntersPresentationModeFromWindowed);
   FRIEND_TEST_ALL_PREFIXES(FullscreenExitBubbleControllerTest,
@@ -484,7 +514,6 @@ class Browser : public TabStripModelObserver,
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
                            OpenAppShortcutWindowPref);
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest, OpenAppShortcutTabPref);
-  FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest, OpenAppShortcutPanel);
 
   // Used to describe why a tab is being detached. This is used by
   // TabDetachedAtImpl.
@@ -515,6 +544,9 @@ class Browser : public TabStripModelObserver,
 
     // Change is the result of window toggling in/out of fullscreen mode.
     BOOKMARK_BAR_STATE_CHANGE_TOGGLE_FULLSCREEN,
+
+    // Change is the result of a state change in the instant preview.
+    BOOKMARK_BAR_STATE_CHANGE_INSTANT_PREVIEW_STATE,
   };
 
   // Overridden from content::WebContentsDelegate:
@@ -527,7 +559,8 @@ class Browser : public TabStripModelObserver,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
-                              bool user_gesture) OVERRIDE;
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
   virtual void DeactivateContents(content::WebContents* contents) OVERRIDE;
   virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
@@ -543,8 +576,7 @@ class Browser : public TabStripModelObserver,
                                   bool motion) OVERRIDE;
   virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
   virtual void WebContentsFocused(content::WebContents* content) OVERRIDE;
-  virtual bool TakeFocus(bool reverse) OVERRIDE;
-  virtual bool IsApplication() const OVERRIDE;
+  virtual bool TakeFocus(content::WebContents* source, bool reverse) OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void BeforeUnloadFired(content::WebContents* source,
                                  bool proceed,
@@ -562,9 +594,6 @@ class Browser : public TabStripModelObserver,
       const std::string& frame_content_state) OVERRIDE;
   virtual void ShowRepostFormWarningDialog(
       content::WebContents* source) OVERRIDE;
-  virtual bool ShouldAddNavigationToHistory(
-      const history::HistoryAddPageArgs& add_page_args,
-      content::NavigationType navigation_type) OVERRIDE;
   virtual bool ShouldCreateWebContents(
       content::WebContents* web_contents,
       int route_id,
@@ -632,34 +661,40 @@ class Browser : public TabStripModelObserver,
       content::WebContents* web_contents,
       const content::MediaStreamRequest* request,
       const content::MediaResponseCallback& callback) OVERRIDE;
+  virtual bool RequestPpapiBrokerPermission(
+      content::WebContents* web_contents,
+      const GURL& url,
+      const FilePath& plugin_path,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
 
   // Overridden from CoreTabHelperDelegate:
-  // Note that the caller is responsible for deleting |old_tab_contents|.
-  virtual void SwapTabContents(TabContents* old_tab_contents,
-                               TabContents* new_tab_contents) OVERRIDE;
-  virtual bool CanReloadContents(TabContents* source) const OVERRIDE;
-  virtual bool CanSaveContents(TabContents* source) const OVERRIDE;
+  // Note that the caller is responsible for deleting |old_contents|.
+  virtual void SwapTabContents(content::WebContents* old_contents,
+                               content::WebContents* new_contents) OVERRIDE;
+  virtual bool CanReloadContents(
+      content::WebContents* web_contents) const OVERRIDE;
+  virtual bool CanSaveContents(
+      content::WebContents* web_contents) const OVERRIDE;
 
   // Overridden from SearchEngineTabHelperDelegate:
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
 
   // Overridden from ConstrainedWindowTabHelperDelegate:
-  virtual void SetTabContentBlocked(TabContents* contents,
+  virtual void SetTabContentBlocked(content::WebContents* web_contents,
                                     bool blocked) OVERRIDE;
+  virtual bool GetConstrainedWindowTopCenter(gfx::Point* point) OVERRIDE;
 
   // Overridden from BlockedContentTabHelperDelegate:
-  virtual TabContents* GetConstrainingTabContents(TabContents* source) OVERRIDE;
+  virtual content::WebContents* GetConstrainingWebContents(
+      content::WebContents* source) OVERRIDE;
 
   // Overridden from BookmarkTabHelperDelegate:
-  virtual void URLStarredChanged(TabContents* source,
+  virtual void URLStarredChanged(content::WebContents* web_contents,
                                  bool starred) OVERRIDE;
 
   // Overridden from ZoomObserver:
-  virtual void OnZoomIconChanged(TabContents* source,
-                                 ZoomController::ZoomIconState state) OVERRIDE;
-  virtual void OnZoomChanged(TabContents* source,
-                             int zoom_percent,
+  virtual void OnZoomChanged(content::WebContents* source,
                              bool can_show_bubble) OVERRIDE;
 
   // Overridden from SelectFileDialog::Listener:
@@ -676,10 +711,17 @@ class Browser : public TabStripModelObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // Overridden from chrome::search::SearchModelObserver:
+  virtual void ModeChanged(const chrome::search::Mode& old_mode,
+                           const chrome::search::Mode& new_mode) OVERRIDE;
+
   // Command and state updating ///////////////////////////////////////////////
 
+  // Handle changes to kDevTools preference.
+  void OnDevToolsDisabledChanged();
+
   // Set the preference that indicates that the home page has been changed.
-  void MarkHomePageAsChanged(PrefService* pref_service);
+  void MarkHomePageAsChanged();
 
   // UI update coalescing and handling ////////////////////////////////////////
 
@@ -691,7 +733,7 @@ class Browser : public TabStripModelObserver,
   void UpdateToolbar(bool should_restore_state);
 
   // Updates the browser's search model with the tab's search model.
-  void UpdateSearchState(TabContents* contents);
+  void UpdateSearchState(content::WebContents* contents);
 
   // Does one or both of the following for each bit in |changed_flags|:
   // . If the update should be processed immediately, it is.
@@ -737,9 +779,9 @@ class Browser : public TabStripModelObserver,
 
   // Assorted utility functions ///////////////////////////////////////////////
 
-  // Sets the delegate of all the parts of the TabContents that
-  // are needed.
-  void SetAsDelegate(TabContents* tab, Browser* delegate);
+  // Sets the specified browser as the delegate of the WebContents and all the
+  // associated tab helpers that are needed.
+  void SetAsDelegate(content::WebContents* web_contents, Browser* delegate);
 
   // Shows the Find Bar, optionally selecting the next entry that matches the
   // existing search string for that Tab. |forward_direction| controls the
@@ -751,7 +793,9 @@ class Browser : public TabStripModelObserver,
   //             after a return to the message loop.
   void CloseFrame();
 
-  void TabDetachedAtImpl(TabContents* contents, int index, DetachType type);
+  void TabDetachedAtImpl(content::WebContents* contents,
+                         int index,
+                         DetachType type);
 
   // Shared code between Reload() and ReloadIgnoringCache().
   void ReloadInternal(WindowOpenDisposition disposition, bool ignore_cache);
@@ -771,6 +815,8 @@ class Browser : public TabStripModelObserver,
   // Resets |bookmark_bar_state_| based on the active tab. Notifies the
   // BrowserWindow if necessary.
   void UpdateBookmarkBarState(BookmarkBarStateChangeReason reason);
+
+  bool ShouldHideUIForFullscreen() const;
 
   // Creates a BackgroundContents if appropriate; return true if one was
   // created.
@@ -860,6 +906,8 @@ class Browser : public TabStripModelObserver,
 
   // Tracks when this browser is being created by session restore.
   bool is_session_restore_;
+
+  chrome::HostDesktopType host_desktop_type_;
 
   scoped_ptr<chrome::UnloadController> unload_controller_;
 

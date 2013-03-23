@@ -29,16 +29,14 @@
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
-namespace media_stream {
+namespace content {
 class VideoCaptureManager;
-}  // namespace media_stream
 
 class CONTENT_EXPORT VideoCaptureController
     : public base::RefCountedThreadSafe<VideoCaptureController>,
       public media::VideoCaptureDevice::EventHandler {
  public:
-  VideoCaptureController(
-      media_stream::VideoCaptureManager* video_capture_manager);
+  VideoCaptureController(VideoCaptureManager* video_capture_manager);
 
   // Start video capturing and try to use the resolution specified in
   // |params|.
@@ -88,7 +86,7 @@ class CONTENT_EXPORT VideoCaptureController
 
   // Worker functions on IO thread.
   void DoIncomingCapturedFrameOnIOThread(int buffer_id, base::Time timestamp);
-  void DoFrameInfoOnIOThread(const media::VideoCaptureCapability& info);
+  void DoFrameInfoOnIOThread();
   void DoErrorOnIOThread();
   void DoDeviceStoppedOnIOThread();
 
@@ -132,16 +130,22 @@ class CONTENT_EXPORT VideoCaptureController
   // It's modified on caller thread, assuming there is only one OnFrameInfo()
   // call per StartCapture().
   media::VideoCaptureCapability frame_info_;
+  // Chopped pixels in width/height in case video capture device has odd numbers
+  // for width/height.
+  int chopped_width_;
+  int chopped_height_;
 
   // It's accessed only on IO thread.
   bool frame_info_available_;
 
-  media_stream::VideoCaptureManager* video_capture_manager_;
+  VideoCaptureManager* video_capture_manager_;
 
   bool device_in_use_;
-  video_capture::State state_;
+  VideoCaptureState state_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoCaptureController);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_CONTROLLER_H_

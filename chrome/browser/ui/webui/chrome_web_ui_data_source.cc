@@ -10,7 +10,6 @@
 #include "base/string_util.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
 ChromeWebUIDataSource::ChromeWebUIDataSource(const std::string& source_name)
@@ -31,6 +30,11 @@ ChromeWebUIDataSource::~ChromeWebUIDataSource() {
 
 void ChromeWebUIDataSource::AddString(const std::string& name,
                                       const string16& value) {
+  localized_strings_.SetString(name, value);
+}
+
+void ChromeWebUIDataSource::AddString(const std::string& name,
+                                      const std::string& value) {
   localized_strings_.SetString(name, value);
 }
 
@@ -88,6 +92,6 @@ void ChromeWebUIDataSource::SendLocalizedStringsAsJSON(int request_id) {
 void ChromeWebUIDataSource::SendFromResourceBundle(int request_id, int idr) {
   scoped_refptr<base::RefCountedStaticMemory> response(
       ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
-          idr, ui::SCALE_FACTOR_NONE));
+          idr));
   SendResponse(request_id, response);
 }

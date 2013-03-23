@@ -15,14 +15,18 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_icon_factory.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/restore_tab_helper.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
+#include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/extensions/extension_popup_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_button.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_shrinkable_hbox.h"
@@ -31,24 +35,24 @@
 #include "chrome/browser/ui/gtk/hover_controller_gtk.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accelerators/accelerator_gtk.h"
+#include "ui/base/accelerators/platform_accelerator_gtk.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia_operations.h"
 
 using extensions::Extension;
+using extensions::ExtensionActionManager;
 
 namespace {
 
@@ -91,7 +95,7 @@ gint WidthForIconCount(gint icon_count) {
 using ui::SimpleMenuModel;
 
 class BrowserActionButton : public content::NotificationObserver,
-                            public ImageLoadingTracker::Observer,
+                            public ExtensionActionIconFactory::Observer,
                             public ExtensionContextMenuModel::PopupDelegate,
                             public MenuGtk::Delegate {
  public:
@@ -101,9 +105,7 @@ class BrowserActionButton : public content::NotificationObserver,
       : toolbar_(toolbar),
         extension_(extension),
         image_(NULL),
-        tracker_(this),
-        tab_specific_icon_(NULL),
-        default_icon_(NULL),
+        icon_factory_(extension, browser_action(), this),
         accel_group_(NULL) {
     button_.reset(new CustomDrawButton(
         theme_provider,
@@ -117,17 +119,7 @@ class BrowserActionButton : public content::NotificationObserver,
     gtk_container_add(GTK_CONTAINER(alignment_.get()), button());
     gtk_widget_show(button());
 
-    DCHECK(extension_->browser_action());
-
-    // The Browser Action API does not allow the default icon path to be
-    // changed at runtime, so we can load this now and cache it.
-    std::string path = extension_->browser_action()->default_icon_path();
-    if (!path.empty()) {
-      tracker_.LoadImage(extension_, extension_->GetResource(path),
-                         gfx::Size(Extension::kBrowserActionIconMaxSize,
-                                   Extension::kBrowserActionIconMaxSize),
-                         ImageLoadingTracker::DONT_CACHE);
-    }
+    DCHECK(browser_action());
 
     UpdateState();
 
@@ -136,7 +128,7 @@ class BrowserActionButton : public content::NotificationObserver,
     signals_.Connect(button(), "clicked",
                      G_CALLBACK(OnClicked), this);
     signals_.Connect(button(), "drag-begin",
-                     G_CALLBACK(&OnDragBegin), this);
+                     G_CALLBACK(OnDragBegin), this);
     signals_.ConnectAfter(widget(), "expose-event",
                      G_CALLBACK(OnExposeEvent), this);
     if (toolbar_->browser()->window()) {
@@ -152,7 +144,7 @@ class BrowserActionButton : public content::NotificationObserver,
 
     registrar_.Add(
         this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-        content::Source<ExtensionAction>(extension->browser_action()));
+        content::Source<ExtensionAction>(browser_action()));
     registrar_.Add(
         this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
         content::Source<Profile>(
@@ -169,12 +161,6 @@ class BrowserActionButton : public content::NotificationObserver,
 
   ~BrowserActionButton() {
     DisconnectBrowserActionPopupAccelerator();
-
-    if (tab_specific_icon_)
-      g_object_unref(tab_specific_icon_);
-
-    if (default_icon_)
-      g_object_unref(default_icon_);
 
     alignment_.Destroy();
   }
@@ -218,12 +204,8 @@ class BrowserActionButton : public content::NotificationObserver,
     }
   }
 
-  // ImageLoadingTracker::Observer implementation.
-  void OnImageLoaded(const gfx::Image& image,
-                     const std::string& extension_id,
-                     int index) OVERRIDE {
-    extension_->browser_action()->CacheIcon(
-        extension_->browser_action()->default_icon_path(), image);
+  // ExtensionActionIconFactory::Observer implementation.
+  void OnIconUpdated() OVERRIDE {
     UpdateState();
   }
 
@@ -234,24 +216,33 @@ class BrowserActionButton : public content::NotificationObserver,
     if (tab_id < 0)
       return;
 
-    std::string tooltip = extension_->browser_action()->GetTitle(tab_id);
+    std::string tooltip = browser_action()->GetTitle(tab_id);
     if (tooltip.empty())
       gtk_widget_set_has_tooltip(button(), FALSE);
     else
       gtk_widget_set_tooltip_text(button(), tooltip.c_str());
 
-    gfx::Image image = extension_->browser_action()->GetIcon(tab_id);
-    if (!image.IsEmpty())
-      SetImage(image.ToGdkPixbuf());
-    bool enabled = extension_->browser_action()->GetIsVisible(tab_id);
-    gtk_widget_set_sensitive(button(), enabled);
+    enabled_ = browser_action()->GetIsVisible(tab_id);
+    if (!enabled_)
+      button_->SetPaintOverride(GTK_STATE_INSENSITIVE);
+    else
+      button_->UnsetPaintOverride();
+
+    gfx::Image image = icon_factory_.GetIcon(tab_id);
+    if (!image.IsEmpty()) {
+      if (enabled_) {
+        SetImage(image);
+      } else {
+        SetImage(gfx::Image(gfx::ImageSkiaOperations::CreateTransparentImage(
+            image.AsImageSkia(), .25)));
+      }
+    }
 
     gtk_widget_queue_draw(button());
   }
 
-  SkBitmap GetIcon() {
-    return *extension_->browser_action()->GetIcon(
-        toolbar_->GetCurrentTabId()).ToSkBitmap();
+  gfx::Image GetIcon() {
+    return icon_factory_.GetIcon(toolbar_->GetCurrentTabId());
   }
 
   MenuGtk* GetContextMenu() {
@@ -285,7 +276,10 @@ class BrowserActionButton : public content::NotificationObserver,
 
   // MenuGtk::Delegate implementation.
   virtual void StoppedShowing() {
-    button_->UnsetPaintOverride();
+    if (enabled_)
+      button_->UnsetPaintOverride();
+    else
+      button_->SetPaintOverride(GTK_STATE_INSENSITIVE);
 
     // If the context menu was showing for the overflow menu, re-assert the
     // grab that was shadowed.
@@ -307,33 +301,34 @@ class BrowserActionButton : public content::NotificationObserver,
                             ExtensionPopupGtk::SHOW_AND_INSPECT);
   }
 
-  void SetImage(GdkPixbuf* image) {
+  void SetImage(const gfx::Image& image) {
     if (!image_) {
-      image_ = gtk_image_new_from_pixbuf(image);
+      image_ = gtk_image_new_from_pixbuf(image.ToGdkPixbuf());
       gtk_button_set_image(GTK_BUTTON(button()), image_);
     } else {
-      gtk_image_set_from_pixbuf(GTK_IMAGE(image_), image);
+      gtk_image_set_from_pixbuf(GTK_IMAGE(image_), image.ToGdkPixbuf());
     }
   }
 
   static gboolean OnButtonPress(GtkWidget* widget,
                                 GdkEventButton* event,
-                                BrowserActionButton* action) {
+                                BrowserActionButton* button) {
     if (event->button != 3)
       return FALSE;
 
-    MenuGtk* menu = action->GetContextMenu();
+    MenuGtk* menu = button->GetContextMenu();
     if (!menu)
       return FALSE;
 
-    action->button_->SetPaintOverride(GTK_STATE_ACTIVE);
+    button->button_->SetPaintOverride(GTK_STATE_ACTIVE);
     menu->PopupForWidget(widget, event->button, event->time);
 
     return TRUE;
   }
 
-  static void OnClicked(GtkWidget* widget, BrowserActionButton* action) {
-    action->Activate(widget);
+  static void OnClicked(GtkWidget* widget, BrowserActionButton* button) {
+    if (button->enabled_)
+      button->Activate(widget);
   }
 
   static gboolean OnExposeEvent(GtkWidget* widget,
@@ -343,7 +338,7 @@ class BrowserActionButton : public content::NotificationObserver,
     if (tab_id < 0)
       return FALSE;
 
-    ExtensionAction* action = button->extension_->browser_action();
+    ExtensionAction* action = button->browser_action();
     if (action->GetBadgeText(tab_id).empty())
       return FALSE;
 
@@ -396,11 +391,7 @@ class BrowserActionButton : public content::NotificationObserver,
         &command,
         NULL)) {
       // Found the browser action shortcut command, register it.
-      keybinding_.reset(new ui::AcceleratorGtk(
-          command.accelerator().key_code(),
-          command.accelerator().IsShiftDown(),
-          command.accelerator().IsCtrlDown(),
-          command.accelerator().IsAltDown()));
+      keybinding_ = command.accelerator();
 
       gfx::NativeWindow window =
           toolbar_->browser()->window()->GetNativeWindow();
@@ -409,8 +400,8 @@ class BrowserActionButton : public content::NotificationObserver,
 
       gtk_accel_group_connect(
           accel_group_,
-          keybinding_.get()->GetGdkKeyCode(),
-          keybinding_.get()->gdk_modifier_type(),
+          ui::GetGdkKeyCodeForAccelerator(keybinding_),
+          ui::GetGdkModifierForAccelerator(keybinding_),
           GtkAccelFlags(0),
           g_cclosure_new(G_CALLBACK(OnGtkAccelerator), this, NULL));
 
@@ -430,18 +421,23 @@ class BrowserActionButton : public content::NotificationObserver,
           toolbar_->browser()->window()->GetNativeWindow();
       gtk_accel_group_disconnect_key(
           accel_group_,
-          keybinding_.get()->GetGdkKeyCode(),
-          static_cast<GdkModifierType>(keybinding_.get()->modifiers()));
+          ui::GetGdkKeyCodeForAccelerator(keybinding_),
+          GetGdkModifierForAccelerator(keybinding_));
       gtk_window_remove_accel_group(window, accel_group_);
       g_object_unref(accel_group_);
       accel_group_ = NULL;
-      keybinding_.reset(NULL);
+      keybinding_ = ui::Accelerator();
 
       // We've removed the accelerator, so no need to listen to this anymore.
       registrar_.Remove(this,
                         chrome::NOTIFICATION_WINDOW_CLOSED,
                         content::Source<GtkWindow>(window));
     }
+  }
+
+  ExtensionAction* browser_action() const {
+    return ExtensionActionManager::Get(toolbar_->browser()->profile())->
+        GetBrowserAction(*extension_);
   }
 
   // The toolbar containing this button.
@@ -453,6 +449,10 @@ class BrowserActionButton : public content::NotificationObserver,
   // The button for this browser action.
   scoped_ptr<CustomDrawButton> button_;
 
+  // Whether the browser action is enabled (equivalent to whether a page action
+  // is visible).
+  bool enabled_;
+
   // The top level widget (parent of |button_|).
   ui::OwnedWidgetGtk alignment_;
 
@@ -462,14 +462,11 @@ class BrowserActionButton : public content::NotificationObserver,
   // extensions change browser action icon in a loop.
   GtkWidget* image_;
 
-  // Loads the button's icons for us on the file thread.
-  ImageLoadingTracker tracker_;
-
-  // If we are displaying a tab-specific icon, it will be here.
-  GdkPixbuf* tab_specific_icon_;
-
-  // If the browser action has a default icon, it will be here.
-  GdkPixbuf* default_icon_;
+  // The object that will be used to get the browser action icon for us.
+  // It may load the icon asynchronously (in which case the initial icon
+  // returned by the factory will be transparent), so we have to observe it for
+  // updates to the icon.
+  ExtensionActionIconFactory icon_factory_;
 
   // Same as |default_icon_|, but stored as SkBitmap.
   SkBitmap default_skbitmap_;
@@ -481,7 +478,7 @@ class BrowserActionButton : public content::NotificationObserver,
   GtkAccelGroup* accel_group_;
 
   // The keybinding accelerator registered to show the browser action popup.
-  scoped_ptr<ui::AcceleratorGtk> keybinding_;
+  ui::Accelerator keybinding_;
 
   // The context menu view and model for this extension action.
   scoped_ptr<MenuGtk> context_menu_;
@@ -505,8 +502,8 @@ BrowserActionsToolbarGtk::BrowserActionsToolbarGtk(Browser* browser)
       desired_width_(0),
       start_width_(0),
       weak_factory_(this) {
-  ExtensionService* extension_service = profile_->GetExtensionService();
-  // The |extension_service| can be NULL in Incognito.
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (!extension_service)
     return;
 
@@ -591,11 +588,11 @@ BrowserActionsToolbarGtk::~BrowserActionsToolbarGtk() {
 }
 
 int BrowserActionsToolbarGtk::GetCurrentTabId() const {
-  TabContents* active_tab = chrome::GetActiveTabContents(browser_);
+  content::WebContents* active_tab = chrome::GetActiveWebContents(browser_);
   if (!active_tab)
     return -1;
 
-  return active_tab->restore_tab_helper()->session_id().id();
+  return SessionTabHelper::FromWebContents(active_tab)->session_id().id();
 }
 
 void BrowserActionsToolbarGtk::Update() {
@@ -626,8 +623,9 @@ void BrowserActionsToolbarGtk::CreateAllButtons() {
   extension_button_map_.clear();
 
   int i = 0;
-  for (extensions::ExtensionList::iterator iter = model_->begin();
-       iter != model_->end(); ++iter) {
+  const extensions::ExtensionList& toolbar_items = model_->toolbar_items();
+  for (extensions::ExtensionList::const_iterator iter = toolbar_items.begin();
+       iter != toolbar_items.end(); ++iter) {
     CreateButtonForExtension(*iter, i++);
   }
 }
@@ -700,7 +698,8 @@ bool BrowserActionsToolbarGtk::ShouldDisplayBrowserAction(
     const Extension* extension) {
   // Only display incognito-enabled extensions while in incognito mode.
   return (!profile_->IsOffTheRecord() ||
-          profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
+          extensions::ExtensionSystem::Get(profile_)->extension_service()->
+              IsIncognitoEnabled(extension->id()));
 }
 
 void BrowserActionsToolbarGtk::HidePopup() {
@@ -797,8 +796,9 @@ bool BrowserActionsToolbarGtk::IsCommandIdChecked(int command_id) const {
 }
 
 bool BrowserActionsToolbarGtk::IsCommandIdEnabled(int command_id) const {
-  const Extension* extension = model_->GetExtensionByIndex(command_id);
-  return extension->browser_action()->GetIsVisible(GetCurrentTabId());
+  const Extension* extension = model_->toolbar_items()[command_id];
+  return ExtensionActionManager::Get(profile_)->
+      GetBrowserAction(*extension)->GetIsVisible(GetCurrentTabId());
 }
 
 bool BrowserActionsToolbarGtk::GetAcceleratorForCommandId(
@@ -808,7 +808,7 @@ bool BrowserActionsToolbarGtk::GetAcceleratorForCommandId(
 }
 
 void BrowserActionsToolbarGtk::ExecuteCommand(int command_id) {
-  const Extension* extension = model_->GetExtensionByIndex(command_id);
+  const Extension* extension = model_->toolbar_items()[command_id];
   GURL popup_url;
 
   switch (model_->ExecuteBrowserAction(extension, browser(), &popup_url)) {
@@ -1039,7 +1039,7 @@ gboolean BrowserActionsToolbarGtk::OnOverflowButtonPress(
     if (profile_->IsOffTheRecord())
       model_index = model_->IncognitoIndexToOriginal(i);
 
-    const Extension* extension = model_->GetExtensionByIndex(model_index);
+    const Extension* extension = model_->toolbar_items()[model_index];
     BrowserActionButton* button = extension_button_map_[extension->id()].get();
 
     overflow_menu_model_->AddItem(model_index, UTF8ToUTF16(extension->name()));
@@ -1079,7 +1079,7 @@ gboolean BrowserActionsToolbarGtk::OnOverflowMenuButtonPress(
   if (profile_->IsOffTheRecord())
     item_index = model_->IncognitoIndexToOriginal(item_index);
 
-  const Extension* extension = model_->GetExtensionByIndex(item_index);
+  const Extension* extension = model_->toolbar_items()[item_index];
   ExtensionButtonMap::iterator it = extension_button_map_.find(
       extension->id());
   if (it == extension_button_map_.end()) {

@@ -20,6 +20,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/common/chrome_switches.h"
@@ -87,7 +88,7 @@ bool NetworkProfileBubble::ShouldCheckNetworkProfile(Profile* profile) {
 }
 
 // static
-void NetworkProfileBubble::CheckNetworkProfile(Profile* profile) {
+void NetworkProfileBubble::CheckNetworkProfile(const FilePath& profile_folder) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   // On Windows notify the users if their profiles are located on a network
   // share as we don't officially support this setup yet.
@@ -108,23 +109,23 @@ void NetworkProfileBubble::CheckNetworkProfile(Profile* profile) {
   DWORD buffer_length = 0;
   // Checking for RDP is cheaper than checking for a network drive so do this
   // one first.
-  if (!WTSQuerySessionInformation(WTS_CURRENT_SERVER, WTS_CURRENT_SESSION,
-                                  WTSClientProtocolType,
-                                  &buffer, &buffer_length)) {
+  if (!::WTSQuerySessionInformation(WTS_CURRENT_SERVER, WTS_CURRENT_SESSION,
+                                    WTSClientProtocolType,
+                                    &buffer, &buffer_length)) {
     RecordUmaEvent(METRIC_CHECK_FAILED);
     return;
   }
 
   unsigned short* type = reinterpret_cast<unsigned short*>(buffer);
-  // Zero means local session and we should warn the users if they have
-  // their profile on a network share.
-  if (*type == 0) {
+  // We should warn the users if they have their profile on a network share only
+  // if running on a local session.
+  if (*type == WTS_PROTOCOL_TYPE_CONSOLE) {
     bool profile_on_network = false;
-    if (!profile->GetPath().empty()) {
+    if (!profile_folder.empty()) {
       FilePath temp_file;
       // Try to create some non-empty temp file in the profile dir and use
       // it to check if there is a reparse-point free path to it.
-      if (file_util::CreateTemporaryFileInDir(profile->GetPath(), &temp_file) &&
+      if (file_util::CreateTemporaryFileInDir(profile_folder, &temp_file) &&
           file_util::WriteFile(temp_file, ".", 1)) {
         FilePath normalized_temp_file;
         if (!file_util::NormalizeFilePath(temp_file, &normalized_temp_file))
@@ -145,7 +146,7 @@ void NetworkProfileBubble::CheckNetworkProfile(Profile* profile) {
     RecordUmaEvent(METRIC_REMOTE_SESSION);
   }
 
-  WTSFreeMemory(buffer);
+  ::WTSFreeMemory(buffer);
 }
 
 // static
@@ -172,8 +173,14 @@ void NetworkProfileBubble::RecordUmaEvent(MetricNetworkedProfileCheck event) {
 
 // static
 void NetworkProfileBubble::NotifyNetworkProfileDetected() {
-  if (BrowserList::GetLastActive())
-    ShowNotification(BrowserList::GetLastActive());
+  // TODO(robertshield): Eventually, we will need to figure out the correct
+  //                     desktop type for this for platforms that can have
+  //                     multiple desktop types (win8/metro).
+  Browser* browser = chrome::FindLastActiveWithHostDesktopType(
+      chrome::HOST_DESKTOP_TYPE_NATIVE);
+
+  if (browser)
+    ShowNotification(browser);
   else
     BrowserList::AddObserver(new BrowserListObserver());
 }

@@ -30,6 +30,7 @@ class ChromeContentClient : public content::ContentClient {
       std::vector<std::string>* saveable_shemes) OVERRIDE;
   virtual bool HasWebUIScheme(const GURL& url) const OVERRIDE;
   virtual bool CanHandleWhileSwappedOut(const IPC::Message& msg) OVERRIDE;
+  virtual std::string GetProduct() const OVERRIDE;
   virtual std::string GetUserAgent() const OVERRIDE;
   virtual string16 GetLocalizedString(int message_id) const OVERRIDE;
   virtual base::StringPiece GetDataResource(
@@ -37,12 +38,7 @@ class ChromeContentClient : public content::ContentClient {
       ui::ScaleFactor scale_factor) const OVERRIDE;
   virtual gfx::Image& GetNativeImageNamed(int resource_id) const OVERRIDE;
 
-#if defined(OS_WIN)
-  virtual bool SandboxPlugin(CommandLine* command_line,
-                             sandbox::TargetPolicy* policy) OVERRIDE;
-#endif
-
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   virtual bool GetSandboxProfileForSandboxType(
       int sandbox_type,
       int* sandbox_profile_resource_id) const OVERRIDE;

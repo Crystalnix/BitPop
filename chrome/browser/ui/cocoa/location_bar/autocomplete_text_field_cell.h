@@ -22,6 +22,10 @@ class LocationBarDecoration;
   // from outside in.  Decorations are owned by |LocationBarViewMac|.
   std::vector<LocationBarDecoration*> leftDecorations_;
   std::vector<LocationBarDecoration*> rightDecorations_;
+
+  // If YES then the text field will not draw a focus ring or show the insertion
+  // pointer.
+  BOOL hideFocusState_;
 }
 
 // Clear |leftDecorations_| and |rightDecorations_|.
@@ -63,6 +67,18 @@ class LocationBarDecoration;
            inRect:(NSRect)cellFrame
            ofView:(AutocompleteTextField*)controlView;
 
+// These messages are passed down from the AutocompleteTextField, where they are
+// received from tracking areas registered for decorations that act as buttons.
+- (void)mouseEntered:(NSEvent*)theEvent
+              inView:(AutocompleteTextField*)controlView;
+- (void)mouseExited:(NSEvent*)theEvent
+             inView:(AutocompleteTextField*)controlView;
+
+// Setup tracking areas for the decorations that are part of this cell, so they
+// can receive |mouseEntered:| and |mouseExited:| events.
+- (void)setUpTrackingAreasInRect:(NSRect)frame
+                          ofView:(AutocompleteTextField*)view;
+
 // Overridden from StyledTextFieldCell to include decorations adjacent
 // to the text area which don't handle mouse clicks themselves.
 // Keyword-search bubble, for instance.
@@ -72,5 +88,11 @@ class LocationBarDecoration;
 // |-addToolTip:forRect:|.
 - (void)updateToolTipsInRect:(NSRect)cellFrame
                       ofView:(AutocompleteTextField*)controlView;
+
+// Gets and sets |hideFocusState|. This allows the text field to have focus but
+// to appear unfocused.
+- (BOOL)hideFocusState;
+- (void)setHideFocusState:(BOOL)hideFocusState
+                   ofView:(AutocompleteTextField*)controlView;
 
 @end

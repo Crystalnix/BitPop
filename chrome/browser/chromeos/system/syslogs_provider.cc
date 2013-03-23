@@ -4,24 +4,36 @@
 
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 
-
+#include "ash/shell.h"
+#include "ash/touch/touch_observer_hud.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/message_loop_proxy.h"
 #include "base/string_util.h"
+#include "base/task_runner.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/network/network_event_log.h"
 #include "content/public/browser/browser_thread.h"
+#include "dbus/dbus_statistics.h"
 
 using content::BrowserThread;
 
 namespace chromeos {
 namespace system {
+
+const size_t kFeedbackMaxLength = 4 * 1024;
+const size_t kFeedbackMaxLineCount = 40;
+
 namespace {
 
 const char kSysLogsScript[] =
@@ -171,32 +183,42 @@ LogDictionaryType* GetSystemLogs(FilePath* zip_file_name,
 class SyslogsProviderImpl : public SyslogsProvider {
  public:
   // SyslogsProvider implementation:
-  virtual Handle RequestSyslogs(
+  virtual CancelableTaskTracker::TaskId RequestSyslogs(
       bool compress_logs,
       SyslogsContext context,
-      CancelableRequestConsumerBase* consumer,
-      const ReadCompleteCallback& callback);
-
-  // Reads system logs, compresses content if requested.
-  // Called from FILE thread.
-  void ReadSyslogs(
-      scoped_refptr<CancelableRequest<ReadCompleteCallback> > request,
-      bool compress_logs,
-      SyslogsContext context);
-
-  // Loads compressed logs and writes into |zip_content|.
-  void LoadCompressedLogs(const FilePath& zip_file,
-                          std::string* zip_content);
+      const ReadCompleteCallback& callback,
+      CancelableTaskTracker* tracker) OVERRIDE;
 
   static SyslogsProviderImpl* GetInstance();
 
  private:
   friend struct DefaultSingletonTraits<SyslogsProviderImpl>;
 
+  // Reads system logs, compresses content if requested.
+  // Called from blocking pool thread.
+  void ReadSyslogs(
+      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      bool compress_logs,
+      SyslogsContext context,
+      const ReadCompleteCallback& callback);
+
+  // Loads compressed logs and writes into |zip_content|.
+  void LoadCompressedLogs(const FilePath& zip_file,
+                          std::string* zip_content);
+
   SyslogsProviderImpl();
 
   // Gets syslogs context string from the enum value.
   const char* GetSyslogsContextString(SyslogsContext context);
+
+  // If not canceled, run callback on originating thread (the thread on which
+  // ReadSyslogs was run).
+  static void RunCallbackIfNotCanceled(
+      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      base::TaskRunner* origin_runner,
+      const ReadCompleteCallback& callback,
+      LogDictionaryType* logs,
+      std::string* zip_content);
 
   DISALLOW_COPY_AND_ASSIGN(SyslogsProviderImpl);
 };
@@ -204,24 +226,24 @@ class SyslogsProviderImpl : public SyslogsProvider {
 SyslogsProviderImpl::SyslogsProviderImpl() {
 }
 
-CancelableRequestProvider::Handle SyslogsProviderImpl::RequestSyslogs(
+CancelableTaskTracker::TaskId SyslogsProviderImpl::RequestSyslogs(
     bool compress_logs,
     SyslogsContext context,
-    CancelableRequestConsumerBase* consumer,
-    const ReadCompleteCallback& callback) {
-  // Register the callback request.
-  scoped_refptr<CancelableRequest<ReadCompleteCallback> > request(
-         new CancelableRequest<ReadCompleteCallback>(callback));
-  AddRequest(request, consumer);
+    const ReadCompleteCallback& callback,
+    CancelableTaskTracker* tracker) {
+  CancelableTaskTracker::IsCanceledCallback is_canceled;
+  CancelableTaskTracker::TaskId id = tracker->NewTrackedTaskId(&is_canceled);
 
-  // Schedule a task on the FILE thread which will then trigger a request
-  // callback on the calling thread (e.g. UI) when complete.
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
+  ReadCompleteCallback callback_runner =
+      base::Bind(&SyslogsProviderImpl::RunCallbackIfNotCanceled,
+                 is_canceled, base::MessageLoopProxy::current(), callback);
+
+  // Schedule a task which will run the callback later when complete.
+  BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
       base::Bind(&SyslogsProviderImpl::ReadSyslogs, base::Unretained(this),
-                 request, compress_logs, context));
-
-  return request->handle();
+                 is_canceled, compress_logs, context, callback_runner));
+  return id;
 }
 
 // Derived class from memoryDetails converts the results into a single string
@@ -238,43 +260,50 @@ class SyslogsMemoryHandler : public MemoryDetails {
 
   // |logs| is modified (see comment above) and passed to |request|.
   // |zip_content| is passed to |request|.
-  SyslogsMemoryHandler(
-      scoped_refptr<CancelableRequest<ReadCompleteCallback> > request,
-      LogDictionaryType* logs,
-      std::string* zip_content)
-      : request_(request),
-        logs_(logs),
-        zip_content_(zip_content) {
-  }
+  SyslogsMemoryHandler(const ReadCompleteCallback& callback,
+                       LogDictionaryType* logs,
+                       std::string* zip_content);
 
-  virtual void OnDetailsAvailable() OVERRIDE {
-    (*logs_)["mem_usage"] = ToLogString();
-    // This will call the callback on the calling thread.
-    request_->ForwardResult(logs_, zip_content_);
-  }
+  virtual void OnDetailsAvailable() OVERRIDE;
 
  private:
-  virtual ~SyslogsMemoryHandler() {}
+  virtual ~SyslogsMemoryHandler();
 
-  scoped_refptr<CancelableRequest<ReadCompleteCallback> > request_;
+  ReadCompleteCallback callback_;
+
   LogDictionaryType* logs_;
   std::string* zip_content_;
+
   DISALLOW_COPY_AND_ASSIGN(SyslogsMemoryHandler);
 };
 
-// Called from FILE thread.
+SyslogsMemoryHandler::SyslogsMemoryHandler(
+    const ReadCompleteCallback& callback,
+    LogDictionaryType* logs,
+    std::string* zip_content)
+    : callback_(callback),
+      logs_(logs),
+      zip_content_(zip_content) {
+  DCHECK(!callback_.is_null());
+}
+
+void SyslogsMemoryHandler::OnDetailsAvailable() {
+    (*logs_)["mem_usage"] = ToLogString();
+    callback_.Run(logs_, zip_content_);
+  }
+
+SyslogsMemoryHandler::~SyslogsMemoryHandler() {}
+
+// Called from blocking pool thread.
 void SyslogsProviderImpl::ReadSyslogs(
-    scoped_refptr<CancelableRequest<ReadCompleteCallback> > request,
+    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
     bool compress_logs,
-    SyslogsContext context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    SyslogsContext context,
+    const ReadCompleteCallback& callback) {
+  DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
 
-  if (request->canceled())
+  if (is_canceled.Run())
     return;
-
-  if (compress_logs && !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kCompressSystemFeedback))
-    compress_logs = false;
 
   // Create temp file.
   FilePath zip_file;
@@ -296,11 +325,26 @@ void SyslogsProviderImpl::ReadSyslogs(
     file_util::Delete(zip_file, false);
   }
 
+  // Include dbus statistics summary
+  (*logs)["dbus"] = dbus::statistics::GetAsString(
+      dbus::statistics::SHOW_INTERFACE,
+      dbus::statistics::FORMAT_ALL);
+
+  // Include recent network log events
+  (*logs)["network_event_log"] = chromeos::network_event_log::GetAsString(
+      chromeos::network_event_log::OLDEST_FIRST,
+      chromeos::system::kFeedbackMaxLineCount);
+
+  if (ash::Shell::GetInstance()->touch_observer_hud()) {
+    (*logs)[kHUDLogDataKey] =
+        ash::Shell::GetInstance()->touch_observer_hud()->GetLogAsString();
+  }
+
   // SyslogsMemoryHandler will clean itself up.
   // SyslogsMemoryHandler::OnDetailsAvailable() will modify |logs| and call
   // request->ForwardResult(logs, zip_content).
   scoped_refptr<SyslogsMemoryHandler>
-      handler(new SyslogsMemoryHandler(request, logs, zip_content));
+      handler(new SyslogsMemoryHandler(callback, logs, zip_content));
   // TODO(jamescook): Maybe we don't need to update histograms here?
   handler->StartFetch(MemoryDetails::UPDATE_USER_METRICS);
 }
@@ -328,6 +372,29 @@ const char* SyslogsProviderImpl::GetSyslogsContextString(
     default:
       NOTREACHED();
       return "";
+  }
+}
+
+// static
+void SyslogsProviderImpl::RunCallbackIfNotCanceled(
+    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    base::TaskRunner* origin_runner,
+    const ReadCompleteCallback& callback,
+    LogDictionaryType* logs,
+    std::string* zip_content) {
+  DCHECK(!is_canceled.is_null() && !callback.is_null());
+
+  if (is_canceled.Run()) {
+    delete logs;
+    delete zip_content;
+    return;
+  }
+
+  // TODO(achuith@chromium.org): Maybe always run callback asynchronously?
+  if (origin_runner->RunsTasksOnCurrentThread()) {
+    callback.Run(logs, zip_content);
+  } else {
+    origin_runner->PostTask(FROM_HERE, base::Bind(callback, logs, zip_content));
   }
 }
 

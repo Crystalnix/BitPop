@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function runTests() {
+onload = function() {
   var getURL = chrome.extension.getURL;
   var URL_LOAD =
       "http://127.0.0.1:PORT/files/prerender/prerender_loader.html";
@@ -24,6 +24,7 @@ function runTests() {
             { label: "a-onBeforeNavigate",
               event: "onBeforeNavigate",
               details: { frameId: 0,
+                         parentFrameId: -1,
                          processId: 0,
                          tabId: 0,
                          timeStamp: 0,
@@ -54,6 +55,7 @@ function runTests() {
             { label: "b-onBeforeNavigate",
               event: "onBeforeNavigate",
               details: { frameId: 0,
+                         parentFrameId: -1,
                          processId: 1,
                          tabId: 1,
                          timeStamp: 0,
@@ -96,4 +98,4 @@ function runTests() {
       ]);
     });
   });
-}
+};

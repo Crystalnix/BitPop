@@ -15,8 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "content/public/browser/notification_service.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -28,7 +27,6 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/events/event.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
@@ -55,10 +53,12 @@ const int kMinimumFieldSize = 180;
 namespace chrome {
 
 void ShowBookmarkBubbleView(views::View* anchor_view,
+                            BookmarkBubbleViewObserver* observer,
                             Profile* profile,
                             const GURL& url,
                             bool newly_bookmarked) {
-  BookmarkBubbleView::ShowBubble(anchor_view, profile, url, newly_bookmarked);
+  BookmarkBubbleView::ShowBubble(anchor_view, observer, profile, url,
+                                 newly_bookmarked);
 }
 
 void HideBookmarkBubbleView() {
@@ -77,24 +77,22 @@ BookmarkBubbleView* BookmarkBubbleView::bookmark_bubble_ = NULL;
 
 // static
 void BookmarkBubbleView::ShowBubble(views::View* anchor_view,
+                                    BookmarkBubbleViewObserver* observer,
                                     Profile* profile,
                                     const GURL& url,
                                     bool newly_bookmarked) {
   if (IsShowing())
     return;
 
-  bookmark_bubble_ =
-      new BookmarkBubbleView(anchor_view, profile, url, newly_bookmarked);
+  bookmark_bubble_ = new BookmarkBubbleView(anchor_view, observer, profile, url,
+                                            newly_bookmarked);
   views::BubbleDelegateView::CreateBubble(bookmark_bubble_);
   bookmark_bubble_->Show();
   // Select the entire title textfield contents when the bubble is first shown.
   bookmark_bubble_->title_tf_->SelectAll(true);
 
-  GURL url_ptr(url);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_BOOKMARK_BUBBLE_SHOWN,
-      content::Source<Profile>(profile->GetOriginalProfile()),
-      content::Details<GURL>(&url_ptr));
+  if (bookmark_bubble_->observer_)
+    bookmark_bubble_->observer_->OnBookmarkBubbleShown(url);
 }
 
 // static
@@ -122,23 +120,14 @@ views::View* BookmarkBubbleView::GetInitiallyFocusedView() {
   return title_tf_;
 }
 
-gfx::Rect BookmarkBubbleView::GetAnchorRect() {
-  // Compensate for some built-in padding in the star image.
-  gfx::Rect rect(BubbleDelegateView::GetAnchorRect());
-  rect.Inset(0, anchor_view() ? 5 : 0);
-  return rect;
-}
-
 void BookmarkBubbleView::WindowClosing() {
   // We have to reset |bubble_| here, not in our destructor, because we'll be
   // destroyed asynchronously and the shown state will be checked before then.
-  DCHECK(bookmark_bubble_ == this);
+  DCHECK_EQ(bookmark_bubble_, this);
   bookmark_bubble_ = NULL;
 
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_BOOKMARK_BUBBLE_HIDDEN,
-      content::Source<Profile>(profile_->GetOriginalProfile()),
-      content::NotificationService::NoDetails());
+  if (observer_)
+    observer_->OnBookmarkBubbleHidden();
  }
 
 bool BookmarkBubbleView::AcceleratorPressed(
@@ -245,10 +234,12 @@ void BookmarkBubbleView::Init() {
 }
 
 BookmarkBubbleView::BookmarkBubbleView(views::View* anchor_view,
+                                       BookmarkBubbleViewObserver* observer,
                                        Profile* profile,
                                        const GURL& url,
                                        bool newly_bookmarked)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
+      observer_(observer),
       profile_(profile),
       url_(url),
       newly_bookmarked_(newly_bookmarked),
@@ -263,6 +254,8 @@ BookmarkBubbleView::BookmarkBubbleView(views::View* anchor_view,
       parent_combobox_(NULL),
       remove_bookmark_(false),
       apply_edits_(true) {
+  // Compensate for built-in vertical padding in the anchor view's image.
+  set_anchor_insets(gfx::Insets(5, 0, 5, 0));
 }
 
 string16 BookmarkBubbleView::GetTitle() {
@@ -277,13 +270,13 @@ string16 BookmarkBubbleView::GetTitle() {
   return string16();
 }
 
-void BookmarkBubbleView::ButtonPressed(
-    views::Button* sender, const views::Event& event) {
+void BookmarkBubbleView::ButtonPressed(views::Button* sender,
+                                       const ui::Event& event) {
   HandleButtonPressed(sender);
 }
 
 void BookmarkBubbleView::LinkClicked(views::Link* source, int event_flags) {
-  DCHECK(source == remove_link_);
+  DCHECK_EQ(remove_link_, source);
   content::RecordAction(UserMetricsAction("BookmarkBubble_Unstar"));
 
   // Set this so we remove the bookmark after the window closes.

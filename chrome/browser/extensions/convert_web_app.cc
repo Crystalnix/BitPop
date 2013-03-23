@@ -12,27 +12,28 @@
 #include "base/base64.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/web_apps.h"
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
+namespace extensions {
+
 namespace keys = extension_manifest_keys;
 
 using base::Time;
-using extensions::Extension;
 
 namespace {
 
@@ -84,15 +85,17 @@ std::string ConvertTimeToExtensionVersion(const Time& create_time) {
 
 scoped_refptr<Extension> ConvertWebAppToExtension(
     const WebApplicationInfo& web_app,
-    const Time& create_time) {
-  FilePath user_data_temp_dir = extension_file_util::GetUserDataTempDir();
-  if (user_data_temp_dir.empty()) {
+    const Time& create_time,
+    const FilePath& extensions_dir) {
+  FilePath install_temp_dir =
+      extension_file_util::GetInstallTempDir(extensions_dir);
+  if (install_temp_dir.empty()) {
     LOG(ERROR) << "Could not get path to profile temporary directory.";
     return NULL;
   }
 
-  ScopedTempDir temp_dir;
-  if (!temp_dir.CreateUniqueTempDirUnderPath(user_data_temp_dir)) {
+  base::ScopedTempDir temp_dir;
+  if (!temp_dir.CreateUniqueTempDirUnderPath(install_temp_dir)) {
     LOG(ERROR) << "Could not create temporary directory.";
     return NULL;
   }
@@ -195,3 +198,5 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
   temp_dir.Take();  // The caller takes ownership of the directory.
   return extension;
 }
+
+}  // namespace extensions

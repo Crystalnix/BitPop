@@ -16,11 +16,13 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
@@ -32,7 +34,6 @@
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::BrowserThread;
@@ -99,7 +100,8 @@ std::string OfflineLoadPage::GetHTMLContents() {
       web_contents_->GetBrowserContext());
   DCHECK(profile);
   const extensions::Extension* extension = NULL;
-  ExtensionService* extensions_service = profile->GetExtensionService();
+  ExtensionService* extensions_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   // Extension service does not exist in test.
   if (extensions_service)
     extension = extensions_service->extensions()->GetHostedAppByURL(
@@ -112,7 +114,7 @@ std::string OfflineLoadPage::GetHTMLContents() {
 
   base::StringPiece html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_OFFLINE_LOAD_HTML, ui::SCALE_FACTOR_NONE));
+          IDR_OFFLINE_LOAD_HTML));
   return jstemplate_builder::GetI18nTemplateHtml(html, &strings);
 }
 
@@ -143,7 +145,7 @@ void OfflineLoadPage::GetAppOfflineStrings(
     DictionaryValue* strings) const {
   strings->SetString("title", app->name());
 
-  GURL icon_url = app->GetIconURL(ExtensionIconSet::EXTENSION_ICON_LARGE,
+  GURL icon_url = app->GetIconURL(extension_misc::EXTENSION_ICON_LARGE,
                                   ExtensionIconSet::MATCH_BIGGER);
   if (icon_url.is_empty()) {
     strings->SetString("display_icon", "none");
@@ -187,7 +189,7 @@ void OfflineLoadPage::CommandReceived(const std::string& cmd) {
   } else if (command == "dontproceed") {
     interstitial_page_->DontProceed();
   } else if (command == "open_network_settings") {
-    ash::Shell::GetInstance()->tray_delegate()->ShowNetworkSettings();
+    ash::Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings();
   } else {
     LOG(WARNING) << "Unknown command:" << cmd;
   }

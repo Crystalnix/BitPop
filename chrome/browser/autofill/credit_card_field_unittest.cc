@@ -8,8 +8,8 @@
 #include "chrome/browser/autofill/autofill_field.h"
 #include "chrome/browser/autofill/autofill_scanner.h"
 #include "chrome/browser/autofill/credit_card_field.h"
+#include "chrome/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/forms/form_field.h"
 
 class CreditCardFieldTest : public testing::Test {
  public:
@@ -22,7 +22,11 @@ class CreditCardFieldTest : public testing::Test {
 
   // Downcast for tests.
   static CreditCardField* Parse(AutofillScanner* scanner) {
-    return static_cast<CreditCardField*>(CreditCardField::Parse(scanner));
+    return
+        static_cast<CreditCardField*>(CreditCardField::Parse(scanner, false));
+  }
+  static CreditCardField* ParseWithNewFieldTypes(AutofillScanner* scanner) {
+    return static_cast<CreditCardField*>(CreditCardField::Parse(scanner, true));
   }
 
  private:
@@ -43,8 +47,8 @@ TEST_F(CreditCardFieldTest, NonParse) {
 }
 
 TEST_F(CreditCardFieldTest, ParseCreditCardNoNumber) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Exp Month");
   field.name = ASCIIToUTF16("ccmonth");
@@ -60,8 +64,8 @@ TEST_F(CreditCardFieldTest, ParseCreditCardNoNumber) {
 }
 
 TEST_F(CreditCardFieldTest, ParseCreditCardNoDate) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Card Number");
   field.name = ASCIIToUTF16("card_number");
@@ -73,8 +77,8 @@ TEST_F(CreditCardFieldTest, ParseCreditCardNoDate) {
 }
 
 TEST_F(CreditCardFieldTest, ParseMiniumCreditCard) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Card Number");
   field.name = ASCIIToUTF16("card_number");
@@ -105,54 +109,116 @@ TEST_F(CreditCardFieldTest, ParseMiniumCreditCard) {
 }
 
 TEST_F(CreditCardFieldTest, ParseFullCreditCard) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
+
+  field.label = ASCIIToUTF16("Card Type");
+  field.name = ASCIIToUTF16("card_type");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("type")));
 
   field.label = ASCIIToUTF16("Name on Card");
   field.name = ASCIIToUTF16("name_on_card");
-  list_.push_back(new AutofillField(field, ASCIIToUTF16("name1")));
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("name")));
 
   field.label = ASCIIToUTF16("Card Number");
   field.name = ASCIIToUTF16("card_number");
-  list_.push_back(new AutofillField(field, ASCIIToUTF16("number2")));
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("number")));
 
   field.label = ASCIIToUTF16("Exp Month");
   field.name = ASCIIToUTF16("ccmonth");
-  list_.push_back(new AutofillField(field, ASCIIToUTF16("month3")));
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("month")));
 
   field.label = ASCIIToUTF16("Exp Year");
   field.name = ASCIIToUTF16("ccyear");
-  list_.push_back(new AutofillField(field, ASCIIToUTF16("year4")));
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("year")));
 
   field.label = ASCIIToUTF16("Verification");
   field.name = ASCIIToUTF16("verification");
-  list_.push_back(new AutofillField(field, ASCIIToUTF16("cvc5")));
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("cvc")));
 
   AutofillScanner scanner(list_.get());
   field_.reset(Parse(&scanner));
   ASSERT_NE(static_cast<CreditCardField*>(NULL), field_.get());
   ASSERT_TRUE(field_->ClassifyField(&field_type_map_));
   ASSERT_TRUE(
-      field_type_map_.find(ASCIIToUTF16("name1")) != field_type_map_.end());
-  EXPECT_EQ(CREDIT_CARD_NAME, field_type_map_[ASCIIToUTF16("name1")]);
+      field_type_map_.find(ASCIIToUTF16("name")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_NAME, field_type_map_[ASCIIToUTF16("name")]);
   ASSERT_TRUE(
-      field_type_map_.find(ASCIIToUTF16("number2")) != field_type_map_.end());
-  EXPECT_EQ(CREDIT_CARD_NUMBER, field_type_map_[ASCIIToUTF16("number2")]);
+      field_type_map_.find(ASCIIToUTF16("number")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_NUMBER, field_type_map_[ASCIIToUTF16("number")]);
   ASSERT_TRUE(
-      field_type_map_.find(ASCIIToUTF16("month3")) != field_type_map_.end());
-  EXPECT_EQ(CREDIT_CARD_EXP_MONTH, field_type_map_[ASCIIToUTF16("month3")]);
+      field_type_map_.find(ASCIIToUTF16("month")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_EXP_MONTH, field_type_map_[ASCIIToUTF16("month")]);
   ASSERT_TRUE(
-      field_type_map_.find(ASCIIToUTF16("year4")) != field_type_map_.end());
+      field_type_map_.find(ASCIIToUTF16("year")) != field_type_map_.end());
   EXPECT_EQ(CREDIT_CARD_EXP_4_DIGIT_YEAR,
-      field_type_map_[ASCIIToUTF16("year4")]);
-  // We don't store CVV.
+      field_type_map_[ASCIIToUTF16("year")]);
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("cvc")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_VERIFICATION_CODE,
+      field_type_map_[ASCIIToUTF16("cvc")]);
+  // We don't fill card types by default.
   EXPECT_TRUE(
-      field_type_map_.find(ASCIIToUTF16("cvc5")) == field_type_map_.end());
+      field_type_map_.find(ASCIIToUTF16("type")) == field_type_map_.end());
+}
+
+TEST_F(CreditCardFieldTest, ParseCreditCardType) {
+  FormFieldData field;
+  field.form_control_type = "text";
+
+  field.label = ASCIIToUTF16("Card Type");
+  field.name = ASCIIToUTF16("card_type");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("type")));
+
+  field.label = ASCIIToUTF16("Name on Card");
+  field.name = ASCIIToUTF16("name_on_card");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("name")));
+
+  field.label = ASCIIToUTF16("Card Number");
+  field.name = ASCIIToUTF16("card_number");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("number")));
+
+  field.label = ASCIIToUTF16("Exp Month");
+  field.name = ASCIIToUTF16("ccmonth");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("month")));
+
+  field.label = ASCIIToUTF16("Exp Year");
+  field.name = ASCIIToUTF16("ccyear");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("year")));
+
+  field.label = ASCIIToUTF16("Verification");
+  field.name = ASCIIToUTF16("verification");
+  list_.push_back(new AutofillField(field, ASCIIToUTF16("cvc")));
+
+  AutofillScanner scanner(list_.get());
+  field_.reset(ParseWithNewFieldTypes(&scanner));
+  ASSERT_NE(static_cast<CreditCardField*>(NULL), field_.get());
+  ASSERT_TRUE(field_->ClassifyField(&field_type_map_));
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("type")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_TYPE, field_type_map_[ASCIIToUTF16("type")]);
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("name")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_NAME, field_type_map_[ASCIIToUTF16("name")]);
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("number")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_NUMBER, field_type_map_[ASCIIToUTF16("number")]);
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("month")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_EXP_MONTH, field_type_map_[ASCIIToUTF16("month")]);
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("year")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_EXP_4_DIGIT_YEAR,
+      field_type_map_[ASCIIToUTF16("year")]);
+  ASSERT_TRUE(
+      field_type_map_.find(ASCIIToUTF16("cvc")) != field_type_map_.end());
+  EXPECT_EQ(CREDIT_CARD_VERIFICATION_CODE,
+      field_type_map_[ASCIIToUTF16("cvc")]);
 }
 
 TEST_F(CreditCardFieldTest, ParseExpMonthYear) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Name on Card");
   field.name = ASCIIToUTF16("name_on_card");
@@ -190,8 +256,8 @@ TEST_F(CreditCardFieldTest, ParseExpMonthYear) {
 }
 
 TEST_F(CreditCardFieldTest, ParseExpMonthYear2) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Name on Card");
   field.name = ASCIIToUTF16("name_on_card");
@@ -229,8 +295,8 @@ TEST_F(CreditCardFieldTest, ParseExpMonthYear2) {
 }
 
 TEST_F(CreditCardFieldTest, ParseExpField) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Name on Card");
   field.name = ASCIIToUTF16("name_on_card");
@@ -261,8 +327,8 @@ TEST_F(CreditCardFieldTest, ParseExpField) {
 }
 
 TEST_F(CreditCardFieldTest, ParseExpField2DigitYear) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Name on Card");
   field.name = ASCIIToUTF16("name_on_card");
@@ -293,8 +359,8 @@ TEST_F(CreditCardFieldTest, ParseExpField2DigitYear) {
 }
 
 TEST_F(CreditCardFieldTest, ParseCreditCardHolderNameWithCCFullName) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Name");
   field.name = ASCIIToUTF16("ccfullname");

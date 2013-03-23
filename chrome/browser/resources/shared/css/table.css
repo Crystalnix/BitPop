@@ -1,8 +1,6 @@
-/*
- * Copyright (c) 2012 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 html.col-resize * {
   cursor: col-resize !important;
@@ -90,7 +88,7 @@ list > [selected]:hover {
   padding: 0 12px;
 }
 
-.table-header-sort-image-desc:after {
+.table-header-sort-image-desc::after {
   -webkit-padding-start: 5px;
   color: #888;
   content: '\25be'; /* BLACK DOWN-POINTING SMALL TRIANGLE */
@@ -98,7 +96,7 @@ list > [selected]:hover {
   top: -2px;
 }
 
-.table-header-sort-image-asc:after {
+.table-header-sort-image-asc::after {
   -webkit-padding-start: 5px;
   color: #888;
   content: '\25b4'; /* BLACK UP-POINTING SMALL TRIANGLE */
@@ -111,6 +109,7 @@ list > [selected]:hover {
   background-color: black;
   cursor: col-resize;
   height: 100%;
+  left: 0;
   position: absolute;
   top: 0;
   width: 5px;

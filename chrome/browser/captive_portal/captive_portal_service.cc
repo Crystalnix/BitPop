@@ -5,50 +5,27 @@
 #include "chrome/browser/captive_portal/captive_portal_service.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
-#include "net/base/load_flags.h"
-#include "net/http/http_response_headers.h"
-#include "net/url_request/url_fetcher.h"
-#include "net/url_request/url_request_status.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/mac_util.h"
+#endif
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
 
 namespace captive_portal {
 
 namespace {
-
-// The test URL.  When connected to the Internet, it should return a blank page
-// with a 204 status code.  When behind a captive portal, requests for this
-// URL should get an HTTP redirect or a login page.  When neither is true,
-// no server should respond to requests for this URL.
-// TODO(mmenke):  Look into getting another domain, for better load management.
-//                Need a cookieless domain, so can't use clients*.google.com.
-const char* const kDefaultTestURL = "http://www.gstatic.com/generate_204";
-
-// Used for histograms.
-const char* const kCaptivePortalResultNames[] = {
-  "InternetConnected",
-  "NoResponse",
-  "BehindCaptivePortal",
-  "NumCaptivePortalResults",
-};
-COMPILE_ASSERT(arraysize(kCaptivePortalResultNames) == RESULT_COUNT + 1,
-               captive_portal_result_name_count_mismatch);
-
-// Used for histograms.
-std::string CaptivePortalResultToString(Result result) {
-  DCHECK_GE(result, 0);
-  DCHECK_LT(static_cast<unsigned int>(result),
-            arraysize(kCaptivePortalResultNames));
-  return kCaptivePortalResultNames[result];
-}
 
 // Records histograms relating to how often captive portal detection attempts
 // ended with |result| in a row, and for how long |result| was the last result
@@ -70,7 +47,7 @@ void RecordRepeatHistograms(Result result,
   base::Histogram* result_repeated_histogram =
       base::Histogram::FactoryGet(
           "CaptivePortal.ResultRepeated." +
-              CaptivePortalResultToString(result),
+              CaptivePortalDetector::CaptivePortalResultToString(result),
           1,  // min
           100,  // max
           100,  // bucket_count
@@ -84,7 +61,7 @@ void RecordRepeatHistograms(Result result,
   base::Histogram* result_duration_histogram =
       base::Histogram::FactoryTimeGet(
           "CaptivePortal.ResultDuration." +
-              CaptivePortalResultToString(result),
+              CaptivePortalDetector::CaptivePortalResultToString(result),
           base::TimeDelta::FromSeconds(1),  // min
           base::TimeDelta::FromHours(1),  // max
           50,  // bucket_count
@@ -92,10 +69,22 @@ void RecordRepeatHistograms(Result result,
   result_duration_histogram->AddTime(result_duration);
 }
 
+bool HasNativeCaptivePortalDetection() {
+  // Lion and Windows 8 have their own captive portal detection that will open
+  // a browser window as needed.
+#if defined(OS_MACOSX)
+  return base::mac::IsOSLionOrLater();
+#elif defined(OS_WIN)
+  return base::win::GetVersion() >= base::win::VERSION_WIN8;
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
-// Disabled for M22.
-bool CaptivePortalService::is_disabled_for_testing_ = true;
+CaptivePortalService::TestingState CaptivePortalService::testing_state_ =
+    NOT_TESTING;
 
 class CaptivePortalService::RecheckBackoffEntry : public net::BackoffEntry {
  public:
@@ -145,17 +134,19 @@ CaptivePortalService::RecheckPolicy::RecheckPolicy()
 CaptivePortalService::CaptivePortalService(Profile* profile)
     : profile_(profile),
       state_(STATE_IDLE),
+      captive_portal_detector_(profile->GetRequestContext()),
       enabled_(false),
       last_detection_result_(RESULT_INTERNET_CONNECTED),
       num_checks_with_same_result_(0),
-      test_url_(kDefaultTestURL) {
+      test_url_(CaptivePortalDetector::kDefaultURL) {
   // The order matters here:
   // |resolve_errors_with_web_service_| must be initialized and |backoff_entry_|
   // created before the call to UpdateEnabledState.
   resolve_errors_with_web_service_.Init(
       prefs::kAlternateErrorPagesEnabled,
       profile_->GetPrefs(),
-      this);
+      base::Bind(&CaptivePortalService::UpdateEnabledState,
+                 base::Unretained(this)));
   ResetBackoffEntry(last_detection_result_);
 
   UpdateEnabledState();
@@ -185,7 +176,6 @@ void CaptivePortalService::DetectCaptivePortal() {
 void CaptivePortalService::DetectCaptivePortalInternal() {
   DCHECK(CalledOnValidThread());
   DCHECK(state_ == STATE_TIMER_RUNNING || state_ == STATE_IDLE);
-  DCHECK(!FetchingURL());
   DCHECK(!TimerRunning());
 
   state_ = STATE_CHECKING_FOR_PORTAL;
@@ -199,42 +189,26 @@ void CaptivePortalService::DetectCaptivePortalInternal() {
     return;
   }
 
-  // The first 0 means this can use a TestURLFetcherFactory in unit tests.
-  url_fetcher_.reset(net::URLFetcher::Create(0,
-                                             test_url_,
-                                             net::URLFetcher::GET,
-                                             this));
-  url_fetcher_->SetAutomaticallyRetryOn5xx(false);
-  url_fetcher_->SetRequestContext(profile_->GetRequestContext());
-  // Can't safely use net::LOAD_DISABLE_CERT_REVOCATION_CHECKING here,
-  // since then the connection may be reused without checking the cert.
-  url_fetcher_->SetLoadFlags(
-      net::LOAD_BYPASS_CACHE |
-      net::LOAD_DO_NOT_PROMPT_FOR_LOGIN |
-      net::LOAD_DO_NOT_SAVE_COOKIES |
-      net::LOAD_DO_NOT_SEND_COOKIES |
-      net::LOAD_DO_NOT_SEND_AUTH_DATA);
-  url_fetcher_->Start();
+  captive_portal_detector_.DetectCaptivePortal(
+      test_url_, base::Bind(
+          &CaptivePortalService::OnPortalDetectionCompleted,
+          base::Unretained(this)));
 }
 
-void CaptivePortalService::OnURLFetchComplete(const net::URLFetcher* source) {
+void CaptivePortalService::OnPortalDetectionCompleted(
+    const CaptivePortalDetector::Results& results) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(STATE_CHECKING_FOR_PORTAL, state_);
-  DCHECK(FetchingURL());
   DCHECK(!TimerRunning());
-  DCHECK_EQ(url_fetcher_.get(), source);
   DCHECK(enabled_);
 
+  Result result = results.result;
+  const base::TimeDelta& retry_after_delta = results.retry_after_delta;
   base::TimeTicks now = GetCurrentTimeTicks();
-
-  base::TimeDelta retry_after_delta;
-  Result new_result = GetCaptivePortalResultFromResponse(source,
-                                                         &retry_after_delta);
-  url_fetcher_.reset();
 
   // Record histograms.
   UMA_HISTOGRAM_ENUMERATION("CaptivePortal.DetectResult",
-                            new_result,
+                            result,
                             RESULT_COUNT);
 
   // If this isn't the first captive portal result, record stats.
@@ -242,7 +216,7 @@ void CaptivePortalService::OnURLFetchComplete(const net::URLFetcher* source) {
     UMA_HISTOGRAM_LONG_TIMES("CaptivePortal.TimeBetweenChecks",
                              now - last_check_time_);
 
-    if (last_detection_result_ != new_result) {
+    if (last_detection_result_ != result) {
       // If the last result was different from the result of the latest test,
       // record histograms about the previous period over which the result was
       // the same.
@@ -252,39 +226,32 @@ void CaptivePortalService::OnURLFetchComplete(const net::URLFetcher* source) {
     }
   }
 
-  if (last_check_time_.is_null() || new_result != last_detection_result_) {
+  if (last_check_time_.is_null() || result != last_detection_result_) {
     first_check_time_with_same_result_ = now;
     num_checks_with_same_result_ = 1;
 
     // Reset the backoff entry both to update the default time and clear
     // previous failures.
-    ResetBackoffEntry(new_result);
+    ResetBackoffEntry(result);
 
     backoff_entry_->SetCustomReleaseTime(now + retry_after_delta);
-    backoff_entry_->InformOfRequest(true);
+    // The BackoffEntry is not informed of this request, so there's no delay
+    // before the next request.  This allows for faster login when a captive
+    // portal is first detected.  It can also help when moving between captive
+    // portals.
   } else {
     DCHECK_LE(1, num_checks_with_same_result_);
     ++num_checks_with_same_result_;
 
     // Requests that have the same Result as the last one are considered
     // "failures", to trigger backoff.
+    backoff_entry_->SetCustomReleaseTime(now + retry_after_delta);
     backoff_entry_->InformOfRequest(false);
   }
 
   last_check_time_ = now;
 
-  OnResult(new_result);
-}
-
-void CaptivePortalService::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(chrome::NOTIFICATION_PREF_CHANGED, type);
-  DCHECK_EQ(std::string(prefs::kAlternateErrorPagesEnabled),
-            *content::Details<std::string>(details).ptr());
-  UpdateEnabledState();
+  OnResult(result);
 }
 
 void CaptivePortalService::Shutdown() {
@@ -327,9 +294,16 @@ void CaptivePortalService::ResetBackoffEntry(Result result) {
 }
 
 void CaptivePortalService::UpdateEnabledState() {
+  DCHECK(CalledOnValidThread());
   bool enabled_before = enabled_;
-  enabled_ = !is_disabled_for_testing_ &&
+  enabled_ = testing_state_ != DISABLED_FOR_TESTING &&
              resolve_errors_with_web_service_.GetValue();
+
+  if (testing_state_ != SKIP_OS_CHECK_FOR_TESTING &&
+      HasNativeCaptivePortalDetection()) {
+    enabled_ = false;
+  }
+
   if (enabled_before == enabled_)
     return;
 
@@ -341,10 +315,10 @@ void CaptivePortalService::UpdateEnabledState() {
   ResetBackoffEntry(last_detection_result_);
 
   if (state_ == STATE_CHECKING_FOR_PORTAL || state_ == STATE_TIMER_RUNNING) {
-    // If a captive portal check was running or pending, stop the check or the
-    // timer.
-    url_fetcher_.reset();
+    // If a captive portal check was running or pending, cancel check
+    // and the timer.
     check_captive_portal_timer_.Stop();
+    captive_portal_detector_.Cancel();
     state_ = STATE_IDLE;
 
     // Since a captive portal request was queued or running, something may be
@@ -353,68 +327,15 @@ void CaptivePortalService::UpdateEnabledState() {
   }
 }
 
-// Takes a net::URLFetcher that has finished trying to retrieve the test
-// URL, and returns a CaptivePortalService::Result based on its result.
-Result CaptivePortalService::GetCaptivePortalResultFromResponse(
-    const net::URLFetcher* url_fetcher,
-    base::TimeDelta* retry_after) const {
-  DCHECK(retry_after);
-  DCHECK(!url_fetcher->GetStatus().is_io_pending());
-
-  *retry_after = base::TimeDelta();
-
-  // If there's a network error of some sort when fetching a file via HTTP,
-  // there may be a networking problem, rather than a captive portal.
-  // TODO(mmenke):  Consider special handling for redirects that end up at
-  //                errors, especially SSL certificate errors.
-  if (url_fetcher->GetStatus().status() != net::URLRequestStatus::SUCCESS)
-    return RESULT_NO_RESPONSE;
-
-  // In the case of 503 errors, look for the Retry-After header.
-  int response_code = url_fetcher->GetResponseCode();
-  if (response_code == 503) {
-    net::HttpResponseHeaders* headers = url_fetcher->GetResponseHeaders();
-    std::string retry_after_string;
-
-    // If there's no Retry-After header, nothing else to do.
-    if (!headers->EnumerateHeader(NULL, "Retry-After", &retry_after_string))
-      return RESULT_NO_RESPONSE;
-
-    // Otherwise, try parsing it as an integer (seconds) or as an HTTP date.
-    int seconds;
-    base::Time full_date;
-    if (base::StringToInt(retry_after_string, &seconds)) {
-      *retry_after = base::TimeDelta::FromSeconds(seconds);
-    } else if (headers->GetTimeValuedHeader("Retry-After", &full_date)) {
-      base::Time now = GetCurrentTime();
-      if (full_date > now)
-        *retry_after = full_date - now;
-    }
-    return RESULT_NO_RESPONSE;
-  }
-
-  // Non-2xx/3xx HTTP responses may also indicate server errors.
-  if (response_code >= 400 || response_code < 200)
-    return RESULT_NO_RESPONSE;
-
-  // A 204 response code indicates there's no captive portal.
-  if (response_code == 204)
-    return RESULT_INTERNET_CONNECTED;
-
-  // Otherwise, assume it's a captive portal.
-  return RESULT_BEHIND_CAPTIVE_PORTAL;
-}
-
-base::Time CaptivePortalService::GetCurrentTime() const {
-  return base::Time::Now();
-}
-
 base::TimeTicks CaptivePortalService::GetCurrentTimeTicks() const {
-  return base::TimeTicks::Now();
+  if (time_ticks_for_testing_.is_null())
+    return base::TimeTicks::Now();
+  else
+    return time_ticks_for_testing_;
 }
 
-bool CaptivePortalService::FetchingURL() const {
-  return url_fetcher_.get() != NULL;
+bool CaptivePortalService::DetectionInProgress() const {
+  return state_ == STATE_CHECKING_FOR_PORTAL;
 }
 
 bool CaptivePortalService::TimerRunning() const {

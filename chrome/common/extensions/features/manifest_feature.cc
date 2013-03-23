@@ -18,18 +18,18 @@ Feature::Availability ManifestFeature::IsAvailableToContext(
     const Extension* extension,
     Feature::Context context,
     Feature::Platform platform) const {
-  Availability availability = Feature::IsAvailableToContext(extension,
-                                                            context,
-                                                            platform);
-  if (availability != IS_AVAILABLE)
+  Availability availability = SimpleFeature::IsAvailableToContext(extension,
+                                                                  context,
+                                                                  platform);
+  if (!availability.is_available())
     return availability;
 
   // We know we can skip manifest()->GetKey() here because we just did the same
   // validation it would do above.
   if (!extension->manifest()->value()->HasKey(name()))
-    return NOT_PRESENT;
+    return CreateAvailability(NOT_PRESENT, extension->GetType());
 
-  return IS_AVAILABLE;
+  return CreateAvailability(IS_AVAILABLE);
 }
 
 }  // namespace

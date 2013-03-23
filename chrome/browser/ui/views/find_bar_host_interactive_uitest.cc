@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/views/find_bar_host.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
@@ -94,7 +95,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_CrashEscHandlers) {
                                            VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
 
   // Select tab A.
-  chrome::ActivateTabAt(browser(), 0, true);
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
 
   // Close tab B.
   chrome::CloseWebContents(browser(), chrome::GetWebContentsAt(browser(), 1));
@@ -138,8 +139,8 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestore) {
   chrome::Find(browser());
   EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
                                            VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
-  ui_test_utils::FindInPage(chrome::GetActiveTabContents(browser()),
-                            ASCIIToUTF16("a"), true, false, NULL);
+  ui_test_utils::FindInPage(chrome::GetActiveWebContents(browser()),
+                            ASCIIToUTF16("a"), true, false, NULL, NULL);
   browser()->GetFindBarController()->EndFindSession(
       FindBarController::kKeepSelectionOnPage,
       FindBarController::kKeepResultsInFindBox);
@@ -162,7 +163,8 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestore) {
 }
 
 #if defined(OS_WIN)
-#define MAYBE_FocusRestoreOnTabSwitch FLAKY_FocusRestoreOnTabSwitch
+// crbug.com/128724
+#define MAYBE_FocusRestoreOnTabSwitch DISABLED_FocusRestoreOnTabSwitch
 #else
 #define MAYBE_FocusRestoreOnTabSwitch FocusRestoreOnTabSwitch
 #endif
@@ -181,8 +183,8 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_FocusRestoreOnTabSwitch) {
       browser()->GetFindBarController()->find_bar()->GetFindBarTesting();
 
   // Search for 'a'.
-  ui_test_utils::FindInPage(chrome::GetActiveTabContents(browser()),
-                            ASCIIToUTF16("a"), true, false, NULL);
+  ui_test_utils::FindInPage(chrome::GetActiveWebContents(browser()),
+                            ASCIIToUTF16("a"), true, false, NULL, NULL);
   EXPECT_TRUE(ASCIIToUTF16("a") == find_bar->GetFindSelectedText());
 
   // Open another tab (tab B).
@@ -198,8 +200,8 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_FocusRestoreOnTabSwitch) {
                                            VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
 
   // Search for 'b'.
-  ui_test_utils::FindInPage(chrome::GetActiveTabContents(browser()),
-                            ASCIIToUTF16("b"), true, false, NULL);
+  ui_test_utils::FindInPage(chrome::GetActiveWebContents(browser()),
+                            ASCIIToUTF16("b"), true, false, NULL, NULL);
   EXPECT_TRUE(ASCIIToUTF16("b") == find_bar->GetFindSelectedText());
 
   // Set focus away from the Find bar (to the Location bar).
@@ -208,21 +210,27 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_FocusRestoreOnTabSwitch) {
                                            location_bar_focus_view_id_));
 
   // Select tab A. Find bar should get focus.
-  chrome::ActivateTabAt(browser(), 0, true);
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
   EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
                                            VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
   EXPECT_TRUE(ASCIIToUTF16("a") == find_bar->GetFindSelectedText());
 
   // Select tab B. Location bar should get focus.
-  chrome::ActivateTabAt(browser(), 1, true);
+  browser()->tab_strip_model()->ActivateTabAt(1, true);
   EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
                                            location_bar_focus_view_id_));
 }
 
+// Flaky on XP: http://crbug.com/152100
+#if defined(OS_WIN)
+#define MAYBE_PrepopulateRespectBlank DISABLED_PrepopulateRespectBlank
+#else
+#define MAYBE_PrepopulateRespectBlank PrepopulateRespectBlank
+#endif
 // This tests that whenever you clear values from the Find box and close it that
 // it respects that and doesn't show you the last search, as reported in bug:
 // http://crbug.com/40121.
-IN_PROC_BROWSER_TEST_F(FindInPageTest, PrepopulateRespectBlank) {
+IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_PrepopulateRespectBlank) {
 #if defined(OS_MACOSX)
   // FindInPage on Mac doesn't use prepopulated values. Search there is global.
   return;
@@ -352,7 +360,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_PasteWithoutTextChange) {
       browser(), ui::VKEY_C, true, false, false, false));
 
   string16 str;
-  views::ViewsDelegate::views_delegate->GetClipboard()->
+  ui::Clipboard::GetForCurrentThread()->
       ReadText(ui::Clipboard::BUFFER_STANDARD, &str);
 
   // Make sure the text is copied successfully.

@@ -29,9 +29,9 @@ bool WebContentsDelegate::IsPopupOrPanel(const WebContents* source) const {
   return false;
 }
 
-bool WebContentsDelegate::IsApplication() const { return false; }
-
 bool WebContentsDelegate::CanLoadDataURLsInWebUI() const { return false; }
+
+bool WebContentsDelegate::CanOverscrollContent() const { return false; }
 
 gfx::Rect WebContentsDelegate::GetRootWindowResizerRect() const {
   return gfx::Rect();
@@ -59,7 +59,7 @@ bool WebContentsDelegate::ShouldFocusPageAfterCrash() {
   return true;
 }
 
-bool WebContentsDelegate::TakeFocus(bool reverse) {
+bool WebContentsDelegate::TakeFocus(WebContents* soruce, bool reverse) {
   return false;
 }
 
@@ -75,10 +75,6 @@ bool WebContentsDelegate::CanDownload(RenderViewHost* render_view_host,
 
 bool WebContentsDelegate::HandleContextMenu(
     const content::ContextMenuParams& params) {
-  return false;
-}
-
-bool WebContentsDelegate::ExecuteContextMenuCommand(int command) {
   return false;
 }
 
@@ -106,6 +102,7 @@ void WebContentsDelegate::ViewSourceForFrame(WebContents* source,
 }
 
 bool WebContentsDelegate::PreHandleKeyboardEvent(
+    WebContents* source,
     const NativeWebKeyboardEvent& event,
     bool* is_keyboard_shortcut) {
   return false;
@@ -113,16 +110,6 @@ bool WebContentsDelegate::PreHandleKeyboardEvent(
 
 bool WebContentsDelegate::OnGoToEntryOffset(int offset) {
   return true;
-}
-
-bool WebContentsDelegate::ShouldAddNavigationToHistory(
-    const history::HistoryAddPageArgs& add_page_args,
-    NavigationType navigation_type) {
-  return true;
-}
-
-gfx::NativeWindow WebContentsDelegate::GetFrameNativeWindow() {
-  return NULL;
 }
 
 bool WebContentsDelegate::ShouldCreateWebContents(
@@ -156,6 +143,14 @@ void WebContentsDelegate::WebIntentDispatch(
   // The caller passes this method ownership of the |intents_dispatcher|, but
   // this empty implementation will not use it, so we delete it immediately.
   delete intents_dispatcher;
+}
+
+bool WebContentsDelegate::RequestPpapiBrokerPermission(
+    WebContents* web_contents,
+    const GURL& url,
+    const FilePath& plugin_path,
+    const base::Callback<void(bool)>& callback) {
+  return false;
 }
 
 WebContentsDelegate::~WebContentsDelegate() {

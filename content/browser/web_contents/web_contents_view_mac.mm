@@ -31,9 +31,12 @@
 using WebKit::WebDragOperation;
 using WebKit::WebDragOperationsMask;
 using content::PopupMenuHelper;
+using content::RenderViewHostFactory;
 using content::RenderWidgetHostView;
 using content::RenderWidgetHostViewMac;
 using content::WebContents;
+using content::WebContentsImpl;
+using content::WebContentsViewMac;
 
 // Ensure that the WebKit::WebDragOperation enum values stay in sync with
 // NSDragOperation constants, since the code below static_casts between 'em.
@@ -72,13 +75,12 @@ WebContentsView* CreateWebContentsView(
   *render_view_host_delegate_view = rv;
   return rv;
 }
-}
 
-WebContentsViewMac::WebContentsViewMac(
-    WebContentsImpl* web_contents,
-    content::WebContentsViewDelegate* delegate)
+WebContentsViewMac::WebContentsViewMac(WebContentsImpl* web_contents,
+                                       WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
-      delegate_(delegate) {
+      delegate_(delegate),
+      allow_overlapping_views_(false) {
 }
 
 WebContentsViewMac::~WebContentsViewMac() {
@@ -90,14 +92,15 @@ WebContentsViewMac::~WebContentsViewMac() {
   [cocoa_view_ clearWebContentsView];
 }
 
-void WebContentsViewMac::CreateView(const gfx::Size& initial_size) {
+void WebContentsViewMac::CreateView(
+    const gfx::Size& initial_size, gfx::NativeView context) {
   WebContentsViewCocoa* view =
       [[WebContentsViewCocoa alloc] initWithWebContentsViewMac:this];
   cocoa_view_.reset(view);
 }
 
 RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
-    content::RenderWidgetHost* render_widget_host) {
+    RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -115,6 +118,7 @@ RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
         delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host);
     view->SetDelegate(rw_delegate);
   }
+  view->SetAllowOverlappingViews(allow_overlapping_views_);
 
   // Fancy layout comes later; for now just make it our size and resize it
   // with us. In case there are other siblings of the content area, we want
@@ -173,7 +177,8 @@ void WebContentsViewMac::StartDragging(
     const WebDropData& drop_data,
     WebDragOperationsMask allowed_operations,
     const gfx::ImageSkia& image,
-    const gfx::Point& image_offset) {
+    const gfx::Vector2d& image_offset,
+    const DragEventSourceInfo& event_info) {
   // By allowing nested tasks, the code below also allows Close(),
   // which would deallocate |this|.  The same problem can occur while
   // processing -sendEvent:, so Close() is deferred in that case.
@@ -185,14 +190,15 @@ void WebContentsViewMac::StartDragging(
   // processing events.
   MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
   NSDragOperation mask = static_cast<NSDragOperation>(allowed_operations);
-  NSPoint offset = NSPointFromCGPoint(image_offset.ToCGPoint());
+  NSPoint offset = NSPointFromCGPoint(
+      gfx::PointAtOffsetFromOrigin(image_offset).ToCGPoint());
   [cocoa_view_ startDragWithDropData:drop_data
                    dragOperationMask:mask
                                image:gfx::NSImageFromImageSkia(image)
                               offset:offset];
 }
 
-void WebContentsViewMac::RenderViewCreated(content::RenderViewHost* host) {
+void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
   // We want updates whenever the intrinsic width of the webpage changes.
   // Put the RenderView into that mode. The preferred width is used for example
   // when the "zoom" button in the browser window is clicked.
@@ -212,7 +218,12 @@ void WebContentsViewMac::SizeContents(const gfx::Size& size) {
   // See web_contents_view.h.
   gfx::Rect rect(gfx::Point(), size);
   WebContentsViewCocoa* view = cocoa_view_.get();
-  [view setFrame:[view flipRectToNSRect:rect]];
+
+  NSPoint origin = [view frame].origin;
+  NSRect frame = [view flipRectToNSRect:rect];
+  frame.origin = NSMakePoint(NSMinX(frame) + origin.x,
+                             NSMinY(frame) + origin.y);
+  [view setFrame:frame];
 }
 
 void WebContentsViewMac::Focus() {
@@ -250,13 +261,6 @@ void WebContentsViewMac::RestoreFocus() {
   focus_tracker_.reset(nil);
 }
 
-bool WebContentsViewMac::IsDoingDrag() const {
-  return false;
-}
-
-void WebContentsViewMac::CancelDragAndCloseTab() {
-}
-
 WebDropData* WebContentsViewMac::GetDropData() const {
   return [cocoa_view_ dropData];
 }
@@ -280,8 +284,8 @@ void WebContentsViewMac::TakeFocus(bool reverse) {
   }
 }
 
-void WebContentsViewMac::ShowContextMenu(
-    const content::ContextMenuParams& params) {
+void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params,
+                                         ContextMenuSourceType type) {
   // Allow delegates to handle the context menu operation first.
   if (web_contents_->GetDelegate() &&
       web_contents_->GetDelegate()->HandleContextMenu(params)) {
@@ -289,7 +293,7 @@ void WebContentsViewMac::ShowContextMenu(
   }
 
   if (delegate())
-    delegate()->ShowContextMenu(params);
+    delegate()->ShowContextMenu(params, type);
   else
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }
@@ -330,9 +334,22 @@ gfx::Rect WebContentsViewMac::GetViewBounds() const {
   return gfx::Rect();
 }
 
+void WebContentsViewMac::SetAllowOverlappingViews(bool overlapping) {
+  if (allow_overlapping_views_ == overlapping)
+    return;
+
+  allow_overlapping_views_ = overlapping;
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      web_contents_->GetRenderWidgetHostView());
+  if (view)
+    view->SetAllowOverlappingViews(allow_overlapping_views_);
+}
+
 void WebContentsViewMac::CloseTab() {
   web_contents_->Close(web_contents_->GetRenderViewHost());
 }
+
+}  // namespace content
 
 @implementation WebContentsViewCocoa
 
@@ -514,6 +531,7 @@ void WebContentsViewMac::CloseTab() {
 
 - (void)clearWebContentsView {
   webContentsView_ = NULL;
+  [dragSource_ clearWebContentsView];
 }
 
 - (void)closeTabAfterEvent {

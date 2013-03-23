@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -73,26 +73,6 @@ class PrefixSet {
   // |prefixes|.  Prefixes will be added in sorted order.
   void GetPrefixes(std::vector<SBPrefix>* prefixes) const;
 
-  // TODO(shess): The following are debugging accessors.  Delete once
-  // the encoding problem is figured out.
-
-  size_t IndexBinFor(size_t target_index) const;
-
-  // The number of prefixes represented.
-  size_t GetSize() const;
-
-  // Returns |true| if the element at |target_index| is between items in the
-  // |index_| array.
-  bool IsDeltaAt(size_t target_index) const;
-
-  // Returns the delta used to calculate the element at
-  // |target_index|.  Only call if |IsDeltaAt()| returned |true|.
-  uint16 DeltaAt(size_t target_index) const;
-
-  // Check whether |index_| and |deltas_| still match the CRC
-  // generated during construction.
-  bool CheckChecksum() const;
-
  private:
   // Maximum number of consecutive deltas to encode before generating
   // a new index entry.  This helps keep the worst-case performance
@@ -114,11 +94,6 @@ class PrefixSet {
   // prefixes.  Deltas are only valid between consecutive items from
   // |index_|, or the end of |deltas_| for the last |index_| pair.
   std::vector<uint16> deltas_;
-
-  // For debugging, used to verify that |index_| and |deltas| were not
-  // changed after generation during construction.  |checksum_| is
-  // calculated from the data used to construct those vectors.
-  uint32 checksum_;
 
   DISALLOW_COPY_AND_ASSIGN(PrefixSet);
 };

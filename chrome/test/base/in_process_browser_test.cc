@@ -7,16 +7,17 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/debug/stack_trace.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/path_service.h"
 #include "base/string_number_conversions.h"
 #include "base/test/test_file_util.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/captive_portal/captive_portal_service.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -37,10 +38,10 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_process_host.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_launcher.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/test/test_server.h"
 #include "ui/compositor/compositor_switches.h"
@@ -51,18 +52,23 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+#include "chrome/browser/captive_portal/captive_portal_service.h"
+#endif
+
 namespace {
 
 // Passed as value of kTestType.
 const char kBrowserTestType[] = "browser";
 
+// Used when running in single-process mode.
+base::LazyInstance<chrome::ChromeContentRendererClient>::Leaky
+    g_chrome_content_renderer_client = LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 InProcessBrowserTest::InProcessBrowserTest()
     : browser_(NULL)
-#if defined(OS_POSIX)
-      , handle_sigterm_(true)
-#endif
 #if defined(OS_MACOSX)
       , autorelease_pool_(NULL)
 #endif  // OS_MACOSX
@@ -79,7 +85,7 @@ InProcessBrowserTest::InProcessBrowserTest()
   chrome_path = chrome_path.Append(chrome::kBrowserProcessExecutablePath);
   CHECK(PathService::Override(base::FILE_EXE, chrome_path));
 #endif  // defined(OS_MACOSX)
-  CreateTestServer("chrome/test/data");
+  CreateTestServer(FilePath(FILE_PATH_LITERAL("chrome/test/data")));
 }
 
 InProcessBrowserTest::~InProcessBrowserTest() {
@@ -110,11 +116,8 @@ void InProcessBrowserTest::SetUp() {
   // Single-process mode is not set in BrowserMain, so process it explicitly,
   // and set up renderer.
   if (command_line->HasSwitch(switches::kSingleProcess)) {
-    content::RenderProcessHost::set_run_renderer_in_process(true);
-    single_process_renderer_client_.reset(
-        new chrome::ChromeContentRendererClient);
     content::GetContentClient()->set_renderer_for_testing(
-        single_process_renderer_client_.get());
+        &g_chrome_content_renderer_client.Get());
   }
 
 #if defined(OS_CHROMEOS)
@@ -148,8 +151,13 @@ void InProcessBrowserTest::SetUp() {
 #endif
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
-  captive_portal::CaptivePortalService::set_is_disabled_for_testing(true);
+  captive_portal::CaptivePortalService::set_state_for_testing(
+      captive_portal::CaptivePortalService::DISABLED_FOR_TESTING);
 #endif
+
+  chrome_browser_net::NetErrorTabHelper::set_enabled_for_testing(false);
+
+  google_util::SetMockLinkDoctorBaseURLForTesting();
 
   BrowserTestBase::SetUp();
 }
@@ -180,10 +188,6 @@ void InProcessBrowserTest::PrepareTestCommandLine(CommandLine* command_line) {
   // TODO(pkotwicz): Investigate if we can remove this switch.
   command_line->AppendSwitch(switches::kDisableZeroBrowsersOpenForTests);
 
-  if (!command_line->HasSwitch(switches::kHomePage)) {
-    command_line->AppendSwitchASCII(
-        switches::kHomePage, chrome::kAboutBlankURL);
-  }
   if (command_line->GetArgs().empty())
     command_line->AppendArg(chrome::kAboutBlankURL);
 }
@@ -210,23 +214,20 @@ void InProcessBrowserTest::TearDown() {
   BrowserTestBase::TearDown();
 }
 
-content::BrowserContext* InProcessBrowserTest::GetBrowserContext() {
-  return browser_->profile();
-}
-
-content::ResourceContext* InProcessBrowserTest::GetResourceContext() {
-  return browser_->profile()->GetResourceContext();
-}
-
 void InProcessBrowserTest::AddTabAtIndexToBrowser(
     Browser* browser,
     int index,
     const GURL& url,
     content::PageTransition transition) {
+  content::TestNavigationObserver observer(
+      content::NotificationService::AllSources(), NULL, 1);
+
   chrome::NavigateParams params(browser, url, transition);
   params.tabstrip_index = index;
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
+
+  observer.Wait();
 }
 
 void InProcessBrowserTest::AddTabAtIndex(
@@ -278,7 +279,7 @@ void InProcessBrowserTest::AddBlankTabAndShow(Browser* browser) {
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
   chrome::AddSelectedTabWithURL(browser, GURL(chrome::kAboutBlankURL),
-                                content::PAGE_TRANSITION_START_PAGE);
+                                content::PAGE_TRANSITION_AUTO_TOPLEVEL);
   observer.Wait();
 
   browser->window()->Show();
@@ -290,9 +291,9 @@ CommandLine InProcessBrowserTest::GetCommandLineForRelaunch() {
   CommandLine::SwitchMap switches =
       CommandLine::ForCurrentProcess()->GetSwitches();
   switches.erase(switches::kUserDataDir);
-  switches.erase(test_launcher::kSingleProcessTestsFlag);
-  switches.erase(test_launcher::kSingleProcessTestsAndChromeFlag);
-  new_command_line.AppendSwitch(ChromeTestSuite::kLaunchAsBrowser);
+  switches.erase(content::kSingleProcessTestsFlag);
+  switches.erase(switches::kSingleProcess);
+  new_command_line.AppendSwitch(content::kLaunchAsBrowser);
 
 #if defined(USE_AURA)
   // Copy what UITestBase::SetLaunchSwitches() does, and also what
@@ -316,22 +317,7 @@ CommandLine InProcessBrowserTest::GetCommandLineForRelaunch() {
 }
 #endif
 
-#if defined(OS_POSIX)
-// On SIGTERM (sent by the runner on timeouts), dump a stack trace (to make
-// debugging easier) and also exit with a known error code (so that the test
-// framework considers this a failure -- http://crbug.com/57578).
-static void DumpStackTraceSignalHandler(int signal) {
-  base::debug::StackTrace().PrintBacktrace();
-  _exit(128 + signal);
-}
-#endif  // defined(OS_POSIX)
-
 void InProcessBrowserTest::RunTestOnMainThreadLoop() {
-#if defined(OS_POSIX)
-  if (handle_sigterm_)
-    signal(SIGTERM, DumpStackTraceSignalHandler);
-#endif  // defined(OS_POSIX)
-
   // Pump startup related events.
   content::RunAllPendingInMessageLoop();
 

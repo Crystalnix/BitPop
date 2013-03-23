@@ -1,10 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_CHROME_NOTIFICATION_TYPES_H_
 #define CHROME_COMMON_CHROME_NOTIFICATION_TYPES_H_
 
+#include "build/build_config.h"
 #include "content/public/browser/notification_types.h"
 
 namespace chrome {
@@ -87,6 +88,13 @@ enum NotificationType {
 
   // Application-wide ----------------------------------------------------------
 
+  // This message is sent when the application is terminating (the last
+  // browser window has shutdown as part of an explicit user-initiated exit,
+  // or the user closed the last browser window on Windows/Linux and there are
+  // no BackgroundContents keeping the browser running). No source or details
+  // are passed.
+  NOTIFICATION_APP_TERMINATING,
+
 #if defined(OS_MACOSX)
   // This notification is sent when the app has no key window, such as when
   // all windows are closed but the app is still active. No source or details
@@ -143,6 +151,17 @@ enum NotificationType {
   // starting and finishing all painting.
   NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD,
 
+#if defined(OS_ANDROID)
+  // Indicates that the new tab page is ready.  This is different than
+  // NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD as the NTP might do some more in-page
+  // navigations after it's done loading, potentially causing flakyness in tests
+  // that would navigate as soon as the NTP is done loading.
+  // When this notification happen, it guarantees the page is not going to do
+  // any further navigation.
+  // The source is the WebContents containing the NTP.
+  NOTIFICATION_NEW_TAB_READY,
+#endif
+
   // Used to fire notifications about how long various events took to
   // complete.  E.g., this is used to get more fine grained timings from the
   // new tab page.  The source is a WebContents and the details is a
@@ -166,7 +185,7 @@ enum NotificationType {
   NOTIFICATION_TAB_ADDED,
 
   // This notification is sent after a tab has been appended to the tab_strip.
-  // The source is a Source<TabContents> of the tab being added. There
+  // The source is a Source<WebContents> of the tab being added. There
   // are no details.
   NOTIFICATION_TAB_PARENTED,
 
@@ -174,30 +193,25 @@ enum NotificationType {
   // Source<NavigationController> with a pointer to the controller for the
   // closed tab.  No details are expected.
   //
-  // See also NOTIFICATION_TAB_CONTENTS_DESTROYED, which is sent when the
-  // TabContents is destroyed, and
-  // content::NOTIFICATION_WEB_CONTENTS_DESTROYED, which is sent when the
-  // WebContents containing the NavigationController is destroyed.
+  // See also content::NOTIFICATION_WEB_CONTENTS_DESTROYED, which is sent when
+  // the WebContents containing the NavigationController is destroyed.
   NOTIFICATION_TAB_CLOSING,
 
-  // Sent when a TabContents is being destroyed.  At this point it's safe
-  // to call TabContents member functions, which is not true of the
-  // similar content::NOTIFICATION_WEB_CONTENTS_DESTROYED that fires later
-  // during teardown.  The source is a Source<TabContents>.  There are no
-  // details.
-  NOTIFICATION_TAB_CONTENTS_DESTROYED,
-
   // Stuff inside the tabs ---------------------------------------------------
-
-  // Sent when the bookmark bubble hides. The source is the profile, the
-  // details unused.
-  NOTIFICATION_BOOKMARK_BUBBLE_HIDDEN,
 
   // This notification is sent when the result of a find-in-page search is
   // available with the browser process. The source is a Source<WebContents>.
   // Details encompass a FindNotificationDetail object that tells whether the
   // match was found or not found.
   NOTIFICATION_FIND_RESULT_AVAILABLE,
+
+#if defined(OS_ANDROID)
+  // This notification is sent when the match rects of a find-in-page search
+  // are available. The source is a Source<WebContents>. Details encompass a
+  // FindMatchRectsDetails object that contains the result version and the
+  // rects information.
+  NOTIFICATION_FIND_MATCH_RECTS_AVAILABLE,
+#endif
 
   // BackgroundContents ------------------------------------------------------
 
@@ -338,19 +352,9 @@ enum NotificationType {
 
   // Bookmarks ---------------------------------------------------------------
 
-  // Sent when the starred state of a URL changes. A URL is starred if there
-  // is at least one bookmark for it. The source is a Profile and the details
-  // is history::URLsStarredDetails that contains the list of URLs and
-  // whether they were starred or unstarred.
-  NOTIFICATION_URLS_STARRED,
-
   // Sent when the bookmark bar model finishes loading. This source is the
   // Profile, and the details aren't used.
   NOTIFICATION_BOOKMARK_MODEL_LOADED,
-
-  // Sent when the bookmark bubble is shown for a particular URL. The source
-  // is the profile, the details the URL.
-  NOTIFICATION_BOOKMARK_BUBBLE_SHOWN,
 
   // Task Manager ------------------------------------------------------------
 
@@ -387,14 +391,6 @@ enum NotificationType {
   // Sent when the prefs relating to the default search engine have changed due
   // to policy.  Source and details are unused.
   NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-
-  // This is sent to a pref observer when a pref is changed. The source is the
-  // PrefService and the details a std::string of the changed path.
-  NOTIFICATION_PREF_CHANGED,
-
-  // This is broadcast after the preference subsystem has completed
-  // asynchronous initalization of a PrefService.
-  NOTIFICATION_PREF_INITIALIZATION_COMPLETED,
 
   // The state of a web resource has been changed. A resource may have been
   // added, removed, or altered. Source is WebResourceService, and the
@@ -436,7 +432,7 @@ enum NotificationType {
   NOTIFICATION_PRINT_JOB_EVENT,
 
   // Sent when a PrintJob has been released.
-  // Source is the TabContents that holds the print job.
+  // Source is the WebContents that holds the print job.
   NOTIFICATION_PRINT_JOB_RELEASED,
 
   // Shutdown ----------------------------------------------------------------
@@ -469,7 +465,7 @@ enum NotificationType {
   NOTIFICATION_EXTENSIONS_READY,
 
   // Sent when an extension icon being displayed in the location bar is updated.
-  // The source is the Profile and the details are the TabContents for
+  // The source is the Profile and the details are the WebContents for
   // the tab.
   NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
 
@@ -562,7 +558,8 @@ enum NotificationType {
   NOTIFICATION_EXTENSION_POPUP_VIEW_READY,
 
   // Sent when a browser action's state has changed. The source is the
-  // ExtensionAction* that changed.  There are no details.
+  // ExtensionAction* that changed.  The details are the Profile* that the
+  // browser action belongs to.
   NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
 
   // Sent when the count of page actions has changed. Note that some of them
@@ -578,6 +575,11 @@ enum NotificationType {
   // ExtensionAction* that changed. The details are a WebContents*.
   NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
 
+  // Sent when a system indicator action's state has changed. The source is the
+  // Profile* that the browser action belongs to. The details are the
+  // ExtensionAction* that changed.
+  NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
+
   // Sent when an extension command has been removed. The source is the profile
   // and the details is a std::pair of two std::string objects (an extension ID
   // and the name of the command being removed).
@@ -587,6 +589,21 @@ enum NotificationType {
   // and the details is a std::pair of two std::string objects (an extension ID
   // and the name of the command being added).
   NOTIFICATION_EXTENSION_COMMAND_ADDED,
+
+  // Sent when an extension command shortcut for a browser action is activated
+  // on Mac. The source is the profile and the details is a std::string
+  // containing an extension ID.
+  NOTIFICATION_EXTENSION_COMMAND_BROWSER_ACTION_MAC,
+
+  // Sent when an extension command shortcut for a page action is activated
+  // on Mac. The source is the profile and the details is a std::string
+  // containing an extension ID.
+  NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC,
+
+  // Sent when an extension command shortcut for a script badge is activated
+  // on Mac. The source is the profile and the details is a std::string
+  // containing an extension ID.
+  NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC,
 
   // A new extension RenderViewHost has been registered. The details are
   // the RenderViewHost*.
@@ -630,11 +647,6 @@ enum NotificationType {
   // source is the profile.
   NOTIFICATION_EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
 
-  // Sent when an extension changes a preference value. The source is the
-  // profile, and the details are an ExtensionPrefStore::ExtensionPrefDetails
-  // object.
-  NOTIFICATION_EXTENSION_PREF_CHANGED,
-
   // Sent when a recording session for speech input has started.
   NOTIFICATION_EXTENSION_SPEECH_INPUT_RECORDING_STARTED,
 
@@ -648,21 +660,11 @@ enum NotificationType {
   // extensions. The source is a Profile, and there are no details.
   NOTIFICATION_EXTENSION_UPDATING_STARTED,
 
-  // Sent when the extension updater is finished checking for updates to
-  // installed extensions. The source is a Profile, and there are no details.
-  // NOTE: It's possible that there are extension updates still being
-  // installed by the extension service at the time this notification fires.
-  NOTIFICATION_EXTENSION_UPDATING_FINISHED,
-
   // The extension updater found an update and will attempt to download and
-  // install it. The source is a Profile, and the details are an extension id
-  // (const std::string).
+  // install it. The source is a Profile, and the details are an
+  // extensions::UpdateDetails object with the extension id and version of the
+  // found update.
   NOTIFICATION_EXTENSION_UPDATE_FOUND,
-
-  // Sent when one or more extensions changed their warning status (like
-  // slowing down Chrome or conflicting with each other).
-  // The source is a Profile.
-  NOTIFICATION_EXTENSION_WARNING_CHANGED,
 
   // An installed app changed notification state (added or removed
   // notifications). The source is a Profile, and the details are a string
@@ -810,14 +812,14 @@ enum NotificationType {
 
   // Sync --------------------------------------------------------------------
 
-  // Sent when the syncer is blocked configuring.
-  NOTIFICATION_SYNC_CONFIGURE_BLOCKED,
-
-  // The sync service has started the configuration process.
-  NOTIFICATION_SYNC_CONFIGURE_START,
-
-  // The sync service is finished the configuration process.
+  // The sync service has finished the datatype configuration process. The
+  // source is the ProfileSyncService object of the Profile. There are no
+  // details.
   NOTIFICATION_SYNC_CONFIGURE_DONE,
+
+  // The sync service has started the datatype configuration process. The source
+  // is the ProfileSyncService object of the Profile. There are no details.
+  NOTIFICATION_SYNC_CONFIGURE_START,
 
   // A service is requesting a sync datatype refresh for the current profile.
   // The details value is a const syncer::ModelTypePayloadMap.
@@ -874,12 +876,6 @@ enum NotificationType {
   // TokenRequestFailedDetails object.
   NOTIFICATION_TOKEN_REQUEST_FAILED,
 
-  // When the token service receives updated credentials with which to generate
-  // new tokens, one of these notifications is issued.
-  // The source is a TokenService on the Profile. The details are a
-  // CredentialsUpdatedDetails object.
-  NOTIFICATION_TOKEN_SERVICE_CREDENTIALS_UPDATED,
-
   // When a service has a new token they got from a frontend that the
   // TokenService should know about, fire this notification. The source is the
   // Profile. The details are a TokenAvailableDetails object.
@@ -901,7 +897,8 @@ enum NotificationType {
   NOTIFICATION_GOOGLE_SIGNIN_FAILED,
 
   // Sent when the currently signed-in user for a user has been signed out.
-  // The source is the Profile. There are no details.
+  // The source is the Profile. The details are a
+  // GoogleServiceSignoutDetails object.
   NOTIFICATION_GOOGLE_SIGNED_OUT,
 
   // Autofill Notifications --------------------------------------------------
@@ -998,6 +995,10 @@ enum NotificationType {
   // First paint event after this fires NOTIFICATION_LOGIN_WEBUI_VISIBLE.
   NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN,
 
+  // Sent when the EULA has been accepted in the first-run wizard. This is never
+  // sent if the EULA was already accepted at startup.
+  NOTIFICATION_WIZARD_EULA_ACCEPTED,
+
   // Sent when the specific part of login WebUI is considered to be visible.
   // That moment is tracked as the first paint event after one of the:
   // 1. NOTIFICATION_LOGIN_USER_IMAGES_LOADED
@@ -1043,16 +1044,11 @@ enum NotificationType {
   // object.
   NOTIFICATION_SCREEN_LOCK_STATE_CHANGED,
 
-  // Sent when an attempt to acquire the public key of the owner of a chromium
-  // os device has succeeded.
-  NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED,
-
-  // Sent when an attempt to acquire the public key of the owner of a chromium
-  // os device has failed.
-  NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_FAILED,
-
-  // Sent after UserManager checked ownership status of logged in user.
-  NOTIFICATION_OWNERSHIP_CHECKED,
+  // Sent by DeviceSettingsService to indicate that the ownership status
+  // changed. If you can, please use DeviceSettingsService::Observer instead.
+  // Other singleton-based services can't use that because Observer
+  // unregistration is impossible due to unpredictable deletion order.
+  NOTIFICATION_OWNERSHIP_STATUS_CHANGED,
 
   // This is sent to a ChromeOS settings observer when a system setting is
   // changed. The source is the CrosSettings and the details a std::string of
@@ -1070,6 +1066,15 @@ enum NotificationType {
   // EnterPuk dialog, either because the user cancelled, or entered a
   // PIN or PUK.
   NOTIFICATION_ENTER_PIN_ENDED,
+
+  // Sent when high contrast mode is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
+
+  // Sent when screen magnifier is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
+
+  // Sent when spoken feedback is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
 
 #endif
 
@@ -1093,16 +1098,12 @@ enum NotificationType {
   // Sent each time the InstantController is updated.
   NOTIFICATION_INSTANT_CONTROLLER_UPDATED,
 
-  // Sent each time the InstantController shows the InstantLoader.
-  NOTIFICATION_INSTANT_CONTROLLER_SHOWN,
-
-  // Sent when an Instant preview is committed.  The Source is the
-  // TabContents containing the committed preview.  There are no details.
+  // Sent when an Instant preview is committed. The Source is the WebContents
+  // containing the committed preview.
   NOTIFICATION_INSTANT_COMMITTED,
 
-  // Sent when the instant loader determines whether the page supports the
-  // instant API or not. The details is a boolean indicating if the page
-  // supports instant. The source is not used.
+  // Sent when the Instant loader determines whether the page supports the
+  // Instant API or not.
   NOTIFICATION_INSTANT_SUPPORT_DETERMINED,
 
   // Sent when the CaptivePortalService checks if we're behind a captive portal.
@@ -1115,7 +1116,7 @@ enum NotificationType {
   // store are changed. The detail of this notification is a list of changes
   // represented by a vector of PasswordStoreChange. Each change includes a
   // change type (ADD, UPDATE, or REMOVE) as well as the
-  // |webkit::forms::PasswordForm|s that were affected.
+  // |content::PasswordForm|s that were affected.
   NOTIFICATION_LOGINS_CHANGED,
 
   // Sent when an import process has ended.
@@ -1131,12 +1132,12 @@ enum NotificationType {
   // which was installed.
   NOTIFICATION_APP_INSTALLED_TO_NTP,
 
-#if defined(USE_ASH)
   // Similar to NOTIFICATION_APP_INSTALLED_TO_NTP but used to nofity ash AppList
   // about installed app. Source is the profile in which the app is installed
   // and Details is the string ID of the extension.
   NOTIFICATION_APP_INSTALLED_TO_APPLIST,
 
+#if defined(USE_ASH)
   // Sent when wallpaper show animation has finished.
   NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
 #endif
@@ -1192,10 +1193,14 @@ enum NotificationType {
   // Used only in unit testing.
   NOTIFICATION_PANEL_WINDOW_SIZE_KNOWN,
 
-  // Sent when panel strip get updated.
-  // The source is the PanelStrip, no details.
+  // Sent when panel app icon is loaded.
+  // Used only in unit testing.
+  NOTIFICATION_PANEL_APP_ICON_LOADED,
+
+  // Sent when panel collection get updated.
+  // The source is the PanelCollection, no details.
   // Used only in coordination with notification balloons.
-  NOTIFICATION_PANEL_STRIP_UPDATED,
+  NOTIFICATION_PANEL_COLLECTION_UPDATED,
 
   // Sent when panel is closed.
   // The source is the Panel, no details.
@@ -1224,7 +1229,7 @@ enum NotificationType {
   // Blocked content.
   // Sent when content changes to or from the blocked state in
   // BlockedContentTabHelper.
-  // The source is the TabContents of the blocked content and details
+  // The source is the WebContents of the blocked content and details
   // is a boolean: true if the content is entering the blocked state, false
   // if it is leaving.
   NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED,

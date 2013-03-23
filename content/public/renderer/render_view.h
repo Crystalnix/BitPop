@@ -38,12 +38,18 @@ struct WebPluginInfo;
 
 namespace content {
 
+class ContextMenuClient;
 class RenderViewVisitor;
+struct ContextMenuParams;
+struct SSLStatus;
 
 class CONTENT_EXPORT RenderView : public IPC::Sender {
  public:
   // Returns the RenderView containing the given WebView.
   static RenderView* FromWebView(WebKit::WebView* webview);
+
+  // Returns the RenderView for the given routing ID.
+  static RenderView* FromRoutingID(int routing_id);
 
   // Visit all RenderViews with a live WebView (i.e., RenderViews that have
   // been closed but not yet destroyed are excluded).
@@ -65,6 +71,11 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 
   // Gets WebKit related preferences associated with this view.
   virtual webkit_glue::WebPreferences& GetWebkitPreferences() = 0;
+
+  // Overrides the WebKit related preferences associated with this view. Note
+  // that the browser process may update the preferences at any time.
+  virtual void SetWebkitPreferences(
+      const webkit_glue::WebPreferences& preferences) = 0;
 
   // Returns the associated WebView. May return NULL when the view is closing.
   virtual WebKit::WebView* GetWebView() = 0;
@@ -108,10 +119,23 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // Filtered time per frame based on UpdateRect messages.
   virtual float GetFilteredTimePerFrame() const = 0;
 
-  // Shows a context menu with commands relevant to a specific element on
-  // the given frame. Additional context data is supplied.
-  virtual void ShowContextMenu(WebKit::WebFrame* frame,
-                               const WebKit::WebContextMenuData& data) = 0;
+  // Shows a context menu with the given information. The given client will
+  // be called with the result.
+  //
+  // The request ID will be returned by this function. This is passed to the
+  // client functions for identification.
+  //
+  // If the client is destroyed, CancelContextMenu() should be called with the
+  // request ID returned by this function.
+  //
+  // Note: if you end up having clients outliving the RenderView, we should add
+  // a CancelContextMenuCallback function that takes a request id.
+  virtual int ShowContextMenu(ContextMenuClient* client,
+                              const ContextMenuParams& params) = 0;
+
+  // Cancels a context menu in the event that the client is destroyed before the
+  // menu is closed.
+  virtual void CancelContextMenu(int request_id) = 0;
 
   // Returns the current visibility of the WebView.
   virtual WebKit::WebPageVisibilityState GetVisibilityState() const = 0;
@@ -126,6 +150,18 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& request,
       WebKit::WebNavigationPolicy policy) = 0;
+
+  // Notifies the renderer that a paint is to be generated for the size
+  // passed in.
+  virtual void Repaint(const gfx::Size& size) = 0;
+
+  // Inject edit commands to be used for the next keyboard event.
+  virtual void SetEditCommandForNextKeyEvent(const std::string& name,
+                                             const std::string& value) = 0;
+  virtual void ClearEditCommands() = 0;
+
+  // Returns a collection of security info about |frame|.
+  virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const = 0;
 
  protected:
   virtual ~RenderView() {}

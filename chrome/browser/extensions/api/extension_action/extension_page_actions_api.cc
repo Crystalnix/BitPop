@@ -8,20 +8,21 @@
 
 #include "base/string_number_conversions.h"
 #include "chrome/browser/extensions/api/extension_action/extension_page_actions_api_constants.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_action.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/error_utils.h"
 
 using content::NavigationEntry;
+using extensions::ErrorUtils;
 
 namespace keys = extension_page_actions_api_constants;
 
@@ -31,8 +32,6 @@ const char kNoTabError[] = "No tab with id: *.";
 const char kNoPageActionError[] =
     "This extension has no page action specified.";
 const char kUrlNotActiveError[] = "This url is no longer active: *.";
-const char kIconIndexOutOfBounds[] = "Page action icon index out of bounds.";
-const char kNoIconSpecified[] = "Page action has no icons to show.";
 }
 
 PageActionsFunction::PageActionsFunction() {
@@ -53,44 +52,33 @@ bool PageActionsFunction::SetPageActionEnabled(bool enable) {
   EXTENSION_FUNCTION_VALIDATE(action->GetString(keys::kUrlKey, &url));
 
   std::string title;
-  int icon_id = 0;
   if (enable) {
-    // Both of those are optional.
     if (action->HasKey(keys::kTitleKey))
       EXTENSION_FUNCTION_VALIDATE(action->GetString(keys::kTitleKey, &title));
-    if (action->HasKey(keys::kIconIdKey)) {
-      EXTENSION_FUNCTION_VALIDATE(action->GetInteger(keys::kIconIdKey,
-                                                     &icon_id));
-    }
   }
 
-  ExtensionAction* page_action = GetExtension()->page_action();
+  ExtensionAction* page_action =
+      extensions::ExtensionActionManager::Get(profile())->
+      GetPageAction(*GetExtension());
   if (!page_action) {
     error_ = kNoPageActionError;
     return false;
   }
 
-  if (icon_id < 0 ||
-      static_cast<size_t>(icon_id) >= page_action->icon_paths()->size()) {
-    error_ = (icon_id == 0) ? kNoIconSpecified : kIconIndexOutOfBounds;
-    return false;
-  }
-
-  // Find the TabContents that contains this tab id.
-  TabContents* contents = NULL;
+  // Find the WebContents that contains this tab id.
+  content::WebContents* contents = NULL;
   bool result = ExtensionTabUtil::GetTabById(
       tab_id, profile(), include_incognito(), NULL, NULL, &contents, NULL);
   if (!result || !contents) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         kNoTabError, base::IntToString(tab_id));
     return false;
   }
 
   // Make sure the URL hasn't changed.
-  NavigationEntry* entry =
-      contents->web_contents()->GetController().GetActiveEntry();
+  NavigationEntry* entry = contents->GetController().GetActiveEntry();
   if (!entry || url != entry->GetURL().spec()) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(kUrlNotActiveError, url);
+    error_ = ErrorUtils::FormatErrorMessage(kUrlNotActiveError, url);
     return false;
   }
 
@@ -98,8 +86,8 @@ bool PageActionsFunction::SetPageActionEnabled(bool enable) {
   page_action->SetAppearance(
       tab_id, enable ? ExtensionAction::ACTIVE : ExtensionAction::INVISIBLE);
   page_action->SetTitle(tab_id, title);
-  page_action->SetIconIndex(tab_id, icon_id);
-  contents->extension_tab_helper()->location_bar_controller()->NotifyChange();
+  extensions::TabHelper::FromWebContents(contents)->
+      location_bar_controller()->NotifyChange();
 
   return true;
 }

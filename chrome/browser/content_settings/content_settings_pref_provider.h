@@ -10,13 +10,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/content_settings/content_settings_origin_identifier_value_map.h"
 #include "chrome/browser/content_settings/content_settings_observable_provider.h"
+#include "chrome/browser/content_settings/content_settings_origin_identifier_value_map.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 
 class PrefService;
 
@@ -28,8 +26,7 @@ namespace content_settings {
 
 // Content settings provider that provides content settings from the user
 // preference.
-class PrefProvider : public ObservableProvider,
-                     public content::NotificationObserver {
+class PrefProvider : public ObservableProvider {
  public:
   static void RegisterUserPrefs(PrefService* prefs);
 
@@ -55,17 +52,15 @@ class PrefProvider : public ObservableProvider,
 
   virtual void ShutdownOnUIThread() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
  private:
   friend class DeadlockCheckerThread;  // For testing.
   // Reads all content settings exceptions from the preference and load them
   // into the |value_map_|. The |value_map_| is cleared first if |overwrite| is
   // true.
   void ReadContentSettingsFromPref(bool overwrite);
+
+  // Callback for changes in the pref with the same name.
+  void OnContentSettingsPatternPairsChanged();
 
   // Update the preference that stores content settings exceptions and syncs the
   // value to the obsolete preference. When calling this function, |lock_|
@@ -78,19 +73,8 @@ class PrefProvider : public ObservableProvider,
       const ResourceIdentifier& resource_identifier,
       const base::Value* value);
 
-  // Updates the given |pattern_pairs_settings| dictionary value.
-  void UpdatePatternPairsSettings(
-      const ContentSettingsPattern& primary_pattern,
-      const ContentSettingsPattern& secondary_pattern,
-      ContentSettingsType content_type,
-      const ResourceIdentifier& resource_identifier,
-      const base::Value* value,
-      DictionaryValue* pattern_pairs_settings);
-
-  void MigrateObsoleteClearOnExitPref();
-  void MigrateObsoleteContentSettingsPatternPref();
-  void MigrateObsoleteGeolocationPref();
-  void MigrateObsoleteNotificationsPrefs();
+  // Migrate the old media setting into new mic/camera content settings.
+  void MigrateObsoleteMediaContentSetting();
 
   static void CanonicalizeContentSettingsExceptions(
       base::DictionaryValue* all_settings_dictionary);

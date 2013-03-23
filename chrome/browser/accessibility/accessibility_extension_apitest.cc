@@ -3,18 +3,25 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_switches.h"
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, GetAlertsForTab) {
-  TabContents* tab = chrome::GetActiveTabContents(browser());
-  ASSERT_TRUE(tab);
-  InfoBarTabHelper* infobar_helper = tab->infobar_tab_helper();
+// Times out on win asan, http://crbug.com/166026
+#if defined(OS_WIN) && defined(ADDRESS_SANITIZER)
+#define MAYBE_GetAlertsForTab DISABLED_GetAlertsForTab
+#else
+#define MAYBE_GetAlertsForTab GetAlertsForTab
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_GetAlertsForTab) {
+  content::WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  ASSERT_TRUE(web_contents);
+  InfoBarTabHelper* infobar_helper =
+      InfoBarTabHelper::FromWebContents(web_contents);
+  ASSERT_TRUE(infobar_helper);
 
   const char kAlertMessage[] = "Simple Alert Infobar.";
   infobar_helper->AddInfoBar(

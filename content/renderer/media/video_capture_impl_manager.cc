@@ -9,6 +9,8 @@
 #include "content/renderer/media/video_capture_impl.h"
 #include "content/renderer/media/video_capture_message_filter.h"
 
+namespace content {
+
 VideoCaptureImplManager::VideoCaptureImplManager()
     : thread_("VC manager") {
   thread_.Start();
@@ -62,8 +64,10 @@ void VideoCaptureImplManager::FreeDevice(VideoCaptureImpl* vc) {
 }
 
 VideoCaptureImplManager::~VideoCaptureImplManager() {
-  STLDeleteContainerPairSecondPointers(devices_.begin(), devices_.end());
   thread_.Stop();
+  // TODO(wjia): uncomment the line below after collecting enough info for
+  // crbug.com/152418.
+  // STLDeleteContainerPairSecondPointers(devices_.begin(), devices_.end());
 }
 
 VideoCaptureImplManager::Device::Device(
@@ -74,3 +78,5 @@ VideoCaptureImplManager::Device::Device(
 }
 
 VideoCaptureImplManager::Device::~Device() {}
+
+}  // namespace content

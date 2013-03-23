@@ -18,15 +18,25 @@
 #include "chrome/browser/sync/glue/backend_data_type_configurer.h"
 #include "chrome/browser/sync/glue/model_association_manager.h"
 
+namespace syncer {
+class DataTypeDebugInfoListener;
+template <typename T> class WeakHandle;
+}
+
 namespace browser_sync {
 
 class DataTypeController;
+class DataTypeManagerObserver;
 
 class DataTypeManagerImpl : public DataTypeManager,
                             public ModelAssociationResultProcessor {
  public:
-  DataTypeManagerImpl(BackendDataTypeConfigurer* configurer,
-                      const DataTypeController::TypeMap* controllers);
+  DataTypeManagerImpl(
+      const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
+          debug_info_listener,
+      BackendDataTypeConfigurer* configurer,
+      const DataTypeController::TypeMap* controllers,
+      DataTypeManagerObserver* observer);
   virtual ~DataTypeManagerImpl();
 
   // DataTypeManager interface.
@@ -34,8 +44,8 @@ class DataTypeManagerImpl : public DataTypeManager,
                          syncer::ConfigureReason reason) OVERRIDE;
 
   // Needed only for backend migration.
-  virtual void ConfigureWithoutNigori(
-      TypeSet desired_types,
+  virtual void PurgeForMigration(
+      TypeSet undesired_types,
       syncer::ConfigureReason reason) OVERRIDE;
 
   virtual void Stop() OVERRIDE;
@@ -62,8 +72,7 @@ class DataTypeManagerImpl : public DataTypeManager,
   // Otherwise, returns false.
   bool ProcessReconfigure();
 
-  void Restart(syncer::ConfigureReason reason,
-               BackendDataTypeConfigurer::NigoriState nigori_state);
+  void Restart(syncer::ConfigureReason reason);
   void DownloadReady(syncer::ModelTypeSet failed_configuration_types);
 
   // Notification from the SBH that download failed due to a transient
@@ -77,10 +86,7 @@ class DataTypeManagerImpl : public DataTypeManager,
   // Restart().
   void AddToConfigureTime();
 
-  void ConfigureImpl(
-      TypeSet desired_types,
-      syncer::ConfigureReason reason,
-      BackendDataTypeConfigurer::NigoriState nigori_state);
+  void ConfigureImpl(TypeSet desired_types, syncer::ConfigureReason reason);
 
   BackendDataTypeConfigurer* configurer_;
   // Map of all data type controllers that are available for sync.
@@ -94,13 +100,9 @@ class DataTypeManagerImpl : public DataTypeManager,
   // The |last_requested_types_| will reflect the newest set of requested types.
   bool needs_reconfigure_;
 
-  // The reason for the last reconfigure attempt. Not this will be set to a
+  // The reason for the last reconfigure attempt. Note: this will be set to a
   // valid value only when |needs_reconfigure_| is set.
   syncer::ConfigureReason last_configure_reason_;
-  // The value of |nigori_state| on the last reconfigure attempt.
-  // Like |last_configure_reason_|, set to a valid value only when
-  // |needs_reconfigure_| is set.
-  BackendDataTypeConfigurer::NigoriState last_nigori_state_;
 
   base::WeakPtrFactory<DataTypeManagerImpl> weak_ptr_factory_;
 
@@ -116,6 +118,10 @@ class DataTypeManagerImpl : public DataTypeManager,
   // been given a chance to start.
   std::list<syncer::SyncError> failed_datatypes_info_;
   ModelAssociationManager model_association_manager_;
+
+  // DataTypeManager must have only one observer -- the ProfileSyncService that
+  // created it and manages its lifetime.
+  DataTypeManagerObserver* const observer_;
 
   DISALLOW_COPY_AND_ASSIGN(DataTypeManagerImpl);
 };

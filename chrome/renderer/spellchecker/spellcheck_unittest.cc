@@ -10,6 +10,7 @@
 #include "base/platform_file.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/renderer/spellchecker/hunspell_engine.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/spellcheck_common.h"
@@ -54,6 +55,11 @@ class SpellCheckTest : public testing::Test {
         chrome::spellcheck_common::GetVersionedFileName(language,
             hunspell_directory),
         base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ, NULL, NULL);
+#if defined(OS_MACOSX)
+    // TODO(groby): Forcing spellcheck to use hunspell, even on OSX.
+    // Instead, tests should exercise individual spelling engines.
+    spell_check_->platform_spelling_engine_.reset(new HunspellEngine);
+#endif
     spell_check_->Init(
         file, std::vector<std::string>(), language);
   }
@@ -358,6 +364,7 @@ TEST_F(SpellCheckTest, SpellCheckStrings_EN_US) {
     {L"2012", true},
     {L"100,000,000", true},
     {L"3.141592653", true},
+
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
@@ -932,7 +939,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithEmptyString) {
 
   spell_check()->RequestTextChecking(string16(), 0, &completion);
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(completion.completion_count_, 1U);
 }
@@ -944,7 +951,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithoutMisspelling) {
   const string16 text = ASCIIToUTF16("hello");
   spell_check()->RequestTextChecking(text, 0, &completion);
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(completion.completion_count_, 1U);
 }
@@ -956,7 +963,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithSingleMisspelling) {
   const string16 text = ASCIIToUTF16("apple, zz");
   spell_check()->RequestTextChecking(text, 0, &completion);
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(completion.completion_count_, 1U);
   EXPECT_EQ(completion.last_results_.size(), 1U);
@@ -971,7 +978,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithMisspellings) {
   const string16 text = ASCIIToUTF16("apple, zz, orange, zz");
   spell_check()->RequestTextChecking(text, 0, &completion);
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(completion.completion_count_, 1U);
   EXPECT_EQ(completion.last_results_.size(), 2U);
@@ -995,7 +1002,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithMultipleRequests) {
   for (int i = 0; i < 3; ++i)
     spell_check()->RequestTextChecking(text[i], 0, &completion[i]);
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   for (int i = 0; i < 3; ++i) {
     EXPECT_EQ(completion[i].completion_count_, 1U);
@@ -1016,7 +1023,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithoutInitialization) {
   spell_check()->RequestTextChecking(text, 0, &completion);
 
   // The task will not be posted yet.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(completion.completion_count_, 0U);
 }
 
@@ -1038,7 +1045,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckMultipleTimesWithoutInitialization) {
 
   // The last task will be posted after initialization, however the other
   // requests should be pressed without spellchecking.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   for (int i = 0; i < 2; ++i)
     EXPECT_EQ(completion[i].completion_count_, 1U);
   EXPECT_EQ(completion[2].completion_count_, 0U);
@@ -1047,8 +1054,9 @@ TEST_F(SpellCheckTest, RequestSpellCheckMultipleTimesWithoutInitialization) {
   InitializeSpellCheck("en-US");
 
   // Calls PostDelayedSpellCheckTask instead of OnInit here for simplicity.
-  spell_check()->PostDelayedSpellCheckTask();
-  MessageLoop::current()->RunAllPending();
+  spell_check()->PostDelayedSpellCheckTask(
+      spell_check()->pending_request_param_.release());
+  MessageLoop::current()->RunUntilIdle();
   for (int i = 0; i < 3; ++i)
     EXPECT_EQ(completion[i].completion_count_, 1U);
 }
@@ -1062,8 +1070,11 @@ TEST_F(SpellCheckTest, CreateTextCheckingResults) {
     spellcheck_results.push_back(SpellCheckResult(
         SpellCheckResult::SPELLING, 0, 2, string16()));
     WebKit::WebVector<WebKit::WebTextCheckingResult> textcheck_results;
-    spell_check()->CreateTextCheckingResults(
-        0, text, spellcheck_results, &textcheck_results);
+    spell_check()->CreateTextCheckingResults(SpellCheck::USE_NATIVE_CHECKER,
+                                             0,
+                                             text,
+                                             spellcheck_results,
+                                             &textcheck_results);
     EXPECT_EQ(spellcheck_results.size(), textcheck_results.size());
     EXPECT_EQ(WebKit::WebTextCheckingTypeSpelling, textcheck_results[0].type);
     EXPECT_EQ(spellcheck_results[0].location, textcheck_results[0].location);
@@ -1078,12 +1089,128 @@ TEST_F(SpellCheckTest, CreateTextCheckingResults) {
     spellcheck_results.push_back(SpellCheckResult(
         SpellCheckResult::SPELLING, 7, 4, string16()));
     WebKit::WebVector<WebKit::WebTextCheckingResult> textcheck_results;
-    spell_check()->CreateTextCheckingResults(
-        0, text, spellcheck_results, &textcheck_results);
+    spell_check()->CreateTextCheckingResults(SpellCheck::USE_NATIVE_CHECKER,
+                                             0,
+                                             text,
+                                             spellcheck_results,
+                                             &textcheck_results);
     EXPECT_EQ(spellcheck_results.size(), textcheck_results.size());
     EXPECT_EQ(WebKit::WebTextCheckingTypeGrammar, textcheck_results[0].type);
     EXPECT_EQ(spellcheck_results[0].location, textcheck_results[0].location);
     EXPECT_EQ(spellcheck_results[0].length, textcheck_results[0].length);
+  }
+}
+
+// Checks some words that should be present in all English dictionaries.
+TEST_F(SpellCheckTest, EnglishWords) {
+  static const struct {
+    const char* input;
+    bool should_pass;
+  } kTestCases[] = {
+    // Issue 146093: "Chromebook" and "Chromebox" not included in spell-checking
+    // dictionary.
+    {"Chromebook", true},
+    {"Chromebooks", true},
+    {"Chromebox", true},
+    {"Chromeboxes", true},
+    {"Chromeblade", true},
+    {"Chromeblades", true},
+    {"Chromebase", true},
+    {"Chromebases", true},
+    // Issue 94708: Spell-checker incorrectly reports whisky as misspelled.
+    {"whisky", true},
+    {"whiskey", true},
+    {"whiskies", true},
+    // Issue 98678: "Recency" should be included in client-side dictionary.
+    {"recency", true},
+    {"recencies", false},
+    // Issue 140486
+    {"movie", true},
+    {"movies", true},
+  };
+
+  static const char* kLocales[] = { "en-GB", "en-US", "en-CA", "en-AU" };
+
+  for (size_t j = 0; j < arraysize(kLocales); ++j) {
+    ReinitializeSpellCheck(kLocales[j]);
+    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+      size_t input_length = 0;
+      if (kTestCases[i].input != NULL)
+        input_length = strlen(kTestCases[i].input);
+
+      int misspelling_start = 0;
+      int misspelling_length = 0;
+      bool result = spell_check()->SpellCheckWord(
+          ASCIIToUTF16(kTestCases[i].input).c_str(),
+          static_cast<int>(input_length),
+          0,
+          &misspelling_start,
+          &misspelling_length, NULL);
+
+      EXPECT_EQ(kTestCases[i].should_pass, result) << kTestCases[i].input <<
+          " in " << kLocales[j];
+    }
+  }
+}
+
+// Checks that NOSUGGEST works in English dictionaries.
+TEST_F(SpellCheckTest, NoSuggest) {
+  static const struct {
+    const char* input;
+    bool should_pass;
+  } kTestCases[] = {
+    {"cocksucker", true},
+    {"cocksuckers", true},
+  };
+
+  static const char* kLocales[] = { "en-GB", "en-US", "en-CA", "en-AU" };
+
+  // First check that the NOSUGGEST flag didn't mark these words as not
+  // being in the dictionary.
+  size_t test_cases_size = ARRAYSIZE_UNSAFE(kTestCases);
+  for (size_t j = 0; j < arraysize(kLocales); ++j) {
+    ReinitializeSpellCheck(kLocales[j]);
+    for (size_t i = 0; i < test_cases_size; ++i) {
+      size_t input_length = 0;
+      if (kTestCases[i].input != NULL)
+        input_length = strlen(kTestCases[i].input);
+
+      int misspelling_start = 0;
+      int misspelling_length = 0;
+      bool result = spell_check()->SpellCheckWord(
+          ASCIIToUTF16(kTestCases[i].input).c_str(),
+          static_cast<int>(input_length),
+          0,
+          &misspelling_start,
+          &misspelling_length, NULL);
+
+      EXPECT_EQ(kTestCases[i].should_pass, result) << kTestCases[i].input <<
+          " in " << kLocales[j];
+    }
+  }
+
+  // Now verify that neither of testCases show up as suggestions.
+  for (size_t d = 0; d < arraysize(kLocales); ++d) {
+    ReinitializeSpellCheck(kLocales[d]);
+    int misspelling_start;
+    int misspelling_length;
+    std::vector<string16> suggestions;
+    spell_check()->SpellCheckWord(
+        ASCIIToUTF16("suckerbert").c_str(),
+        10,
+        0,
+        &misspelling_start,
+        &misspelling_length,
+        &suggestions);
+    // Check if the suggested words occur.
+    for (int j = 0; j < static_cast<int>(suggestions.size()); j++) {
+      for (size_t t = 0; t < test_cases_size; t++) {
+        int compare_result =
+            suggestions.at(j).compare(ASCIIToUTF16(kTestCases[t].input));
+        EXPECT_FALSE(compare_result == 0) << kTestCases[t].input <<
+            " in " << kLocales[d];
+      }
+    }
   }
 }
 

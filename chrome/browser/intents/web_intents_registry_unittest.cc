@@ -4,10 +4,10 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/test_extension_service.h"
@@ -30,6 +30,8 @@ class MockExtensionService: public TestExtensionService {
   MOCK_CONST_METHOD0(extensions, const ExtensionSet*());
   MOCK_CONST_METHOD2(GetExtensionById,
                      const Extension*(const std::string&, bool));
+  MOCK_CONST_METHOD1(GetInstalledExtension,
+                     const Extension*(const std::string& id));
 };
 
 namespace {
@@ -132,7 +134,7 @@ class WebIntentsRegistryTest : public testing::Test {
   MockExtensionService extension_service_;
   ExtensionSet extensions_;
   WebIntentsRegistry registry_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 };
 
 // Base consumer for WebIntentsRegistry results.
@@ -258,18 +260,16 @@ TEST_F(WebIntentsRegistryTest, GetIntentServicesForExtensionFilter) {
   extensions_.Insert(edit_extension);
   ASSERT_EQ(2U, extensions_.size());
 
-  ServiceListConsumer consumer;
+  WebIntentsRegistry::IntentServiceList services;
   registry_.GetIntentServicesForExtensionFilter(
       ASCIIToUTF16("http://webintents.org/edit"),
       ASCIIToUTF16("image/*"),
       edit_extension->id(),
-      base::Bind(&ServiceListConsumer::Accept,
-          base::Unretained(&consumer)));
-  consumer.WaitForData();
-  ASSERT_EQ(1U, consumer.services_.size());
+      &services);
+  ASSERT_EQ(1U, services.size());
 
   EXPECT_EQ(edit_extension->url().spec() + "services/edit",
-            consumer.services_[0].service_url.spec());
+            services[0].service_url.spec());
 }
 
 TEST_F(WebIntentsRegistryTest, GetAllIntents) {
@@ -562,7 +562,6 @@ TEST_F(WebIntentsRegistryTest, TestGetAllDefaultIntentServices) {
 
   DefaultServiceListConsumer consumer;
 
-  // Test we can retrieve default entries by action.
   registry_.GetAllDefaultIntentServices(
       base::Bind(&DefaultServiceListConsumer::Accept,
                  base::Unretained(&consumer)));
@@ -575,6 +574,10 @@ TEST_F(WebIntentsRegistryTest, TestGetAllDefaultIntentServices) {
 }
 
 TEST_F(WebIntentsRegistryTest, TestGetDefaults) {
+  // Ignore QO-default related calls.
+  EXPECT_CALL(extension_service_, GetInstalledExtension(testing::_)).
+      WillRepeatedly(testing::ReturnNull());
+
   DefaultWebIntentService default_service;
   default_service.action = ASCIIToUTF16("share");
   default_service.type = ASCIIToUTF16("text/*");
@@ -595,6 +598,19 @@ TEST_F(WebIntentsRegistryTest, TestGetDefaults) {
 
   consumer.WaitForData();
 
+  EXPECT_EQ("service_url", consumer.service_.service_url);
+  EXPECT_EQ(1, consumer.service_.user_date);
+  EXPECT_EQ(4, consumer.service_.suppression);
+
+  // Can get for wildcard.
+  consumer.service_ = DefaultWebIntentService();
+  registry_.GetDefaultIntentService(
+      ASCIIToUTF16("share"),
+      ASCIIToUTF16("text/*"),
+      GURL("http://www.google.com/"),
+      base::Bind(&DefaultServiceConsumer::Accept,
+                 base::Unretained(&consumer)));
+  consumer.WaitForData();
   EXPECT_EQ("service_url", consumer.service_.service_url);
   EXPECT_EQ(1, consumer.service_.user_date);
   EXPECT_EQ(4, consumer.service_.suppression);
@@ -733,4 +749,50 @@ TEST_F(WebIntentsRegistryTest, GetIntentsCollapsesEquivalentIntents) {
   consumer.WaitForData();
   ASSERT_EQ(1U, consumer.services_.size());
   EXPECT_EQ(ASCIIToUTF16("image/png,image/jpg"), consumer.services_[0].type);
+}
+
+TEST_F(WebIntentsRegistryTest, UnregisterDefaultIntentServicesForServiceURL) {
+
+  const GURL service_url_0("http://jibfest.com/dozer");
+  const GURL service_url_1("http://kittyfizzer.com/fizz");
+
+  DefaultWebIntentService s0;
+  s0.action = ASCIIToUTF16("share");
+  s0.type = ASCIIToUTF16("text/*");
+  // Values here are just dummies to test for preservation.
+  s0.user_date = 1;
+  s0.suppression = 4;
+  s0.service_url = service_url_0.spec();
+  registry_.RegisterDefaultIntentService(s0);
+
+  DefaultWebIntentService s1;
+  s1.action = ASCIIToUTF16("whack");
+  s1.type = ASCIIToUTF16("text/*");
+  // Values here are just dummies to test for preservation.
+  s1.user_date = 1;
+  s1.suppression = 4;
+  s1.service_url = service_url_1.spec();
+  registry_.RegisterDefaultIntentService(s1);
+
+  DefaultServiceListConsumer consumer;
+
+  registry_.GetAllDefaultIntentServices(
+      base::Bind(&DefaultServiceListConsumer::Accept,
+                 base::Unretained(&consumer)));
+
+  consumer.WaitForData();
+
+  ASSERT_EQ(2U, consumer.services_.size());
+
+  registry_.UnregisterServiceDefaults(service_url_0);
+  MessageLoop::current()->RunUntilIdle();
+
+  registry_.GetAllDefaultIntentServices(
+      base::Bind(&DefaultServiceListConsumer::Accept,
+                 base::Unretained(&consumer)));
+
+  consumer.WaitForData();
+
+  ASSERT_EQ(1U, consumer.services_.size());
+  EXPECT_EQ(service_url_1.spec(), consumer.services_[0].service_url);
 }

@@ -15,9 +15,15 @@
 #include "chrome/common/chrome_paths_internal.h"
 #include "ui/base/ui_base_paths.h"
 
-#if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
+#if defined(OS_ANDROID)
+#include "base/android/path_utils.h"
 #endif
+
+#if defined(OS_MACOSX)
+#include "base/mac/foundation_util.h"
+#endif
+
+#include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
 namespace {
 
@@ -30,6 +36,10 @@ const FilePath::CharType kInternalFlashPluginFileName[] =
 #else  // OS_LINUX, etc.
     FILE_PATH_LITERAL("libgcflashplayer.so");
 #endif
+
+// The Pepper Flash plugins are in a directory with this name.
+const FilePath::CharType kPepperFlashBaseDirectory[] =
+    FILE_PATH_LITERAL("PepperFlash");
 
 // File name of the internal PDF plugin on different platforms.
 const FilePath::CharType kInternalPDFPluginFileName[] =
@@ -71,7 +81,7 @@ const FilePath::CharType kGTalkPluginFileName[] =
 
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#if defined(OS_LINUX)
 // The path to the external extension <id>.json files.
 // /usr/share seems like a good choice, see: http://www.pathname.com/fhs/
 const char kFilepathSinglePrefExtensions[] =
@@ -80,7 +90,16 @@ const char kFilepathSinglePrefExtensions[] =
 #else
     FILE_PATH_LITERAL("/usr/share/chromium/extensions");
 #endif  // defined(GOOGLE_CHROME_BUILD)
-#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#endif  // defined(OS_LINUX)
+
+#if defined(OS_CHROMEOS)
+const char kDefaultAppOrderFileName[] =
+#if defined(GOOGLE_CHROME_BUILD)
+    FILE_PATH_LITERAL("/usr/share/google-chrome/default_app_order.json");
+#else
+    FILE_PATH_LITERAL("/usr/share/chromium/default_app_order.json");
+#endif  // defined(GOOGLE_CHROME_BUILD)
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -88,7 +107,7 @@ namespace chrome {
 
 // Gets the path for internal plugins.
 bool GetInternalPluginsDirectory(FilePath* result) {
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   // If called from Chrome, get internal plugins from a subdirectory of the
   // framework.
   if (base::mac::AmIBundled()) {
@@ -149,22 +168,21 @@ bool PathProvider(int key, FilePath* result) {
       }
       create_dir = true;
       break;
-#if defined(OS_WIN)
-    case chrome::DIR_ALT_USER_DATA:
-      if (!GetAlternateUserDataDirectory(&cur)) {
-        NOTREACHED();
-        return false;
-      }
-      create_dir = false;
-      break;
-#endif  // OS_WIN
     case chrome::DIR_USER_DOCUMENTS:
       if (!GetUserDocumentsDirectory(&cur))
         return false;
       create_dir = true;
       break;
+    case chrome::DIR_USER_MUSIC:
+      if (!GetUserMusicDirectory(&cur))
+        return false;
+      break;
     case chrome::DIR_USER_PICTURES:
       if (!GetUserPicturesDirectory(&cur))
+        return false;
+      break;
+    case chrome::DIR_USER_VIDEOS:
+      if (!GetUserVideosDirectory(&cur))
         return false;
       break;
     case chrome::DIR_DEFAULT_DOWNLOADS_SAFE:
@@ -176,15 +194,23 @@ bool PathProvider(int key, FilePath* result) {
       // Fall through for all other platforms.
 #endif
     case chrome::DIR_DEFAULT_DOWNLOADS:
+#if defined(OS_ANDROID)
+      if (!base::android::GetDownloadsDirectory(&cur))
+        return false;
+#else
       if (!GetUserDownloadsDirectory(&cur))
         return false;
       // Do not create the download directory here, we have done it twice now
       // and annoyed a lot of users.
+#endif
       break;
     case chrome::DIR_CRASH_DUMPS:
 #if defined(OS_CHROMEOS)
       // ChromeOS uses a separate directory. See http://crosbug.com/25089
       cur = FilePath("/var/log/chrome");
+#elif defined(OS_ANDROID)
+      if (!base::android::GetCacheDirectory(&cur))
+        return false;
 #else
       // The crash reports are always stored relative to the default user data
       // directory.  This avoids the problem of having to re-initialize the
@@ -195,10 +221,6 @@ bool PathProvider(int key, FilePath* result) {
 #endif
       cur = cur.Append(FILE_PATH_LITERAL("Crash Reports"));
       create_dir = true;
-      break;
-    case chrome::DIR_USER_DESKTOP:
-      if (!GetUserDesktop(&cur))
-        return false;
       break;
     case chrome::DIR_RESOURCES:
 #if defined(OS_MACOSX)
@@ -230,11 +252,6 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("Dictionaries"));
       create_dir = true;
       break;
-    case chrome::DIR_USER_DATA_TEMP:
-      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
-        return false;
-      cur = cur.Append(FILE_PATH_LITERAL("Temp"));
-      break;
     case chrome::DIR_INTERNAL_PLUGINS:
       if (!GetInternalPluginsDirectory(&cur))
         return false;
@@ -242,7 +259,12 @@ bool PathProvider(int key, FilePath* result) {
     case chrome::DIR_PEPPER_FLASH_PLUGIN:
       if (!GetInternalPluginsDirectory(&cur))
         return false;
-      cur = cur.Append(FILE_PATH_LITERAL("PepperFlash"));
+      cur = cur.Append(kPepperFlashBaseDirectory);
+      break;
+    case chrome::DIR_COMPONENT_UPDATED_PEPPER_FLASH_PLUGIN:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(kPepperFlashBaseDirectory);
       break;
     case chrome::FILE_LOCAL_STATE:
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
@@ -278,13 +300,34 @@ bool PathProvider(int key, FilePath* result) {
         return false;
       cur = cur.Append(kInternalNaClPluginFileName);
       break;
+    // PNaCl is currenly installable via the component updater or by being
+    // simply built-in, but only the builtin path is currently enabled.
+    // If PNaCl ends up using the component updater, it will need the version
+    // encoded in the path, and these will need to be split.
     case chrome::DIR_PNACL_BASE:
-      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
-        return false;
-      cur = cur.Append(FILE_PATH_LITERAL("Pnacl"));
-      break;
     case chrome::DIR_PNACL_COMPONENT:
-      return false;
+#if defined(OS_MACOSX)
+      // PNaCl really belongs in the InternalPluginsDirectory but actually
+      // copying it there would result in the files also being shipped, which
+      // we don't want yet. So for now, just find them in the directory where
+      // they get built.
+      if (!PathService::Get(base::DIR_EXE, &cur))
+        return false;
+      if (base::mac::AmIBundled()) {
+        // If we're called from chrome, it's beside the app (outside the
+        // app bundle), if we're called from a unittest, we'll already be
+        // outside the bundle so use the exe dir.
+        // exe_dir gave us .../Chromium.app/Contents/MacOS/Chromium.
+        cur = cur.DirName();
+        cur = cur.DirName();
+        cur = cur.DirName();
+      }
+#else
+      if (!GetInternalPluginsDirectory(&cur))
+        return false;
+#endif
+      cur = cur.Append(FILE_PATH_LITERAL("pnacl"));
+      break;
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     case chrome::FILE_NACL_HELPER:
       if (!PathService::Get(base::DIR_MODULE, &cur))
@@ -297,18 +340,25 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(kInternalNaClHelperBootstrapFileName);
       break;
     case chrome::FILE_O3D_PLUGIN:
-        if (!PathService::Get(base::DIR_MODULE, &cur))
-          return false;
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
       cur = cur.Append(kO3DPluginFileName);
       break;
     case chrome::FILE_GTALK_PLUGIN:
-        if (!PathService::Get(base::DIR_MODULE, &cur))
-          return false;
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
       cur = cur.Append(kGTalkPluginFileName);
       break;
 #endif
+#if defined(WIDEVINE_CDM_AVAILABLE)
+    case chrome::FILE_WIDEVINE_CDM_PLUGIN:
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+      cur = cur.Append(kWidevineCdmPluginFileName);
+      break;
+#endif
     case chrome::FILE_RESOURCES_PACK:
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
       if (base::mac::AmIBundled()) {
         cur = base::mac::FrameworkBundlePath();
         cur = cur.Append(FILE_PATH_LITERAL("Resources"))
@@ -337,6 +387,14 @@ bool PathProvider(int key, FilePath* result) {
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("wallpapers"));
+      break;
+    case chrome::DIR_CHROMEOS_WALLPAPER_THUMBNAILS:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("wallpaper_thumbnails"));
+      break;
+    case chrome::FILE_DEFAULT_APP_ORDER:
+      cur = FilePath(FILE_PATH_LITERAL(kDefaultAppOrderFileName));
       break;
 #endif
     // The following are only valid in the development environment, and
@@ -377,7 +435,7 @@ bool PathProvider(int key, FilePath* result) {
       break;
     }
 #endif
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
     case chrome::DIR_MANAGED_PREFS: {
       if (!GetLocalLibraryDirectory(&cur))
         return false;
@@ -391,7 +449,7 @@ bool PathProvider(int key, FilePath* result) {
       break;
     }
 #endif
-#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
+#if defined(OS_CHROMEOS) || (defined(OS_MACOSX) && !defined(OS_IOS))
     case chrome::DIR_USER_EXTERNAL_EXTENSIONS: {
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
@@ -399,14 +457,14 @@ bool PathProvider(int key, FilePath* result) {
       break;
     }
 #endif
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#if defined(OS_LINUX)
     case chrome::DIR_STANDALONE_EXTERNAL_EXTENSIONS: {
       cur = FilePath(FILE_PATH_LITERAL(kFilepathSinglePrefExtensions));
       break;
     }
 #endif
     case chrome::DIR_EXTERNAL_EXTENSIONS:
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
       if (!chrome::GetGlobalApplicationSupportDirectory(&cur))
         return false;
 

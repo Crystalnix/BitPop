@@ -18,7 +18,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -27,6 +27,10 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_service.h"
 
+#if defined(OS_ANDROID)
+#include "chrome/browser/lifetime/application_lifetime_android.h"
+#endif
+
 #if defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_application_mac.h"
 #endif
@@ -34,8 +38,6 @@
 #if defined(OS_CHROMEOS)
 #include "base/chromeos/chromeos_version.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_metrics.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
@@ -78,7 +80,7 @@ void MarkAsCleanShutdown() {
   // TODO(beng): Can this use ProfileManager::GetLoadedProfiles() instead?
   for (BrowserList::const_iterator i = BrowserList::begin();
        i != BrowserList::end(); ++i) {
-    (*i)->profile()->MarkAsCleanShutdown();
+    (*i)->profile()->SetExitType(Profile::EXIT_NORMAL);
   }
 }
 
@@ -88,14 +90,17 @@ void AttemptExitInternal() {
       content::NotificationService::AllSources(),
       content::NotificationService::NoDetails());
 
-#if !defined(OS_MACOSX)
-  // On most platforms, closing all windows causes the application to exit.
-  CloseAllBrowsers();
-#else
+#if defined(OS_ANDROID)
+  // Tell the Java code to finish() the Activity.
+  TerminateAndroid();
+#elif defined(OS_MACOSX)
   // On the Mac, the application continues to run once all windows are closed.
   // Terminate will result in a CloseAllBrowsers() call, and once (and if)
   // that is done, will cause the application to exit cleanly.
   chrome_browser_application_mac::Terminate();
+#else
+  // On most platforms, closing all windows causes the application to exit.
+  CloseAllBrowsers();
 #endif
 }
 
@@ -105,7 +110,7 @@ void NotifyAppTerminating() {
     return;
   notified = true;
   content::NotificationService::current()->Notify(
-      content::NOTIFICATION_APP_TERMINATING,
+      chrome::NOTIFICATION_APP_TERMINATING,
       content::NotificationService::AllSources(),
       content::NotificationService::NoDetails());
 }
@@ -126,9 +131,6 @@ void NotifyAndTerminate(bool fast_path) {
 
 #if defined(OS_CHROMEOS)
   if (base::chromeos::IsRunningOnChromeOS()) {
-    if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
-      chromeos::KioskModeMetrics::Get()->SessionEnded();
-
     // If we're on a ChromeOS device, reboot if an update has been applied,
     // or else signal the session manager to log out.
     chromeos::UpdateEngineClient* update_engine_client
@@ -197,7 +199,7 @@ void CloseAllBrowsers() {
       // DestroyBrowser to make sure the browser is deleted and cleanup can
       // happen.
       while (browser->tab_count())
-        delete chrome::GetTabContentsAt(browser, 0);
+        delete browser->tab_strip_model()->GetWebContentsAt(0);
       browser->window()->DestroyBrowser();
       i = BrowserList::begin();
       if (i != BrowserList::end() && browser == *i) {
@@ -241,14 +243,13 @@ void AttemptUserExit() {
 #endif
 }
 
+// The Android implementation is in application_lifetime_android.cc
+#if !defined(OS_ANDROID)
 void AttemptRestart() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableRestoreSessionState)) {
-    // TODO(beng): Can this use ProfileManager::GetLoadedProfiles instead?
-    BrowserList::const_iterator it;
-    for (it = BrowserList::begin(); it != BrowserList::end(); ++it)
-      content::BrowserContext::SaveSessionState((*it)->profile());
-  }
+  // TODO(beng): Can this use ProfileManager::GetLoadedProfiles instead?
+  BrowserList::const_iterator it;
+  for (it = BrowserList::begin(); it != BrowserList::end(); ++it)
+    content::BrowserContext::SaveSessionState((*it)->profile());
 
   PrefService* pref_service = g_browser_process->local_state();
   pref_service->SetBoolean(prefs::kWasRestarted, true);
@@ -264,14 +265,28 @@ void AttemptRestart() {
   AttemptExit();
 #endif
 }
+#endif
+
+#if defined(OS_WIN)
+void AttemptRestartWithModeSwitch() {
+  // The kRestartSwitchMode preference does not exists for Windows 7 and older
+  // operating systems so there is no need for OS version check.
+  PrefService* prefs = g_browser_process->local_state();
+  prefs->SetBoolean(prefs::kRestartSwitchMode, true);
+  browser::AttemptRestart();
+}
+#endif
 
 void AttemptExit() {
   // If we know that all browsers can be closed without blocking,
   // don't notify users of crashes beyond this point.
-  // Note that MarkAsCleanShutdown does not set UMA's exit cleanly bit
+  // Note that MarkAsCleanShutdown() does not set UMA's exit cleanly bit
   // so crashes during shutdown are still reported in UMA.
+#if !defined(OS_ANDROID)
+  // Android doesn't use Browser.
   if (AreAllBrowsersCloseable())
     MarkAsCleanShutdown();
+#endif
   AttemptExitInternal();
 }
 

@@ -8,9 +8,8 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
+#include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
 
 class Browser;
@@ -21,6 +20,7 @@ class Browser;
 @class NSWindow;
 
 namespace extensions {
+class ActiveTabPermissionGranter;
 class Extension;
 }
 
@@ -28,8 +28,9 @@ class Extension;
 // the Cocoa NSWindow. Cross-platform code will interact with this object when
 // it needs to manipulate the window.
 
-class BrowserWindowCocoa : public BrowserWindow,
-                           public content::NotificationObserver {
+class BrowserWindowCocoa :
+    public BrowserWindow,
+    public extensions::ExtensionKeybindingRegistry::Delegate {
  public:
   BrowserWindowCocoa(Browser* browser,
                      BrowserWindowController* controller);
@@ -38,6 +39,7 @@ class BrowserWindowCocoa : public BrowserWindow,
   // Overridden from BrowserWindow
   virtual void Show() OVERRIDE;
   virtual void ShowInactive() OVERRIDE;
+  virtual void Hide() OVERRIDE;
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void Activate() OVERRIDE;
@@ -52,12 +54,9 @@ class BrowserWindowCocoa : public BrowserWindow,
   virtual void BookmarkBarStateChanged(
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
-  virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
-  virtual void SetZoomIconState(ZoomController::ZoomIconState state) OVERRIDE;
-  virtual void SetZoomIconTooltipPercent(int zoom_percent) OVERRIDE;
-  virtual void ShowZoomBubble(int zoom_percent) OVERRIDE;
+  virtual void ZoomChangedForActiveTab(bool can_show_bubble) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual bool IsMaximized() const OVERRIDE;
@@ -76,7 +75,7 @@ class BrowserWindowCocoa : public BrowserWindow,
   virtual LocationBar* GetLocationBar() const OVERRIDE;
   virtual void SetFocusToLocationBar(bool select_all) OVERRIDE;
   virtual void UpdateReloadStopState(bool is_loading, bool force) OVERRIDE;
-  virtual void UpdateToolbar(TabContents* contents,
+  virtual void UpdateToolbar(content::WebContents* contents,
                              bool should_restore_state) OVERRIDE;
   virtual void FocusToolbar() OVERRIDE;
   virtual void FocusAppMenu() OVERRIDE;
@@ -112,7 +111,7 @@ class BrowserWindowCocoa : public BrowserWindow,
                             const content::SSLStatus& ssl,
                             bool show_history) OVERRIDE;
   virtual void ShowWebsiteSettings(Profile* profile,
-                                   TabContents* tab_contents,
+                                   content::WebContents* web_contents,
                                    const GURL& url,
                                    const content::SSLStatus& ssl,
                                    bool show_history) OVERRIDE;
@@ -134,20 +133,23 @@ class BrowserWindowCocoa : public BrowserWindow,
       FullscreenExitBubbleType bubble_type) OVERRIDE;
   virtual void ExitPresentationMode() OVERRIDE;
   virtual bool InPresentationMode() OVERRIDE;
-  virtual void ShowInstant(TabContents* preview) OVERRIDE;
-  virtual void HideInstant() OVERRIDE;
   virtual gfx::Rect GetInstantBounds() OVERRIDE;
+  virtual bool IsInstantTabShowing() OVERRIDE;
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
       const gfx::Rect& bounds) OVERRIDE;
   virtual FindBar* CreateFindBar() OVERRIDE;
+  virtual bool GetConstrainedWindowTopY(int* top_y) OVERRIDE;
   virtual void ShowAvatarBubble(content::WebContents* web_contents,
                                 const gfx::Rect& rect) OVERRIDE;
   virtual void ShowAvatarBubbleFromAvatarButton() OVERRIDE;
+  virtual void ShowPasswordGenerationBubble(
+      const gfx::Rect& rect,
+      const content::PasswordForm& form,
+      autofill::PasswordGenerator* password_generator) OVERRIDE;
 
-  // Overridden from NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Overridden from ExtensionKeybindingRegistry::Delegate:
+  virtual extensions::ActiveTabPermissionGranter*
+      GetActiveTabPermissionGranter() OVERRIDE;
 
   // Adds the given FindBar cocoa controller to this browser window.
   void AddFindBar(FindBarCocoaController* find_bar_cocoa_controller);
@@ -161,8 +163,6 @@ class BrowserWindowCocoa : public BrowserWindow,
  private:
   NSWindow* window() const;  // Accessor for the (current) |NSWindow|.
 
-  content::NotificationRegistrar registrar_;
-  PrefChangeRegistrar pref_change_registrar_;
   Browser* browser_;  // weak, owned by controller
   BrowserWindowController* controller_;  // weak, owns us
   base::WeakPtrFactory<Browser> confirm_close_factory_;

@@ -5,9 +5,8 @@
 #include "chrome/browser/ssl/ssl_add_cert_handler.h"
 
 #include "base/bind.h"
-#include "chrome/browser/tab_contents/tab_contents_ssl_helper.h"
+#include "chrome/browser/ssl/ssl_tab_helper.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
@@ -39,11 +38,7 @@ SSLAddCertHandler::SSLAddCertHandler(net::URLRequest* request,
 SSLAddCertHandler::~SSLAddCertHandler() {}
 
 void SSLAddCertHandler::Run() {
-  int cert_error;
-  {
-    net::CertDatabase db;
-    cert_error = db.CheckUserCert(cert_);
-  }
+  int cert_error = net::CertDatabase::GetInstance()->CheckUserCert(cert_);
   if (cert_error != net::OK) {
     LOG_IF(ERROR, cert_error == net::ERR_NO_PRIVATE_KEY_FOR_CERT)
         << "No corresponding private key in store for cert: "
@@ -74,10 +69,8 @@ void SSLAddCertHandler::AskToAddCert() {
 
 void SSLAddCertHandler::Finished(bool add_cert) {
   int cert_error = net::OK;
-  if (add_cert) {
-    net::CertDatabase db;
-    cert_error = db.AddUserCert(cert_);
-  }
+  if (add_cert)
+    cert_error = net::CertDatabase::GetInstance()->AddUserCert(cert_);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -94,8 +87,8 @@ void SSLAddCertHandler::CallVerifyClientCertificateError(int cert_error) {
   if (!tab)
     return;
 
-  TabContents* tab_contents = TabContents::FromWebContents(tab);
-  tab_contents->ssl_helper()->OnVerifyClientCertificateError(this, cert_error);
+  SSLTabHelper* ssl_tab_helper = SSLTabHelper::FromWebContents(tab);
+  ssl_tab_helper->OnVerifyClientCertificateError(this, cert_error);
 }
 
 void SSLAddCertHandler::CallAddClientCertificate(bool add_cert,
@@ -105,13 +98,13 @@ void SSLAddCertHandler::CallAddClientCertificate(bool add_cert,
   if (!tab)
     return;
 
-  TabContents* tab_contents = TabContents::FromWebContents(tab);
+  SSLTabHelper* ssl_tab_helper = SSLTabHelper::FromWebContents(tab);
   if (add_cert) {
     if (cert_error == net::OK) {
-      tab_contents->ssl_helper()->OnAddClientCertificateSuccess(this);
+      ssl_tab_helper->OnAddClientCertificateSuccess(this);
     } else {
-      tab_contents->ssl_helper()->OnAddClientCertificateError(this, cert_error);
+      ssl_tab_helper->OnAddClientCertificateError(this, cert_error);
     }
   }
-  tab_contents->ssl_helper()->OnAddClientCertificateFinished(this);
+  ssl_tab_helper->OnAddClientCertificateFinished(this);
 }

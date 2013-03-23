@@ -11,12 +11,11 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/public/pref_service_base.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/pref_names.h"
+#include "chrome/browser/chromeos/input_method/input_method_delegate.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_collator.h"
@@ -46,7 +45,6 @@ const struct {
   { "mozc", "\xe3\x81\x82" },  // U+3042, Japanese Hiragana letter A in UTF-8.
   { "mozc-dv", "\xe3\x81\x82" },
   { "mozc-jp", "\xe3\x81\x82" },
-  { "zinnia-japanese", "\xe6\x89\x8b" },  // U+624B, "hand"
   // For simplified Chinese input methods
   { "pinyin", "\xe6\x8b\xbc" },  // U+62FC
   { "pinyin-dv", "\xe6\x8b\xbc" },
@@ -61,13 +59,29 @@ const struct {
 const size_t kMappingFromIdToIndicatorTextLen =
     ARRAYSIZE_UNSAFE(kMappingFromIdToIndicatorText);
 
-string16 GetLanguageName(const std::string& language_code) {
-  const string16 language_name = l10n_util::GetDisplayNameForLocale(
-      language_code, g_browser_process->GetApplicationLocale(), true);
-  return language_name;
-}
+// A mapping from an input method id to a resource id for a
+// medium length language indicator.
+// For those languages that want to display a slightly longer text in the
+// "Your input method has changed to..." bubble than in the status tray.
+// If an entry is not found in this table the short name is used.
+const struct {
+  const char* input_method_id;
+  const int resource_id;
+} kMappingImeIdToMediumLenNameResourceId[] = {
+  { "m17n:zh:cangjie", IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_TRADITIONAL },
+  { "m17n:zh:quick", IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_TRADITIONAL },
+  { "mozc", IDS_LANGUAGES_MEDIUM_LEN_NAME_JAPANESE },
+  { "mozc-chewing", IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_TRADITIONAL },
+  { "mozc-dv", IDS_LANGUAGES_MEDIUM_LEN_NAME_JAPANESE },
+  { "mozc-hangul", IDS_LANGUAGES_MEDIUM_LEN_NAME_KOREAN },
+  { "mozc-jp", IDS_LANGUAGES_MEDIUM_LEN_NAME_JAPANESE },
+  { "pinyin", IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_SIMPLIFIED },
+  { "pinyin-dv", IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_SIMPLIFIED },
+};
+const size_t kMappingImeIdToMediumLenNameResourceIdLen =
+    ARRAYSIZE_UNSAFE(kMappingImeIdToMediumLenNameResourceId);
 
-}
+}  // namespace
 
 namespace chromeos {
 
@@ -246,20 +260,22 @@ const size_t kEnglishToResourceIdArraySize =
 // corresponding language names, using the ICU collator.
 struct CompareLanguageCodesByLanguageName
     : std::binary_function<const std::string&, const std::string&, bool> {
-  explicit CompareLanguageCodesByLanguageName(icu::Collator* collator)
-      : collator_(collator) {
+  CompareLanguageCodesByLanguageName(InputMethodUtil* util,
+                                     icu::Collator* collator)
+      : util_(util), collator_(collator) {
   }
 
   // Calling GetLanguageDisplayNameFromCode() in the comparator is not
   // efficient, but acceptable as the function is cheap, and the language
   // list is short (about 60 at most).
   bool operator()(const std::string& s1, const std::string& s2) const {
-    const string16 key1 = InputMethodUtil::GetLanguageDisplayNameFromCode(s1);
-    const string16 key2 = InputMethodUtil::GetLanguageDisplayNameFromCode(s2);
+    const string16 key1 = util_->GetLanguageDisplayNameFromCode(s1);
+    const string16 key2 = util_->GetLanguageDisplayNameFromCode(s2);
     return l10n_util::StringComparator<string16>(collator_)(key1, key2);
   }
 
  private:
+  InputMethodUtil* util_;
   icu::Collator* collator_;
 };
 
@@ -285,8 +301,10 @@ const ExtraLanguage kExtraLanguages[] = {
 const size_t kExtraLanguagesLength = arraysize(kExtraLanguages);
 
 InputMethodUtil::InputMethodUtil(
-    InputMethodDescriptors* supported_input_methods)
-    : supported_input_methods_(supported_input_methods) {
+    InputMethodDelegate* delegate,
+    scoped_ptr<InputMethodDescriptors> supported_input_methods)
+    : supported_input_methods_(supported_input_methods.Pass()),
+      delegate_(delegate) {
   ReloadInternalMaps();
 
   // Initialize a map from English string to Chrome string resource ID as well.
@@ -425,6 +443,21 @@ string16 InputMethodUtil::GetInputMethodShortName(
   return text;
 }
 
+string16 InputMethodUtil::GetInputMethodMediumName(
+    const InputMethodDescriptor& input_method) const {
+  // For the "Your input method has changed to..." bubble. In most cases
+  // it uses the same name as the short name, unless found in a table
+  // for medium length names.
+  for (size_t i = 0; i < kMappingImeIdToMediumLenNameResourceIdLen; ++i) {
+    if (kMappingImeIdToMediumLenNameResourceId[i].input_method_id ==
+        input_method.id()) {
+      return l10n_util::GetStringUTF16(
+          kMappingImeIdToMediumLenNameResourceId[i].resource_id);
+    }
+  }
+  return GetInputMethodShortName(input_method);
+}
+
 string16 InputMethodUtil::GetInputMethodLongName(
     const InputMethodDescriptor& input_method) const {
   if (!input_method.name().empty()) {
@@ -448,7 +481,10 @@ string16 InputMethodUtil::GetInputMethodLongName(
              language_code == "de" ||
              language_code == "fr" ||
              language_code == "nl") {
-    text = GetLanguageName(language_code) + UTF8ToUTF16(" - ") + text;
+    const string16 language_name = l10n_util::GetDisplayNameForLocale(
+        language_code, delegate_->GetActiveLocale(), true);
+
+    text = language_name + UTF8ToUTF16(" - ") + text;
   }
 
   DCHECK(!text.empty());
@@ -472,11 +508,8 @@ const InputMethodDescriptor* InputMethodUtil::GetInputMethodDescriptorFromXkbId(
 // static
 string16 InputMethodUtil::GetLanguageDisplayNameFromCode(
     const std::string& language_code) {
-  if (!g_browser_process) {
-    return string16();
-  }
   return l10n_util::GetDisplayNameForLocale(
-      language_code, g_browser_process->GetApplicationLocale(), true);
+      language_code, delegate_->GetActiveLocale(), true);
 }
 
 // static
@@ -485,23 +518,19 @@ string16 InputMethodUtil::GetLanguageNativeDisplayNameFromCode(
   return l10n_util::GetDisplayNameForLocale(language_code, language_code, true);
 }
 
-// static
 void InputMethodUtil::SortLanguageCodesByNames(
     std::vector<std::string>* language_codes) {
-  if (!g_browser_process) {
-    return;
-  }
   // We should build collator outside of the comparator. We cannot have
   // scoped_ptr<> in the comparator for a subtle STL reason.
   UErrorCode error = U_ZERO_ERROR;
-  icu::Locale locale(g_browser_process->GetApplicationLocale().c_str());
+  icu::Locale locale(delegate_->GetActiveLocale().c_str());
   scoped_ptr<icu::Collator> collator(
       icu::Collator::createInstance(locale, error));
   if (U_FAILURE(error)) {
     collator.reset();
   }
   std::sort(language_codes->begin(), language_codes->end(),
-            CompareLanguageCodesByLanguageName(collator.get()));
+            CompareLanguageCodesByLanguageName(this, collator.get()));
 }
 
 bool InputMethodUtil::GetInputMethodIdsFromLanguageCode(
@@ -611,27 +640,8 @@ void InputMethodUtil::GetLanguageCodesFromInputMethodIds(
 }
 
 std::string InputMethodUtil::GetHardwareInputMethodId() const {
-  if (!hardware_input_method_id_for_testing_.empty()) {
-    return hardware_input_method_id_for_testing_;
-  }
+  const std::string input_method_id = delegate_->GetHardwareKeyboardLayout();
 
-  if (!(g_browser_process && g_browser_process->local_state())) {
-    // This shouldn't happen but just in case.
-    DVLOG(1) << "Local state is not yet ready";
-    return InputMethodDescriptor::GetFallbackInputMethodDescriptor().id();
-  }
-
-  PrefService* local_state = g_browser_process->local_state();
-  if (!local_state->FindPreference(prefs::kHardwareKeyboardLayout)) {
-    // This could happen in unittests. We register the preference in
-    // BrowserMain::InitializeLocalState and that method is not called during
-    // unittests.
-    DVLOG(1) << prefs::kHardwareKeyboardLayout << " is not registered";
-    return InputMethodDescriptor::GetFallbackInputMethodDescriptor().id();
-  }
-
-  const std::string input_method_id =
-      local_state->GetString(prefs::kHardwareKeyboardLayout);
   if (input_method_id.empty()) {
     // This is totally fine if it's empty. The hardware keyboard layout is
     // not stored if startup_manifest.json (OEM customization data) is not
@@ -688,11 +698,6 @@ void InputMethodUtil::ReloadInternalMaps() {
 
 void InputMethodUtil::OnLocaleChanged() {
   ReloadInternalMaps();
-}
-
-void InputMethodUtil::SetHardwareInputMethodIdForTesting(
-    const std::string& input_method_id) {
-  hardware_input_method_id_for_testing_ = input_method_id;
 }
 
 }  // namespace input_method

@@ -29,9 +29,11 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
+#include "sql/error_delegate_util.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/sqlite/sqlite3.h"
 
 using base::Time;
 using content::BrowserThread;
@@ -69,6 +71,7 @@ class SQLitePersistentCookieStore::Backend
         num_pending_(0),
         force_keep_session_state_(false),
         initialized_(false),
+        corruption_detected_(false),
         restore_old_session_cookies_(restore_old_session_cookies),
         clear_on_exit_policy_(clear_on_exit_policy),
         num_cookies_read_(0),
@@ -103,6 +106,34 @@ class SQLitePersistentCookieStore::Backend
 
  private:
   friend class base::RefCountedThreadSafe<SQLitePersistentCookieStore::Backend>;
+
+  class KillDatabaseErrorDelegate : public sql::ErrorDelegate {
+   public:
+    KillDatabaseErrorDelegate(Backend* backend);
+
+    virtual ~KillDatabaseErrorDelegate() {}
+
+    // ErrorDelegate implementation.
+    virtual int OnError(int error,
+                        sql::Connection* connection,
+                        sql::Statement* stmt) OVERRIDE;
+
+   private:
+
+    class HistogramUniquifier {
+     public:
+      static const char* name() { return "Sqlite.Cookie.Error"; }
+    };
+
+    // Do not increment the count on Backend, as that would create a circular
+    // reference (Backend -> Connection -> ErrorDelegate -> Backend).
+    Backend* backend_;
+
+    // True if the delegate has previously attempted to kill the database.
+    bool attempted_to_kill_database_;
+
+    DISALLOW_COPY_AND_ASSIGN(KillDatabaseErrorDelegate);
+  };
 
   // You should call Close() before destructing this object.
   ~Backend() {
@@ -189,6 +220,9 @@ class SQLitePersistentCookieStore::Backend
 
   void DeleteSessionCookiesOnShutdown();
 
+  void KillDatabase();
+  void ScheduleKillDatabase();
+
   FilePath path_;
   scoped_ptr<sql::Connection> db_;
   sql::MetaTable meta_table_;
@@ -218,6 +252,9 @@ class SQLitePersistentCookieStore::Backend
   // Indicates if DB has been initialized.
   bool initialized_;
 
+  // Indicates if the kill-database callback has been scheduled.
+  bool corruption_detected_;
+
   // If false, we should filter out session cookies when reading the DB.
   bool restore_old_session_cookies_;
 
@@ -246,6 +283,27 @@ class SQLitePersistentCookieStore::Backend
 
   DISALLOW_COPY_AND_ASSIGN(Backend);
 };
+
+SQLitePersistentCookieStore::Backend::KillDatabaseErrorDelegate::
+KillDatabaseErrorDelegate(Backend* backend)
+    : backend_(backend),
+      attempted_to_kill_database_(false) {
+}
+
+int SQLitePersistentCookieStore::Backend::KillDatabaseErrorDelegate::OnError(
+    int error, sql::Connection* connection, sql::Statement* stmt) {
+  sql::LogAndRecordErrorInHistogram<HistogramUniquifier>(error, connection);
+
+  // Do not attempt to kill database more than once. If the first time failed,
+  // it is unlikely that a second time will be successful.
+  if (!attempted_to_kill_database_ && sql::IsErrorCatastrophic(error)) {
+    attempted_to_kill_database_ = true;
+
+    backend_->ScheduleKillDatabase();
+  }
+
+  return error;
+}
 
 // Version number of the database.
 //
@@ -474,9 +532,9 @@ void SQLitePersistentCookieStore::Backend::Notify(
 bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 
-  if (initialized_) {
+  if (initialized_ || corruption_detected_) {
     // Return false if we were previously initialized but the DB has since been
-    // closed.
+    // closed, or if corruption caused a database reset during initialization.
     return db_ != NULL;
   }
 
@@ -494,16 +552,22 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
   }
 
   db_.reset(new sql::Connection);
+  db_->set_error_delegate(new KillDatabaseErrorDelegate(this));
+
   if (!db_->Open(path_)) {
     NOTREACHED() << "Unable to open cookie DB.";
+    if (corruption_detected_)
+      db_->Raze();
+    meta_table_.Reset();
     db_.reset();
     return false;
   }
 
-  db_->set_error_delegate(GetErrorHandlerForCookieDb());
-
   if (!EnsureDatabaseVersion() || !InitTable(db_.get())) {
     NOTREACHED() << "Unable to open cookie DB.";
+    if (corruption_detected_)
+      db_->Raze();
+    meta_table_.Reset();
     db_.reset();
     return false;
   }
@@ -521,6 +585,9 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
     "SELECT DISTINCT host_key FROM cookies"));
 
   if (!smt.is_valid()) {
+    if (corruption_detected_)
+      db_->Raze();
+    meta_table_.Reset();
     db_.reset();
     return false;
   }
@@ -604,6 +671,7 @@ bool SQLitePersistentCookieStore::Backend::LoadCookiesForDomains(
   }
   if (!smt.is_valid()) {
     smt.Clear();  // Disconnect smt_ref from db_.
+    meta_table_.Reset();
     db_.reset();
     return false;
   }
@@ -924,6 +992,7 @@ void SQLitePersistentCookieStore::Backend::InternalBackgroundClose() {
     DeleteSessionCookiesOnShutdown();
   }
 
+  meta_table_.Reset();
   db_.reset();
 }
 
@@ -966,6 +1035,31 @@ void SQLitePersistentCookieStore::Backend::DeleteSessionCookiesOnShutdown() {
 
   if (!transaction.Commit())
     LOG(WARNING) << "Unable to delete cookies on shutdown.";
+}
+
+void SQLitePersistentCookieStore::Backend::ScheduleKillDatabase() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+
+  corruption_detected_ = true;
+
+  // Don't just do the close/delete here, as we are being called by |db| and
+  // that seems dangerous.
+  MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&Backend::KillDatabase, this));
+}
+
+void SQLitePersistentCookieStore::Backend::KillDatabase() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+
+  if (db_.get()) {
+    // This Backend will now be in-memory only. In a future run we will recreate
+    // the database. Hopefully things go better then!
+    bool success = db_->Raze();
+    UMA_HISTOGRAM_BOOLEAN("Cookie.KillDatabaseResult", success);
+    db_->Close();
+    meta_table_.Reset();
+    db_.reset();
+  }
 }
 
 void SQLitePersistentCookieStore::Backend::SetForceKeepSessionState() {

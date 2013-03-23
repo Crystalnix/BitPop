@@ -8,6 +8,9 @@
 // This file describes various types used to describe and filter notifications
 // that pass through the NotificationService.
 //
+// Only notifications that are fired from the content module should be here. We
+// should never have a notification that is fired by the embedder and listened
+// to by content.
 namespace content {
 
 enum NotificationType {
@@ -146,30 +149,15 @@ enum NotificationType {
   // controller associated with the state change.
   NOTIFICATION_SSL_INTERNAL_STATE_CHANGED,
 
-  // Application-wide ----------------------------------------------------------
-
-#if defined(OS_MACOSX)
-  // This message is sent when the application is made active (Mac OS X only
-  // at present). No source or details are passed.
-  NOTIFICATION_APP_ACTIVATED,
-#endif
-
-  // This message is sent when the application is terminating (the last
-  // browser window has shutdown as part of an explicit user-initiated exit,
-  // or the user closed the last browser window on Windows/Linux and there are
-  // no BackgroundContents keeping the browser running). No source or details
-  // are passed.
-  NOTIFICATION_APP_TERMINATING,
-
   // Devtools ------------------------------------------------------------------
 
-  // Indicates that a devtools window is opening. The source is the
-  // BrowserContext* and the details is the inspected RenderViewHost*.
-  NOTIFICATION_DEVTOOLS_WINDOW_OPENING,
+  // Indicates that a devtools agent has attached to a client. The source is
+  // the BrowserContext* and the details is the inspected RenderViewHost*.
+  NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
 
-  // Indicates that a devtools window is closing. The source is the
-  // BrowserContext* and the details is the inspected RenderViewHost*.
-  NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
+  // Indicates that a devtools agent has detached from a client. The source is
+  // the BrowserContext* and the details is the inspected RenderViewHost*.
+  NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
 
   // WebContents ---------------------------------------------------------------
 
@@ -184,7 +172,8 @@ enum NotificationType {
   // with another one, possibly changing processes. The source is a
   // Source<WebContents> with a pointer to the WebContents.  A
   // NOTIFICATION_WEB_CONTENTS_DISCONNECTED notification is guaranteed before
-  // the source pointer becomes junk.  No details are expected.
+  // the source pointer becomes junk.  Details are the RenderViewHost that
+  // has been replaced, or NULL if the old RVH was shut down.
   NOTIFICATION_WEB_CONTENTS_SWAPPED,
 
   // This message is sent after a WebContents is disconnected from the
@@ -252,11 +241,6 @@ enum NotificationType {
   // std::pair::<old RenderViewHost, new RenderViewHost>).
   NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
 
-  // Indicates that the render view host has received an accessibility tree
-  // update, either partial or full, from the render view.  The source is the
-  // RenderViewHost, the details are not used.
-  NOTIFICATION_RENDER_VIEW_HOST_ACCESSIBILITY_TREE_UPDATED,
-
   // This is sent when a RenderWidgetHost is being destroyed. The source is
   // the RenderWidgetHost, the details are not used.
   NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
@@ -320,6 +304,21 @@ enum NotificationType {
   // renderer in response to a dom automation controller action. The source is
   // the RenderViewHost, and the details is a DomOperationNotificationDetails.
   NOTIFICATION_DOM_OPERATION_RESPONSE,
+
+  // Indicates that the render view host has received a "load complete"
+  // accessibility notification. The source is the RenderViewHost,
+  // the details are not used.
+  NOTIFICATION_ACCESSIBILITY_LOAD_COMPLETE,
+
+  // Indicates that the render view host has received a "layout complete"
+  // accessibility notification. The source is the RenderViewHost,
+  // the details are not used.
+  NOTIFICATION_ACCESSIBILITY_LAYOUT_COMPLETE,
+
+  // Indicates that the render view host has received an accessibility
+  // notification. other than the ones covered above.
+  // The source is the RenderViewHost, the details are not used.
+  NOTIFICATION_ACCESSIBILITY_OTHER,
 
   // Child Processes ---------------------------------------------------------
 

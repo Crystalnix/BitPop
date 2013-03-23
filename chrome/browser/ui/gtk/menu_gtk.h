@@ -15,7 +15,9 @@
 #include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/gfx/point.h"
 
-class SkBitmap;
+namespace gfx {
+class Image;
+}
 
 namespace ui {
 class ButtonMenuItemModel;
@@ -43,10 +45,10 @@ class MenuGtk {
 
     // Return true if we should override the "gtk-menu-images" system setting
     // when showing image menu items for this menu.
-    virtual bool AlwaysShowIconForCmd(int command_id) const { return false; }
+    virtual bool AlwaysShowIconForCmd(int command_id) const;
 
     // Returns a tinted image used in button in a menu.
-    virtual GtkIconSet* GetIconSetForId(int idr) { return NULL; }
+    virtual GtkIconSet* GetIconSetForId(int idr);
 
     // Returns an icon for the menu item, if available.
     virtual GtkWidget* GetImageForCommandId(int command_id) const;
@@ -64,7 +66,7 @@ class MenuGtk {
   // is the new menu item.
   GtkWidget* AppendMenuItemWithLabel(int command_id, const std::string& label);
   GtkWidget* AppendMenuItemWithIcon(int command_id, const std::string& label,
-                                    const SkBitmap& icon);
+                                    const gfx::Image& icon);
   GtkWidget* AppendCheckMenuItemWithLabel(int command_id,
                                           const std::string& label);
   GtkWidget* AppendSeparator();
@@ -125,7 +127,7 @@ class MenuGtk {
  private:
   // Builds a GtkImageMenuItem.
   GtkWidget* BuildMenuItemWithImage(const std::string& label,
-                                    const SkBitmap& icon);
+                                    const gfx::Image& icon);
 
   GtkWidget* BuildMenuItemWithImage(const std::string& label,
                                     GtkWidget* image);

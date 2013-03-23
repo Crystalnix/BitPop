@@ -33,9 +33,6 @@ class WebIntentInlineDispositionDelegate
   // WebContentsDelegate implementation.
   virtual bool IsPopupOrPanel(
       const content::WebContents* source) const OVERRIDE;
-  virtual bool ShouldAddNavigationToHistory(
-    const history::HistoryAddPageArgs& add_page_args,
-    content::NavigationType navigation_type) OVERRIDE;
   virtual content::WebContents* OpenURLFromTab(
       content::WebContents* source,
       const content::OpenURLParams& params) OVERRIDE;
@@ -43,15 +40,20 @@ class WebIntentInlineDispositionDelegate
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
-                              bool user_gesture) OVERRIDE;
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
   virtual void ResizeDueToAutoResize(content::WebContents* source,
                                      const gfx::Size& pref_size) OVERRIDE;
+  virtual void HandleKeyboardEvent(
+      content::WebContents* source,
+      const content::NativeWebKeyboardEvent& event) OVERRIDE;
 
   // content::WebContentsObserver
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void RenderViewCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DocumentAvailableInMainFrame() OVERRIDE;
 
   // ExtensionFunctionDispatcher::Delegate
   virtual extensions::WindowController* GetExtensionWindowController()
@@ -60,6 +62,10 @@ class WebIntentInlineDispositionDelegate
 
   // Message handlers.
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
+
+  // Updates the inline render view with a new max and min size.
+  void SetRenderViewSizeLimits();
+
  private:
   // Picker to notify when loading state changes. Weak pointer.
   WebIntentPicker* picker_;
@@ -68,6 +74,9 @@ class WebIntentInlineDispositionDelegate
   content::WebContents* web_contents_;
 
   Browser* browser_;  // Weak pointer.
+
+  // The RVH responsible for the RenderView. Weak pointer.
+  content::RenderViewHost* render_view_host_;
 
   // Dispatch handler for extension APIs.
   ExtensionFunctionDispatcher extension_function_dispatcher_;

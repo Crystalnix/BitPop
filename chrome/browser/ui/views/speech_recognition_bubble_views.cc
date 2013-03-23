@@ -62,7 +62,7 @@ class SpeechRecognitionBubbleView
 
   // views::ButtonListener methods.
   virtual void ButtonPressed(views::Button* source,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::LinkListener methods.
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -128,7 +128,7 @@ gfx::Rect SpeechRecognitionBubbleView::GetAnchorRect() {
   gfx::Rect container_rect;
   web_contents_->GetContainerBounds(&container_rect);
   gfx::Rect anchor(element_rect_);
-  anchor.Offset(container_rect.origin());
+  anchor.Offset(container_rect.OffsetFromOrigin());
   if (!container_rect.Intersects(anchor))
     return BubbleDelegateView::GetAnchorRect();
   return anchor;
@@ -143,14 +143,13 @@ void SpeechRecognitionBubbleView::Init() {
   heading_->set_border(views::Border::CreateEmptyBorder(
       kBubbleHeadingVertMargin, 0, kBubbleHeadingVertMargin, 0));
   heading_->SetFont(font);
-  heading_->SetHorizontalAlignment(views::Label::ALIGN_CENTER);
+  heading_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
   heading_->SetText(
       l10n_util::GetStringUTF16(IDS_SPEECH_INPUT_BUBBLE_HEADING));
   AddChildView(heading_);
 
   message_ = new views::Label();
   message_->SetFont(font);
-  message_->SetHorizontalAlignment(views::Label::ALIGN_CENTER);
   message_->SetMultiLine(true);
   AddChildView(message_);
 
@@ -215,7 +214,7 @@ void SpeechRecognitionBubbleView::SetImage(const gfx::ImageSkia& image) {
 }
 
 void SpeechRecognitionBubbleView::ButtonPressed(views::Button* source,
-                                                const views::Event& event) {
+                                                const ui::Event& event) {
   if (source == cancel_) {
     delegate_->InfoBubbleButtonClicked(SpeechRecognitionBubble::BUTTON_CANCEL);
   } else if (source == try_again_) {
@@ -228,7 +227,7 @@ void SpeechRecognitionBubbleView::ButtonPressed(views::Button* source,
 
 void SpeechRecognitionBubbleView::LinkClicked(views::Link* source,
                                               int event_flags) {
-  DCHECK_EQ(source, mic_settings_);
+  DCHECK_EQ(mic_settings_, source);
   content::SpeechRecognitionManager::GetInstance()->ShowAudioInputSettings();
 }
 
@@ -359,7 +358,7 @@ SpeechRecognitionBubbleImpl::~SpeechRecognitionBubbleImpl() {
 void SpeechRecognitionBubbleImpl::Show() {
   if (!bubble_) {
     // Anchor to the location icon view, in case |element_rect| is offscreen.
-    Browser* browser = browser::FindBrowserWithWebContents(GetWebContents());
+    Browser* browser = chrome::FindBrowserWithWebContents(GetWebContents());
     BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
     views::View* icon = browser_view->GetLocationBarView() ?
         browser_view->GetLocationBarView()->location_icon_view() : NULL;

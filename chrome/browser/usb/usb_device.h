@@ -14,10 +14,12 @@
 
 struct libusb_device;
 struct libusb_device_handle;
+struct libusb_iso_packet_descriptor;
 struct libusb_transfer;
 
 typedef libusb_device* PlatformUsbDevice;
 typedef libusb_device_handle* PlatformUsbDeviceHandle;
+typedef libusb_iso_packet_descriptor* PlatformUsbIsoPacketDescriptor;
 typedef libusb_transfer* PlatformUsbTransferHandle;
 
 class UsbService;
@@ -34,9 +36,19 @@ enum UsbTransferStatus {
   USB_TRANSFER_STALLED,
   USB_TRANSFER_DISCONNECT,
   USB_TRANSFER_OVERFLOW,
+  USB_TRANSFER_LENGTH_SHORT,
 };
 
-typedef base::Callback<void(UsbTransferStatus)> UsbTransferCallback;
+enum UsbTransferType {
+  USB_TRANSFER_CONTROL = 0,
+  USB_TRANSFER_BULK,
+  USB_TRANSFER_INTERRUPT,
+  USB_TRANSFER_ISOCHRONOUS,
+};
+
+typedef base::Callback<void(UsbTransferStatus, scoped_refptr<net::IOBuffer>,
+    size_t)> UsbTransferCallback;
+typedef base::Callback<void(bool)> UsbInterfaceCallback;
 
 // A UsbDevice wraps the platform's underlying representation of what a USB
 // device actually is, and provides accessors for performing many of the
@@ -54,42 +66,54 @@ class UsbDevice : public base::RefCounted<UsbDevice> {
 
   PlatformUsbDeviceHandle handle() { return handle_; }
 
-  // Close the USB device and release the underlying platform device.
-  void Close();
+  // Close the USB device and release the underlying platform device. |callback|
+  // is invoked after the device has been closed.
+  virtual void Close(const base::Callback<void()>& callback);
 
-  void ControlTransfer(const TransferDirection direction,
-                       const TransferRequestType request_type,
-                       const TransferRecipient recipient,
-                       const uint8 request,
-                       const uint16 value,
-                       const uint16 index,
-                       net::IOBuffer* buffer,
-                       const size_t length,
-                       const unsigned int timeout,
-                       const UsbTransferCallback& callback);
+  virtual void ClaimInterface(const int interface_number,
+                              const UsbInterfaceCallback& callback);
 
-  void BulkTransfer(const TransferDirection direction,
-                    const uint8 endpoint,
-                    net::IOBuffer* buffer,
-                    const size_t length,
-                    const unsigned int timeout,
-                    const UsbTransferCallback& callback);
+  virtual void ReleaseInterface(const int interface_number,
+                                const UsbInterfaceCallback& callback);
 
-  void InterruptTransfer(const TransferDirection direction,
-                         const uint8 endpoint,
-                         net::IOBuffer* buffer,
-                         const size_t length,
-                         const unsigned int timeout,
-                         const UsbTransferCallback& callback);
+  virtual void SetInterfaceAlternateSetting(
+      const int interface_number,
+      const int alternate_setting,
+      const UsbInterfaceCallback& callback);
 
-  void IsochronousTransfer(const TransferDirection direction,
-                           const uint8 endpoint,
-                           net::IOBuffer* buffer,
-                           const size_t length,
-                           const unsigned int packets,
-                           const unsigned int packet_length,
-                           const unsigned int timeout,
-                           const UsbTransferCallback& callback);
+  virtual void ControlTransfer(const TransferDirection direction,
+                               const TransferRequestType request_type,
+                               const TransferRecipient recipient,
+                               const uint8 request,
+                               const uint16 value,
+                               const uint16 index,
+                               net::IOBuffer* buffer,
+                               const size_t length,
+                               const unsigned int timeout,
+                               const UsbTransferCallback& callback);
+
+  virtual void BulkTransfer(const TransferDirection direction,
+                            const uint8 endpoint,
+                            net::IOBuffer* buffer,
+                            const size_t length,
+                            const unsigned int timeout,
+                            const UsbTransferCallback& callback);
+
+  virtual void InterruptTransfer(const TransferDirection direction,
+                                 const uint8 endpoint,
+                                 net::IOBuffer* buffer,
+                                 const size_t length,
+                                 const unsigned int timeout,
+                                 const UsbTransferCallback& callback);
+
+  virtual void IsochronousTransfer(const TransferDirection direction,
+                                   const uint8 endpoint,
+                                   net::IOBuffer* buffer,
+                                   const size_t length,
+                                   const unsigned int packets,
+                                   const unsigned int packet_length,
+                                   const unsigned int timeout,
+                                   const UsbTransferCallback& callback);
 
   // Normal code should not call this function. It is called by the platform's
   // callback mechanism in such a way that it cannot be made private. Invokes
@@ -97,17 +121,23 @@ class UsbDevice : public base::RefCounted<UsbDevice> {
   // in-flight transfer set.
   void TransferComplete(PlatformUsbTransferHandle transfer);
 
+ protected:
+  // This constructor variant is for use in testing only.
+  UsbDevice();
+
+  friend class base::RefCounted<UsbDevice>;
+  virtual ~UsbDevice();
+
  private:
   struct Transfer {
     Transfer();
     ~Transfer();
 
+    UsbTransferType transfer_type;
     scoped_refptr<net::IOBuffer> buffer;
+    size_t length;
     UsbTransferCallback callback;
   };
-
-  friend class base::RefCounted<UsbDevice>;
-  virtual ~UsbDevice();
 
   // Checks that the device has not yet been closed.
   void CheckDevice();
@@ -115,7 +145,10 @@ class UsbDevice : public base::RefCounted<UsbDevice> {
   // Submits a transfer and starts tracking it. Retains the buffer and copies
   // the completion callback until the transfer finishes, whereupon it invokes
   // the callback then releases the buffer.
-  void SubmitTransfer(PlatformUsbTransferHandle handle, net::IOBuffer* buffer,
+  void SubmitTransfer(PlatformUsbTransferHandle handle,
+                      UsbTransferType transfer_type,
+                      net::IOBuffer* buffer,
+                      const size_t length,
                       const UsbTransferCallback& callback);
 
   // The UsbService isn't referenced here to prevent a dependency cycle between
@@ -131,7 +164,7 @@ class UsbDevice : public base::RefCounted<UsbDevice> {
   base::Lock lock_;
   std::map<PlatformUsbTransferHandle, Transfer> transfers_;
 
-  DISALLOW_EVIL_CONSTRUCTORS(UsbDevice);
+  DISALLOW_COPY_AND_ASSIGN(UsbDevice);
 };
 
 #endif  // CHROME_BROWSER_USB_USB_DEVICE_H_

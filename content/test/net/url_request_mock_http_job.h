@@ -13,9 +13,13 @@
 
 class FilePath;
 
+namespace content {
+
 class URLRequestMockHTTPJob : public net::URLRequestFileJob {
  public:
-  URLRequestMockHTTPJob(net::URLRequest* request, const FilePath& file_path);
+  URLRequestMockHTTPJob(net::URLRequest* request,
+                        net::NetworkDelegate* network_delegate,
+                        const FilePath& file_path);
 
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
@@ -47,5 +51,7 @@ class URLRequestMockHTTPJob : public net::URLRequestFileJob {
  private:
   void GetResponseInfoConst(net::HttpResponseInfo* info) const;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_TEST_NET_URL_REQUEST_MOCK_HTTP_JOB_H_

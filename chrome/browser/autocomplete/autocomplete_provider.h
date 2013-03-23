@@ -50,6 +50,7 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // HistoryContents (any match in title of starred page)                | 1000++
 // HistoryURL (some inexact matches)                                   |  900++
+// BookmarkProvider (prefix match in bookmark title)                   |  900+-
 // Search Primary Provider (navigational suggestion)                   |  800++
 // HistoryContents (any match in title of nonstarred page)             |  700++
 // Search Primary Provider (suggestion)                                |  600++
@@ -121,6 +122,7 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // HistoryContents (any match in title of starred page)                | 1000++
 // HistoryURL (inexact match)                                          |  900++
+// BookmarkProvider (prefix match in bookmark title)                   |  900+-
 // Search Primary Provider (navigational suggestion)                   |  800++
 // HistoryContents (any match in title of nonstarred page)             |  700++
 // Search Primary Provider (suggestion)                                |  600++
@@ -166,6 +168,8 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // *~: Partial matches get a score on a sliding scale from about 575-1125 based
 //     on how many times the URL for the Extension App has been typed and how
 //     many of the letters match.
+// +-: A base score that the provider will adjust upward or downward based on
+//     provider-specific metrics.
 //
 // A single result provider for the autocomplete system.  Given user input, the
 // provider decides what (if any) matches to return, their relevance, and their
@@ -173,10 +177,27 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 class AutocompleteProvider
     : public base::RefCountedThreadSafe<AutocompleteProvider> {
  public:
+  // Different AutocompleteProvider implementations.
+  enum Type {
+    TYPE_BOOKMARK         = 1 << 0,
+    TYPE_BUILTIN          = 1 << 1,
+    TYPE_CONTACT          = 1 << 2,
+    TYPE_EXTENSION_APP    = 1 << 3,
+    TYPE_HISTORY_CONTENTS = 1 << 4,
+    TYPE_HISTORY_QUICK    = 1 << 5,
+    TYPE_HISTORY_URL      = 1 << 6,
+    TYPE_KEYWORD          = 1 << 7,
+    TYPE_SEARCH           = 1 << 8,
+    TYPE_SHORTCUTS        = 1 << 9,
+    TYPE_ZERO_SUGGEST     = 1 << 10,
+  };
 
   AutocompleteProvider(AutocompleteProviderListener* listener,
                        Profile* profile,
-                       const char* name);
+                       Type type);
+
+  // Returns a string describing a particular AutocompleteProvider type.
+  static const char* TypeToString(Type type);
 
   // Called to start an autocomplete query.  The provider is responsible for
   // tracking its matches for this query and whether it is done processing the
@@ -202,16 +223,9 @@ class AutocompleteProvider
   // on the value of |clear_cached_results|.
   virtual void Stop(bool clear_cached_results);
 
-  // Returns the set of matches for the current query.
-  const ACMatches& matches() const { return matches_; }
-
-  // Returns whether the provider is done processing the query.
-  bool done() const { return done_; }
-
-  // Returns the name of this provider.
-  const std::string& name() const { return name_; }
-
   // Returns the enum equivalent to the name of this provider.
+  // TODO(derat): Make metrics use AutocompleteProvider::Type directly, or at
+  // least move this method to the metrics directory.
   metrics::OmniboxEventProto_ProviderType AsOmniboxEventProviderType() const;
 
   // Called to delete a match and the backing data that produced it.  This
@@ -227,12 +241,29 @@ class AutocompleteProvider
   // information it wants to |provider_info|.
   virtual void AddProviderInfo(ProvidersInfo* provider_info) const;
 
+  // Called when a new omnibox session starts or the current session ends.
+  // This gives the opportunity to reset the internal state, if any, associated
+  // with the previous session.
+  virtual void ResetSession();
+
   // A convenience function to call net::FormatUrl() with the current set of
   // "Accept Languages" when check_accept_lang is true.  Otherwise, it's called
   // with an empty list.
   string16 StringForURLDisplay(const GURL& url,
                                bool check_accept_lang,
                                bool trim_http) const;
+
+  // Returns the set of matches for the current query.
+  const ACMatches& matches() const { return matches_; }
+
+  // Returns whether the provider is done processing the query.
+  bool done() const { return done_; }
+
+  // Returns this provider's type.
+  Type type() const { return type_; }
+
+  // Returns a string describing this provider's type.
+  const char* GetName() const;
 
 #ifdef UNIT_TEST
   void set_listener(AutocompleteProviderListener* listener) {
@@ -265,8 +296,7 @@ class AutocompleteProvider
   ACMatches matches_;
   bool done_;
 
-  // The name of this provider.  Used for logging.
-  std::string name_;
+  Type type_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AutocompleteProvider);

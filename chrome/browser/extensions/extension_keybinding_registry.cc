@@ -4,6 +4,9 @@
 
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 
+#include "base/values.h"
+#include "chrome/browser/extensions/active_tab_permission_granter.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -13,8 +16,11 @@
 
 namespace extensions {
 
-ExtensionKeybindingRegistry::ExtensionKeybindingRegistry(Profile* profile)
-    : profile_(profile) {
+ExtensionKeybindingRegistry::ExtensionKeybindingRegistry(
+    Profile* profile, ExtensionFilter extension_filter, Delegate* delegate)
+    : profile_(profile),
+      extension_filter_(extension_filter),
+      delegate_(delegate) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
@@ -29,14 +35,16 @@ ExtensionKeybindingRegistry::~ExtensionKeybindingRegistry() {
 }
 
 void ExtensionKeybindingRegistry::Init() {
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (!service)
     return;  // ExtensionService can be null during testing.
 
   const ExtensionSet* extensions = service->extensions();
   ExtensionSet::const_iterator iter = extensions->begin();
   for (; iter != extensions->end(); ++iter)
-    AddExtensionKeybinding(*iter, std::string());
+    if (ExtensionMatchesFilter(*iter))
+      AddExtensionKeybinding(*iter, std::string());
 }
 
 bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
@@ -46,21 +54,51 @@ bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
          command == extension_manifest_values::kScriptBadgeCommandEvent;
 }
 
+void ExtensionKeybindingRegistry::CommandExecuted(
+    const std::string& extension_id, const std::string& command) {
+  ExtensionService* service =
+      ExtensionSystem::Get(profile_)->extension_service();
+
+  const Extension* extension = service->extensions()->GetByID(extension_id);
+  if (!extension)
+    return;
+
+  // Grant before sending the event so that the permission is granted before
+  // the extension acts on the command.
+  ActiveTabPermissionGranter* granter =
+      delegate_->GetActiveTabPermissionGranter();
+  if (granter)
+    granter->GrantIfRequested(extension);
+
+  scoped_ptr<ListValue> args(new ListValue());
+  args->Append(Value::CreateStringValue(command));
+
+  scoped_ptr<Event> event(new Event("commands.onCommand", args.Pass()));
+  event->restrict_to_profile = profile_;
+  event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
+  ExtensionSystem::Get(profile_)->event_router()->
+      DispatchEventToExtension(extension_id, event.Pass());
+}
+
 void ExtensionKeybindingRegistry::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
-      AddExtensionKeybinding(
-          content::Details<const extensions::Extension>(details).ptr(),
-          std::string());
+    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+      const extensions::Extension* extension =
+          content::Details<const extensions::Extension>(details).ptr();
+      if (ExtensionMatchesFilter(extension))
+        AddExtensionKeybinding(extension, std::string());
       break;
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
-      RemoveExtensionKeybinding(
-          content::Details<UnloadedExtensionInfo>(details)->extension,
-          std::string());
+    }
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+      const extensions::Extension* extension =
+          content::Details<UnloadedExtensionInfo>(details)->extension;
+      if (ExtensionMatchesFilter(extension))
+        RemoveExtensionKeybinding(extension, std::string());
       break;
+    }
     case chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED:
     case chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED: {
       std::pair<const std::string, const std::string>* payload =
@@ -75,16 +113,32 @@ void ExtensionKeybindingRegistry::Observe(
       if (!extension)
         return;
 
-      if (type == chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED)
-        AddExtensionKeybinding(extension, payload->second);
-      else
-        RemoveExtensionKeybinding(extension, payload->second);
+      if (ExtensionMatchesFilter(extension)) {
+        if (type == chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED)
+          AddExtensionKeybinding(extension, payload->second);
+        else
+          RemoveExtensionKeybinding(extension, payload->second);
+      }
       break;
     }
     default:
       NOTREACHED();
       break;
   }
+}
+
+bool ExtensionKeybindingRegistry::ExtensionMatchesFilter(
+    const extensions::Extension* extension)
+{
+  switch (extension_filter_) {
+    case ALL_EXTENSIONS:
+      return true;
+    case PLATFORM_APPS_ONLY:
+      return extension->is_platform_app();
+    default:
+      NOTREACHED();
+  }
+  return false;
 }
 
 }  // namespace extensions

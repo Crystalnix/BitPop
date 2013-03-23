@@ -54,7 +54,6 @@ static void ToggleWebKitSharedTimers(JNIEnv* env,
   }
 }
 
-// TODO(pliard): http://crbug.com/137674
 bool RegisterProcessUtils(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }

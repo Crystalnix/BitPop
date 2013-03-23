@@ -4,25 +4,45 @@
 
 #include "base/command_line.h"
 #include "base/file_path.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "chrome/browser/extensions/api/management/management_api.h"
 #include "chrome/browser/extensions/api/management/management_api_constants.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/extensions/extension_install_dialog.h"
+#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/common/url_constants.h"
+#include "content/public/test/test_utils.h"
 
 namespace keys = extension_management_api_constants;
 namespace util = extension_function_test_utils;
 
-class ExtensionManagementApiBrowserTest : public ExtensionBrowserTest {};
+class ExtensionManagementApiBrowserTest : public ExtensionBrowserTest {
+ protected:
+  bool CrashEnabledExtension(const std::string& extension_id) {
+    content::WindowedNotificationObserver extension_crash_observer(
+        chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
+        content::NotificationService::AllSources());
+    extensions::ExtensionHost* background_host =
+        extensions::ExtensionSystem::Get(browser()->profile())->
+            process_manager()->GetBackgroundHostForExtension(extension_id);
+    if (!background_host)
+      return false;
+    background_host->host_contents()->GetController().LoadURL(
+        GURL(chrome::kChromeUICrashURL), content::Referrer(),
+        content::PAGE_TRANSITION_LINK, std::string());
+    extension_crash_observer.Wait();
+    return true;
+  }
+};
 
 // We test this here instead of in an ExtensionApiTest because normal extensions
 // are not allowed to call the install function.
@@ -73,7 +93,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
                        UninstallWithConfirmDialog) {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   // Install an extension.
   const extensions::Extension* extension = InstallExtension(
@@ -110,7 +131,37 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
   EXPECT_TRUE(service->GetExtensionById(id, false) == NULL);
 }
 
-class ExtensionManagementApiEscalationTest : public ExtensionBrowserTest {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
+                       GetAllIncludesTerminated) {
+  // Load an extension with a background page, so that we know it has a process
+  // running.
+  ExtensionTestMessageListener listener("ready", false);
+  const extensions::Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("management/install_event"));
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(listener.WaitUntilSatisfied());
+
+  // The management API should list this extension.
+  scoped_refptr<GetAllExtensionsFunction> function =
+      new GetAllExtensionsFunction();
+  scoped_ptr<base::Value> result(util::RunFunctionAndReturnSingleResult(
+      function.get(), "[]", browser()));
+  base::ListValue* list;
+  ASSERT_TRUE(result->GetAsList(&list));
+  EXPECT_EQ(1U, list->GetSize());
+
+  // And it should continue to do so even after it crashes.
+  ASSERT_TRUE(CrashEnabledExtension(extension->id()));
+
+  function = new GetAllExtensionsFunction();
+  result.reset(util::RunFunctionAndReturnSingleResult(
+      function.get(), "[]", browser()));
+  ASSERT_TRUE(result->GetAsList(&list));
+  EXPECT_EQ(1U, list->GetSize());
+}
+
+class ExtensionManagementApiEscalationTest :
+    public ExtensionManagementApiBrowserTest {
  protected:
   // The id of the permissions escalation test extension we use.
   static const char kId[];
@@ -130,7 +181,8 @@ class ExtensionManagementApiEscalationTest : public ExtensionBrowserTest {
         pem_path,
         FilePath());
 
-    ExtensionService* service = browser()->profile()->GetExtensionService();
+    ExtensionService* service = extensions::ExtensionSystem::Get(
+        browser()->profile())->extension_service();
 
     // Install low-permission version of the extension.
     ASSERT_TRUE(InstallExtension(path_v1, 1));
@@ -144,13 +196,15 @@ class ExtensionManagementApiEscalationTest : public ExtensionBrowserTest {
         service->extension_prefs()->DidExtensionEscalatePermissions(kId));
   }
 
-  void ReEnable(bool user_gesture, const std::string& expected_error) {
+  void SetEnabled(bool enabled, bool user_gesture,
+                  const std::string& expected_error) {
     scoped_refptr<SetEnabledFunction> function(new SetEnabledFunction);
+    const char* enabled_string = enabled ? "true" : "false";
     if (user_gesture)
       function->set_user_gesture(true);
     bool response = util::RunFunction(
         function.get(),
-        base::StringPrintf("[\"%s\", true]", kId),
+        base::StringPrintf("[\"%s\", %s]", kId, enabled_string),
         browser(),
         util::NONE);
     if (expected_error.empty()) {
@@ -161,8 +215,9 @@ class ExtensionManagementApiEscalationTest : public ExtensionBrowserTest {
     }
   }
 
+
  private:
-  ScopedTempDir scoped_temp_dir_;
+  base::ScopedTempDir scoped_temp_dir_;
 };
 
 const char ExtensionManagementApiEscalationTest::kId[] =
@@ -186,17 +241,26 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiEscalationTest,
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiEscalationTest,
-                       ReEnable) {
+                       SetEnabled) {
   // Expect an error about no gesture.
-  ReEnable(false, keys::kGestureNeededForEscalationError);
+  SetEnabled(true, false, keys::kGestureNeededForEscalationError);
 
   // Expect an error that user cancelled the dialog.
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kAppsGalleryInstallAutoConfirmForTests, "cancel");
-  ReEnable(true, keys::kUserDidNotReEnableError);
+  SetEnabled(true, true, keys::kUserDidNotReEnableError);
 
   // This should succeed when user accepts dialog.
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
-  ReEnable(true, "");
+  SetEnabled(true, true, "");
+
+  // Crash the extension. Mock a reload by disabling and then enabling. The
+  // extension should be reloaded and enabled.
+  ASSERT_TRUE(CrashEnabledExtension(kId));
+  SetEnabled(false, true, "");
+  SetEnabled(true, true, "");
+  const extensions::Extension* extension = browser()->profile()->
+      GetExtensionService()->GetExtensionById(kId, false);
+  EXPECT_TRUE(extension);
 }

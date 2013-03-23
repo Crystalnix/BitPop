@@ -12,6 +12,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/web_ui.h"
@@ -20,7 +21,7 @@
 
 namespace extensions {
 
-CommandHandler::CommandHandler() {
+CommandHandler::CommandHandler(Profile* profile) : profile_(profile) {
 }
 
 CommandHandler::~CommandHandler() {
@@ -36,10 +37,17 @@ void CommandHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_INACTIVE));
   localized_strings->SetString("extensionCommandsStartTyping",
       l10n_util::GetStringUTF16(IDS_EXTENSION_TYPE_SHORTCUT));
+  localized_strings->SetString("extensionCommandsDelete",
+      l10n_util::GetStringUTF16(IDS_EXTENSION_DELETE_SHORTCUT));
   localized_strings->SetString("ok", l10n_util::GetStringUTF16(IDS_OK));
 }
 
 void CommandHandler::RegisterMessages() {
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile_));
+
   web_ui()->RegisterMessageCallback("extensionCommandsRequestExtensionsData",
       base::Bind(&CommandHandler::HandleRequestExtensionsData,
       base::Unretained(this)));
@@ -49,6 +57,15 @@ void CommandHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("setExtensionCommandShortcut",
       base::Bind(&CommandHandler::HandleSetExtensionCommandShortcut,
       base::Unretained(this)));
+}
+
+void CommandHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED ||
+         type == chrome::NOTIFICATION_EXTENSION_UNLOADED);
+  UpdateCommandDataOnPage();
 }
 
 void CommandHandler::UpdateCommandDataOnPage() {
@@ -83,13 +100,9 @@ void CommandHandler::HandleSetExtensionCommandShortcut(
 }
 
 void CommandHandler::HandleSetShortcutHandlingSuspended(const ListValue* args) {
-#if !defined(OS_MACOSX)
   bool suspended;
   if (args->GetBoolean(0, &suspended))
     ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(suspended);
-#else
-  NOTIMPLEMENTED();
-#endif
 }
 
 void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {

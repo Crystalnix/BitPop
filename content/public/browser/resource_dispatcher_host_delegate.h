@@ -9,17 +9,24 @@
 
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_message.h"
 #include "webkit/glue/resource_type.h"
 
 class GURL;
 template <class T> class ScopedVector;
+
+namespace appcache {
+class AppCacheService;
+}
 
 namespace content {
 class ResourceContext;
 class ResourceThrottle;
 struct Referrer;
 struct ResourceResponse;
+}
+
+namespace IPC {
+class Sender;
 }
 
 namespace net {
@@ -51,6 +58,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   virtual void RequestBeginning(
       net::URLRequest* request,
       ResourceContext* resource_context,
+      appcache::AppCacheService* appcache_service,
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
@@ -90,8 +98,10 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   virtual ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info, net::URLRequest* request);
 
-  // Launches the url for the given tab.
-  virtual void HandleExternalProtocol(const GURL& url,
+  // Launches the url for the given tab. Returns true if an attempt to handle
+  // the url was made, e.g. by launching an app. Note that this does not
+  // guarantee that the app successfully handled it.
+  virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
                                       int route_id);
 

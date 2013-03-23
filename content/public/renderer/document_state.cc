@@ -4,8 +4,8 @@
 
 #include "content/public/renderer/document_state.h"
 
+#include "content/public/common/password_form.h"
 #include "content/public/renderer/navigation_state.h"
-#include "webkit/forms/password_form.h"
 #include "webkit/glue/alt_error_page_resource_fetcher.h"
 
 namespace content {
@@ -20,19 +20,22 @@ DocumentState::DocumentState()
       was_fetched_via_proxy_(false),
       use_error_page_(false),
       is_overriding_user_agent_(false),
+      must_reset_scroll_and_scale_state_(false),
       was_prefetcher_(false),
       was_referred_by_prefetcher_(false),
       load_type_(UNDEFINED_LOAD),
       cache_policy_override_set_(false),
       cache_policy_override_(WebKit::WebURLRequest::UseProtocolCachePolicy),
       referrer_policy_set_(false),
-      referrer_policy_(WebKit::WebReferrerPolicyDefault) {
+      referrer_policy_(WebKit::WebReferrerPolicyDefault),
+      can_load_local_resources_(false) {
 }
 
 DocumentState::~DocumentState() {}
 
-void DocumentState::set_password_form_data(webkit::forms::PasswordForm* data) {
-  password_form_data_.reset(data);
+void DocumentState::set_password_form_data(
+    scoped_ptr<PasswordForm> data) {
+  password_form_data_.reset(data.release());
 }
 
 void DocumentState::set_alt_error_page_fetcher(

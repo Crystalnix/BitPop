@@ -18,7 +18,8 @@
 #include "ui/base/l10n/l10n_util.h"
 
 // static
-FormField* CreditCardField::Parse(AutofillScanner* scanner) {
+FormField* CreditCardField::Parse(AutofillScanner* scanner,
+                                  bool parse_new_field_types) {
   if (scanner->IsEnd())
     return NULL;
 
@@ -66,6 +67,17 @@ FormField* CreditCardField::Parse(AutofillScanner* scanner) {
       scanner->Rewind();
     }
 
+    // Check for a credit card type (Visa, MasterCard, etc.) field.
+    if (parse_new_field_types) {
+      string16 type_pattern = UTF8ToUTF16(autofill::kCardTypeRe);
+      if (!credit_card_field->type_ &&
+          ParseFieldSpecifics(scanner, type_pattern,
+                              MATCH_DEFAULT | MATCH_SELECT,
+                              &credit_card_field->type_)) {
+        continue;
+      }
+    }
+
     // We look for a card security code before we look for a credit
     // card number and match the general term "number".  The security code
     // has a plethora of names; we've seen "verification #",
@@ -76,7 +88,6 @@ FormField* CreditCardField::Parse(AutofillScanner* scanner) {
         ParseField(scanner, pattern, &credit_card_field->verification_)) {
       continue;
     }
-    // TODO(jhawkins): Parse the type select control.
 
     pattern = UTF8ToUTF16(autofill::kCardNumberRe);
     if (!credit_card_field->number_ &&
@@ -185,6 +196,9 @@ CreditCardField::CreditCardField()
 
 bool CreditCardField::ClassifyField(FieldTypeMap* map) const {
   bool ok = AddClassification(number_, CREDIT_CARD_NUMBER, map);
+  ok = ok && AddClassification(type_, CREDIT_CARD_TYPE, map);
+  ok = ok && AddClassification(verification_, CREDIT_CARD_VERIFICATION_CODE,
+                               map);
 
   // If the heuristics detected first and last name in separate fields,
   // then ignore both fields. Putting them into separate fields is probably
@@ -193,7 +207,6 @@ bool CreditCardField::ClassifyField(FieldTypeMap* map) const {
   if (cardholder_last_ == NULL)
     ok = ok && AddClassification(cardholder_, CREDIT_CARD_NAME, map);
 
-  ok = ok && AddClassification(type_, CREDIT_CARD_TYPE, map);
   if (expiration_date_) {
     if (is_two_digit_year_) {
       ok = ok && AddClassification(expiration_date_,

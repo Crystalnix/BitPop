@@ -17,6 +17,7 @@ class Profile;
 
 namespace extensions {
 
+class ActiveTabPermissionGranter;
 class Extension;
 
 // The ExtensionKeybindingRegistry is a class that handles the cross-platform
@@ -24,7 +25,24 @@ class Extension;
 // implementation details for each platform.
 class ExtensionKeybindingRegistry : public content::NotificationObserver {
  public:
-  explicit ExtensionKeybindingRegistry(Profile* profile);
+  enum ExtensionFilter {
+    ALL_EXTENSIONS,
+    PLATFORM_APPS_ONLY
+  };
+
+  class Delegate {
+   public:
+    // Gets the ActiveTabPermissionGranter for the active tab, if any.
+    // If there is no active tab then returns NULL.
+    virtual ActiveTabPermissionGranter* GetActiveTabPermissionGranter() = 0;
+  };
+
+  // If |extension_filter| is not ALL_EXTENSIONS, only keybindings by
+  // by extensions that match the filter will be registered.
+  ExtensionKeybindingRegistry(Profile* profile,
+                              ExtensionFilter extension_filter,
+                              Delegate* delegate);
+
   virtual ~ExtensionKeybindingRegistry();
 
   // Enables/Disables general shortcut handing in Chrome. Implemented in
@@ -44,7 +62,7 @@ class ExtensionKeybindingRegistry : public content::NotificationObserver {
       const Extension* extension,
       const std::string& command_name) = 0;
   // Remove extension bindings for |extension|. |command_name| is optional,
-  // but if not blank then only the command specified will be added.
+  // but if not blank then only the command specified will be removed.
   virtual void RemoveExtensionKeybinding(
       const Extension* extension,
       const std::string& command_name) = 0;
@@ -56,12 +74,25 @@ class ExtensionKeybindingRegistry : public content::NotificationObserver {
   // commands are currently ignored, since they are handled elsewhere.
   bool ShouldIgnoreCommand(const std::string& command) const;
 
+  // Notifies appropriate parties that a command has been executed.
+  void CommandExecuted(const std::string& extension_id,
+                       const std::string& command);
+
  private:
+  // Returns true if the |extension| matches our extension filter.
+  bool ExtensionMatchesFilter(const extensions::Extension* extension);
+
   // The content notification registrar for listening to extension events.
   content::NotificationRegistrar registrar_;
 
-  // Weak pointer to the our profile. Not owned by us.
+  // Weak pointer to our profile. Not owned by us.
   Profile* profile_;
+
+  // What extensions to register keybindings for.
+  ExtensionFilter extension_filter_;
+
+  // Weak pointer to our delegate. Not owned by us. Must outlive this class.
+  Delegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionKeybindingRegistry);
 };

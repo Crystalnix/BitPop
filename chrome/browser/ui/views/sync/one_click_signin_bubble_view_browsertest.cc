@@ -11,7 +11,6 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/common/page_transition_types.h"
 #include "ui/views/controls/button/text_button.h"
-#include "ui/views/events/event.h"
 
 class OneClickSigninBubbleViewBrowserTest : public InProcessBrowserTest {
  public:
@@ -69,7 +68,9 @@ IN_PROC_BROWSER_TEST_F(OneClickSigninBubbleViewBrowserTest, DISABLED_OkButton) {
   // Simulate pressing the OK button.  Set the message loop in the bubble
   // view so that it can be quit once the bubble is hidden.
   views::ButtonListener* listener = view;
-  const views::MouseEvent event(ui::ET_MOUSE_PRESSED, 0, 0, 0);
+  const ui::MouseEvent event(ui::ET_MOUSE_PRESSED,
+                             gfx::Point(), gfx::Point(),
+                             0);
   listener->ButtonPressed(view->ok_button_, event);
 
   // View should no longer be showing.  The message loop will exit once the
@@ -88,7 +89,9 @@ IN_PROC_BROWSER_TEST_F(OneClickSigninBubbleViewBrowserTest,
   // Simulate pressing the undo button.  Set the message loop in the bubble
   // view so that it can be quit once the bubble is hidden.
   views::ButtonListener* listener = view;
-  const views::MouseEvent event(ui::ET_MOUSE_PRESSED, 0, 0, 0);
+  const ui::MouseEvent event(ui::ET_MOUSE_PRESSED,
+                             gfx::Point(), gfx::Point(),
+                             0);
   listener->ButtonPressed(view->undo_button_, event);
 
   // View should no longer be showing.  The message loop will exit once the

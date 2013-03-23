@@ -31,11 +31,12 @@
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
+#include "net/proxy/proxy_service_v8.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "chrome/browser/importer/firefox_proxy_settings.h"
 #endif
 
@@ -93,7 +94,7 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
                             &host_resolver_tmp);
     if (rv != net::OK)
       return rv;  // Failure.
-    storage_.set_host_resolver(host_resolver_tmp.release());
+    storage_.set_host_resolver(host_resolver_tmp.Pass());
 
     // Create a custom ProxyService for this this experiment.
     scoped_ptr<net::ProxyService> experiment_proxy_service;
@@ -106,8 +107,10 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     // The rest of the dependencies are standard, and don't depend on the
     // experiment being run.
     storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
+#if !defined(DISABLE_FTP_SUPPORT)
     storage_.set_ftp_transaction_factory(
         new net::FtpNetworkLayer(host_resolver()));
+#endif
     storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
     storage_.set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
@@ -142,33 +145,35 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     // Create a vanilla HostResolver that disables caching.
     const size_t kMaxJobs = 50u;
     const size_t kMaxRetryAttempts = 4u;
-    net::HostResolver* impl = net::CreateNonCachingSystemHostResolver(
-        kMaxJobs,
-        kMaxRetryAttempts,
-        NULL /* NetLog */);
-
-    host_resolver->reset(impl);
+    net::HostResolver::Options options;
+    options.max_concurrent_resolves = kMaxJobs;
+    options.max_retry_attempts = kMaxRetryAttempts;
+    options.enable_caching = false;
+    scoped_ptr<net::HostResolver> resolver(
+        net::HostResolver::CreateSystemResolver(options, NULL /* NetLog */));
 
     // Modify it slightly based on the experiment being run.
     switch (experiment) {
       case ConnectionTester::HOST_RESOLVER_EXPERIMENT_PLAIN:
-        return net::OK;
+        break;
       case ConnectionTester::HOST_RESOLVER_EXPERIMENT_DISABLE_IPV6:
-        impl->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
-        return net::OK;
+        resolver->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
+        break;
       case ConnectionTester::HOST_RESOLVER_EXPERIMENT_IPV6_PROBE: {
         // Note that we don't use impl->ProbeIPv6Support() since that finishes
         // asynchronously and may not take effect in time for the test.
         // So instead we will probe synchronously (might take 100-200 ms).
         net::AddressFamily family = net::TestIPv6Support().ipv6_supported ?
             net::ADDRESS_FAMILY_UNSPECIFIED : net::ADDRESS_FAMILY_IPV4;
-        impl->SetDefaultAddressFamily(family);
-        return net::OK;
+        resolver->SetDefaultAddressFamily(family);
+        break;
       }
       default:
         NOTREACHED();
         return net::ERR_UNEXPECTED;
     }
+    host_resolver->swap(resolver);
+    return net::OK;
   }
 
   // Creates a proxy service for |experiment|. On success returns net::OK
@@ -191,15 +196,21 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
       dhcp_factory.set_enabled(false);
     }
 
+#if defined(OS_IOS)
     experiment_proxy_service->reset(
-        net::ProxyService::CreateUsingV8ProxyResolver(
-        proxy_config_service->release(),
-        0u,
-        new net::ProxyScriptFetcherImpl(proxy_request_context_),
-        dhcp_factory.Create(proxy_request_context_),
-        host_resolver(),
-        NULL,
-        NULL));
+        net::ProxyService::CreateUsingSystemProxyResolver(
+            proxy_config_service->release(), 0u, NULL));
+#else
+    experiment_proxy_service->reset(
+        net::CreateProxyServiceUsingV8ProxyResolver(
+            proxy_config_service->release(),
+            0u,
+            new net::ProxyScriptFetcherImpl(proxy_request_context_),
+            dhcp_factory.Create(proxy_request_context_),
+            host_resolver(),
+            NULL,
+            NULL));
+#endif
 
     return net::OK;
   }
@@ -221,7 +232,7 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
 #endif
   }
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
   static int FirefoxProxySettingsTask(
       FirefoxProxySettings* firefox_settings) {
     if (!FirefoxProxySettings::GetSettings(firefox_settings))
@@ -256,8 +267,8 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
   int CreateFirefoxProxyConfigService(
       scoped_ptr<net::ProxyConfigService>* config_service,
       base::Callback<void(int)> callback) {
-#if defined(OS_ANDROID)
-    // Chrome on Android does not support Firefox settings.
+#if defined(OS_ANDROID) || defined(OS_IOS)
+    // Chrome on Android and iOS do not support Firefox settings.
     return net::ERR_NOT_IMPLEMENTED;
 #else
     // Fetch Firefox's proxy settings (can fail if Firefox is not installed).
@@ -401,9 +412,7 @@ void ConnectionTester::TestRunner::ProxyConfigServiceCreated(
     return;
   }
   // Fetch a request using the experimental context.
-  request_.reset(new net::URLRequest(experiment.url,
-                                     this,
-                                     request_context_.get()));
+  request_.reset(request_context_->CreateRequest(experiment.url, this));
   request_->Start();
 }
 

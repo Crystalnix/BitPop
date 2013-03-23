@@ -5,12 +5,14 @@
 #include "chrome/browser/extensions/browser_action_test_util.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/browser_action_view.h"
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -34,13 +36,20 @@ int BrowserActionTestUtil::VisibleBrowserActions() {
 }
 
 ExtensionAction* BrowserActionTestUtil::GetExtensionAction(int index) {
-  return GetContainer(browser_)->GetBrowserActionViewAt(index)->
-          button()->extension()->browser_action();
+  return extensions::ExtensionActionManager::Get(browser_->profile())->
+      GetBrowserAction(*GetContainer(browser_)->GetBrowserActionViewAt(index)->
+                       button()->extension());
 }
 
 bool BrowserActionTestUtil::HasIcon(int index) {
   return GetContainer(browser_)->GetBrowserActionViewAt(index)->button()->
       HasIcon();
+}
+
+gfx::Image BrowserActionTestUtil::GetIcon(int index) {
+  gfx::ImageSkia icon = GetContainer(browser_)->GetBrowserActionViewAt(index)->
+      button()->GetIconForTest();
+  return gfx::Image(icon);
 }
 
 void BrowserActionTestUtil::Press(int index) {

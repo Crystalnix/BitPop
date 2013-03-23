@@ -82,16 +82,12 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   virtual void RecordUserMetrics(const std::string& action) = 0;
 
   // Asks the host to create a block of shared memory for the renderer.
-  // The shared memory handle allocated by the host is returned back.
-  virtual base::SharedMemoryHandle HostAllocateSharedMemoryBuffer(
-      uint32 buffer_size) = 0;
+  // The shared memory allocated by the host is returned back.
+  virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
+      size_t buffer_size) = 0;
 
   // Registers the given V8 extension with WebKit.
   virtual void RegisterExtension(v8::Extension* extension) = 0;
-
-  // Returns true iff the extension is registered.
-  virtual bool IsRegisteredExtension(
-      const std::string& v8_extension_name) const = 0;
 
   // Schedule a call to IdleHandler with the given initial delay.
   virtual void ScheduleIdleHandler(int64 initial_delay_ms) = 0;

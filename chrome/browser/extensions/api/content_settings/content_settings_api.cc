@@ -4,26 +4,30 @@
 
 #include "chrome/browser/extensions/api/content_settings/content_settings_api.h"
 
+#include <set>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "chrome/browser/content_settings/cookie_settings.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_api_constants.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_helpers.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
-#include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_preference_api_constants.h"
-#include "chrome/browser/extensions/extension_preference_helpers.h"
+#include "chrome/browser/extensions/api/preference/preference_api_constants.h"
+#include "chrome/browser/extensions/api/preference/preference_helpers.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/plugins/plugin_finder.h"
+#include "chrome/browser/plugins/plugin_installer.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/content_settings.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/plugin_service.h"
-#include "webkit/plugins/npapi/plugin_group.h"
+#include "extensions/common/error_utils.h"
 
 using content::BrowserThread;
 using content::PluginService;
@@ -31,12 +35,12 @@ using content::PluginService;
 namespace Clear = extensions::api::content_settings::ContentSetting::Clear;
 namespace Get = extensions::api::content_settings::ContentSetting::Get;
 namespace Set = extensions::api::content_settings::ContentSetting::Set;
-namespace pref_helpers = extension_preference_helpers;
-namespace pref_keys = extension_preference_api_constants;
+namespace pref_helpers = extensions::preference_helpers;
+namespace pref_keys = extensions::preference_api_constants;
 
 namespace {
 
-const std::vector<webkit::npapi::PluginGroup>* g_testing_plugin_groups_;
+const std::vector<webkit::WebPluginInfo>* g_testing_plugins_;
 
 bool RemoveContentType(ListValue* args, ContentSettingsType* content_type) {
   std::string content_type_str;
@@ -85,8 +89,8 @@ bool ClearContentSettingsFunction::RunImpl() {
     }
   }
 
-  ContentSettingsStore* store =
-      profile_->GetExtensionService()->GetContentSettingsStore();
+  ContentSettingsStore* store = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->GetContentSettingsStore();
   store->ClearContentSettingsForExtension(extension_id(), scope);
 
   return true;
@@ -101,7 +105,7 @@ bool GetContentSettingFunction::RunImpl() {
 
   GURL primary_url(params->details.primary_url);
   if (!primary_url.is_valid()) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(keys::kInvalidUrlError,
+    error_ = ErrorUtils::FormatErrorMessage(keys::kInvalidUrlError,
         params->details.primary_url);
     return false;
   }
@@ -110,7 +114,7 @@ bool GetContentSettingFunction::RunImpl() {
   if (params->details.secondary_url.get()) {
     secondary_url = GURL(*params->details.secondary_url);
     if (!secondary_url.is_valid()) {
-      error_ = ExtensionErrorUtils::FormatErrorMessage(keys::kInvalidUrlError,
+      error_ = ErrorUtils::FormatErrorMessage(keys::kInvalidUrlError,
         *params->details.secondary_url);
       return false;
     }
@@ -238,8 +242,8 @@ bool SetContentSettingFunction::RunImpl() {
     return false;
   }
 
-  ContentSettingsStore* store =
-      profile_->GetExtensionService()->GetContentSettingsStore();
+  ContentSettingsStore* store = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->GetContentSettingsStore();
   store->SetExtensionContentSetting(extension_id(), primary_pattern,
                                     secondary_pattern, content_type,
                                     resource_identifier, setting, scope);
@@ -250,29 +254,36 @@ bool GetResourceIdentifiersFunction::RunImpl() {
   ContentSettingsType content_type;
   EXTENSION_FUNCTION_VALIDATE(RemoveContentType(args_.get(), &content_type));
 
-  if (content_type == CONTENT_SETTINGS_TYPE_PLUGINS) {
-    if (g_testing_plugin_groups_) {
-      OnGotPluginGroups(*g_testing_plugin_groups_);
-    } else {
-      PluginService::GetInstance()->GetPluginGroups(
-          base::Bind(&GetResourceIdentifiersFunction::OnGotPluginGroups, this));
-    }
-  } else {
+  if (content_type != CONTENT_SETTINGS_TYPE_PLUGINS) {
     SendResponse(true);
+    return true;
   }
 
+  if (!g_testing_plugins_) {
+    PluginService::GetInstance()->GetPlugins(
+        base::Bind(&GetResourceIdentifiersFunction::OnGotPlugins, this));
+  } else {
+    OnGotPlugins(*g_testing_plugins_);
+  }
   return true;
 }
 
-void GetResourceIdentifiersFunction::OnGotPluginGroups(
-    const std::vector<webkit::npapi::PluginGroup>& groups) {
+void GetResourceIdentifiersFunction::OnGotPlugins(
+    const std::vector<webkit::WebPluginInfo>& plugins) {
+  PluginFinder* finder = PluginFinder::GetInstance();
+  std::set<std::string> group_identifiers;
   ListValue* list = new ListValue();
-  for (std::vector<webkit::npapi::PluginGroup>::const_iterator it =
-          groups.begin();
-       it != groups.end(); ++it) {
+  for (std::vector<webkit::WebPluginInfo>::const_iterator it = plugins.begin();
+       it != plugins.end(); ++it) {
+    scoped_ptr<PluginMetadata> plugin_metadata(finder->GetPluginMetadata(*it));
+    const std::string& group_identifier = plugin_metadata->identifier();
+    if (group_identifiers.find(group_identifier) != group_identifiers.end())
+      continue;
+
+    group_identifiers.insert(group_identifier);
     DictionaryValue* dict = new DictionaryValue();
-    dict->SetString(keys::kIdKey, it->identifier());
-    dict->SetString(keys::kDescriptionKey, it->GetGroupName());
+    dict->SetString(keys::kIdKey, group_identifier);
+    dict->SetString(keys::kDescriptionKey, plugin_metadata->name());
     list->Append(dict);
   }
   SetResult(list);
@@ -282,9 +293,9 @@ void GetResourceIdentifiersFunction::OnGotPluginGroups(
 }
 
 // static
-void GetResourceIdentifiersFunction::SetPluginGroupsForTesting(
-    const std::vector<webkit::npapi::PluginGroup>* plugin_groups) {
-  g_testing_plugin_groups_ = plugin_groups;
+void GetResourceIdentifiersFunction::SetPluginsForTesting(
+    const std::vector<webkit::WebPluginInfo>* plugins) {
+  g_testing_plugins_ = plugins;
 }
 
 }  // namespace extensions

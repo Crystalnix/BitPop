@@ -37,6 +37,7 @@
 #include "chrome_frame/policy_settings.h"
 #include "chrome_frame/registry_list_preferences_holder.h"
 #include "chrome_frame/simple_resource_loader.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon.h"
 #include "grit/chromium_strings.h"
@@ -295,10 +296,9 @@ HRESULT UtilGetXUACompatContentValue(const std::wstring& html_string,
 void DisplayVersionMismatchWarning(HWND parent,
                                    const std::string& server_version) {
   // Obtain the current module version.
-  FileVersionInfo* file_version_info =
-      FileVersionInfo::CreateFileVersionInfoForCurrentModule();
-  DCHECK(file_version_info);
-  std::wstring version_string(file_version_info->file_version());
+  scoped_ptr<FileVersionInfo> module_version_info(
+      FileVersionInfo::CreateFileVersionInfoForCurrentModule());
+  string16 version_string(module_version_info->file_version());
   std::wstring wide_server_version;
   if (server_version.empty()) {
     wide_server_version = SimpleResourceLoader::Get(IDS_VERSIONUNKNOWN);
@@ -975,7 +975,7 @@ bool IsValidUrlScheme(const GURL& url, bool is_privileged) {
 
   if (is_privileged &&
       (url.SchemeIs(chrome::kDataScheme) ||
-       url.SchemeIs(chrome::kExtensionScheme)))
+       url.SchemeIs(extensions::kExtensionScheme)))
     return true;
 
   return false;

@@ -14,7 +14,6 @@
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -24,7 +23,7 @@
 #include "content/public/browser/web_contents.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_payload_map.h"
+#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/protocol/session_specifics.pb.h"
@@ -39,17 +38,14 @@ namespace {
 
 // The URL at which the set of synced tabs is displayed. We treat it differently
 // from all other URL's as accessing it triggers a sync refresh of Sessions.
-static const char kNTPOpenTabSyncURL[] = "chrome://newtab/#opentabs";
+static const char kNTPOpenTabSyncURL[] = "chrome://newtab/#open_tabs";
 
 // Extract the source SyncedTabDelegate from a NotificationSource originating
 // from a NavigationController, if it exists. Returns |NULL| otherwise.
 SyncedTabDelegate* ExtractSyncedTabDelegate(
     const content::NotificationSource& source) {
-  TabContents* tab = TabContents::FromWebContents(
+  return TabContentsSyncedTabDelegate::FromWebContents(
       content::Source<NavigationController>(source).ptr()->GetWebContents());
-  if (!tab)
-    return NULL;
-  return tab->synced_tab_delegate();
 }
 
 }  // namespace
@@ -88,7 +84,6 @@ void SessionChangeProcessor::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(running());
   DCHECK(profile_);
 
   // Track which windows and/or tabs are modified.
@@ -112,8 +107,9 @@ void SessionChangeProcessor::Observe(
     }
 
     case chrome::NOTIFICATION_TAB_PARENTED: {
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
       SyncedTabDelegate* tab =
-          content::Source<TabContents>(source).ptr()->synced_tab_delegate();
+          TabContentsSyncedTabDelegate::FromWebContents(web_contents);
       if (!tab || tab->profile() != profile_) {
         return;
       }
@@ -123,12 +119,9 @@ void SessionChangeProcessor::Observe(
     }
 
     case content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME: {
-      TabContents* tab_contents = TabContents::FromWebContents(
-          content::Source<WebContents>(source).ptr());
-      if (!tab_contents) {
-        return;
-      }
-      SyncedTabDelegate* tab = tab_contents->synced_tab_delegate();
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
+      SyncedTabDelegate* tab =
+          TabContentsSyncedTabDelegate::FromWebContents(web_contents);
       if (!tab || tab->profile() != profile_) {
         return;
       }
@@ -137,14 +130,14 @@ void SessionChangeProcessor::Observe(
       break;
     }
 
-    case chrome::NOTIFICATION_TAB_CONTENTS_DESTROYED: {
-      TabContents* tab_contents = content::Source<TabContents>(source).ptr();
-      SyncedTabDelegate* tab = tab_contents->synced_tab_delegate();
-      if (!tab || tab->profile() != profile_) {
+    case content::NOTIFICATION_WEB_CONTENTS_DESTROYED: {
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
+      SyncedTabDelegate* tab =
+          TabContentsSyncedTabDelegate::FromWebContents(web_contents);
+      if (!tab || tab->profile() != profile_)
         return;
-      }
       modified_tabs.push_back(tab);
-      DVLOG(1) << "Received NOTIFICATION_TAB_CONTENTS_DESTROYED for profile "
+      DVLOG(1) << "Received NOTIFICATION_WEB_CONTENTS_DESTROYED for profile "
                << profile_;
       break;
     }
@@ -182,14 +175,14 @@ void SessionChangeProcessor::Observe(
     case chrome::NOTIFICATION_TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED: {
       extensions::TabHelper* extension_tab_helper =
           content::Source<extensions::TabHelper>(source).ptr();
-      if (!extension_tab_helper ||
-          extension_tab_helper->web_contents()->GetBrowserContext() !=
+      if (extension_tab_helper->web_contents()->GetBrowserContext() !=
               profile_) {
         return;
       }
       if (extension_tab_helper->extension_app()) {
-        modified_tabs.push_back(extension_tab_helper->tab_contents()->
-            synced_tab_delegate());
+        SyncedTabDelegate* tab = TabContentsSyncedTabDelegate::FromWebContents(
+            extension_tab_helper->web_contents());
+        modified_tabs.push_back(tab);
       }
       DVLOG(1) << "Received TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED "
                << "for profile " << profile_;
@@ -213,13 +206,14 @@ void SessionChangeProcessor::Observe(
         entry->GetVirtualURL().is_valid() &&
         entry->GetVirtualURL().spec() == kNTPOpenTabSyncURL) {
       DVLOG(1) << "Triggering sync refresh for sessions datatype.";
-      const syncer::ModelType type = syncer::SESSIONS;
-      syncer::ModelTypePayloadMap payload_map;
-      payload_map[type] = "";
+      const syncer::ModelTypeSet types(syncer::SESSIONS);
+      const syncer::ModelTypeInvalidationMap& invalidation_map =
+          ModelTypeSetToInvalidationMap(types, std::string());
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,
           content::Source<Profile>(profile_),
-          content::Details<const syncer::ModelTypePayloadMap>(&payload_map));
+          content::Details<const syncer::ModelTypeInvalidationMap>(
+              &invalidation_map));
     }
   }
 
@@ -242,7 +236,7 @@ void SessionChangeProcessor::Observe(
     LOG(WARNING) << "Reassociation of local models triggered.";
     syncer::SyncError error;
     error = session_model_associator_->DisassociateModels();
-    error = session_model_associator_->AssociateModels();
+    error = session_model_associator_->AssociateModels(NULL, NULL);
     if (error.IsSet()) {
       error_handler()->OnSingleDatatypeUnrecoverableError(
           error.location(),
@@ -253,11 +247,9 @@ void SessionChangeProcessor::Observe(
 
 void SessionChangeProcessor::ApplyChangesFromSyncModel(
     const syncer::BaseTransaction* trans,
+    int64 model_version,
     const syncer::ImmutableChangeRecordList& changes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!running()) {
-    return;
-  }
 
   ScopedStopObserving<SessionChangeProcessor> stop_observing(this);
 
@@ -335,19 +327,14 @@ void SessionChangeProcessor::StartImpl(Profile* profile) {
   StartObserving();
 }
 
-void SessionChangeProcessor::StopImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  StopObserving();
-  profile_ = NULL;
-}
-
 void SessionChangeProcessor::StartObserving() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!profile_)
     return;
   notification_registrar_.Add(this, chrome::NOTIFICATION_TAB_PARENTED,
       content::NotificationService::AllSources());
-  notification_registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_DESTROYED,
+  notification_registrar_.Add(this,
+      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
       content::NotificationService::AllSources());
   notification_registrar_.Add(this, content::NOTIFICATION_NAV_LIST_PRUNED,
       content::NotificationService::AllSources());

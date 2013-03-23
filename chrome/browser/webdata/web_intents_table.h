@@ -62,9 +62,8 @@ class WebIntentsTable : public WebDatabaseTable {
   // If |service| already exists, replaces it.
   bool SetWebIntentService(const webkit_glue::WebIntentServiceData& service);
 
-  // TODO(smckay): rename to GetWebIntentServicesForAction
   // Retrieve all |services| from WebIntents table that match |action|.
-  bool GetWebIntentServices(
+  bool GetWebIntentServicesForAction(
       const string16& action,
       std::vector<webkit_glue::WebIntentServiceData>* services);
 
@@ -104,6 +103,9 @@ class WebIntentsTable : public WebDatabaseTable {
   // Removes a default |service| from table - must match the action, type,
   // and url_pattern parameters exactly.
   bool RemoveDefaultService(const DefaultWebIntentService& default_service);
+
+  // Removes all default services associated with |service_url|.
+  bool RemoveServiceDefaults(const GURL& service_url);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WebIntentsTable);

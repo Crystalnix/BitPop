@@ -18,7 +18,9 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_field_trial.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/in_memory_url_index_types.h"
@@ -36,6 +38,7 @@
 #include "googleurl/src/url_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
 using history::InMemoryURLIndex;
 using history::ScoredHistoryMatch;
@@ -46,7 +49,8 @@ bool HistoryQuickProvider::disabled_ = false;
 HistoryQuickProvider::HistoryQuickProvider(
     AutocompleteProviderListener* listener,
     Profile* profile)
-    : HistoryProvider(listener, profile, "HistoryQuick"),
+    : HistoryProvider(listener, profile,
+          AutocompleteProvider::TYPE_HISTORY_QUICK),
       languages_(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
       reorder_for_inlining_(false) {
   enum InliningOption {
@@ -147,8 +151,13 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
   }
 }
 
-// TODO(mrossetti): Implement this function. (Will happen in next CL.)
-void HistoryQuickProvider::DeleteMatch(const AutocompleteMatch& match) {}
+void HistoryQuickProvider::DeleteMatch(const AutocompleteMatch& match) {
+  DCHECK(match.deletable);
+  DCHECK(match.destination_url.is_valid());
+  // Delete the match from the InMemoryURLIndex.
+  GetIndex()->DeleteURL(match.destination_url);
+  DeleteMatchFromMatches(match);
+}
 
 HistoryQuickProvider::~HistoryQuickProvider() {}
 
@@ -176,6 +185,91 @@ void HistoryQuickProvider::DoAutocomplete() {
     }
   }
 
+  // Figure out if HistoryURL provider has a URL-what-you-typed match
+  // that ought to go first and what its score will be.
+  bool will_have_url_what_you_typed_match_first = false;
+  int url_what_you_typed_match_score = -1;  // undefined
+  // These are necessary (but not sufficient) conditions for the omnibox
+  // input to be a URL-what-you-typed match.  The username test checks that
+  // either the username does not exist (a regular URL such as http://site/)
+  // or, if the username exists (http://user@site/), there must be either
+  // a password or a port.  Together these exclude pure username@site
+  // inputs because these are likely to be an e-mail address.  HistoryURL
+  // provider won't promote the URL-what-you-typed match to first
+  // for these inputs.
+  const bool can_have_url_what_you_typed_match_first =
+      autocomplete_input_.canonicalized_url().is_valid() &&
+      (autocomplete_input_.type() != AutocompleteInput::QUERY) &&
+      (autocomplete_input_.type() != AutocompleteInput::FORCED_QUERY) &&
+      (!autocomplete_input_.parts().username.is_nonempty() ||
+       autocomplete_input_.parts().password.is_nonempty() ||
+       autocomplete_input_.parts().path.is_nonempty());
+  if (can_have_url_what_you_typed_match_first) {
+    HistoryService* const history_service =
+        HistoryServiceFactory::GetForProfile(profile_,
+                                             Profile::EXPLICIT_ACCESS);
+    // We expect HistoryService to be available.  In case it's not,
+    // (e.g., due to Profile corruption) we let HistoryQuick provider
+    // completions (which may be available because it's a different
+    // data structure) compete with the URL-what-you-typed match as
+    // normal.
+    if (history_service) {
+      history::URLDatabase* url_db = history_service->InMemoryDatabase();
+      // url_db can be NULL if it hasn't finished initializing (or
+      // failed to to initialize).  In this case, we let HistoryQuick
+      // provider completions compete with the URL-what-you-typed
+      // match as normal.
+      if (url_db) {
+        const std::string host(UTF16ToUTF8(autocomplete_input_.text().substr(
+            autocomplete_input_.parts().host.begin,
+            autocomplete_input_.parts().host.len)));
+        // We want to put the URL-what-you-typed match first if either
+        // * the user visited the URL before (intranet or internet).
+        // * it's a URL on a host that user visited before and this
+        //   is the root path of the host.  (If the user types some
+        //   of a path--more than a simple "/"--we let autocomplete compete
+        //   normally with the URL-what-you-typed match.)
+        // TODO(mpearson): Remove this hacky code and simply score URL-what-
+        // you-typed in some sane way relative to possible completions:
+        // URL-what-you-typed should get some sort of a boost relative
+        // to completions, but completions should naturally win if
+        // they're a lot more popular.  In this process, if the input
+        // is a bare intranet hostname that has been visited before, we
+        // may want to enforce that the only completions that can outscore
+        // the URL-what-you-typed match are on the same host (i.e., aren't
+        // from a longer internet hostname for which the omnibox input is
+        // a prefix).
+        if (url_db->GetRowForURL(
+            autocomplete_input_.canonicalized_url(), NULL) != 0) {
+          // We visited this URL before.
+          will_have_url_what_you_typed_match_first = true;
+          // HistoryURLProvider gives visited what-you-typed URLs a high score.
+          url_what_you_typed_match_score =
+              HistoryURLProvider::kScoreForBestInlineableResult;
+        } else if (url_db->IsTypedHost(host) &&
+             (!autocomplete_input_.parts().path.is_nonempty() ||
+              ((autocomplete_input_.parts().path.len == 1) &&
+               (autocomplete_input_.text()[
+                   autocomplete_input_.parts().path.begin] == '/'))) &&
+             !autocomplete_input_.parts().query.is_nonempty() &&
+             !autocomplete_input_.parts().ref.is_nonempty()) {
+          // Not visited, but we've seen the host before.
+          will_have_url_what_you_typed_match_first = true;
+          if (net::RegistryControlledDomainService::GetRegistryLength(
+              host, false) == 0) {
+            // Known intranet hosts get one score.
+            url_what_you_typed_match_score =
+                HistoryURLProvider::kScoreForUnvisitedIntranetResult;
+          } else {
+            // Known internet hosts get another.
+            url_what_you_typed_match_score =
+                HistoryURLProvider::kScoreForWhatYouTypedResult;
+          }
+        }
+      }
+    }
+  }
+
   // Loop over every result and add it to matches_.  In the process,
   // guarantee that scores are decreasing.  |max_match_score| keeps
   // track of the highest score we can assign to any later results we
@@ -184,11 +278,19 @@ void HistoryQuickProvider::DoAutocomplete() {
   // artificially reduce the starting |max_match_score| (which
   // therefore applies to all results) to something low enough that
   // guarantees no result will be offered as an autocomplete
-  // suggestion.
+  // suggestion.  Also do a similar reduction if we think there will be
+  // a URL-what-you-typed match.  (We want URL-what-you-typed matches for
+  // visited URLs to beat out any longer URLs, no matter how frequently
+  // they're visited.)  The strength of this last reduction depends on the
+  // likely score for the URL-what-you-typed result.
   int max_match_score = (PreventInlineAutocomplete(autocomplete_input_) ||
       !matches.begin()->can_inline) ?
       (AutocompleteResult::kLowestDefaultScore - 1) :
       matches.begin()->raw_score;
+  if (will_have_url_what_you_typed_match_first) {
+    max_match_score = std::min(max_match_score,
+        url_what_you_typed_match_score - 1);
+  }
   for (ScoredHistoryMatches::const_iterator match_iter = matches.begin();
        match_iter != matches.end(); ++match_iter) {
     const ScoredHistoryMatch& history_match(*match_iter);

@@ -46,6 +46,9 @@ class FakeServerSocket : public net::ServerSocket {
   }
 
   // net::ServerSocket implementation.
+  virtual void AllowAddressReuse() {
+  }
+
   virtual int Listen(const net::IPEndPoint& address, int backlog) OVERRIDE {
     local_address_ = address;
     listening_ = true;
@@ -90,7 +93,7 @@ class P2PSocketHostTcpServerTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     socket_ = new FakeServerSocket();
-    socket_host_.reset(new P2PSocketHostTcpServer(&sender_, 0, 0));
+    socket_host_.reset(new P2PSocketHostTcpServer(&sender_, 0));
     socket_host_->socket_.reset(socket_);
 
     EXPECT_CALL(sender_, Send(

@@ -31,9 +31,9 @@ AutofillField::AutofillField()
       phone_part_(IGNORED) {
 }
 
-AutofillField::AutofillField(const webkit::forms::FormField& field,
+AutofillField::AutofillField(const FormFieldData& field,
                              const string16& unique_name)
-    : webkit::forms::FormField(field),
+    : FormFieldData(field),
       unique_name_(unique_name),
       server_type_(NO_SERVER_DATA),
       heuristic_type_(UNKNOWN_TYPE),
@@ -74,8 +74,7 @@ bool AutofillField::IsEmpty() const {
 
 std::string AutofillField::FieldSignature() const {
   std::string field_name = UTF16ToUTF8(name);
-  std::string type = UTF16ToUTF8(form_control_type);
-  std::string field_string = field_name + "&" + type;
+  std::string field_string = field_name + "&" + form_control_type;
   return Hash32Bit(field_string);
 }
 

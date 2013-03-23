@@ -9,25 +9,31 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_value_map.h"
 #include "base/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/cros/onc_constants.h"
-#include "chrome/browser/chromeos/cros/onc_network_parser.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/prefs/pref_value_map.h"
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/network/onc/onc_constants.h"
+#include "chromeos/network/onc/onc_signature.h"
+#include "chromeos/network/onc/onc_utils.h"
+#include "chromeos/network/onc/onc_validator.h"
 #include "grit/generated_resources.h"
 #include "policy/policy_constants.h"
 
 namespace onc = chromeos::onc;
 
+namespace {
+
+}  // namespace
+
 namespace policy {
 
 NetworkConfigurationPolicyHandler::NetworkConfigurationPolicyHandler(
     const char* policy_name,
-    chromeos::NetworkUIData::ONCSource onc_source)
+    chromeos::onc::ONCSource onc_source)
     : TypeCheckingPolicyHandler(policy_name, base::Value::TYPE_STRING),
       onc_source_(onc_source) {}
 
@@ -43,14 +49,33 @@ bool NetworkConfigurationPolicyHandler::CheckPolicySettings(
   if (value) {
     std::string onc_blob;
     value->GetAsString(&onc_blob);
-    // Policy-based ONC blobs cannot have a passphrase.
-    chromeos::OncNetworkParser parser(onc_blob, "", onc_source_);
-    if (!parser.parse_error().empty()) {
-      errors->AddError(policy_name(),
-                       IDS_POLICY_NETWORK_CONFIG_PARSE_ERROR,
-                       parser.parse_error());
+    scoped_ptr<base::DictionaryValue> root_dict =
+        onc::ReadDictionaryFromJson(onc_blob);
+    if (root_dict.get() == NULL) {
+      errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_PARSE_FAILED);
       return false;
     }
+
+    // Validate the ONC dictionary. We are liberal and ignore unknown field
+    // names and ignore invalid field names in kRecommended arrays.
+    onc::Validator validator(false,  // Ignore unknown fields.
+                             false,  // Ignore invalid recommended field names.
+                             true,  // Fail on missing fields.
+                             true);  // Validate for managed ONC
+
+    // ONC policies are always unencrypted.
+    onc::Validator::Result validation_result;
+    root_dict = validator.ValidateAndRepairObject(
+        &onc::kToplevelConfigurationSignature, *root_dict, &validation_result);
+    if (validation_result == onc::Validator::VALID_WITH_WARNINGS) {
+      errors->AddError(policy_name(),
+                       IDS_POLICY_NETWORK_CONFIG_IMPORT_PARTIAL);
+    } else if (validation_result == onc::Validator::INVALID) {
+      errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_IMPORT_FAILED);
+    }
+
+    // In any case, don't reject the policy as some networks or certificates
+    // could still be applied.
   }
 
   return true;

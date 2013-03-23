@@ -12,8 +12,6 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
 
-class RenderViewImpl;
-
 namespace ppapi {
 namespace host {
 class PpapiHost;
@@ -24,17 +22,21 @@ namespace WebKit {
 class WebDataSource;
 class WebFrame;
 class WebFormElement;
+class WebGestureEvent;
 class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebNode;
 class WebTouchEvent;
 class WebURL;
+struct WebContextMenuData;
 struct WebURLError;
 }
 
 namespace content {
 
+class RendererPpapiHost;
 class RenderView;
+class RenderViewImpl;
 
 // Base class for objects that want to filter incoming IPCs, and also get
 // notified of changes to the frame.
@@ -48,8 +50,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match the WebKit API notifications
   virtual void DidStartLoading() {}
   virtual void DidStopLoading() {}
-  virtual void DidChangeIcon(WebKit::WebFrame* frame,
-                             WebKit::WebIconURL::Type) {}
   virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) {}
   virtual void DidFailLoad(WebKit::WebFrame* frame,
                            const WebKit::WebURLError& error) {}
@@ -67,26 +67,32 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   virtual void DidCompleteClientRedirect(WebKit::WebFrame* frame,
                                          const WebKit::WebURL& from) {}
   virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) {}
+  virtual void FrameCreated(WebKit::WebFrame* parent,
+                            WebKit::WebFrame* frame) {}
   virtual void FrameDetached(WebKit::WebFrame* frame) {}
   virtual void FrameWillClose(WebKit::WebFrame* frame) {}
   virtual void WillSubmitForm(WebKit::WebFrame* frame,
                               const WebKit::WebFormElement& form) {}
   virtual void DidCreateDataSource(WebKit::WebFrame* frame,
                                    WebKit::WebDataSource* ds) {}
-  virtual void PrintPage(WebKit::WebFrame* frame) {}
+  virtual void PrintPage(WebKit::WebFrame* frame, bool user_initiated) {}
   virtual void FocusedNodeChanged(const WebKit::WebNode& node) {}
   virtual void WillCreateMediaPlayer(WebKit::WebFrame* frame,
                                      WebKit::WebMediaPlayerClient* client) {}
   virtual void ZoomLevelChanged() {};
   virtual void DidChangeScrollOffset(WebKit::WebFrame* frame) {}
+  virtual void DraggableRegionsChanged(WebKit::WebFrame* frame) {}
+  virtual void DidRequestShowContextMenu(
+      WebKit::WebFrame* frame,
+      const WebKit::WebContextMenuData& data) {}
 
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) {}
   virtual void DidHandleTouchEvent(const WebKit::WebTouchEvent& event) {}
-  virtual void DidCreatePepperPlugin(ppapi::host::PpapiHost* host) {}
+  virtual void DidHandleGestureEvent(const WebKit::WebGestureEvent& event) {}
+  virtual void DidCreatePepperPlugin(RendererPpapiHost* host) {}
 
   // These match incoming IPCs.
-  virtual void ContextMenuAction(unsigned id) {}
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
 
@@ -100,11 +106,11 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
-  RenderView* render_view();
+  RenderView* render_view() const;
   int routing_id() { return routing_id_; }
 
  private:
-  friend class ::RenderViewImpl;
+  friend class RenderViewImpl;
 
   // This is called by the RenderView when it's going away so that this object
   // can null out its pointer.

@@ -726,6 +726,40 @@ class TypingTest(ChromeDriverTest):
     area_elem.send_keys('much ')
     self.assertEquals('much more text', area_elem.get_attribute('value'))
 
+  def testWithWebWidgets(self):
+    def SetHTML(html):
+      """Sets the page HTML.
+
+      The given HTML should not contain single quotes.
+      """
+      assert '\'' not in html
+      self._driver.execute_script('document.body.innerHTML = \'%s\'' % html)
+    SetHTML('<input type="checkbox">check</input>')
+    elem = self._driver.find_element_by_tag_name('input')
+    elem.send_keys(' ')
+    self.assertTrue(elem.is_selected())
+    elem.send_keys(' ')
+    self.assertFalse(elem.is_selected())
+
+    SetHTML('<input type="radio" name="g" checked>1</input>' +
+            '<input type="radio" name="g">2</input>')
+    elem1, elem2 = self._driver.find_elements_by_tag_name('input')
+    elem1.send_keys(Keys.RIGHT)
+    self.assertTrue(elem2.is_selected())
+    elem2.send_keys(Keys.LEFT)
+    self.assertFalse(elem2.is_selected())
+
+    SetHTML('<select><option>a</option><option>b</option></select>')
+    elem = self._driver.find_element_by_tag_name('select')
+    elem.send_keys('b')
+    self.assertEquals('b', elem.get_attribute('value'))
+
+    handler = 'javascript:document.title=\\x27success\\x27'
+    SetHTML('<input type="button" onclick="%s"></input>' % handler)
+    elem = self._driver.find_element_by_tag_name('input')
+    elem.send_keys(' ')
+    self.assertEquals('success', self._driver.title)
+
 
 class UrlBaseTest(ChromeDriverTest):
   """Tests that the server can be configured for a different URL base."""
@@ -1036,6 +1070,7 @@ class GeolocationTest(ChromeDriverTest):
   def testGeolocation(self):
     """Tests the get and set geolocation commands."""
     driver = self.GetNewDriver()
+    driver.get(self.GetTestDataUrl() + '/empty.html')
 
     # TODO(kkania): Update the python bindings and get rid of these.
     driver.command_executor._commands.update({
@@ -1068,6 +1103,8 @@ class ExtensionTest(ChromeDriverTest):
       '/infobar_browser_action_extension'
   PAGE_ACTION_EXTENSION = test_paths.TEST_DATA_PATH + \
       '/page_action_extension'
+  APP_SHELL = test_paths.TEST_DATA_PATH + \
+      '/app_shell_extension'
 
   def testExtensionInstallAndUninstall(self):
     driver = self.GetNewDriver()
@@ -1138,6 +1175,20 @@ class ExtensionTest(ChromeDriverTest):
     ext.click_page_action()
     self._testExtensionView(driver, ext.get_popup_handle(), ext)
 
+  def testAppShellView(self):
+    driver = self.GetNewDriver({'chrome.switches':
+                                ['enable-experimental-extension-apis']})
+    ext = driver.install_extension(self.APP_SHELL)
+
+    # Navigates to the new tab page to launch the app.
+    driver.get('chrome:newtab')
+    app = driver.find_element_by_xpath("//div[@title='App Shell']")
+    app.click()
+    def is_app_window_launched(driver):
+      return ext.get_app_shell_handle() is not None
+    WebDriverWait(driver, 10).until(is_app_window_launched)
+    self._testExtensionView(driver, ext.get_app_shell_handle(), ext)
+
 
 class BadJSTest(ChromeDriverTest):
   """Tests that ensure sites with hacky JS don't break ChromeDriver."""
@@ -1158,6 +1209,8 @@ class ContentSettingsTest(ChromeDriverTest):
     driver.execute_script('window.open("about:blank")')
     self.assertEquals(2, len(driver.window_handles))
 
+  # Failing on win7: crbug.com/141231.
+  @SkipIf(util.IsWin())
   def testPopupsCanBeResized(self):
     """Regression test for chromedriver issue 126."""
     driver = self.GetNewDriver()

@@ -109,7 +109,7 @@ void CriticalNotificationBubbleView::OnCountdown() {
 }
 
 void CriticalNotificationBubbleView::ButtonPressed(
-    views::Button* sender, const views::Event& event) {
+    views::Button* sender, const ui::Event& event) {
   // Let other bubbles know we have an answer from the user.
   UpgradeDetector::GetInstance()->acknowledge_critical_update();
 
@@ -193,7 +193,7 @@ void CriticalNotificationBubbleView::Init() {
 
   views::Label* message = new views::Label();
   message->SetMultiLine(true);
-  message->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  message->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   message->SetText(l10n_util::GetStringFUTF16(IDS_CRITICAL_NOTIFICATION_TEXT,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
   message->SizeToFit(views::Widget::GetLocalizedContentsWidth(

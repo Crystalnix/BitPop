@@ -6,8 +6,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/platform_file.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -39,7 +39,7 @@ using testing::ElementsAreArray;
 using testing::Pointee;
 using testing::Property;
 using testing::WithArg;
-using webkit::forms::PasswordForm;
+using content::PasswordForm;
 
 typedef std::vector<PasswordForm*> VectorOfForms;
 
@@ -50,6 +50,8 @@ class MockPasswordStoreConsumer : public PasswordStoreConsumer {
   MOCK_METHOD2(OnPasswordStoreRequestDone,
                void(CancelableRequestProvider::Handle,
                     const std::vector<PasswordForm*>&));
+  MOCK_METHOD1(OnGetPasswordStoreResults,
+               void(const std::vector<PasswordForm*>&));
 };
 
 // This class will add and remove a mock notification observer from
@@ -298,7 +300,7 @@ class PasswordStoreXTest : public testing::TestWithParam<BackendType> {
 
   scoped_ptr<LoginDatabase> login_db_;
   scoped_ptr<TestingProfile> profile_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 };
 
 ACTION(STLDeleteElements0) {

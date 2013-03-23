@@ -21,11 +21,10 @@ function PhotoImport(dom, filesystem, params) {
   this.volumeManager_ = new VolumeManager();
   this.copyManager_ = FileCopyManagerWrapper.getInstance(this.filesystem_.root);
   this.mediaFilesList_ = null;
-  this.albums_ = null;
-  this.albumsDir_ = null;
+  this.destination_ = null;
 
   this.initDom_();
-  this.initAlbums_();
+  this.initDestination_();
   this.loadSource_(params.source);
 }
 
@@ -65,16 +64,6 @@ PhotoImport.load = function(opt_filesystem, opt_params) {
   api.getStrings(function(strings) {
     loadTimeData.data = strings;
 
-    // TODO(dgozman): remove when all strings finalized.
-    var original = loadTimeData.getString;
-    loadTimeData.getString = function(s) {
-      return original.call(loadTimeData, s) || s;
-    };
-    var originalF = loadTimeData.getStringF;
-    loadTimeData.getStringF = function() {
-      return originalF.apply(loadTimeData, arguments) || arguments[0];
-    };
-
     if (opt_filesystem) {
       onFilesystem(opt_filesystem);
     } else {
@@ -94,60 +83,54 @@ PhotoImport.prototype.initDom_ = function() {
 
   this.spinner_ = this.dom_.querySelector('.spinner');
 
-  this.title_ = this.dom_.querySelector('.title');
+  this.document_.querySelector('title').textContent =
+      loadTimeData.getString('PHOTO_IMPORT_TITLE');
+  this.dom_.querySelector('.caption').textContent =
+      loadTimeData.getString('PHOTO_IMPORT_CAPTION');
+  this.selectAllNone_ = this.dom_.querySelector('.select');
+  this.selectAllNone_.addEventListener('click',
+      this.onSelectAllNone_.bind(this));
+
+  this.dom_.querySelector('label[for=delete-after-checkbox]').textContent =
+      loadTimeData.getString('PHOTO_IMPORT_DELETE_AFTER');
+  this.selectedCount_ = this.dom_.querySelector('.selected-count');
+
   this.importButton_ = this.dom_.querySelector('button.import');
   this.importButton_.textContent =
       loadTimeData.getString('PHOTO_IMPORT_IMPORT_BUTTON');
   this.importButton_.addEventListener('click', this.onImportClick_.bind(this));
 
-  // TODO(dgozman): add shades at top and bottom of the list.
   this.grid_ = this.dom_.querySelector('grid');
   cr.ui.Grid.decorate(this.grid_);
-  this.grid_.redraw = cr.ui.List.prototype.redraw;
-  this.grid_.createSelectionController = function(sm) {
-    return new GridSelectionController(sm, this);
-  };
-
-  this.onResize_();  // To set columns number.
-  this.grid_.itemConstructor =
-      GridItem.bind(null, this);
+  this.grid_.itemConstructor = GridItem.bind(null, this);
   this.fileList_ = new cr.ui.ArrayDataModel([]);
   this.grid_.selectionModel = new cr.ui.ListSelectionModel();
   this.grid_.dataModel = this.fileList_;
-
   this.grid_.selectionModel.addEventListener('change',
       this.onSelectionChanged_.bind(this));
   this.onSelectionChanged_();
 
-  this.selectAlbumDialog_ = new SelectAlbumDialog(this.dom_);
+  this.importingDialog_ = new ImportingDialog(this.dom_, this.copyManager_,
+      this.metadataCache_);
 };
 
 /**
- * One-time initialization of albums.
+ * One-time initialization of destination directory.
  * @private
  */
-PhotoImport.prototype.initAlbums_ = function() {
+PhotoImport.prototype.initDestination_ = function() {
   var onError = this.onError_.bind(
-      this, loadTimeData.getString('PHOTO_IMPORT_GDATA_ERROR'));
+      this, loadTimeData.getString('PHOTO_IMPORT_DRIVE_ERROR'));
 
-  var albums = [];
-
-  var onEntry = function(entry) {
-    if (entry != null) {
-      albums.push(entry);
-    } else {
-      this.albums_ = albums;
-    }
-  }.bind(this);
-
-  var onGData = function(gdata) {
-    this.albumsDir_ = gdata;
-    util.forEachDirEntry(gdata, onEntry);
+  var onDirectory = function(dir) {
+    this.destination_ = dir;
+    // This may enable the import button, so check that.
+    this.onSelectionChanged_();
   }.bind(this);
 
   var onMounted = function() {
     var dir = PathUtil.join(RootDirectory.GDATA, PhotoImport.GDATA_PHOTOS_DIR);
-    util.resolvePath(this.filesystem_.root, dir, onGData, onError);
+    util.getOrCreateDirectory(this.filesystem_.root, dir, onDirectory, onError);
   }.bind(this);
 
   if (this.volumeManager_.isMounted(RootDirectory.GDATA)) {
@@ -166,12 +149,12 @@ PhotoImport.prototype.loadSource_ = function(source) {
   var onTraversed = function(results) {
     this.dom_.removeAttribute('loading');
     this.mediaFilesList_ = results.filter(FileType.isImageOrVideo);
-    this.makeFileGroups_();
+    this.fillGrid_();
   }.bind(this);
 
   var onEntry = function(entry) {
-    this.title_.textContent = entry.name;
-    util.traverseTree(entry, onTraversed, 0 /* infinite depth */);
+    util.traverseTree(entry, onTraversed, 0 /* infinite depth */,
+        FileType.isVisible);
   }.bind(this);
 
   var onError = this.onError_.bind(
@@ -181,121 +164,114 @@ PhotoImport.prototype.loadSource_ = function(source) {
 };
 
 /**
- * Divides files into groups by the modification date and pass them to the grid.
+ * Renders files into grid.
  * @private
  */
-PhotoImport.prototype.makeFileGroups_ = function() {
-  var files = this.mediaFilesList_;
-  if (!files) return;
+PhotoImport.prototype.fillGrid_ = function() {
+  if (!this.mediaFilesList_) return;
+  this.fileList_.splice(0, this.fileList_.length);
+  this.fileList_.push.apply(this.fileList_, this.mediaFilesList_);
+};
 
+/**
+ * Creates groups for files based on modification date.
+ * @param {Array.<Entry>} files File list.
+ * @param {Object} filesystem Filesystem metadata.
+ * @return {Array.<Object>} List of grouped items.
+ * @private
+ */
+PhotoImport.prototype.createGroups_ = function(files, filesystem) {
   var dateFormatter = v8Intl.DateTimeFormat(
       [] /* default locale */,
       {year: 'numeric', month: 'short', day: 'numeric'});
 
   var columns = this.grid_.columns;
 
-  var onMetadata = function(filesystem) {
-    var unknownGroup = {
-      type: 'group',
-      date: 0,
-      title: loadTimeData.getString('PHOTO_IMPORT_UNKNOWN_DATE'),
-      items: []
-    };
+  var unknownGroup = {
+    type: 'group',
+    date: 0,
+    title: loadTimeData.getString('PHOTO_IMPORT_UNKNOWN_DATE'),
+    items: []
+  };
 
-    var groupsMap = {};
+  var groupsMap = {};
 
-    for (var index = 0; index < files.length; index++) {
-      var props = filesystem[index];
-      var item = { type: 'entry', entry: files[index] };
+  for (var index = 0; index < files.length; index++) {
+    var props = filesystem[index];
+    var item = { type: 'entry', entry: files[index] };
 
-      if (!props || !props.modificationTime) {
-        item.group = unknownGroup;
-        unknownGroup.items.push(item);
-        continue;
-      }
-
-      var date = new Date(props.modificationTime);
-      date.setHours(0);
-      date.setMinutes(0);
-      date.setSeconds(0);
-      date.setMilliseconds(0);
-
-      var time = date.getTime();
-      if (!(time in groupsMap)) {
-        groupsMap[time] = {
-          type: 'group',
-          date: date,
-          title: dateFormatter.format(date),
-          items: []
-        };
-      }
-
-      var group = groupsMap[time];
-      group.items.push(item);
-      item.group = group;
+    if (!props || !props.modificationTime) {
+      item.group = unknownGroup;
+      unknownGroup.items.push(item);
+      continue;
     }
 
-    var groups = [];
-    for (var time in groupsMap) {
-      if (groupsMap.hasOwnProperty(time)) {
-        groups.push(groupsMap[time]);
-      }
-    }
-    if (unknownGroup.items.length > 0)
-      groups.push(unknownGroup);
+    var date = new Date(props.modificationTime);
+    date.setHours(0);
+    date.setMinutes(0);
+    date.setSeconds(0);
+    date.setMilliseconds(0);
 
-    groups.sort(function(a, b) {
-      return b.date.getTime() - a.date.getTime();
-    });
-
-    var list = [];
-    for (var index = 0; index < groups.length; index++) {
-      var group = groups[index];
-
-      list.push(group);
-      for (var t = 1; t < columns; t++) {
-        list.push({ type: 'empty' });
-      }
-
-      for (var j = 0; j < group.items.length; j++) {
-        list.push(group.items[j]);
-      }
-
-      var count = group.items.length;
-      while (count % columns != 0) {
-        list.push({ type: 'empty' });
-        count++;
-      }
+    var time = date.getTime();
+    if (!(time in groupsMap)) {
+      groupsMap[time] = {
+        type: 'group',
+        date: date,
+        title: dateFormatter.format(date),
+        items: []
+      };
     }
 
-    this.fileList_.splice(0, this.fileList_.length);
-    this.fileList_.push.apply(this.fileList_, list);
-  }.bind(this);
+    var group = groupsMap[time];
+    group.items.push(item);
+    item.group = group;
+  }
 
-  this.metadataCache_.get(files, 'filesystem', onMetadata);
+  var groups = [];
+  for (var time in groupsMap) {
+    if (groupsMap.hasOwnProperty(time)) {
+      groups.push(groupsMap[time]);
+    }
+  }
+  if (unknownGroup.items.length > 0)
+    groups.push(unknownGroup);
+
+  groups.sort(function(a, b) {
+    return b.date.getTime() - a.date.getTime();
+  });
+
+  var list = [];
+  for (var index = 0; index < groups.length; index++) {
+    var group = groups[index];
+
+    list.push(group);
+    for (var t = 1; t < columns; t++) {
+      list.push({ type: 'empty' });
+    }
+
+    for (var j = 0; j < group.items.length; j++) {
+      list.push(group.items[j]);
+    }
+
+    var count = group.items.length;
+    while (count % columns != 0) {
+      list.push({ type: 'empty' });
+      count++;
+    }
+  }
+
+  return list;
 };
 
 /**
  * Decorates grid item.
  * @param {HTMLLIElement} li The list item.
- * @param {Object} item The model item.
+ * @param {FileEntry} entry The file entry.
  * @private
  */
-PhotoImport.prototype.decorateGridItem_ = function(li, item) {
+PhotoImport.prototype.decorateGridItem_ = function(li, entry) {
   li.className = 'grid-item';
-
-  if (item.type == 'empty') {
-    li.classList.add('empty');
-    return;
-  }
-
-  if (item.type == 'group') {
-    li.classList.add('group');
-    var content = this.document_.createElement('div');
-    content.textContent = item.title;
-    li.appendChild(content);
-    return;
-  }
+  li.entry = entry;
 
   var frame = this.document_.createElement('div');
   frame.className = 'grid-frame';
@@ -303,12 +279,29 @@ PhotoImport.prototype.decorateGridItem_ = function(li, item) {
 
   var box = this.document_.createElement('div');
   box.className = 'img-container';
-  this.metadataCache_.get(item.entry, 'thumbnail|filesystem',
+  this.metadataCache_.get(entry, 'thumbnail|filesystem',
       function(metadata) {
-        new ThumbnailLoader(item.entry.toURL(), metadata).
+        new ThumbnailLoader(entry.toURL(), metadata).
             load(box, false /* fit, not fill*/);
       });
   frame.appendChild(box);
+
+  var check = this.document_.createElement('div');
+  check.className = 'check';
+  li.appendChild(check);
+};
+
+/**
+ * Handles the 'pick all/none' action.
+ * @private
+ */
+PhotoImport.prototype.onSelectAllNone_ = function() {
+  var sm = this.grid_.selectionModel;
+  if (sm.selectedIndexes.length == this.fileList_.length) {
+    sm.unselectAll();
+  } else {
+    sm.selectAll();
+  }
 };
 
 /**
@@ -325,12 +318,13 @@ PhotoImport.prototype.onError_ = function(message) {
  * @private
  */
 PhotoImport.prototype.onResize_ = function() {
-  var columns =
-      Math.floor((this.dom_.clientWidth - 20) / PhotoImport.ITEM_WIDTH);
-  if (columns != this.grid_.columns) {
-    this.grid_.columns = columns;
-    this.makeFileGroups_();
-  }
+  var g = this.grid_;
+  g.startBatchUpdates();
+  setTimeout(function() {
+    g.columns = 0;
+    g.redraw();
+    g.endBatchUpdates();
+  }, 0);
 };
 
 /**
@@ -338,19 +332,27 @@ PhotoImport.prototype.onResize_ = function() {
  * @private
  */
 PhotoImport.prototype.getSelectedItems_ = function() {
-  return this.grid_.selectedItems.filter(function(item) {
-    return item.type == 'entry';
-  });
+  var indexes = this.grid_.selectionModel.selectedIndexes;
+  var list = [];
+  for (var i = 0; i < indexes.length; i++) {
+    list.push(this.fileList_.item(indexes[i]));
+  }
+  return list;
 };
 
 /**
- * Event handler for selection change.
- * @param {Event} event The event.
+ * Event handler for picked items change.
  * @private
  */
-PhotoImport.prototype.onSelectionChanged_ = function(event) {
-  this.importButton_.disabled = this.getSelectedItems_().length == 0 ||
-      this.albums_ == null;
+PhotoImport.prototype.onSelectionChanged_ = function() {
+  var count = this.grid_.selectionModel.selectedIndexes.length;
+  this.selectedCount_.textContent = count == 0 ? '' :
+      count == 1 ? loadTimeData.getString('PHOTO_IMPORT_ONE_SELECTED') :
+                   loadTimeData.getStringF('PHOTO_IMPORT_MANY_SELECTED', count);
+  this.importButton_.disabled = count == 0 || this.destination_ == null;
+  this.selectAllNone_.textContent = loadTimeData.getString(
+      count == this.fileList_.length && count > 0 ?
+          'PHOTO_IMPORT_SELECT_NONE' : 'PHOTO_IMPORT_SELECT_ALL');
 };
 
 /**
@@ -359,88 +361,14 @@ PhotoImport.prototype.onSelectionChanged_ = function(event) {
  * @private
  */
 PhotoImport.prototype.onImportClick_ = function(event) {
-  var items = this.getSelectedItems_();
+  var entries = this.getSelectedItems_();
+  var move = this.dom_.querySelector('#delete-after-checkbox').checked;
 
-  var defaultTitle = loadTimeData.getString('PHOTO_IMPORT_NEW_ALBUM_NAME');
-  var group = items[0].group;
-  if (items.filter(function(i) { return i.group !== group }).length == 0)
-    defaultTitle = group.title;
+  var percentage = Math.round(entries.length / this.fileList_.length * 100);
+  metrics.recordMediumCount('PhotoImport.ImportCount', entries.length);
+  metrics.recordSmallCount('PhotoImport.ImportPercentage', percentage);
 
-  // TODO: use albums instead.
-  var dialogAlbums = [];
-  for (var index = 0; index < this.albums_.length; index++) {
-    dialogAlbums.push({
-      name: this.albums_[index].name,
-      entry: this.albums_[index],
-      url: chrome.extension.getURL('../../images/filetype_large_audio.png')
-    });
-  }
-
-  this.selectAlbumDialog_.show(
-      items.length == 1 ?
-          loadTimeData.getString('PHOTO_IMPORT_SELECT_ALBUM_CAPTION') :
-          loadTimeData.getStringF('PHOTO_IMPORT_SELECT_ALBUM_CAPTION_PLURAL',
-                                  items.length),
-      dialogAlbums,
-      defaultTitle,
-      loadTimeData.getString('PHOTO_IMPORT_IMPORT_BUTTON'),
-      this.onAlbumSelected_.bind(this, items)
-  );
-};
-
-/**
- * Called when album is selected.
- * @param {Array.<Object>} items List of items to import.
- * @param {Object} album Album description.
- * @private
- */
-PhotoImport.prototype.onAlbumSelected_ = function(items, album) {
-  var entries = items.map(function(i) { return i.entry });
-
-  if (album.create) {
-    var onError = this.onError_.bind(this,
-        loadTimeData.getString('PHOTO_IMPORT_IMPORTING_ERROR'));
-    this.createAlbum_(album.name,
-        this.startImport_.bind(this, entries),
-        onError);
-  } else {
-    this.startImport_(entries, album.entry);
-  }
-};
-
-/**
- * Starts importing process.
- * @param {Array.<FileEntry>} entries List of entries to import.
- * @param {DirectoryEntry} dir Where to import.
- * @private
- */
-PhotoImport.prototype.startImport_ = function(entries, dir) {
-  var files = entries.map(function(e) { return e.fullPath }).join('\n');
-  var operationInfo = {
-    isCut: false,
-    isOnGData: PathUtil.getRootType(entries[0].fullPath) == RootType.GDATA,
-    sourceDir: null,
-    directories: '',
-    files: files
-  };
-  this.copyManager_.paste(operationInfo, dir.fullPath, true);
-};
-
-/**
- * Creates a directory for an album.
- * @param {string} name Album name.
- * @param {function(DirectoryEntry)} onSuccess Success callback.
- * @param {function} onError Failure callback.
- * @private
- */
-PhotoImport.prototype.createAlbum_ = function(name, onSuccess, onError) {
-  var callback = function(entry) {
-    this.initAlbums_();
-    onSuccess(entry);
-  }.bind(this);
-
-  this.albumsDir_.getDirectory(name, { create: true, exclusive: true},
-      callback, onError);
+  this.importingDialog_.show(entries, this.destination_, move);
 };
 
 /**
@@ -481,7 +409,7 @@ function GridSelectionController(selectionModel, grid) {
 GridSelectionController.prototype.__proto__ =
     cr.ui.ListSelectionController.prototype;
 
-/** @inheritDoc */
+/** @override */
 GridSelectionController.prototype.getIndexBelow = function(index) {
   if (index == this.getLastIndex()) {
     return -1;
@@ -505,7 +433,7 @@ GridSelectionController.prototype.getIndexBelow = function(index) {
   return this.getLastIndex();
 };
 
-/** @inheritDoc */
+/** @override */
 GridSelectionController.prototype.getIndexAbove = function(index) {
   if (index == this.getFirstIndex()) {
     return -1;
@@ -520,7 +448,7 @@ GridSelectionController.prototype.getIndexAbove = function(index) {
   return index < 0 ? this.getFirstIndex() : index;
 };
 
-/** @inheritDoc */
+/** @override */
 GridSelectionController.prototype.getIndexBefore = function(index) {
   var dm = this.grid_.dataModel;
   index--;
@@ -530,7 +458,7 @@ GridSelectionController.prototype.getIndexBefore = function(index) {
   return index;
 };
 
-/** @inheritDoc */
+/** @override */
 GridSelectionController.prototype.getIndexAfter = function(index) {
   var dm = this.grid_.dataModel;
   index++;
@@ -540,7 +468,7 @@ GridSelectionController.prototype.getIndexAfter = function(index) {
   return index == dm.length ? -1 : index;
 };
 
-/** @inheritDoc */
+/** @override */
 GridSelectionController.prototype.getFirstIndex = function() {
   var dm = this.grid_.dataModel;
   for (var index = 0; index < dm.length; index++) {
@@ -550,7 +478,7 @@ GridSelectionController.prototype.getFirstIndex = function() {
   return -1;
 };
 
-/** @inheritDoc */
+/** @override */
 GridSelectionController.prototype.getLastIndex = function() {
   var dm = this.grid_.dataModel;
   for (var index = dm.length - 1; index >= 0; index--) {

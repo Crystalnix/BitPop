@@ -17,21 +17,27 @@
 #include "base/metrics/histogram.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "cc/compositor_frame.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
+#include "content/browser/renderer_host/gesture_event_filter.h"
+#include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/tap_suppression_controller.h"
+#include "content/browser/renderer_host/touch_event_queue.h"
 #include "content/common/accessibility_messages.h"
+#include "content/common/content_constants_internal.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_port.h"
 #include "content/port/browser/smooth_scroll_gesture.h"
+#include "content/public/browser/compositor_util.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -45,11 +51,15 @@
 #if defined(OS_WIN)
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
 #endif
+#include "ui/base/events/event.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skbitmap_operations.h"
+#include "ui/gfx/vector2d_conversions.h"
 #include "webkit/glue/webcursor.h"
 #include "webkit/glue/webpreferences.h"
 #include "webkit/plugins/npapi/webplugin.h"
+#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 
 #if defined(TOOLKIT_GTK)
 #include "content/browser/renderer_host/backing_store_gtk.h"
@@ -60,6 +70,7 @@
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
+using webkit::npapi::WebPluginDelegateImpl;
 using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
 using WebKit::WebKeyboardEvent;
@@ -76,9 +87,6 @@ namespace {
 // This timeout impacts the "choppiness" of our window resize perf.
 const int kPaintMsgTimeoutMS = 50;
 
-// How long to wait before we consider a renderer hung.
-const int kHungRendererDelayMs = 30000;
-
 // How many milliseconds apart synthetic scroll messages should be sent.
 static const int kSyntheticScrollMessageIntervalMs = 8;
 
@@ -93,15 +101,8 @@ bool ShouldCoalesceMouseWheelEvents(const WebMouseWheelEvent& last_event,
          last_event.momentumPhase == new_event.momentumPhase;
 }
 
-// Returns |true| if two gesture events should be coalesced.
-bool ShouldCoalesceGestureEvents(const WebKit::WebGestureEvent& last_event,
-                                 const WebKit::WebGestureEvent& new_event) {
-  return new_event.type == WebInputEvent::GestureScrollUpdate &&
-      last_event.type == new_event.type &&
-      last_event.modifiers == new_event.modifiers;
-}
-
 }  // namespace
+
 
 // static
 void RenderWidgetHost::RemoveAllBackingStores() {
@@ -133,9 +134,11 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
       should_auto_resize_(false),
+      waiting_for_screen_rects_ack_(false),
       mouse_move_pending_(false),
       mouse_wheel_pending_(false),
-      gesture_event_pending_(false),
+      select_range_pending_(false),
+      move_caret_pending_(false),
       needs_repainting_on_restore_(false),
       is_unresponsive_(false),
       in_flight_event_count_(0),
@@ -151,7 +154,9 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       allow_privileged_mouse_lock_(false),
       has_touch_handler_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      tap_suppression_controller_(new TapSuppressionController(this)) {
+      tick_active_smooth_scroll_gestures_task_posted_(false),
+      touch_event_queue_(new TouchEventQueue(this)),
+      gesture_event_filter_(new GestureEventFilter(this)) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
     routing_id_ = process_->GetNextRoutingID();
@@ -172,10 +177,19 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
     DCHECK(surface_id_);
   }
 
+  is_threaded_compositing_enabled_ = IsThreadedCompositingEnabled();
+
   process_->Attach(this, routing_id_);
   // Because the widget initializes as is_hidden_ == false,
   // tell the process host that we're alive.
   process_->WidgetRestored();
+
+#if defined(USE_AURA)
+  bool overscroll_enabled = CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kEnableOverscrollHistoryNavigation);
+  if (overscroll_enabled)
+    InitializeOverscrollController();
+#endif
 }
 
 RenderWidgetHostImpl::~RenderWidgetHostImpl() {
@@ -241,6 +255,36 @@ void RenderWidgetHostImpl::CompositingSurfaceUpdated() {
   process_->SurfaceUpdated(surface_id_);
 }
 
+void RenderWidgetHostImpl::ResetSizeAndRepaintPendingFlags() {
+  resize_ack_pending_ = false;
+  repaint_ack_pending_ = false;
+  in_flight_size_.SetSize(0, 0);
+}
+
+void RenderWidgetHostImpl::SendScreenRects() {
+  if (!renderer_initialized_ || waiting_for_screen_rects_ack_)
+    return;
+
+  if (is_hidden_) {
+    // On GTK, this comes in for backgrounded tabs. Ignore, to match what
+    // happens on Win & Mac, and when the view is shown it'll call this again.
+    return;
+  }
+
+  if (!view_)
+    return;
+
+  last_view_screen_rect_ = view_->GetViewBounds();
+  last_window_screen_rect_ = view_->GetBoundsInRootWindow();
+  Send(new ViewMsg_UpdateScreenRects(
+      GetRoutingID(), last_view_screen_rect_, last_window_screen_rect_));
+  waiting_for_screen_rects_ack_ = true;
+}
+
+int RenderWidgetHostImpl::SyntheticScrollMessageInterval() const {
+  return kSyntheticScrollMessageIntervalMs;
+}
+
 void RenderWidgetHostImpl::Init() {
   DCHECK(process_->HasConnection());
 
@@ -250,7 +294,7 @@ void RenderWidgetHostImpl::Init() {
       surface_id_, GetCompositingSurface());
 
   // Send the ack along with the information on placement.
-  Send(new ViewMsg_CreatingNew_ACK(routing_id_, GetNativeViewId()));
+  Send(new ViewMsg_CreatingNew_ACK(routing_id_));
   GetProcess()->ResumeRequestsForView(routing_id_);
 
   WasResized();
@@ -283,15 +327,21 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnMsgRenderViewReady)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewGone, OnMsgRenderViewGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnMsgClose)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateScreenRects_ACK,
+                        OnMsgUpdateScreenRectsAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnMsgRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTooltipText, OnMsgSetTooltipText)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PaintAtSize_ACK, OnMsgPaintAtSizeAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
                         OnCompositorSurfaceBuffersSwapped)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapCompositorFrame,
+                        OnMsgSwapCompositorFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnMsgUpdateRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnMsgUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_HandleInputEvent_ACK, OnMsgInputEventAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_BeginSmoothScroll, OnMsgBeginSmoothScroll)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SelectRange_ACK, OnMsgSelectRangeAck)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_MoveCaret_ACK, OnMsgMoveCaretAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnMsgFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnMsgBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_HasTouchEventHandlers,
@@ -307,10 +357,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnMsgDidActivateAcceleratedCompositing)
     IPC_MESSAGE_HANDLER(ViewHostMsg_LockMouse, OnMsgLockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnMsgUnlockMouse)
-#if defined(OS_POSIX) || defined(USE_AURA)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowRect, OnMsgGetWindowRect)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetRootWindowRect, OnMsgGetRootWindowRect)
-#endif
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ShowDisambiguationPopup,
+                        OnMsgShowDisambiguationPopup)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PluginFocusChanged,
                         OnMsgPluginFocusChanged)
@@ -327,11 +375,21 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_AcceleratedSurfaceBuffersSwapped,
                         OnAcceleratedSurfaceBuffersSwapped)
 #endif
+#if defined(OS_ANDROID)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateFrameInfo,
+                        OnMsgUpdateFrameInfo)
+#endif
 #if defined(TOOLKIT_GTK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreatePluginContainer,
                         OnMsgCreatePluginContainer)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DestroyPluginContainer,
                         OnMsgDestroyPluginContainer)
+#endif
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowCreated,
+                        OnWindowlessPluginDummyWindowCreated)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowDestroyed,
+                        OnWindowlessPluginDummyWindowDestroyed)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
@@ -373,6 +431,8 @@ void RenderWidgetHostImpl::WasShown() {
   if (!is_hidden_)
     return;
   is_hidden_ = false;
+
+  SendScreenRects();
 
   BackingStore* backing_store = BackingStoreManager::Lookup(this);
   // If we already have a backing store for this widget, then we don't need to
@@ -503,7 +563,7 @@ void RenderWidgetHostImpl::CopyFromBackingStore(
     const gfx::Rect& src_subrect,
     const gfx::Size& accelerated_dst_size,
     const base::Callback<void(bool)>& callback,
-    skia::PlatformCanvas* output) {
+    skia::PlatformBitmap* output) {
   if (view_ && is_accelerated_compositing_active_) {
     TRACE_EVENT0("browser",
         "RenderWidgetHostImpl::CopyFromBackingStore::FromCompositingSurface");
@@ -613,7 +673,8 @@ BackingStore* RenderWidgetHostImpl::GetBackingStore(bool force_create) {
   // We should never be called recursively; this can theoretically lead to
   // infinite recursion and almost certainly leads to lower performance.
   DCHECK(!in_get_backing_store_) << "GetBackingStore called recursively!";
-  AutoReset<bool> auto_reset_in_get_backing_store(&in_get_backing_store_, true);
+  base::AutoReset<bool> auto_reset_in_get_backing_store(
+      &in_get_backing_store_, true);
 
   // We might have a cached backing store that we can reuse!
   BackingStore* backing_store = NULL;
@@ -755,16 +816,12 @@ static WebGestureEvent MakeGestureEvent(WebInputEvent::Type type,
                                         double timestamp_seconds,
                                         int x,
                                         int y,
-                                        float delta_x,
-                                        float delta_y,
                                         int modifiers) {
   WebGestureEvent result;
 
   result.type = type;
   result.x = x;
   result.y = y;
-  result.deltaX = delta_x;
-  result.deltaY = delta_y;
   result.timeStampSeconds = timestamp_seconds;
   result.modifiers = modifiers;
 
@@ -784,17 +841,20 @@ void RenderWidgetHostImpl::SimulateTouchGestureWithMouse(
         startY = y;
         ForwardGestureEvent(MakeGestureEvent(
             WebInputEvent::GestureScrollBegin, mouse_event.timeStampSeconds,
-            x, y, 0, 0, 0));
+            x, y, 0));
       }
       if (dx != 0 || dy != 0) {
-        ForwardGestureEvent(MakeGestureEvent(
+        WebGestureEvent event = MakeGestureEvent(
             WebInputEvent::GestureScrollUpdate, mouse_event.timeStampSeconds,
-            x, y, dx, dy, 0));
+            x, y, 0);
+        event.data.scrollUpdate.deltaX = dx;
+        event.data.scrollUpdate.deltaY = dy;
+        ForwardGestureEvent(event);
       }
       if (mouse_event.type == WebInputEvent::MouseUp) {
         ForwardGestureEvent(MakeGestureEvent(
             WebInputEvent::GestureScrollEnd, mouse_event.timeStampSeconds,
-            x, y, dx, dy, 0));
+            x, y, 0));
       }
       break;
     case WebMouseEvent::ButtonMiddle:
@@ -803,12 +863,12 @@ void RenderWidgetHostImpl::SimulateTouchGestureWithMouse(
         startY = y;
         ForwardGestureEvent(MakeGestureEvent(
             WebInputEvent::GestureTapDown, mouse_event.timeStampSeconds,
-            x, y, 0, 0, 0));
+            x, y, 0));
       }
       if (mouse_event.type == WebInputEvent::MouseUp) {
         ForwardGestureEvent(MakeGestureEvent(
             WebInputEvent::GestureTap, mouse_event.timeStampSeconds,
-            x, y, dx, dy, 0));
+            x, y, 0));
       }
       break;
     case WebMouseEvent::ButtonRight:
@@ -817,19 +877,20 @@ void RenderWidgetHostImpl::SimulateTouchGestureWithMouse(
         startY = y;
         ForwardGestureEvent(MakeGestureEvent(
             WebInputEvent::GesturePinchBegin, mouse_event.timeStampSeconds,
-            x, y, 1, 1, 0));
+            x, y, 0));
       }
       if (dx != 0 || dy != 0) {
         dx = pow(dy < 0 ? 0.998f : 1.002f, fabs(dy));
-        dy = dx;
-        ForwardGestureEvent(MakeGestureEvent(
+        WebGestureEvent event = MakeGestureEvent(
             WebInputEvent::GesturePinchUpdate, mouse_event.timeStampSeconds,
-            startX, startY, dx, dy, 0));
+            startX, startY, 0);
+        event.data.pinchUpdate.scale = dx;
+        ForwardGestureEvent(event);
       }
       if (mouse_event.type == WebInputEvent::MouseUp) {
         ForwardGestureEvent(MakeGestureEvent(
             WebInputEvent::GesturePinchEnd, mouse_event.timeStampSeconds,
-            x, y, dx, dy, 0));
+            x, y, 0));
       }
       break;
     case WebMouseEvent::ButtonNone:
@@ -849,35 +910,16 @@ void RenderWidgetHostImpl::ForwardMouseEvent(const WebMouseEvent& mouse_event) {
     return;
   }
 
-  // Avoid spamming the renderer with mouse move events.  It is important
-  // to note that WM_MOUSEMOVE events are anyways synthetic, but since our
-  // thread is able to rapidly consume WM_MOUSEMOVE events, we may get way
-  // more WM_MOUSEMOVE events than we wish to send to the renderer.
-  if (mouse_event.type == WebInputEvent::MouseMove) {
-    if (mouse_move_pending_) {
-      if (!next_mouse_move_.get()) {
-        next_mouse_move_.reset(new WebMouseEvent(mouse_event));
-      } else {
-        // Accumulate movement deltas.
-        int x = next_mouse_move_->movementX;
-        int y = next_mouse_move_->movementY;
-        *next_mouse_move_ = mouse_event;
-        next_mouse_move_->movementX += x;
-        next_mouse_move_->movementY += y;
-      }
+  if (mouse_event.type == WebInputEvent::MouseDown &&
+      gesture_event_filter_->GetTapSuppressionController()->
+          ShouldDeferMouseDown(mouse_event))
       return;
-    }
-    mouse_move_pending_ = true;
-  } else if (mouse_event.type == WebInputEvent::MouseDown) {
-    if (tap_suppression_controller_->ShouldDeferMouseDown(mouse_event))
+  if (mouse_event.type == WebInputEvent::MouseUp &&
+      gesture_event_filter_->GetTapSuppressionController()->
+          ShouldSuppressMouseUp())
       return;
-    OnUserGesture();
-  } else if (mouse_event.type == WebInputEvent::MouseUp) {
-    if (tap_suppression_controller_->ShouldSuppressMouseUp())
-      return;
-  }
 
-  ForwardInputEvent(mouse_event, sizeof(WebMouseEvent), false);
+  ForwardMouseEventImmediately(mouse_event);
 }
 
 void RenderWidgetHostImpl::OnPointerEventActivate() {
@@ -926,27 +968,67 @@ void RenderWidgetHostImpl::ForwardGestureEvent(
   if (ignore_input_events_ || process_->IgnoreInputEvents())
     return;
 
-  if (gesture_event_pending_) {
-   if (coalesced_gesture_events_.empty() ||
-       !ShouldCoalesceGestureEvents(coalesced_gesture_events_.back(),
-                                    gesture_event)) {
-     coalesced_gesture_events_.push_back(gesture_event);
-    } else {
-      WebGestureEvent* last_gesture_event =
-          &coalesced_gesture_events_.back();
-      last_gesture_event->deltaX += gesture_event.deltaX;
-      last_gesture_event->deltaY += gesture_event.deltaY;
-      DCHECK_GE(gesture_event.timeStampSeconds,
-                last_gesture_event->timeStampSeconds);
-      last_gesture_event->timeStampSeconds = gesture_event.timeStampSeconds;
-    }
+  if (!IsInOverscrollGesture() &&
+      !gesture_event_filter_->ShouldForward(gesture_event))
+    return;
+
+  ForwardInputEvent(gesture_event, sizeof(WebGestureEvent), false);
+}
+
+// Forwards MouseEvent without passing it through TapSuppressionController
+void RenderWidgetHostImpl::ForwardMouseEventImmediately(
+    const WebMouseEvent& mouse_event) {
+  TRACE_EVENT2("renderer_host",
+               "RenderWidgetHostImpl::ForwardMouseEventImmediately",
+               "x", mouse_event.x, "y", mouse_event.y);
+  if (ignore_input_events_ || process_->IgnoreInputEvents())
+    return;
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSimulateTouchScreenWithMouse)) {
+    SimulateTouchGestureWithMouse(mouse_event);
     return;
   }
-  gesture_event_pending_ = true;
 
-  if (gesture_event.type == WebInputEvent::GestureFlingCancel)
-    tap_suppression_controller_->GestureFlingCancel(
-        gesture_event.timeStampSeconds);
+  // Avoid spamming the renderer with mouse move events.  It is important
+  // to note that WM_MOUSEMOVE events are anyways synthetic, but since our
+  // thread is able to rapidly consume WM_MOUSEMOVE events, we may get way
+  // more WM_MOUSEMOVE events than we wish to send to the renderer.
+  if (mouse_event.type == WebInputEvent::MouseMove) {
+    if (mouse_move_pending_) {
+      if (!next_mouse_move_.get()) {
+        next_mouse_move_.reset(new WebMouseEvent(mouse_event));
+      } else {
+        // Accumulate movement deltas.
+        int x = next_mouse_move_->movementX;
+        int y = next_mouse_move_->movementY;
+        *next_mouse_move_ = mouse_event;
+        next_mouse_move_->movementX += x;
+        next_mouse_move_->movementY += y;
+      }
+      return;
+    }
+    mouse_move_pending_ = true;
+  } else if (mouse_event.type == WebInputEvent::MouseDown) {
+    OnUserGesture();
+  }
+
+  ForwardInputEvent(mouse_event, sizeof(WebMouseEvent), false);
+}
+
+void RenderWidgetHostImpl::ForwardTouchEventImmediately(
+    const WebKit::WebTouchEvent& touch_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::ForwardTouchEvent");
+  if (ignore_input_events_ || process_->IgnoreInputEvents())
+    return;
+
+  ForwardInputEvent(touch_event, sizeof(WebKit::WebTouchEvent), false);
+}
+
+void RenderWidgetHostImpl::ForwardGestureEventImmediately(
+    const WebKit::WebGestureEvent& gesture_event) {
+  if (ignore_input_events_ || process_->IgnoreInputEvents())
+    return;
   ForwardInputEvent(gesture_event, sizeof(WebGestureEvent), false);
 }
 
@@ -1005,10 +1087,21 @@ void RenderWidgetHostImpl::ForwardKeyboardEvent(
     key_queue_.push_back(key_event);
     HISTOGRAM_COUNTS_100("Renderer.KeyboardQueueSize", key_queue_.size());
 
+    gesture_event_filter_->FlingHasBeenHalted();
+
     // Only forward the non-native portions of our event.
     ForwardInputEvent(key_event, sizeof(WebKeyboardEvent),
                       is_keyboard_shortcut);
   }
+}
+
+void RenderWidgetHostImpl::SendInputEvent(const WebInputEvent& input_event,
+                                          int event_size,
+                                          bool is_keyboard_shortcut) {
+  input_event_start_time_ = TimeTicks::Now();
+  Send(new ViewMsg_HandleInputEvent(
+      routing_id_, &input_event, is_keyboard_shortcut));
+  increment_in_flight_event_count();
 }
 
 void RenderWidgetHostImpl::ForwardInputEvent(const WebInputEvent& input_event,
@@ -1021,42 +1114,63 @@ void RenderWidgetHostImpl::ForwardInputEvent(const WebInputEvent& input_event,
 
   DCHECK(!process_->IgnoreInputEvents());
 
-  IPC::Message* message = new ViewMsg_HandleInputEvent(routing_id_);
-  message->WriteData(
-      reinterpret_cast<const char*>(&input_event), event_size);
-  // |is_keyboard_shortcut| only makes sense for RawKeyDown events.
-  if (input_event.type == WebInputEvent::RawKeyDown)
-    message->WriteBool(is_keyboard_shortcut);
-  input_event_start_time_ = TimeTicks::Now();
-  Send(message);
+  if (overscroll_controller_.get() &&
+      !overscroll_controller_->WillDispatchEvent(input_event)) {
+    // Reset the wheel-event state when appropriate.
+    if (input_event.type == WebKit::WebInputEvent::MouseWheel) {
+      mouse_wheel_pending_ = false;
+    } else if (WebInputEvent::isGestureEventType(input_event.type) &&
+               gesture_event_filter_->HasQueuedGestureEvents()) {
+      // If the gesture-event filter has queued gesture events, that implies it
+      // is awaiting an ack for the event. Since the event is being consumed by
+      // the over scroll here, it is never sent to the renderer, and so it won't
+      // receive any ACKs. So send the ACK to the gesture event filter
+      // immediately, and mark it as having been processed.
+      gesture_event_filter_->ProcessGestureAck(true, input_event.type);
+    } else if (WebInputEvent::isTouchEventType(input_event.type)) {
+      // During an overscroll gesture initiated by touch-scrolling, the
+      // touch-events do not reset or contribute to the overscroll gesture.
+      // However, the touch-events are not sent to the renderer. So send and ACK
+      // to the touch-event queue immediately. Mark the event as not processed,
+      // to make sure that the touch-scroll gesture that initiated the
+      // overscroll is updated properly.
+      touch_event_queue_->ProcessTouchAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+    }
+    return;
+  }
 
-  // Any non-wheel input event cancels pending wheel events.
-  if (input_event.type != WebInputEvent::MouseWheel)
+  in_process_event_types_.push(input_event.type);
+
+  // Transmit any pending wheel events on a non-wheel event. This ensures that
+  // the renderer receives the final PhaseEnded wheel event, which is necessary
+  // to terminate rubber-banding, for example.
+  if (input_event.type != WebInputEvent::MouseWheel) {
+    for (size_t i = 0; i < coalesced_mouse_wheel_events_.size(); ++i) {
+      SendInputEvent(coalesced_mouse_wheel_events_[i],
+                     sizeof(WebMouseWheelEvent), false);
+    }
     coalesced_mouse_wheel_events_.clear();
+  }
+
+  SendInputEvent(input_event, event_size, is_keyboard_shortcut);
 
   // Any input event cancels a pending mouse move event. Note that
   // |next_mouse_move_| possibly owns |input_event|, so don't use |input_event|
   // after this line.
   next_mouse_move_.reset();
 
-  increment_in_flight_event_count();
   StartHangMonitorTimeout(
       TimeDelta::FromMilliseconds(hung_renderer_delay_ms_));
 }
 
 void RenderWidgetHostImpl::ForwardTouchEvent(
     const WebKit::WebTouchEvent& touch_event) {
-  TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::ForwardTouchEvent");
-  if (ignore_input_events_ || process_->IgnoreInputEvents())
-    return;
-
-  // TODO(sad): Do touch-event coalescing when appropriate.
-  ForwardInputEvent(touch_event, sizeof(WebKit::WebTouchEvent), false);
+  touch_event_queue_->QueueEvent(touch_event);
 }
 
-#if defined(TOOLKIT_GTK)
-bool RenderWidgetHostImpl::KeyPressListenersHandleEvent(GdkEventKey* event) {
-  if (event->type != GDK_KEY_PRESS)
+bool RenderWidgetHostImpl::KeyPressListenersHandleEvent(
+    const NativeWebKeyboardEvent& event) {
+  if (event.type != WebKeyboardEvent::RawKeyDown)
     return false;
 
   for (std::list<KeyboardListener*>::iterator it = keyboard_listeners_.begin();
@@ -1067,7 +1181,6 @@ bool RenderWidgetHostImpl::KeyPressListenersHandleEvent(GdkEventKey* event) {
 
   return false;
 }
-#endif  // defined(TOOLKIT_GTK)
 
 void RenderWidgetHostImpl::AddKeyboardListener(KeyboardListener* listener) {
   keyboard_listeners_.push_back(listener);
@@ -1084,8 +1197,9 @@ void RenderWidgetHostImpl::NotifyScreenInfoChanged() {
   Send(new ViewMsg_ScreenInfoChanged(GetRoutingID(), screen_info));
 }
 
-void RenderWidgetHostImpl::SetDeviceScaleFactor(float scale) {
-  Send(new ViewMsg_SetDeviceScaleFactor(GetRoutingID(), scale));
+void RenderWidgetHostImpl::UpdateVSyncParameters(base::TimeTicks timebase,
+                                                 base::TimeDelta interval) {
+  Send(new ViewMsg_UpdateVSyncParameters(GetRoutingID(), timebase, interval));
 }
 
 void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
@@ -1094,6 +1208,8 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // from a crashed renderer.
   renderer_initialized_ = false;
 
+  waiting_for_screen_rects_ack_ = false;
+
   // Must reset these to ensure that mouse move/wheel events work with a new
   // renderer.
   mouse_move_pending_ = false;
@@ -1101,19 +1217,28 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   mouse_wheel_pending_ = false;
   coalesced_mouse_wheel_events_.clear();
 
+  // Must reset these to ensure that SelectRange works with a new renderer.
+  select_range_pending_ = false;
+  next_selection_range_.reset();
+
+  // Must reset these to ensure that MoveCaret works with a new renderer.
+  move_caret_pending_ = false;
+  next_move_caret_.reset();
+
+  touch_event_queue_->Reset();
+
   // Must reset these to ensure that gesture events work with a new renderer.
-  coalesced_gesture_events_.clear();
-  gesture_event_pending_ = false;
+  gesture_event_filter_->Reset();
+
+  if (overscroll_controller_.get())
+    overscroll_controller_->Reset();
 
   // Must reset these to ensure that keyboard events work with a new renderer.
   key_queue_.clear();
   suppress_next_char_events_ = false;
 
   // Reset some fields in preparation for recovering from a crash.
-  resize_ack_pending_ = false;
-  repaint_ack_pending_ = false;
-
-  in_flight_size_.SetSize(0, 0);
+  ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
   is_hidden_ = false;
   is_accelerated_compositing_active_ = false;
@@ -1182,6 +1307,12 @@ void RenderWidgetHostImpl::ImeCancelComposition() {
             std::vector<WebKit::WebCompositionUnderline>(), 0, 0));
 }
 
+void RenderWidgetHostImpl::ExtendSelectionAndDelete(
+    size_t before,
+    size_t after) {
+  Send(new ViewMsg_ExtendSelectionAndDelete(GetRoutingID(), before, after));
+}
+
 gfx::Rect RenderWidgetHostImpl::GetRootWindowResizerRect() const {
   return gfx::Rect();
 }
@@ -1213,6 +1344,15 @@ bool RenderWidgetHostImpl::IsFullscreen() const {
 
 void RenderWidgetHostImpl::SetShouldAutoResize(bool enable) {
   should_auto_resize_ = enable;
+}
+
+void RenderWidgetHostImpl::InitializeOverscrollController() {
+  overscroll_controller_.reset(new OverscrollController(this));
+}
+
+bool RenderWidgetHostImpl::IsInOverscrollGesture() const {
+  return overscroll_controller_.get() &&
+         overscroll_controller_->overscroll_mode() != OVERSCROLL_NONE;
 }
 
 void RenderWidgetHostImpl::GetWebScreenInfo(WebKit::WebScreenInfo* result) {
@@ -1273,6 +1413,7 @@ void RenderWidgetHostImpl::RendererIsResponsive() {
 }
 
 void RenderWidgetHostImpl::OnMsgRenderViewReady() {
+  SendScreenRects();
   WasResized();
 }
 
@@ -1319,6 +1460,19 @@ void RenderWidgetHostImpl::OnMsgSetTooltipText(
     view_->SetTooltipText(wrapped_tooltip_text);
 }
 
+void RenderWidgetHostImpl::OnMsgUpdateScreenRectsAck() {
+  waiting_for_screen_rects_ack_ = false;
+  if (!view_)
+    return;
+
+  if (view_->GetViewBounds() == last_view_screen_rect_ &&
+      view_->GetBoundsInRootWindow() == last_window_screen_rect_) {
+    return;
+  }
+
+  SendScreenRects();
+}
+
 void RenderWidgetHostImpl::OnMsgRequestMove(const gfx::Rect& pos) {
   // Note that we ignore the position.
   if (view_) {
@@ -1339,19 +1493,24 @@ void RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped(
       int32 surface_id,
       uint64 surface_handle,
       int32 route_id,
+      const gfx::Size& size,
       int32 gpu_process_host_id) {
   TRACE_EVENT0("renderer_host",
                "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped");
   if (!view_) {
+    AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+    ack_params.surface_handle = surface_handle;
+    ack_params.sync_point = 0;
     RenderWidgetHostImpl::AcknowledgeBufferPresent(route_id,
                                                    gpu_process_host_id,
-                                                   0);
+                                                   ack_params);
     return;
   }
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params gpu_params;
   gpu_params.surface_id = surface_id;
   gpu_params.surface_handle = surface_handle;
   gpu_params.route_id = route_id;
+  gpu_params.size = size;
 #if defined(OS_MACOSX)
   // Compositor window is always gfx::kNullPluginWindow.
   // TODO(jbates) http://crbug.com/105344 This will be removed when there are no
@@ -1360,6 +1519,25 @@ void RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped(
 #endif
   view_->AcceleratedSurfaceBuffersSwapped(gpu_params,
                                           gpu_process_host_id);
+}
+
+void RenderWidgetHostImpl::OnMsgSwapCompositorFrame(
+    const cc::CompositorFrame& frame) {
+#if defined(OS_ANDROID)
+  gfx::Vector2dF scroll_offset = ScaleVector2d(
+      frame.metadata.root_scroll_offset, frame.metadata.page_scale_factor);
+  gfx::SizeF content_size = ScaleSize(
+      frame.metadata.root_layer_size, frame.metadata.page_scale_factor);
+
+  if (view_) {
+    view_->UpdateFrameInfo(
+        gfx::ToRoundedVector2d(scroll_offset),
+        frame.metadata.page_scale_factor,
+        frame.metadata.min_page_scale_factor,
+        frame.metadata.max_page_scale_factor,
+        gfx::ToCeiledSize(content_size));
+  }
+#endif
 }
 
 void RenderWidgetHostImpl::OnMsgUpdateRect(
@@ -1402,8 +1580,9 @@ void RenderWidgetHostImpl::OnMsgUpdateRect(
   // and backing store is never used.
   if (dib) {
     DCHECK(!params.bitmap_rect.IsEmpty());
-    const size_t size = params.bitmap_rect.height() *
-        params.bitmap_rect.width() * 4;
+    gfx::Size pixel_size = gfx::ToFlooredSize(
+        gfx::ScaleSize(params.bitmap_rect.size(), params.scale_factor));
+    const size_t size = pixel_size.height() * pixel_size.width() * 4;
     if (dib->size() < size) {
       DLOG(WARNING) << "Transport DIB too small for given rectangle";
       RecordAction(UserMetricsAction("BadMessageTerminate_RWH1"));
@@ -1417,7 +1596,7 @@ void RenderWidgetHostImpl::OnMsgUpdateRect(
 
       // Scroll the backing store.
       if (!params.scroll_rect.IsEmpty()) {
-        ScrollBackingStoreRect(params.dx, params.dy,
+        ScrollBackingStoreRect(params.scroll_delta,
                                params.scroll_rect,
                                params.view_size);
       }
@@ -1483,7 +1662,7 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   // in the process could dispatch other window messages which could cause the
   // view to be destroyed.
   if (view_)
-    view_->MovePluginWindows(params.plugin_window_moves);
+    view_->MovePluginWindows(params.scroll_offset, params.plugin_window_moves);
 
   NotificationService::current()->Notify(
       NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
@@ -1499,7 +1678,7 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   // Now paint the view. Watch out: it might be destroyed already.
   if (view_ && !is_accelerated_compositing_active_) {
     view_being_painted_ = true;
-    view_->DidUpdateBackingStore(params.scroll_rect, params.dx, params.dy,
+    view_->DidUpdateBackingStore(params.scroll_rect, params.scroll_delta,
                                  params.copy_rects);
     view_being_painted_ = false;
   }
@@ -1528,9 +1707,14 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
       "x+y", params.bitmap_rect.x() + params.bitmap_rect.y());
 }
 
-void RenderWidgetHostImpl::OnMsgInputEventAck(WebInputEvent::Type event_type,
-                                              bool processed) {
+void RenderWidgetHostImpl::OnMsgInputEventAck(
+    WebInputEvent::Type event_type, InputEventAckState ack_result) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::OnMsgInputEventAck");
+  bool processed = (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED);
+
+  if (!in_process_event_types_.empty() &&
+      in_process_event_types_.front() == event_type)
+    in_process_event_types_.pop();
 
   // Log the time delta for processing an input event.
   TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
@@ -1539,6 +1723,12 @@ void RenderWidgetHostImpl::OnMsgInputEventAck(WebInputEvent::Type event_type,
   // Cancel pending hung renderer checks since the renderer is responsive.
   if (decrement_in_flight_event_count() == 0)
     StopHangMonitorTimeout();
+
+  // If an input ack is pending, then hold off ticking the gesture
+  // until we get an input ack.
+  if (in_process_event_types_.empty() &&
+      !active_smooth_scroll_gestures_.empty())
+    TickActiveSmoothScrollGesture();
 
   int type = static_cast<int>(event_type);
   if (type < WebInputEvent::Undefined) {
@@ -1557,10 +1747,12 @@ void RenderWidgetHostImpl::OnMsgInputEventAck(WebInputEvent::Type event_type,
   } else if (type == WebInputEvent::MouseWheel) {
     ProcessWheelAck(processed);
   } else if (WebInputEvent::isTouchEventType(type)) {
-    ProcessTouchAck(event_type, processed);
+    ProcessTouchAck(ack_result);
   } else if (WebInputEvent::isGestureEventType(type)) {
     ProcessGestureAck(processed, type);
   }
+
+  // WARNING: |this| may be deleted at this point.
 
   // This is used only for testing, and the other end does not use the
   // source object.  On linux, specifying
@@ -1576,37 +1768,112 @@ void RenderWidgetHostImpl::OnMsgInputEventAck(WebInputEvent::Type event_type,
 }
 
 void RenderWidgetHostImpl::OnMsgBeginSmoothScroll(
-    bool scroll_down, bool scroll_far) {
+    int gesture_id, const ViewHostMsg_BeginSmoothScroll_Params &params) {
   if (!view_)
     return;
-  active_smooth_scroll_gesture_.reset(
-      view_->CreateSmoothScrollGesture(scroll_down, scroll_far));
+  active_smooth_scroll_gestures_.insert(
+      std::make_pair(gesture_id,
+                     view_->CreateSmoothScrollGesture(
+                         params.scroll_down, params.pixels_to_scroll,
+                         params.mouse_event_x, params.mouse_event_y)));
+
+  // If an input ack is pending, then hold off ticking the gesture
+  // until we get an input ack.
+  if (!in_process_event_types_.empty())
+    return;
+  if (tick_active_smooth_scroll_gestures_task_posted_)
+    return;
   TickActiveSmoothScrollGesture();
 }
 
 void RenderWidgetHostImpl::TickActiveSmoothScrollGesture() {
-  if (!active_smooth_scroll_gesture_.get())
+  TRACE_EVENT0("input", "RenderWidgetHostImpl::TickActiveSmoothScrollGesture");
+  tick_active_smooth_scroll_gestures_task_posted_ = false;
+  if (active_smooth_scroll_gestures_.empty()) {
+    TRACE_EVENT_INSTANT0("input", "EarlyOut_NoActiveScrollGesture");
+    return;
+  }
+
+  base::TimeTicks now = TimeTicks::HighResNow();
+  base::TimeDelta preferred_interval =
+      base::TimeDelta::FromMilliseconds(kSyntheticScrollMessageIntervalMs);
+  base::TimeDelta time_until_next_ideal_interval =
+      (last_smooth_scroll_gestures_tick_time_ + preferred_interval) -
+      now;
+  if (time_until_next_ideal_interval.InMilliseconds() > 0) {
+    TRACE_EVENT_INSTANT1(
+        "input", "EarlyOut_TickedTooRecently",
+        "delay", time_until_next_ideal_interval.InMilliseconds());
+    // Post a task.
+    tick_active_smooth_scroll_gestures_task_posted_ = true;
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&RenderWidgetHostImpl::TickActiveSmoothScrollGesture,
+                   weak_factory_.GetWeakPtr()),
+        time_until_next_ideal_interval);
+    return;
+  }
+
+  last_smooth_scroll_gestures_tick_time_ = now;
+
+  // Separate ticking of gestures from sending their completion messages.
+  std::vector<int> ids_that_are_done;
+  for (SmoothScrollGestureMap::iterator it =
+           active_smooth_scroll_gestures_.begin();
+       it != active_smooth_scroll_gestures_.end();
+       ++it) {
+
+    bool active = it->second->ForwardInputEvents(now, this);
+    if (!active)
+      ids_that_are_done.push_back(it->first);
+  }
+
+  // Delete completed gestures and send their completion event.
+  for(size_t i = 0; i < ids_that_are_done.size(); i++) {
+    int id = ids_that_are_done[i];
+    SmoothScrollGestureMap::iterator it =
+        active_smooth_scroll_gestures_.find(id);
+    DCHECK(it != active_smooth_scroll_gestures_.end());
+    active_smooth_scroll_gestures_.erase(it);
+
+    Send(new ViewMsg_SmoothScrollCompleted(routing_id_, id));
+  }
+
+  // No need to post the next tick if an input is in flight.
+  if (!in_process_event_types_.empty())
     return;
 
-  TimeTicks now = TimeTicks::HighResNow();
-
-  // Post the next tick right away so it is regular.
+  TRACE_EVENT_INSTANT1("input", "PostTickTask",
+                       "delay", preferred_interval.InMilliseconds());
+  tick_active_smooth_scroll_gestures_task_posted_ = true;
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&RenderWidgetHostImpl::TickActiveSmoothScrollGesture,
                  weak_factory_.GetWeakPtr()),
-      base::TimeDelta::FromMilliseconds(kSyntheticScrollMessageIntervalMs));
+      preferred_interval);
+}
 
+void RenderWidgetHostImpl::OnMsgSelectRangeAck() {
+  select_range_pending_ = false;
+  if (next_selection_range_.get()) {
+    scoped_ptr<SelectionRange> next(next_selection_range_.Pass());
+    SelectRange(next->start, next->end);
+  }
+}
 
-  bool active = active_smooth_scroll_gesture_->ForwardInputEvents(now, this);
-  if (!active) {
-    active_smooth_scroll_gesture_.reset();
-    // TODO(nduca): send "smooth scroll done" event to RenderWidget.
+void RenderWidgetHostImpl::OnMsgMoveCaretAck() {
+  move_caret_pending_ = false;
+  if (next_move_caret_.get()) {
+    scoped_ptr<gfx::Point> next(next_move_caret_.Pass());
+    MoveCaret(*next);
   }
 }
 
 void RenderWidgetHostImpl::ProcessWheelAck(bool processed) {
   mouse_wheel_pending_ = false;
+
+  if (overscroll_controller_.get())
+    overscroll_controller_->ReceivedEventACK(current_wheel_event_, processed);
 
   // Now send the next (coalesced) mouse wheel event.
   if (!coalesced_mouse_wheel_events_.empty()) {
@@ -1621,24 +1888,15 @@ void RenderWidgetHostImpl::ProcessWheelAck(bool processed) {
 }
 
 void RenderWidgetHostImpl::ProcessGestureAck(bool processed, int type) {
-  if (type == WebInputEvent::GestureFlingCancel)
-    tap_suppression_controller_->GestureFlingCancelAck(processed);
-
-  gesture_event_pending_ = false;
-
-  // Now send the next (coalesced) gesture event.
-  if (!coalesced_gesture_events_.empty()) {
-    WebGestureEvent next_gesture_event =
-        coalesced_gesture_events_.front();
-    coalesced_gesture_events_.pop_front();
-    ForwardGestureEvent(next_gesture_event);
+  if (overscroll_controller_.get()) {
+    overscroll_controller_->ReceivedEventACK(
+        gesture_event_filter_->GetGestureEventAwaitingAck(), processed);
   }
+  gesture_event_filter_->ProcessGestureAck(processed, type);
 }
 
-void RenderWidgetHostImpl::ProcessTouchAck(
-    WebInputEvent::Type type, bool processed) {
-  if (view_)
-    view_->ProcessTouchAck(type, processed);
+void RenderWidgetHostImpl::ProcessTouchAck(InputEventAckState ack_result) {
+  touch_event_queue_->ProcessTouchAck(ack_result);
 }
 
 void RenderWidgetHostImpl::OnMsgFocus() {
@@ -1654,7 +1912,15 @@ void RenderWidgetHostImpl::OnMsgBlur() {
 }
 
 void RenderWidgetHostImpl::OnMsgHasTouchEventHandlers(bool has_handlers) {
+  if (has_touch_handler_ == has_handlers)
+    return;
   has_touch_handler_ = has_handlers;
+  if (!has_touch_handler_)
+    touch_event_queue_->FlushQueue();
+#if defined(OS_ANDROID)
+  if (view_)
+    view_->HasTouchEventHandlers(has_touch_handler_);
+#endif
 }
 
 void RenderWidgetHostImpl::OnMsgSetCursor(const WebCursor& cursor) {
@@ -1665,10 +1931,9 @@ void RenderWidgetHostImpl::OnMsgSetCursor(const WebCursor& cursor) {
 }
 
 void RenderWidgetHostImpl::OnMsgTextInputStateChanged(
-    ui::TextInputType type,
-    bool can_compose_inline) {
+    const ViewHostMsg_TextInputState_Params& params) {
   if (view_)
-    view_->TextInputStateChanged(type, can_compose_inline);
+    view_->TextInputStateChanged(params);
 }
 
 void RenderWidgetHostImpl::OnMsgImeCompositionRangeChanged(
@@ -1718,17 +1983,61 @@ void RenderWidgetHostImpl::OnMsgUnlockMouse() {
   RejectMouseLockOrUnlockIfNecessary();
 }
 
-#if defined(OS_POSIX) || defined(USE_AURA)
-void RenderWidgetHostImpl::OnMsgGetWindowRect(gfx::NativeViewId window_id,
-                                              gfx::Rect* results) {
+void RenderWidgetHostImpl::OnMsgShowDisambiguationPopup(
+    const gfx::Rect& rect,
+    const gfx::Size& size,
+    const TransportDIB::Id& id) {
+  DCHECK(!rect.IsEmpty());
+  DCHECK(!size.IsEmpty());
+
+  TransportDIB* dib = process_->GetTransportDIB(id);
+  DCHECK(dib->memory());
+  DCHECK(dib->size() == SkBitmap::ComputeSize(SkBitmap::kARGB_8888_Config,
+                                              size.width(), size.height()));
+
+  SkBitmap zoomed_bitmap;
+  zoomed_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+      size.width(), size.height());
+  zoomed_bitmap.setPixels(dib->memory());
+
+#if defined(OS_ANDROID)
   if (view_)
-    *results = view_->GetViewBounds();
+    view_->ShowDisambiguationPopup(rect, zoomed_bitmap);
+#else
+  NOTIMPLEMENTED();
+#endif
+
+  zoomed_bitmap.setPixels(0);
+  Send(new ViewMsg_ReleaseDisambiguationPopupDIB(GetRoutingID(),
+                                                 dib->handle()));
 }
 
-void RenderWidgetHostImpl::OnMsgGetRootWindowRect(gfx::NativeViewId window_id,
-                                                  gfx::Rect* results) {
-  if (view_)
-    *results = view_->GetBoundsInRootWindow();
+#if defined(OS_WIN)
+void RenderWidgetHostImpl::OnWindowlessPluginDummyWindowCreated(
+    gfx::NativeViewId dummy_activation_window) {
+  HWND hwnd = reinterpret_cast<HWND>(dummy_activation_window);
+  if (!IsWindow(hwnd) ||
+      !WebPluginDelegateImpl::IsDummyActivationWindow(hwnd)) {
+    // This may happen as a result of a race condition when the plugin is going
+    // away.
+    return;
+  }
+
+  SetParent(hwnd, reinterpret_cast<HWND>(GetNativeViewId()));
+  dummy_windows_for_activation_.push_back(hwnd);
+}
+
+void RenderWidgetHostImpl::OnWindowlessPluginDummyWindowDestroyed(
+    gfx::NativeViewId dummy_activation_window) {
+  HWND hwnd = reinterpret_cast<HWND>(dummy_activation_window);
+  std::list<HWND>::iterator i = dummy_windows_for_activation_.begin();
+  for (; i != dummy_windows_for_activation_.end(); ++i) {
+    if ((*i) == hwnd) {
+      dummy_windows_for_activation_.erase(i);
+      return;
+    }
+  }
+  NOTREACHED() << "Unknown dummy window";
 }
 #endif
 
@@ -1767,7 +2076,7 @@ bool RenderWidgetHostImpl::PaintBackingStoreRect(
   return scheduled_completion_callback;
 }
 
-void RenderWidgetHostImpl::ScrollBackingStoreRect(int dx, int dy,
+void RenderWidgetHostImpl::ScrollBackingStoreRect(const gfx::Vector2d& delta,
                                                   const gfx::Rect& clip_rect,
                                                   const gfx::Size& view_size) {
   if (is_hidden_) {
@@ -1784,7 +2093,7 @@ void RenderWidgetHostImpl::ScrollBackingStoreRect(int dx, int dy,
   BackingStore* backing_store = BackingStoreManager::Lookup(this);
   if (!backing_store || (backing_store->size() != view_size))
     return;
-  backing_store->ScrollBackingStore(dx, dy, clip_rect, view_size);
+  backing_store->ScrollBackingStore(delta, clip_rect, view_size);
 }
 
 void RenderWidgetHostImpl::Replace(const string16& word) {
@@ -1845,8 +2154,16 @@ void RenderWidgetHostImpl::ActivateDeferredPluginHandles() {
 #endif
 }
 
-const gfx::Point& RenderWidgetHostImpl::GetLastScrollOffset() const {
+const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {
   return last_scroll_offset_;
+}
+
+bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {
+  // Always send a touch event if the renderer has a touch-event handler. It is
+  // possible that a renderer stops listening to touch-events while there are
+  // still events in the touch-queue. In such cases, the new events should still
+  // get into the queue.
+  return has_touch_handler_ || !touch_event_queue_->empty();
 }
 
 void RenderWidgetHostImpl::StartUserGesture() {
@@ -1908,7 +2225,27 @@ void RenderWidgetHostImpl::ScrollFocusedEditableNodeIntoRect(
 
 void RenderWidgetHostImpl::SelectRange(const gfx::Point& start,
                                        const gfx::Point& end) {
+  if (select_range_pending_) {
+    if (!next_selection_range_.get()) {
+      next_selection_range_.reset(new SelectionRange());
+    }
+    next_selection_range_->start = start;
+    next_selection_range_->end = end;
+    return;
+  }
+
+  select_range_pending_ = true;
   Send(new ViewMsg_SelectRange(GetRoutingID(), start, end));
+}
+
+void RenderWidgetHostImpl::MoveCaret(const gfx::Point& point) {
+  if (move_caret_pending_) {
+    next_move_caret_.reset(new gfx::Point(point));
+    return;
+  }
+
+  move_caret_pending_ = true;
+  Send(new ViewMsg_MoveCaret(GetRoutingID(), point));
 }
 
 void RenderWidgetHostImpl::Undo() {
@@ -1982,42 +2319,34 @@ bool RenderWidgetHostImpl::GotResponseToLockMouseRequest(bool allowed) {
 
 // static
 void RenderWidgetHostImpl::AcknowledgeBufferPresent(
-    int32 route_id, int gpu_host_id, uint32 sync_point) {
+    int32 route_id, int gpu_host_id,
+    const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
   GpuProcessHostUIShim* ui_shim = GpuProcessHostUIShim::FromID(gpu_host_id);
-  if (ui_shim)
+  if (ui_shim) {
     ui_shim->Send(new AcceleratedSurfaceMsg_BufferPresented(route_id,
-                                                            sync_point));
+                                                            params));
+  }
 }
 
 void RenderWidgetHostImpl::AcknowledgeSwapBuffersToRenderer() {
-  base::FieldTrial* trial =
-      base::FieldTrialList::Find(content::kGpuCompositingFieldTrialName);
-  bool is_thread_trial = trial && trial->group_name() ==
-      content::kGpuCompositingFieldTrialThreadEnabledName;
-  bool has_enable = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableThreadedCompositing);
-  bool has_disable = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableThreadedCompositing);
-  DCHECK(!is_thread_trial || !has_disable);
-  bool enable_threaded_compositing =
-      is_thread_trial || (has_enable && !has_disable);
-  if (!enable_threaded_compositing)
+  if (!is_threaded_compositing_enabled_)
     Send(new ViewMsg_SwapBuffers_ACK(routing_id_));
 }
 
 #if defined(USE_AURA)
-// static
-void RenderWidgetHostImpl::SendFrontSurfaceIsProtected(
-    bool is_protected,
-    uint32 protection_state_id,
-    int32 route_id,
-    int gpu_host_id) {
-  GpuProcessHostUIShim* ui_shim = GpuProcessHostUIShim::FromID(gpu_host_id);
-  if (ui_shim) {
-    ui_shim->Send(new AcceleratedSurfaceMsg_SetFrontSurfaceIsProtected(
-        route_id, is_protected, protection_state_id));
+
+void RenderWidgetHostImpl::ParentChanged(gfx::NativeViewId new_parent) {
+#if defined(OS_WIN)
+  HWND hwnd = reinterpret_cast<HWND>(new_parent);
+  if (!hwnd)
+    hwnd = WebPluginDelegateImpl::GetDefaultWindowParent();
+  for (std::list<HWND>::iterator i = dummy_windows_for_activation_.begin();
+        i != dummy_windows_for_activation_.end(); ++i) {
+    SetParent(*i, hwnd);
   }
+#endif
 }
+
 #endif
 
 void RenderWidgetHostImpl::DelayedAutoResized() {

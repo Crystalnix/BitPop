@@ -26,35 +26,6 @@
         "unprivileged": true
       }
     },
-    "types": [
-      {
-        "id": "ManifestDetails",
-        "description": "Details from the manifest for the current extension/app.",
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The name of the extension/app"
-          },
-          "version": {
-            "type":"string",
-            "description": "The version of the extension/app"
-          },
-          "manifest_version": {
-            "optional": true,
-            "type": "integer"
-          },
-          "permissions": {
-            "optional": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "additionalProperties": { "type": "any" }
-      }
-    ],
     "functions": [
       {
         "name": "getBackgroundPage",
@@ -81,12 +52,14 @@
       },
       {
         "name": "getManifest",
-        "description": "Returns details about the app or extension from the manifest",
+        "description": "Returns details about the app or extension from the manifest. The object returned is a serialization of the full <a href=\"manifest.html\">manifest file</a>.",
         "type": "function",
         "unprivileged": true,
         "parameters": [],
         "returns": {
-          "$ref": "ManifestDetails",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": { "type": "any" },
           "description": "The manifest details."
         }
       },
@@ -106,13 +79,75 @@
           "type": "string",
           "description": "The fully-qualified URL to the resource."
         }
+      },
+      {
+        "name": "reload",
+        "description": "Reloads the app or extension.",
+        "type": "function",
+        "unprivileged": true,
+        "parameters": []
+      },
+      {
+        "name": "requestUpdateCheck",
+        "type": "function",
+        "unprivileged": true,
+        "description": "Requests an update check for this app/extension.",
+        "parameters": [
+          {
+            "type": "function",
+            "name": "callback",
+            "parameters": [
+              {
+                "name": "status",
+                "type": "string",
+                "enum": ["throttled", "no_update", "update_available"],
+                "description": "Result of the update check."
+              },
+              {
+                "name": "details",
+                "type": "object",
+                "optional": true,
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "description": "The version of the available update."
+                  }
+                },
+                "description": "If an update is available, this contains more information about the available update."
+              }
+            ]
+          }
+        ]
       }
     ],
     "events": [
       {
+        "name": "onStartup",
+        "type": "function",
+        "description": "Fired when the browser first starts up."
+      },
+      {
         "name": "onInstalled",
         "type": "function",
-        "description": "Fired when the extension is first installed, and on each update to a new version."
+        "description": "Fired when the extension is first installed, when the extension is updated to a new version, and when Chrome is updated to a new version.",
+        "parameters": [
+          {
+            "type": "object",
+            "name": "details",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": ["install", "update", "chrome_update"],
+                "description": "The reason that this event is being dispatched."
+              },
+              "previousVersion": {
+                "type": "string",
+                "optional": true,
+                "description": "Indicates the previous version of the extension, which has just been updated. This is present only if 'reason' is 'update'."
+              }
+            }
+          }
+        ]
       },
       {
         "name": "onSuspend",
@@ -123,6 +158,25 @@
         "name": "onSuspendCanceled",
         "type": "function",
         "description": "Sent after onSuspend() to indicate that the app won't be unloaded after all."
+      },
+      {
+        "name": "onUpdateAvailable",
+        "type": "function",
+        "description": "Fired when an update is available, but isn't installed immediately because the app is currently running. If you do nothing, the update will be installed the next time the background page gets unloaded, if you want it to be installed sooner you can explicitly call chrome.runtime.reload().",
+        "parameters": [
+          {
+            "type": "object",
+            "name": "details",
+            "properties": {
+              "version": {
+                "type": "string",
+                "description": "The version number of the available update."
+              }
+            },
+            "additionalProperties": { "type": "any" },
+            "description": "The manifest details of the available update."
+          }
+        ]
       }
     ]
   }

@@ -19,11 +19,9 @@ class WebCString;
 class WebDocument;
 }
 
-namespace webkit {
-namespace forms {
+namespace content {
 struct PasswordForm;
-}  // namespace forms
-}  // namespace webkit
+}
 
 namespace autofill {
 
@@ -56,11 +54,12 @@ class PasswordGenerationManager : public content::RenderViewObserver,
   virtual WebKit::WebCString imageNameForNormalState() OVERRIDE;
   virtual WebKit::WebCString imageNameForDisabledState() OVERRIDE;
   virtual WebKit::WebCString imageNameForReadOnlyState() OVERRIDE;
+  virtual WebKit::WebCString imageNameForHoverState() OVERRIDE;
   virtual void handleClick(WebKit::WebInputElement& element) OVERRIDE;
   virtual void willDetach(const WebKit::WebInputElement& element) OVERRIDE;
 
   // Message handlers.
-  void OnFormNotBlacklisted(const webkit::forms::PasswordForm& form);
+  void OnFormNotBlacklisted(const content::PasswordForm& form);
   void OnPasswordAccepted(const string16& password);
   void OnPasswordGenerationEnabled(bool enabled);
 

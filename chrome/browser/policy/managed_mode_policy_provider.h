@@ -6,11 +6,14 @@
 #define CHROME_BROWSER_POLICY_MANAGED_MODE_POLICY_PROVIDER_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/prefs/persistent_pref_store.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/common/persistent_pref_store.h"
 
 class Profile;
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace policy {
 
@@ -18,8 +21,7 @@ namespace policy {
 // It offers methods to set and read policies, and persists them on disk in
 // JSON format.
 class ManagedModePolicyProvider
-    : public ProfileKeyedService,
-      public ConfigurationPolicyProvider,
+    : public ConfigurationPolicyProvider,
       public PrefStore::Observer {
  public:
   // The dictionary key under which we store the policy dictionary. Public for
@@ -27,8 +29,15 @@ class ManagedModePolicyProvider
   static const char kPolicies[];
 
   // Creates a new ManagedModePolicyProvider that caches its policies in a JSON
-  // file inside the profile folder.
-  static ManagedModePolicyProvider* Create(Profile* profile);
+  // file inside the profile folder. |sequenced_task_runner| ensures that all
+  // file I/O operations are executed in the order that does not collide
+  // with Profile's file operations. If |force_immediate_policy_load| is true,
+  // then the underlying policies are loaded immediately before this call
+  // returns, otherwise they will be loaded asynchronously in the background.
+  static scoped_ptr<ManagedModePolicyProvider> Create(
+      Profile* profile,
+      base::SequencedTaskRunner* sequenced_task_runner,
+      bool force_immediate_policy_load);
 
   // Use this constructor to inject a different PrefStore (e.g. for testing).
   explicit ManagedModePolicyProvider(PersistentPrefStore* store);
@@ -41,6 +50,7 @@ class ManagedModePolicyProvider
   void SetPolicy(const std::string& key, const base::Value* value);
 
   // ConfigurationPolicyProvider implementation:
+  virtual void Shutdown() OVERRIDE;
   virtual void RefreshPolicies() OVERRIDE;
   virtual bool IsInitializationComplete() const OVERRIDE;
 

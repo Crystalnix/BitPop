@@ -5,13 +5,15 @@
 #ifndef CONTENT_PUBLIC_TEST_BROWSER_TEST_UTILS_H_
 #define CONTENT_PUBLIC_TEST_BROWSER_TEST_UTILS_H_
 
+#include <queue>
+#include <string>
 #include <vector>
 
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/process.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -42,6 +44,7 @@ class Point;
 
 namespace content {
 
+class BrowserContext;
 class MessageLoopRunner;
 class RenderViewHost;
 class WebContents;
@@ -56,8 +59,11 @@ void WaitForLoadStop(WebContents* web_contents);
 // Causes the specified web_contents to crash. Blocks until it is crashed.
 void CrashTab(WebContents* web_contents);
 
-// Simulates clicking at the center of the given tab asynchronously.
-void SimulateMouseClick(WebContents* web_contents);
+// Simulates clicking at the center of the given tab asynchronously; modifiers
+// may contain bits from WebInputEvent::Modifiers.
+void SimulateMouseClick(WebContents* web_contents,
+                        int modifiers,
+                        WebKit::WebMouseEvent::Button button);
 
 // Simulates asynchronously a mouse enter/move/leave event.
 void SimulateMouseEvent(WebContents* web_contents,
@@ -100,6 +106,14 @@ bool ExecuteJavaScriptAndExtractString(
     const std::wstring& script,
     std::string* result) WARN_UNUSED_RESULT;
 
+// Returns the cookies for the given url.
+std::string GetCookies(BrowserContext* browser_context, const GURL& url);
+
+// Sets a cookie for the given url. Returns true on success.
+bool SetCookie(BrowserContext* browser_context,
+               const GURL& url,
+               const std::string& value);
+
 // Watches title changes on a tab, blocking until an expected title is set.
 class TitleWatcher : public NotificationObserver {
  public:
@@ -138,68 +152,35 @@ class TitleWatcher : public NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(TitleWatcher);
 };
 
-// This is a utility class for running a python websocket server
-// during tests. The server is started during the construction of the
-// object, and is stopped when the destructor is called. Note that
-// because of the underlying script that is used:
-//
-//    third_paty/WebKit/Tools/Scripts/new-run-webkit-websocketserver
-//
-// Only *_wsh.py handlers found under "http/tests/websocket/tests" from the
-// |root_directory| will be found and active while running the test
-// server.
-class TestWebSocketServer {
+// Watches for responses from the DOMAutomationController and keeps them in a
+// queue. Useful for waiting for a message to be received.
+class DOMMessageQueue : public NotificationObserver {
  public:
-  TestWebSocketServer();
+  // Constructs a DOMMessageQueue and begins listening for messages from the
+  // DOMAutomationController. Do not construct this until the browser has
+  // started.
+  DOMMessageQueue();
+  virtual ~DOMMessageQueue();
 
-  // Stops the python websocket server if it was already started.
-  ~TestWebSocketServer();
+  // Removes all messages in the message queue.
+  void ClearQueue();
 
-  // Use a random port, useful for tests that are sharded. Returns the port.
-  int UseRandomPort();
+  // Wait for the next message to arrive. |message| will be set to the next
+  // message, if not null. Returns true on success.
+  bool WaitForMessage(std::string* message) WARN_UNUSED_RESULT;
 
-  // Serves with TLS.
-  void UseTLS();
-
-  // Starts the python websocket server using |root_directory|. Returns whether
-  // the server was successfully started.
-  bool Start(const FilePath& root_directory);
+  // Overridden NotificationObserver methods.
+  virtual void Observe(int type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details) OVERRIDE;
 
  private:
-  // Sets up PYTHONPATH to run websocket_server.py.
-  void SetPythonPath();
+  NotificationRegistrar registrar_;
+  std::queue<std::string> message_queue_;
+  bool waiting_for_message_;
+  scoped_refptr<MessageLoopRunner> message_loop_runner_;
 
-  // Creates a CommandLine for invoking the python interpreter.
-  CommandLine* CreatePythonCommandLine();
-
-  // Creates a CommandLine for invoking the python websocker server.
-  CommandLine* CreateWebSocketServerCommandLine();
-
-  // Has the server been started?
-  bool started_;
-
-  // A Scoped temporary directory for holding the python pid file.
-  ScopedTempDir temp_dir_;
-
-  // Used to close the same python interpreter when server falls out
-  // scope.
-  FilePath websocket_pid_file_;
-
-#if defined(OS_POSIX)
-  // ProcessHandle used to terminate child process.
-  base::ProcessHandle process_group_id_;
-#elif defined(OS_WIN)
-  // JobObject used to clean up orphaned child process.
-  base::win::ScopedHandle job_handle_;
-#endif
-
-  // Holds port number which the python websocket server uses.
-  int port_;
-
-  // If the python websocket server serves with TLS.
-  bool secure_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestWebSocketServer);
+  DISALLOW_COPY_AND_ASSIGN(DOMMessageQueue);
 };
 
 }  // namespace content

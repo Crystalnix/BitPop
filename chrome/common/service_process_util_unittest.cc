@@ -27,14 +27,14 @@
 #endif
 
 #if defined(OS_POSIX)
-#include "chrome/common/auto_start_linux.h"
 #include <glib.h>
+#include "chrome/common/auto_start_linux.h"
 #endif
 
 #if defined(USE_AURA)
 // This test fails http://crbug.com/84854, and is very flaky on CrOS and
 // somewhat flaky on other Linux.
-#define MAYBE_ForceShutdown FAILS_ForceShutdown
+#define MAYBE_ForceShutdown DISABLED_ForceShutdown
 #else
 #if defined(OS_LINUX) || defined(OS_WIN)
 #define MAYBE_ForceShutdown DISABLED_ForceShutdown
@@ -241,8 +241,8 @@ MULTIPROCESS_TEST_MAIN(ServiceProcessStateTestShutdown) {
 
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/mac/mac_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread.h"
 #include "chrome/common/mac/launchd.h"
@@ -289,7 +289,7 @@ class ServiceProcessStateFileManipulationTest : public ::testing::Test {
   void Run() { loop_.Run(); }
 
  private:
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   MessageLoopForUI loop_;
   base::Thread io_thread_;
   FilePath executable_path_, bundle_path_;

@@ -3,35 +3,69 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete_history_manager.h"
+#include "chrome/browser/autofill/autocomplete_history_manager.h"
 #include "chrome/browser/autofill/autofill_external_delegate.h"
 #include "chrome/browser/autofill/autofill_manager.h"
+#include "chrome/browser/ui/autofill/autofill_popup_controller_impl.h"
 #include "chrome/common/autofill_messages.h"
 #include "chrome/common/chrome_constants.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_ANDROID)
+#include "content/public/browser/android/content_view_core.h"
+#endif
+
 using content::RenderViewHost;
 using WebKit::WebAutofillClient;
 
-AutofillExternalDelegate::~AutofillExternalDelegate() {
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(AutofillExternalDelegate)
+
+void AutofillExternalDelegate::CreateForWebContentsAndManager(
+    content::WebContents* web_contents,
+    AutofillManager* autofill_manager) {
+  if (FromWebContents(web_contents))
+    return;
+
+  web_contents->SetUserData(
+      UserDataKey(),
+      new AutofillExternalDelegate(web_contents, autofill_manager));
 }
 
 AutofillExternalDelegate::AutofillExternalDelegate(
-    TabContents* tab_contents,
+    content::WebContents* web_contents,
     AutofillManager* autofill_manager)
-    : tab_contents_(tab_contents),
+    : web_contents_(web_contents),
       autofill_manager_(autofill_manager),
-      password_autofill_manager_(
-          tab_contents ? tab_contents->web_contents() : NULL),
+      controller_(NULL),
+      password_autofill_manager_(web_contents),
       autofill_query_id_(0),
       display_warning_if_disabled_(false),
-      has_shown_autofill_popup_for_current_edit_(false),
-      popup_visible_(false) {
+      has_shown_autofill_popup_for_current_edit_(false) {
+  registrar_.Add(this,
+                 content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
+                 content::Source<content::WebContents>(web_contents));
+  if (web_contents) {
+    registrar_.Add(
+        this,
+        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+        content::Source<content::NavigationController>(
+            &(web_contents->GetController())));
+  }
+}
+
+AutofillExternalDelegate::~AutofillExternalDelegate() {
+  if (controller_)
+    controller_->DelegateDestroyed();
 }
 
 void AutofillExternalDelegate::SelectAutofillSuggestionAtIndex(int unique_id) {
@@ -43,16 +77,16 @@ void AutofillExternalDelegate::SelectAutofillSuggestionAtIndex(int unique_id) {
 }
 
 void AutofillExternalDelegate::OnQuery(int query_id,
-                                       const webkit::forms::FormData& form,
-                                       const webkit::forms::FormField& field,
-                                       const gfx::Rect& bounds,
+                                       const FormData& form,
+                                       const FormFieldData& field,
+                                       const gfx::Rect& element_bounds,
                                        bool display_warning_if_disabled) {
   autofill_query_form_ = form;
   autofill_query_field_ = field;
   display_warning_if_disabled_ = display_warning_if_disabled;
   autofill_query_id_ = query_id;
 
-  OnQueryPlatformSpecific(query_id, form, field, bounds);
+  EnsurePopupForElement(element_bounds);
 }
 
 void AutofillExternalDelegate::OnSuggestionsReturned(
@@ -61,7 +95,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
     const std::vector<string16>& autofill_labels,
     const std::vector<string16>& autofill_icons,
     const std::vector<int>& autofill_unique_ids) {
-  if (query_id != autofill_query_id_)
+  if (query_id != autofill_query_id_ || !controller_)
     return;
 
   std::vector<string16> values(autofill_values);
@@ -108,27 +142,27 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
 
   // Send to display.
   if (autofill_query_field_.is_focusable) {
-    popup_visible_ = true;
     ApplyAutofillSuggestions(values, labels, icons, ids);
 
-    tab_contents_->autofill_manager()->OnDidShowAutofillSuggestions(
-        has_autofill_item && !has_shown_autofill_popup_for_current_edit_);
+    if (autofill_manager_) {
+      autofill_manager_->OnDidShowAutofillSuggestions(
+          has_autofill_item && !has_shown_autofill_popup_for_current_edit_);
+    }
     has_shown_autofill_popup_for_current_edit_ |= has_autofill_item;
   }
 }
 
 void AutofillExternalDelegate::OnShowPasswordSuggestions(
     const std::vector<string16>& suggestions,
-    const webkit::forms::FormField& field,
-    const gfx::Rect& bounds) {
+    const FormFieldData& field,
+    const gfx::Rect& element_bounds) {
   autofill_query_field_ = field;
+  EnsurePopupForElement(element_bounds);
 
   if (suggestions.empty()) {
     HideAutofillPopup();
     return;
   }
-
-  SetBounds(bounds);
 
   std::vector<string16> empty(suggestions.size());
   std::vector<int> password_ids(suggestions.size(),
@@ -136,26 +170,47 @@ void AutofillExternalDelegate::OnShowPasswordSuggestions(
   ApplyAutofillSuggestions(suggestions, empty, empty, password_ids);
 }
 
+void AutofillExternalDelegate::EnsurePopupForElement(
+    const gfx::Rect& element_bounds) {
+  if (controller_)
+    return;
+
+  // |controller_| owns itself.
+  controller_ = new AutofillPopupControllerImpl(
+      this,
+      // web_contents() may be NULL during testing.
+      web_contents() ? web_contents()->GetView()->GetContentNativeView() : NULL,
+      element_bounds);
+}
+
+void AutofillExternalDelegate::ApplyAutofillSuggestions(
+    const std::vector<string16>& autofill_values,
+    const std::vector<string16>& autofill_labels,
+    const std::vector<string16>& autofill_icons,
+    const std::vector<int>& autofill_unique_ids) {
+  controller_->Show(autofill_values,
+                    autofill_labels,
+                    autofill_icons,
+                    autofill_unique_ids);
+
+  web_contents()->GetRenderViewHost()->AddKeyboardListener(controller_);
+}
+
 void AutofillExternalDelegate::SetCurrentDataListValues(
     const std::vector<string16>& data_list_values,
     const std::vector<string16>& data_list_labels,
     const std::vector<string16>& data_list_icons,
     const std::vector<int>& data_list_unique_ids) {
-  // TODO(csharp): Modify the code to allow the data list values to change
-  // even if the popup is visible.
-  // http://crbug.com/131003
-  if (!popup_visible_) {
-    data_list_values_ = data_list_values;
-    data_list_labels_ = data_list_labels;
-    data_list_icons_ = data_list_icons;
-    data_list_unique_ids_ = data_list_unique_ids;
-  }
+  data_list_values_ = data_list_values;
+  data_list_labels_ = data_list_labels;
+  data_list_icons_ = data_list_icons;
+  data_list_unique_ids_ = data_list_unique_ids;
 }
 
 void AutofillExternalDelegate::RemoveAutocompleteEntry(const string16& value) {
-  if (tab_contents_) {
-    tab_contents_->autocomplete_history_manager()->
-        OnRemoveAutocompleteEntry(autofill_query_field_.name, value);
+  if (web_contents_) {
+    autofill_manager_->RemoveAutocompleteEntry(
+        autofill_query_field_.name, value);
   }
 }
 
@@ -164,14 +219,13 @@ void AutofillExternalDelegate::RemoveAutofillProfileOrCreditCard(
   autofill_manager_->RemoveAutofillProfileOrCreditCard(unique_id);
 }
 
-
 void AutofillExternalDelegate::DidEndTextFieldEditing() {
   HideAutofillPopup();
 
   has_shown_autofill_popup_for_current_edit_ = false;
 }
 
-bool AutofillExternalDelegate::DidAcceptAutofillSuggestions(
+bool AutofillExternalDelegate::DidAcceptAutofillSuggestion(
     const string16& value,
     int unique_id,
     unsigned index) {
@@ -179,8 +233,7 @@ bool AutofillExternalDelegate::DidAcceptAutofillSuggestions(
   if (unique_id == WebAutofillClient::MenuItemIDWarningMessage)
     return false;
 
-  RenderViewHost* host =
-      tab_contents_->web_contents()->GetRenderViewHost();
+  RenderViewHost* host = web_contents_->GetRenderViewHost();
 
   if (unique_id == WebAutofillClient::MenuItemIDAutofillOptions) {
     // User selected 'Autofill Options'.
@@ -211,14 +264,24 @@ bool AutofillExternalDelegate::DidAcceptAutofillSuggestions(
 }
 
 void AutofillExternalDelegate::ClearPreviewedForm() {
-  RenderViewHost* host = tab_contents_->web_contents()->GetRenderViewHost();
-  host->Send(new AutofillMsg_ClearPreviewedForm(host->GetRoutingID()));
+  if (web_contents_) {
+    RenderViewHost* host = web_contents_->GetRenderViewHost();
+
+    if (host)
+      host->Send(new AutofillMsg_ClearPreviewedForm(host->GetRoutingID()));
+  }
+}
+
+void AutofillExternalDelegate::ControllerDestroyed() {
+  web_contents()->GetRenderViewHost()->RemoveKeyboardListener(controller_);
+  controller_ = NULL;
 }
 
 void AutofillExternalDelegate::HideAutofillPopup() {
-  popup_visible_ = false;
-
-  HideAutofillPopupInternal();
+  if (controller_) {
+    ClearPreviewedForm();
+    controller_->Hide();
+  }
 }
 
 void AutofillExternalDelegate::Reset() {
@@ -228,14 +291,14 @@ void AutofillExternalDelegate::Reset() {
 }
 
 void AutofillExternalDelegate::AddPasswordFormMapping(
-      const webkit::forms::FormField& form,
-      const webkit::forms::PasswordFormFillData& fill_data) {
-    password_autofill_manager_.AddPasswordFormMapping(form, fill_data);
+      const FormFieldData& form,
+      const PasswordFormFillData& fill_data) {
+  password_autofill_manager_.AddPasswordFormMapping(form, fill_data);
 }
 
 void AutofillExternalDelegate::FillAutofillFormData(int unique_id,
                                                     bool is_preview) {
-  RenderViewHost* host = tab_contents_->web_contents()->GetRenderViewHost();
+  RenderViewHost* host = web_contents_->GetRenderViewHost();
 
   if (is_preview) {
     host->Send(new AutofillMsg_SetAutofillActionPreview(
@@ -343,15 +406,18 @@ void AutofillExternalDelegate::InsertDataListValues(
                               data_list_unique_ids_.end());
 }
 
-// Add a "!defined(OS_YOUROS) for each platform that implements this
-// in an autofill_external_delegate_YOUROS.cc.  Currently there are
-// none, so all platforms use the default.
-
-#if !defined(OS_ANDROID) && !defined(TOOLKIT_GTK)
-
-AutofillExternalDelegate* AutofillExternalDelegate::Create(
-    TabContents*, AutofillManager*) {
-  return NULL;
+void AutofillExternalDelegate::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED) {
+    if (!*content::Details<bool>(details).ptr())
+      HideAutofillPopup();
+  } else if (type == content::NOTIFICATION_NAV_ENTRY_COMMITTED) {
+    HideAutofillPopup();
+  } else {
+    NOTREACHED();
+  }
 }
 
-#endif
+

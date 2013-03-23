@@ -5,7 +5,7 @@
 #include "base/base64.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/zip.h"
@@ -38,7 +38,7 @@ TEST(CapabilitiesParser, SimpleCaps) {
   options->SetBoolean("nativeEvents", true);
 
   Capabilities caps;
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   CapabilitiesParser parser(&dict, temp_dir.path(), Logger(), &caps);
   ASSERT_FALSE(parser.Parse());
@@ -61,7 +61,7 @@ TEST(CapabilitiesParser, Args) {
   options->Set("args", args);
 
   Capabilities caps;
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   CapabilitiesParser parser(&dict, temp_dir.path(), Logger(), &caps);
   ASSERT_FALSE(parser.Parse());
@@ -81,7 +81,7 @@ TEST(CapabilitiesParser, Extensions) {
   options->Set("extensions", extensions);
 
   Capabilities caps;
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   CapabilitiesParser parser(&dict, temp_dir.path(), Logger(), &caps);
   ASSERT_FALSE(parser.Parse());
@@ -99,7 +99,7 @@ TEST(CapabilitiesParser, Profile) {
   DictionaryValue* options = new DictionaryValue();
   dict.Set("chromeOptions", options);
 
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath folder = temp_dir.path().AppendASCII("folder");
   ASSERT_TRUE(file_util::CreateDirectory(folder));
@@ -274,6 +274,28 @@ TEST(CapabilitiesParser, DriverLoggingCapString) {
   // An integer (here, an enum LogLevel value) doesn't work.
   options->SetInteger("driver", kInfoLogLevel);
   ASSERT_TRUE(parser.Parse());
+}
+
+TEST(CapabilitiesParser, ExcludeSwitches) {
+  DictionaryValue dict;
+  DictionaryValue* options = new DictionaryValue();
+  dict.Set("chromeOptions", options);
+
+  ListValue* switches = new ListValue();
+  switches->Append(Value::CreateStringValue(switches::kNoFirstRun));
+  switches->Append(Value::CreateStringValue(switches::kDisableSync));
+  switches->Append(Value::CreateStringValue(switches::kDisableTranslate));
+  options->Set("excludeSwitches", switches);
+
+  Capabilities caps;
+  CapabilitiesParser parser(&dict, FilePath(), Logger(), &caps);
+  ASSERT_FALSE(parser.Parse());
+
+  const std::set<std::string>& rm_set = caps.exclude_switches;
+  EXPECT_EQ(static_cast<size_t>(3), rm_set.size());
+  ASSERT_TRUE(rm_set.find(switches::kNoFirstRun) != rm_set.end());
+  ASSERT_TRUE(rm_set.find(switches::kDisableSync) != rm_set.end());
+  ASSERT_TRUE(rm_set.find(switches::kDisableTranslate) != rm_set.end());
 }
 
 }  // namespace webdriver

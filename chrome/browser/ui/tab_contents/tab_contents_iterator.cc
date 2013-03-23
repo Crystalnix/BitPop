@@ -7,54 +7,71 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/printing/background_printing_manager.h"
-
-namespace {
-
-printing::BackgroundPrintingManager* GetBackgroundPrintingManager() {
-  return g_browser_process->background_printing_manager();
-}
-
-}  // namespace
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 
 TabContentsIterator::TabContentsIterator()
-    : browser_iterator_(BrowserList::begin()),
-      web_view_index_(-1),
-      bg_printing_iterator_(GetBackgroundPrintingManager()->begin()),
-      cur_(NULL) {
+    : web_view_index_(-1),
+      cur_(NULL),
+      desktop_browser_list_(chrome::BrowserListImpl::GetInstance(
+          chrome::HOST_DESKTOP_TYPE_NATIVE)),
+      ash_browser_list_(chrome::BrowserListImpl::GetInstance(
+          chrome::HOST_DESKTOP_TYPE_ASH)),
+      desktop_browser_iterator_(desktop_browser_list_->begin()),
+      ash_browser_iterator_(ash_browser_list_->begin()) {
   Advance();
 }
 
+Browser* TabContentsIterator::browser() const {
+  if (desktop_browser_iterator_ != desktop_browser_list_->end())
+    return *desktop_browser_iterator_;
+  // In some cases like Chrome OS the two browser lists are the same.
+  if (desktop_browser_list_ != ash_browser_list_) {
+    if (ash_browser_iterator_ != ash_browser_list_->end())
+      return *ash_browser_iterator_;
+  }
+  return NULL;
+}
+
 void TabContentsIterator::Advance() {
-  // The current TabContents should be valid unless we are at the beginning.
+  // The current WebContents should be valid unless we are at the beginning.
   DCHECK(cur_ || (web_view_index_ == -1 &&
-                  browser_iterator_ == BrowserList::begin()))
+            desktop_browser_iterator_ == desktop_browser_list_->begin() &&
+            ash_browser_iterator_ == ash_browser_list_->begin()))
       << "Trying to advance past the end";
 
-  // Update cur_ to the next TabContents in the list.
-  while (browser_iterator_ != BrowserList::end()) {
-    if (++web_view_index_ >= (*browser_iterator_)->tab_count()) {
+  // First iterate over the Browser objects in the desktop environment and then
+  // over those in the ASH environment.
+  if (AdvanceBrowserIterator(&desktop_browser_iterator_,
+                             desktop_browser_list_))
+    return;
+
+  // In some cases like Chrome OS the two browser lists are the same.
+  if (desktop_browser_list_ != ash_browser_list_)
+    AdvanceBrowserIterator(&ash_browser_iterator_, ash_browser_list_);
+}
+
+bool TabContentsIterator::AdvanceBrowserIterator(
+    chrome::BrowserListImpl::const_iterator* list_iterator,
+    chrome::BrowserListImpl* browser_list) {
+  // Update cur_ to the next WebContents in the list.
+  while (*list_iterator != browser_list->end()) {
+    if (++web_view_index_ >=
+          (**list_iterator)->tab_strip_model()->count()) {
       // Advance to the next Browser in the list.
-      ++browser_iterator_;
+      ++(*list_iterator);
       web_view_index_ = -1;
       continue;
     }
 
-    TabContents* next_tab =
-        chrome::GetTabContentsAt(*browser_iterator_, web_view_index_);
+    content::WebContents* next_tab =
+        (**list_iterator)->tab_strip_model()->GetWebContentsAt(
+            web_view_index_);
     if (next_tab) {
       cur_ = next_tab;
-      return;
+      return true;
     }
   }
-  // If no more TabContents from Browsers, check the BackgroundPrintingManager.
-  while (bg_printing_iterator_ != GetBackgroundPrintingManager()->end()) {
-    cur_ = *bg_printing_iterator_;
-    CHECK(cur_);
-    ++bg_printing_iterator_;
-    return;
-  }
-  // Reached the end - no more TabContents.
+  // Reached the end.
   cur_ = NULL;
+  return false;
 }

@@ -34,7 +34,8 @@ void AssertInterceptedIO(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   net::URLRequestContext context;
   net::URLRequest request(url, NULL, &context);
-  scoped_refptr<net::URLRequestJob> job = interceptor->MaybeIntercept(&request);
+  scoped_refptr<net::URLRequestJob> job = interceptor->MaybeIntercept(
+      &request, context.network_delegate());
   ASSERT_TRUE(job.get() != NULL);
 }
 
@@ -47,7 +48,7 @@ void AssertIntercepted(
                           base::Bind(AssertInterceptedIO,
                                      url,
                                      base::Unretained(interceptor)));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 void AssertWillHandleIO(
@@ -69,7 +70,7 @@ void AssertWillHandle(
                                      scheme,
                                      expected,
                                      base::Unretained(interceptor)));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 class FakeDelegate : public ProtocolHandlerRegistry::Delegate {
@@ -167,9 +168,9 @@ class FakeProtocolClientWorker
 
   virtual ShellIntegration::DefaultWebClientState CheckIsDefault() OVERRIDE {
     if (force_failure_) {
-      return ShellIntegration::NOT_DEFAULT_WEB_CLIENT;
+      return ShellIntegration::NOT_DEFAULT;
     } else {
-      return ShellIntegration::IS_DEFAULT_WEB_CLIENT;
+      return ShellIntegration::IS_DEFAULT;
     }
   }
 
@@ -716,7 +717,7 @@ TEST_F(ProtocolHandlerRegistryTest, TestOSRegistration) {
 #if defined(OS_LINUX)
 // TODO(benwells): When Linux support is more reliable and
 // http://crbut.com/88255 is fixed this test will pass.
-#define MAYBE_TestOSRegistrationFailure FAILS_TestOSRegistrationFailure
+#define MAYBE_TestOSRegistrationFailure DISABLED_TestOSRegistrationFailure
 #else
 #define MAYBE_TestOSRegistrationFailure TestOSRegistrationFailure
 #endif

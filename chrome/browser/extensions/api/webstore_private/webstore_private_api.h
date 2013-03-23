@@ -12,11 +12,10 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
 #include "chrome/browser/extensions/webstore_installer.h"
-#include "chrome/browser/gpu_feature_checker.h"
-#include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 
 class ProfileSyncService;
 
@@ -24,21 +23,15 @@ namespace content {
 class GpuDataManager;
 }
 
+class GPUFeatureChecker;
+
 namespace extensions {
 
 class WebstorePrivateApi {
  public:
-  // Allows you to set the ProfileSyncService the function will use for
-  // testing purposes.
-  static void SetTestingProfileSyncService(ProfileSyncService* service);
-
   // Allows you to override the WebstoreInstaller delegate for testing.
   static void SetWebstoreInstallerDelegateForTesting(
       WebstoreInstaller::Delegate* delegate);
-
-  // If |allow| is true, then the extension IDs used by the SilentlyInstall
-  // apitest will be trusted.
-  static void SetTrustTestIDsForTesting(bool allow);
 
   // Gets the pending approval for the |extension_id| in |profile|. Pending
   // approvals are held between the calls to beginInstallWithManifest and
@@ -153,49 +146,23 @@ class BeginInstallWithManifestFunction
   scoped_ptr<ExtensionInstallPrompt> install_prompt_;
 };
 
-class CompleteInstallFunction : public SyncExtensionFunction {
+class CompleteInstallFunction
+    : public AsyncExtensionFunction,
+      public WebstoreInstaller::Delegate {
  public:
   DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.completeInstall");
 
+  // WebstoreInstaller::Delegate:
+  virtual void OnExtensionInstallSuccess(const std::string& id) OVERRIDE;
+  virtual void OnExtensionInstallFailure(
+      const std::string& id,
+      const std::string& error,
+      WebstoreInstaller::FailureReason reason) OVERRIDE;
  protected:
   virtual ~CompleteInstallFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-};
-
-class SilentlyInstallFunction : public AsyncExtensionFunction,
-                                public WebstoreInstallHelper::Delegate,
-                                public WebstoreInstaller::Delegate {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.silentlyInstall");
-
-  SilentlyInstallFunction();
-
-  // WebstoreInstallHelper::Delegate:
-  virtual void OnWebstoreParseSuccess(
-      const std::string& id,
-      const SkBitmap& icon,
-      base::DictionaryValue* parsed_manifest) OVERRIDE;
-  virtual void OnWebstoreParseFailure(
-      const std::string& id,
-      InstallHelperResultCode result_code,
-      const std::string& error_message) OVERRIDE;
-
-  // WebstoreInstaller::Delegate:
-  virtual void OnExtensionInstallSuccess(const std::string& id) OVERRIDE;
-  virtual void OnExtensionInstallFailure(const std::string& id,
-                                         const std::string& error) OVERRIDE;
-
- protected:
-  virtual ~SilentlyInstallFunction();
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-
- private:
-  std::string id_;
-  std::string manifest_;
 };
 
 class GetBrowserLoginFunction : public SyncExtensionFunction {

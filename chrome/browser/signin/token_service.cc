@@ -12,13 +12,17 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/gaia/gaia_auth_fetcher.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "google_apis/gaia/gaia_auth_fetcher.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "net/url_request/url_request_context_getter.h"
+
+#if defined(OS_CHROMEOS)
+#include "base/metrics/histogram.h"
+#endif
 
 using content::BrowserThread;
 
@@ -86,11 +90,37 @@ void TokenService::Initialize(const char* const source,
     token_map_[service] = token;
     SaveAuthTokenToDB(service, token);
   }
-
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKEN_UPDATED,
-                 content::Source<Profile>(profile));
 }
+
+// TODO(petewil) We should refactor the token_service so it does not both
+// store tokens and fetch them.  Move the key-value storage out of
+// token_service, and leave the token fetching in token_service.
+
+void TokenService::AddAuthTokenManually(const std::string& service,
+                                        const std::string& auth_token) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  VLOG(1) << "Got an authorization token for " << service;
+  token_map_[service] = auth_token;
+  FireTokenAvailableNotification(service, auth_token);
+  SaveAuthTokenToDB(service, auth_token);
+
+#if defined(OS_CHROMEOS)
+  // We don't ever want to fetch OAuth2 tokens from LSO service token in case
+  // when ChromeOS is in forced OAuth2 use mode. OAuth2 token should only
+  // arrive into token service exclusively through UpdateCredentialsWithOAuth2.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kForceOAuth1))
+    return;
+#endif
+
+  // If we got ClientLogin token for "lso" service, and we don't already have
+  // OAuth2 tokens, start fetching OAuth2 login scoped token pair.
+  if (service == GaiaConstants::kLSOService && !HasOAuthLoginToken()) {
+    int index = GetServiceIndex(service);
+    CHECK_GE(index, 0);
+    fetchers_[index]->StartLsoForOAuthLoginTokenExchange(auth_token);
+  }
+}
+
 
 void TokenService::ResetCredentialsInMemory() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -123,18 +153,12 @@ void TokenService::UpdateCredentials(
   for (size_t i = 0; i < arraysize(kServices); i++) {
     fetchers_[i].reset();
   }
-
-  // Notify the CredentialCacheService that a new lsid and sid are available.
-  FireCredentialsUpdatedNotification(credentials.lsid, credentials.sid);
 }
 
 void TokenService::UpdateCredentialsWithOAuth2(
-    const GaiaAuthConsumer::ClientOAuthResult& credentials) {
-  // Will be implemented once the ClientOAuth signin is complete.  Not called
-  // yet by any code.
-  NOTREACHED();
+    const GaiaAuthConsumer::ClientOAuthResult& oauth2_tokens) {
+  SaveOAuth2Credentials(oauth2_tokens);
 }
-
 
 void TokenService::LoadTokensFromDB() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -215,6 +239,10 @@ bool TokenService::HasOAuthLoginToken() const {
   return HasTokenForService(GaiaConstants::kGaiaOAuth2LoginRefreshToken);
 }
 
+bool TokenService::HasOAuthLoginAccessToken() const {
+  return HasTokenForService(GaiaConstants::kGaiaOAuth2LoginAccessToken);
+}
+
 const std::string& TokenService::GetOAuth2LoginRefreshToken() const {
   return GetTokenForService(GaiaConstants::kGaiaOAuth2LoginRefreshToken);
 }
@@ -227,16 +255,6 @@ const std::string& TokenService::GetOAuth2LoginAccessToken() const {
 void TokenService::GetServiceNamesForTesting(std::vector<std::string>* names) {
   names->resize(arraysize(kServices));
   std::copy(kServices, kServices + arraysize(kServices), names->begin());
-}
-
-void TokenService::FireCredentialsUpdatedNotification(
-    const std::string& lsid,
-    const std::string& sid) {
-  CredentialsUpdatedDetails details(lsid, sid);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_TOKEN_SERVICE_CREDENTIALS_UPDATED,
-      content::Source<TokenService>(this),
-      content::Details<const CredentialsUpdatedDetails>(&details));
 }
 
 // Note that this can fire twice or more for any given service.
@@ -259,6 +277,23 @@ void TokenService::FireTokenRequestFailedNotification(
     const std::string& service,
     const GoogleServiceAuthError& error) {
 
+#if defined(OS_CHROMEOS)
+  std::string metric = "TokenService.TokenRequestFailed." + service;
+  // We can't use the UMA_HISTOGRAM_ENUMERATION here since the macro creates
+  // a static histogram in the function - locking us to one metric name. Since
+  // the metric name can be "TokenService.TokenRequestFailed." + one of four
+  // different values, we need to create the histogram ourselves and add the
+  // sample.
+  base::Histogram* histogram =
+      base::LinearHistogram::FactoryGet(
+          metric,
+          1,
+          GoogleServiceAuthError::NUM_STATES,
+          GoogleServiceAuthError::NUM_STATES + 1,
+          base::Histogram::kUmaTargetedHistogramFlag);
+  histogram->Add(error.state());
+#endif
+
   TokenRequestFailedDetails details(service, error);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_TOKEN_REQUEST_FAILED,
@@ -274,18 +309,7 @@ void TokenService::IssueAuthTokenForTest(const std::string& service,
 
 void TokenService::OnIssueAuthTokenSuccess(const std::string& service,
                                            const std::string& auth_token) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  VLOG(1) << "Got an authorization token for " << service;
-  token_map_[service] = auth_token;
-  FireTokenAvailableNotification(service, auth_token);
-  SaveAuthTokenToDB(service, auth_token);
-  // If we got ClientLogin token for "lso" service, then start fetching OAuth2
-  // login scoped token pair.
-  if (service == GaiaConstants::kLSOService) {
-    int index = GetServiceIndex(service);
-    CHECK_GE(index, 0);
-    fetchers_[index]->StartLsoForOAuthLoginTokenExchange(auth_token);
-  }
+  AddAuthTokenManually(service, auth_token);
 }
 
 void TokenService::OnIssueAuthTokenFailure(const std::string& service,
@@ -299,13 +323,16 @@ void TokenService::OnIssueAuthTokenFailure(const std::string& service,
 void TokenService::OnClientOAuthSuccess(const ClientOAuthResult& result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   VLOG(1) << "Got OAuth2 login token pair";
+  SaveOAuth2Credentials(result);
+}
+
+void TokenService::SaveOAuth2Credentials(const ClientOAuthResult& result) {
   token_map_[GaiaConstants::kGaiaOAuth2LoginRefreshToken] =
       result.refresh_token;
   token_map_[GaiaConstants::kGaiaOAuth2LoginAccessToken] = result.access_token;
+  // Save refresh token only since access token is transient anyway.
   SaveAuthTokenToDB(GaiaConstants::kGaiaOAuth2LoginRefreshToken,
       result.refresh_token);
-  SaveAuthTokenToDB(GaiaConstants::kGaiaOAuth2LoginAccessToken,
-      result.access_token);
   // We don't save expiration information for now.
 
   FireTokenAvailableNotification(GaiaConstants::kGaiaOAuth2LoginRefreshToken,
@@ -360,6 +387,10 @@ void TokenService::LoadTokensIntoMemory(
       GaiaConstants::kGaiaOAuth2LoginRefreshToken);
   LoadSingleTokenIntoMemory(db_tokens, in_memory_tokens,
       GaiaConstants::kGaiaOAuth2LoginAccessToken);
+  // TODO(petewil): Remove next line when we refactor key-value
+  // storage out of token_service.
+  LoadSingleTokenIntoMemory(db_tokens, in_memory_tokens,
+      GaiaConstants::kObfuscatedGaiaId);
 
   if (credentials_.lsid.empty() && credentials_.sid.empty()) {
     // Look for GAIA SID and LSID tokens.  If we have both, and the current
@@ -403,13 +434,4 @@ void TokenService::LoadSingleTokenIntoMemory(
       // Failures are only for network errors.
     }
   }
-}
-
-void TokenService::Observe(int type,
-                           const content::NotificationSource& source,
-                           const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TOKEN_UPDATED);
-  TokenAvailableDetails* tok_details =
-      content::Details<TokenAvailableDetails>(details).ptr();
-  OnIssueAuthTokenSuccess(tok_details->service(), tok_details->token());
 }

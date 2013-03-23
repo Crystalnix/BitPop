@@ -45,14 +45,11 @@ namespace extensions {
 
 // Constants for keeping track of extension preferences in a dictionary.
 const char ExternalProviderImpl::kExternalCrx[] = "external_crx";
-const char ExternalProviderImpl::kExternalVersion[] =
-    "external_version";
-const char ExternalProviderImpl::kExternalUpdateUrl[] =
-    "external_update_url";
-const char ExternalProviderImpl::kSupportedLocales[] =
-    "supported_locales";
-const char ExternalProviderImpl::kIsBookmarkApp[] =
-    "is_bookmark_app";
+const char ExternalProviderImpl::kExternalVersion[] = "external_version";
+const char ExternalProviderImpl::kExternalUpdateUrl[] = "external_update_url";
+const char ExternalProviderImpl::kSupportedLocales[] = "supported_locales";
+const char ExternalProviderImpl::kIsBookmarkApp[] = "is_bookmark_app";
+const char ExternalProviderImpl::kIsFromWebstore[] = "is_from_webstore";
 
 ExternalProviderImpl::ExternalProviderImpl(
     VisitorInterface* service,
@@ -191,6 +188,11 @@ void ExternalProviderImpl::SetPrefs(DictionaryValue* prefs) {
         is_bookmark_app) {
       creation_flags |= Extension::FROM_BOOKMARK;
     }
+    bool is_from_webstore;
+    if (extension->GetBoolean(kIsFromWebstore, &is_from_webstore) &&
+        is_from_webstore) {
+      creation_flags |= Extension::FROM_WEBSTORE;
+    }
 
     if (has_external_crx) {
       if (crx_location_ == Extension::INVALID) {
@@ -314,6 +316,21 @@ void ExternalProviderImpl::CreateExternalProviders(
     VisitorInterface* service,
     Profile* profile,
     ProviderCollection* provider_list) {
+  // Policies are mandatory so they can't be skipped with command line flag.
+  provider_list->push_back(
+      linked_ptr<ExternalProviderInterface>(
+          new ExternalProviderImpl(
+              service,
+              new ExternalPolicyLoader(profile),
+              Extension::INVALID,
+              Extension::EXTERNAL_POLICY_DOWNLOAD,
+              Extension::NO_FLAGS)));
+
+  // In tests don't install extensions from default external sources.
+  // It would only slowdown tests and make them flaky.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableDefaultApps))
+    return;
 
   // On Mac OS, items in /Library/... should be written by the superuser.
   // Check that all components of the path are writable by root only.
@@ -333,7 +350,8 @@ void ExternalProviderImpl::CreateExternalProviders(
       user_manager && user_manager->IsLoggedInAsDemoUser() &&
       g_browser_process->browser_policy_connector()->GetDeviceMode() ==
           policy::DEVICE_MODE_KIOSK;
-  bundled_extension_creation_flags = Extension::FROM_WEBSTORE;
+  bundled_extension_creation_flags = Extension::FROM_WEBSTORE |
+      Extension::WAS_INSTALLED_BY_DEFAULT;
 #endif
 
   if (!is_chromeos_demo_session) {
@@ -372,7 +390,7 @@ void ExternalProviderImpl::CreateExternalProviders(
               Extension::NO_FLAGS)));
 #endif
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#if defined(OS_LINUX)
   provider_list->push_back(
       linked_ptr<ExternalProviderInterface>(
           new ExternalProviderImpl(
@@ -381,19 +399,12 @@ void ExternalProviderImpl::CreateExternalProviders(
                                      ExternalPrefLoader::NONE),
               Extension::EXTERNAL_PREF,
               Extension::EXTERNAL_PREF_DOWNLOAD,
-              Extension::NO_FLAGS)));
+              bundled_extension_creation_flags)));
 #endif
 
-  provider_list->push_back(
-      linked_ptr<ExternalProviderInterface>(
-          new ExternalProviderImpl(
-              service,
-              new ExternalPolicyLoader(profile),
-              Extension::INVALID,
-              Extension::EXTERNAL_POLICY_DOWNLOAD,
-              Extension::NO_FLAGS)));
-
 #if !defined(OS_CHROMEOS)
+  // The default apps are installed as INTERNAL but use the external
+  // extension installer codeflow.
   provider_list->push_back(
       linked_ptr<ExternalProviderInterface>(
           new default_apps::Provider(
@@ -401,9 +412,10 @@ void ExternalProviderImpl::CreateExternalProviders(
               service,
               new ExternalPrefLoader(chrome::DIR_DEFAULT_APPS,
                                      ExternalPrefLoader::NONE),
-              Extension::EXTERNAL_PREF,
+              Extension::INTERNAL,
               Extension::INVALID,
-              Extension::FROM_WEBSTORE)));
+              Extension::FROM_WEBSTORE |
+                  Extension::WAS_INSTALLED_BY_DEFAULT)));
 #endif
 
 #if defined(OS_CHROMEOS)

@@ -16,23 +16,23 @@
 
 #include "base/base_paths.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/environment.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/string_tokenizer.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -77,7 +77,7 @@ std::string CreateShortcutIcon(
     return std::string();
 
   // TODO(phajdan.jr): Report errors from this function, possibly as infobars.
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   if (!temp_dir.CreateUniqueTempDir())
     return std::string();
 
@@ -119,7 +119,7 @@ bool CreateShortcutOnDesktop(const FilePath& shortcut_filename,
   DCHECK_EQ(shortcut_filename.BaseName().value(), shortcut_filename.value());
 
   FilePath desktop_path;
-  if (!PathService::Get(chrome::DIR_USER_DESKTOP, &desktop_path))
+  if (!PathService::Get(base::DIR_USER_DESKTOP, &desktop_path))
     return false;
 
   int desktop_fd = open(desktop_path.value().c_str(), O_RDONLY | O_DIRECTORY);
@@ -156,13 +156,13 @@ bool CreateShortcutOnDesktop(const FilePath& shortcut_filename,
 
 void DeleteShortcutOnDesktop(const FilePath& shortcut_filename) {
   FilePath desktop_path;
-  if (PathService::Get(chrome::DIR_USER_DESKTOP, &desktop_path))
+  if (PathService::Get(base::DIR_USER_DESKTOP, &desktop_path))
     file_util::Delete(desktop_path.Append(shortcut_filename), false);
 }
 
 bool CreateShortcutInApplicationsMenu(const FilePath& shortcut_filename,
                                       const std::string& contents) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   if (!temp_dir.CreateUniqueTempDir())
     return false;
 
@@ -337,9 +337,9 @@ bool SetDefaultWebClient(const std::string& protocol) {
 ShellIntegration::DefaultWebClientState GetIsDefaultWebClient(
     const std::string& protocol) {
 #if defined(OS_CHROMEOS)
-  return ShellIntegration::IS_DEFAULT_WEB_CLIENT;
+  return ShellIntegration::IS_DEFAULT;
 #else
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  base::ThreadRestrictions::AssertIOAllowed();
 
   scoped_ptr<base::Environment> env(base::Environment::Create());
 
@@ -367,12 +367,12 @@ ShellIntegration::DefaultWebClientState GetIsDefaultWebClient(
 
   if (!ran_ok || success_code != EXIT_SUCCESS) {
     // xdg-settings failed: we can't determine or set the default browser.
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
+    return ShellIntegration::UNKNOWN_DEFAULT;
   }
 
   // Allow any reply that starts with "yes".
-  return (reply.find("yes") == 0) ? ShellIntegration::IS_DEFAULT_WEB_CLIENT :
-                                    ShellIntegration::NOT_DEFAULT_WEB_CLIENT;
+  return (reply.find("yes") == 0) ? ShellIntegration::IS_DEFAULT :
+                                    ShellIntegration::NOT_DEFAULT;
 #endif
 }
 
@@ -395,7 +395,7 @@ bool ShellIntegration::SetAsDefaultProtocolClient(const std::string& protocol) {
 }
 
 // static
-ShellIntegration::DefaultWebClientState ShellIntegration::IsDefaultBrowser() {
+ShellIntegration::DefaultWebClientState ShellIntegration::GetDefaultBrowser() {
   return GetIsDefaultWebClient("");
 }
 
@@ -484,7 +484,7 @@ FilePath GetWebShortcutFilename(const GURL& url) {
   file_util::ReplaceIllegalCharactersInPath(&filename, '_');
 
   FilePath desktop_path;
-  if (!PathService::Get(chrome::DIR_USER_DESKTOP, &desktop_path))
+  if (!PathService::Get(base::DIR_USER_DESKTOP, &desktop_path))
     return FilePath();
 
   FilePath filepath = desktop_path.Append(filename);
@@ -520,7 +520,6 @@ std::string GetDesktopFileContents(
     const std::string& app_name,
     const GURL& url,
     const std::string& extension_id,
-    const bool is_platform_app,
     const FilePath& extension_path,
     const string16& title,
     const std::string& icon_name,
@@ -589,7 +588,7 @@ std::string GetDesktopFileContents(
     }
     CommandLine cmd_line(CommandLine::NO_PROGRAM);
     cmd_line = ShellIntegration::CommandLineArgsForLauncher(
-        url, extension_id, is_platform_app, profile_path);
+        url, extension_id, profile_path);
     const CommandLine::SwitchMap& switch_map = cmd_line.GetSwitches();
     for (CommandLine::SwitchMap::const_iterator i = switch_map.begin();
          i != switch_map.end(); ++i) {
@@ -658,7 +657,6 @@ bool CreateDesktopShortcut(
       app_name,
       shortcut_info.url,
       shortcut_info.extension_id,
-      shortcut_info.is_platform_app,
       shortcut_info.extension_path,
       shortcut_info.title,
       icon_name,

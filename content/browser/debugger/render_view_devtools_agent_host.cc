@@ -74,18 +74,9 @@ bool DevToolsAgentHostRegistry::IsDebuggerAttached(WebContents* web_contents) {
 
 RenderViewDevToolsAgentHost::RenderViewDevToolsAgentHost(
     RenderViewHost* rvh)
-    : content::RenderViewHostObserver(rvh),
+    : RenderViewHostObserver(rvh),
       render_view_host_(rvh) {
   g_instances.Get()[rvh] = this;
-
-  // Notify that the view is being opened. This allows any views being debugged
-  // to do anything special they need to do to support debugging.
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING,
-      content::Source<content::BrowserContext>(
-          render_view_host_->GetSiteInstance()->GetProcess()->
-              GetBrowserContext()),
-      content::Details<RenderViewHost>(render_view_host_));
 }
 
 void RenderViewDevToolsAgentHost::SendMessageToAgent(IPC::Message* msg) {
@@ -93,13 +84,22 @@ void RenderViewDevToolsAgentHost::SendMessageToAgent(IPC::Message* msg) {
   render_view_host_->Send(msg);
 }
 
-void RenderViewDevToolsAgentHost::NotifyClientClosing() {
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
-      content::Source<content::BrowserContext>(
+void RenderViewDevToolsAgentHost::NotifyClientAttaching() {
+  NotificationService::current()->Notify(
+      NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
+      Source<BrowserContext>(
           render_view_host_->GetSiteInstance()->GetProcess()->
               GetBrowserContext()),
-      content::Details<RenderViewHost>(render_view_host_));
+      Details<RenderViewHost>(render_view_host_));
+}
+
+void RenderViewDevToolsAgentHost::NotifyClientDetaching() {
+  NotificationService::current()->Notify(
+      NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
+      Source<BrowserContext>(
+          render_view_host_->GetSiteInstance()->GetProcess()->
+              GetBrowserContext()),
+      Details<RenderViewHost>(render_view_host_));
 }
 
 int RenderViewDevToolsAgentHost::GetRenderProcessId() {
@@ -144,11 +144,11 @@ void RenderViewDevToolsAgentHost::OnDispatchOnInspectorFrontend(
 }
 
 void RenderViewDevToolsAgentHost::OnClearBrowserCache() {
-  content::GetContentClient()->browser()->ClearCache(render_view_host_);
+  GetContentClient()->browser()->ClearCache(render_view_host_);
 }
 
 void RenderViewDevToolsAgentHost::OnClearBrowserCookies() {
-  content::GetContentClient()->browser()->ClearCookies(render_view_host_);
+  GetContentClient()->browser()->ClearCookies(render_view_host_);
 }
 
 }  // namespace content

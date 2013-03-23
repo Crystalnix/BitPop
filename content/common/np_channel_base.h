@@ -16,7 +16,6 @@
 #include "content/common/npobject_base.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
-#include "ui/gfx/native_widget_types.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -43,6 +42,8 @@ inline size_t hash_value(NPObject* const& ptr) {
 
 }  // namespace stdext
 #endif // COMPILER
+
+namespace content {
 
 // Encapsulates an IPC channel between a renderer and another process. Used to
 // proxy access to NP objects.
@@ -102,8 +103,7 @@ class NPChannelBase : public IPC::Listener,
   // Returns the event that's set when a call to the renderer causes a modal
   // dialog to come up. The default implementation returns NULL. Derived
   // classes should override this method if this functionality is required.
-  virtual base::WaitableEvent* GetModalDialogEvent(
-      gfx::NativeViewId containing_window);
+  virtual base::WaitableEvent* GetModalDialogEvent(int render_view_id);
 
  protected:
   typedef NPChannelBase* (*ChannelFactory)();
@@ -197,5 +197,7 @@ class NPChannelBase : public IPC::Listener,
 
   DISALLOW_COPY_AND_ASSIGN(NPChannelBase);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_NP_CHANNEL_BASE_H_

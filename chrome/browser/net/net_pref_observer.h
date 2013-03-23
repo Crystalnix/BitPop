@@ -5,11 +5,8 @@
 #ifndef CHROME_BROWSER_NET_NET_PREF_OBSERVER_H_
 #define CHROME_BROWSER_NET_NET_PREF_OBSERVER_H_
 
-#include <string>
-
 #include "base/basictypes.h"
-#include "chrome/browser/prefs/pref_member.h"
-#include "content/public/browser/notification_observer.h"
+#include "base/prefs/public/pref_member.h"
 
 namespace chrome_browser_net {
 class Predictor;
@@ -19,10 +16,12 @@ namespace prerender {
 class PrerenderManager;
 }
 
+class PrefService;
+
 // Monitors network-related preferences for changes and applies them.
 // The supplied PrefService must outlive this NetPrefObserver.
 // Must be used only on the UI thread.
-class NetPrefObserver : public content::NotificationObserver {
+class NetPrefObserver {
  public:
   // |prefs| must be non-NULL and |*prefs| must outlive this.
   // |prerender_manager| may be NULL. If not, |*prerender_manager| must
@@ -32,16 +31,10 @@ class NetPrefObserver : public content::NotificationObserver {
                   chrome_browser_net::Predictor* predictor);
   virtual ~NetPrefObserver();
 
-  // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   static void RegisterPrefs(PrefService* prefs);
 
  private:
-  // If |pref_name| is NULL, all monitored preferences will be applied.
-  void ApplySettings(const std::string* pref_name);
+  void ApplySettings();
 
   BooleanPrefMember network_prediction_enabled_;
   BooleanPrefMember spdy_disabled_;

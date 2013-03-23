@@ -17,7 +17,7 @@ cr.define('cr.ui', function() {
   DropDownContainer.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       this.classList.add('dropdown-container');
       // Selected item in the menu list.
@@ -89,17 +89,20 @@ cr.define('cr.ui', function() {
   DropDown.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       this.appendChild(this.createOverlay_());
       this.appendChild(this.title_ = this.createTitle_());
-      this.appendChild(new DropDownContainer());
+      var container = new DropDownContainer();
+      container.id = this.id + '-dropdown-container';
+      this.appendChild(container);
 
       this.addEventListener('keydown', this.keyDownHandler_);
 
       this.title_.id = this.id + '-dropdown';
       this.title_.setAttribute('role', 'button');
       this.title_.setAttribute('aria-haspopup', 'true');
+      this.title_.setAttribute('aria-owns', container.id);
     },
 
     /**
@@ -119,9 +122,7 @@ cr.define('cr.ui', function() {
       this.container.hidden = !show;
       if (show) {
         this.container.selectItem(this.container.firstItem, false);
-        this.title_.setAttribute('aria-pressed', 'true');
       } else {
-        this.title_.setAttribute('aria-pressed', 'false');
         this.title_.removeAttribute('aria-activedescendant');
       }
     },
@@ -403,7 +404,7 @@ cr.define('cr.ui', function() {
   DropDown.hide = function(elementId) {
     if (DropDown.activeElementId_ == elementId) {
       DropDown.activeElementId_ = '';
-      chrome.send('networkDropdownHide', []);
+      chrome.send('networkDropdownHide');
     }
   };
 
@@ -411,7 +412,7 @@ cr.define('cr.ui', function() {
    * Refreshes network drop-down. Should be called on language change.
    */
   DropDown.refresh = function() {
-    chrome.send('networkDropdownRefresh', []);
+    chrome.send('networkDropdownRefresh');
   };
 
   return {

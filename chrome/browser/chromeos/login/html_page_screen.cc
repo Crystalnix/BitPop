@@ -12,7 +12,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "googleurl/src/gurl.h"
-#include "ui/views/events/event.h"
 
 using content::NativeWebKeyboardEvent;
 using content::SiteInstance;
@@ -65,7 +64,8 @@ HTMLPageView* HTMLPageScreen::AllocateView() {
   return new HTMLPageView(ProfileManager::GetDefaultProfile());
 }
 
-void HTMLPageScreen::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
+void HTMLPageScreen::HandleKeyboardEvent(content::WebContents* source,
+                                         const NativeWebKeyboardEvent& event) {
   unhandled_keyboard_handler_.HandleKeyboardEvent(event,
                                                   view()->GetFocusManager());
 }

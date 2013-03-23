@@ -22,6 +22,8 @@
 interface IMFSample;
 interface IDirect3DSurface9;
 
+namespace content {
+
 // Class to provide a DXVA 2.0 based accelerator using the Microsoft Media
 // foundation APIs via the VideoDecodeAccelerator interface.
 // This class lives on a single thread and DCHECKs that it is never accessed
@@ -34,8 +36,8 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
     kUninitialized,   // un-initialized.
     kNormal,          // normal playing state.
     kResetting,       // upon received Reset(), before ResetDone()
-    kEosDrain,        // upon input EOS received.
     kStopped,         // upon output EOS received.
+    kFlushing,        // upon flush request received.
   };
 
   // Does not take ownership of |client| which must outlive |*this|.
@@ -59,7 +61,9 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // 1. Loads the dlls like mf/mfplat/d3d9, etc required for decoding.
   // 2. Setting up the device manager instance which is shared between all
   //    decoder instances.
-  static void PreSandboxInitialization();
+  // Invokes the completion task, potentially on another thread, when complete.
+  static void PreSandboxInitialization(
+      const base::Closure& completion_task);
 
  private:
   typedef void* EGLConfig;
@@ -67,7 +71,9 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // Creates and initializes an instance of the D3D device and the
   // corresponding device manager. The device manager instance is eventually
   // passed to the IMFTransform interface implemented by the h.264 decoder.
-  static bool CreateD3DDevManager();
+  // Invokes the completion task, potentially on another thread, when complete.
+  static void CreateD3DDevManager(
+      const base::Closure& completion_task);
 
   // Creates, initializes and sets the media types for the h.264 decoder.
   bool InitDecoder();
@@ -106,9 +112,6 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // slots.
   void ProcessPendingSamples();
 
-  // Clears local state maintained by the decoder.
-  void ClearState();
-
   // Helper function to notify the accelerator client about the error.
   void StopOnError(media::VideoDecodeAccelerator::Error error);
 
@@ -134,6 +137,19 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
 
   // Notifies the client about the availability of a picture.
   void NotifyPictureReady(const media::Picture& picture);
+
+  // Sends pending input buffer processed acks to the client if we don't have
+  // output samples waiting to be processed.
+  void NotifyInputBuffersDropped();
+
+  // Decodes pending input buffers.
+  void DecodePendingInputBuffers();
+
+  // Helper for handling the Flush operation.
+  void FlushInternal();
+
+  // Helper for handling the Decode operation.
+  void DecodeInternal(const base::win::ScopedComPtr<IMFSample>& input_sample);
 
   // To expose client callbacks from VideoDecodeAccelerator.
   media::VideoDecodeAccelerator::Client* client_;
@@ -162,11 +178,11 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
 
   // Contains information about a decoded sample.
   struct PendingSampleInfo {
-    PendingSampleInfo(int32 buffer_id, IDirect3DSurface9* surface);
+    PendingSampleInfo(int32 buffer_id, IMFSample* sample);
     ~PendingSampleInfo();
 
     int32 input_buffer_id;
-    base::win::ScopedComPtr<IDirect3DSurface9> dest_surface;
+    base::win::ScopedComPtr<IMFSample> output_sample;
   };
 
   typedef std::list<PendingSampleInfo> PendingOutputSamples;
@@ -202,8 +218,14 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // 2. The device manager initialization completed.
   static bool pre_sandbox_init_done_;
 
+  // List of input samples waiting to be processed.
+  typedef std::list<base::win::ScopedComPtr<IMFSample>> PendingInputs;
+  PendingInputs pending_input_buffers_;
+
   // Callback to set the correct gl context.
   base::Callback<bool(void)> make_context_current_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_DXVA_VIDEO_DECODE_ACCELERATOR_H_

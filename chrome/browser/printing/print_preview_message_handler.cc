@@ -15,7 +15,6 @@
 #include "chrome/browser/printing/print_preview_tab_controller.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_query.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -26,8 +25,9 @@
 #include "printing/print_job_constants.h"
 
 using content::BrowserThread;
-using content::NavigationController;
 using content::WebContents;
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(printing::PrintPreviewMessageHandler)
 
 namespace {
 
@@ -74,33 +74,29 @@ PrintPreviewMessageHandler::PrintPreviewMessageHandler(
 PrintPreviewMessageHandler::~PrintPreviewMessageHandler() {
 }
 
-TabContents* PrintPreviewMessageHandler::GetPrintPreviewTab() {
+WebContents* PrintPreviewMessageHandler::GetPrintPreviewTab() {
   PrintPreviewTabController* tab_controller =
       PrintPreviewTabController::GetInstance();
   if (!tab_controller)
     return NULL;
 
-  return tab_controller->GetPrintPreviewForTab(tab_contents());
-}
-
-TabContents* PrintPreviewMessageHandler::tab_contents() {
-  return TabContents::FromWebContents(web_contents());
+  return tab_controller->GetPrintPreviewForTab(web_contents());
 }
 
 PrintPreviewUI* PrintPreviewMessageHandler::GetPrintPreviewUI() {
-  TabContents* tab = GetPrintPreviewTab();
-  if (!tab || !tab->web_contents()->GetWebUI())
+  WebContents* tab = GetPrintPreviewTab();
+  if (!tab || !tab->GetWebUI())
     return NULL;
-  return static_cast<PrintPreviewUI*>(
-      tab->web_contents()->GetWebUI()->GetController());
+  return static_cast<PrintPreviewUI*>(tab->GetWebUI()->GetController());
 }
 
 void PrintPreviewMessageHandler::OnRequestPrintPreview(
     bool source_is_modifiable, bool webnode_only) {
-  TabContents* tab = tab_contents();
-  if (webnode_only)
-    tab->print_view_manager()->PrintPreviewForWebNode();
-  PrintPreviewTabController::PrintPreview(tab);
+  if (webnode_only) {
+    printing::PrintViewManager::FromWebContents(web_contents())->
+        PrintPreviewForWebNode();
+  }
+  PrintPreviewTabController::PrintPreview(web_contents());
   PrintPreviewUI::SetSourceIsModifiable(GetPrintPreviewTab(),
                                         source_is_modifiable);
 }
@@ -246,24 +242,6 @@ bool PrintPreviewMessageHandler::OnMessageReceived(
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
-}
-
-void PrintPreviewMessageHandler::NavigateToPendingEntry(
-    const GURL& url,
-    NavigationController::ReloadType reload_type) {
-  TabContents* tab = tab_contents();
-  TabContents* preview_tab = GetPrintPreviewTab();
-  if (tab == preview_tab) {
-    // Cloud print sign-in reloads the page.
-    DCHECK(PrintPreviewTabController::IsPrintPreviewURL(url));
-    DCHECK_EQ(NavigationController::RELOAD, reload_type);
-    return;
-  }
-  // If |tab| is navigating and it has a print preview tab, notify |tab| to
-  // consider print preview done so it unfreezes the renderer in the case of
-  // window.print().
-  if (preview_tab)
-    tab->print_view_manager()->PrintPreviewDone();
 }
 
 }  // namespace printing

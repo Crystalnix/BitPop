@@ -4,9 +4,9 @@
 
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 
+#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
-#include "chrome/browser/tab_contents/insecure_content_infobar_delegate.h"
+#include "chrome/browser/infobars/insecure_content_infobar_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_controller.h"
@@ -16,10 +16,19 @@
 using content::NavigationController;
 using content::WebContents;
 
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(InfoBarTabHelper)
+
+InfoBarService* InfoBarService::FromWebContents(WebContents* web_contents) {
+  return InfoBarTabHelper::FromWebContents(web_contents);
+}
+
 InfoBarTabHelper::InfoBarTabHelper(WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       infobars_enabled_(true) {
   DCHECK(web_contents);
+  registrar_.Add(this,
+                 content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 content::Source<WebContents>(web_contents));
 }
 
 InfoBarTabHelper::~InfoBarTabHelper() {
@@ -94,8 +103,16 @@ bool InfoBarTabHelper::ReplaceInfoBar(InfoBarDelegate* old_delegate,
   return true;
 }
 
+size_t InfoBarTabHelper::GetInfoBarCount() const {
+  return infobars_.size();
+}
+
 InfoBarDelegate* InfoBarTabHelper::GetInfoBarDelegateAt(size_t index) {
   return infobars_[index];
+}
+
+content::WebContents* InfoBarTabHelper::GetWebContents() {
+  return content::WebContentsObserver::web_contents();
 }
 
 void InfoBarTabHelper::RemoveInfoBarInternal(InfoBarDelegate* delegate,
@@ -129,7 +146,7 @@ void InfoBarTabHelper::RemoveInfoBarInternal(InfoBarDelegate* delegate,
 
 void InfoBarTabHelper::RemoveAllInfoBars(bool animate) {
   while (!infobars_.empty())
-    RemoveInfoBarInternal(GetInfoBarDelegateAt(infobar_count() - 1), animate);
+    RemoveInfoBarInternal(GetInfoBarDelegateAt(GetInfoBarCount() - 1), animate);
 }
 
 void InfoBarTabHelper::OnDidBlockDisplayingInsecureContent() {
@@ -178,26 +195,32 @@ bool InfoBarTabHelper::OnMessageReceived(const IPC::Message& message) {
 void InfoBarTabHelper::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
-  switch (type) {
-    case content::NOTIFICATION_NAV_ENTRY_COMMITTED: {
-      DCHECK(&web_contents()->GetController() ==
-             content::Source<NavigationController>(source).ptr());
+  if (type == content::NOTIFICATION_NAV_ENTRY_COMMITTED) {
+    DCHECK(&web_contents()->GetController() ==
+           content::Source<NavigationController>(source).ptr());
 
-      content::LoadCommittedDetails& committed_details =
-          *(content::Details<content::LoadCommittedDetails>(details).ptr());
+    content::LoadCommittedDetails& committed_details =
+        *(content::Details<content::LoadCommittedDetails>(details).ptr());
 
-      // NOTE: It is not safe to change the following code to count upwards or
-      // use iterators, as the RemoveInfoBar() call synchronously modifies our
-      // delegate list.
-      for (size_t i = infobars_.size(); i > 0; --i) {
-        InfoBarDelegate* delegate = GetInfoBarDelegateAt(i - 1);
-        if (delegate->ShouldExpire(committed_details))
-          RemoveInfoBar(delegate);
-      }
-
-      break;
+    // NOTE: It is not safe to change the following code to count upwards or
+    // use iterators, as the RemoveInfoBar() call synchronously modifies our
+    // delegate list.
+    for (size_t i = infobars_.size(); i > 0; --i) {
+      InfoBarDelegate* delegate = GetInfoBarDelegateAt(i - 1);
+      if (delegate->ShouldExpire(committed_details))
+        RemoveInfoBar(delegate);
     }
-    default:
-      NOTREACHED();
+
+    return;
   }
+
+  DCHECK_EQ(type, content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
+  // The WebContents is going away; be aggressively paranoid and delete
+  // ourselves lest other parts of the system attempt to add infobars or use
+  // us otherwise during the destruction.
+  DCHECK_EQ(web_contents(), content::Source<WebContents>(source).ptr());
+  web_contents()->RemoveUserData(UserDataKey());
+  // That was the equivalent of "delete this". This object is now destroyed;
+  // returning from this function is the only safe thing to do.
+  return;
 }

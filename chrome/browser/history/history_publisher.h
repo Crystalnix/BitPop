@@ -11,6 +11,7 @@
 #include "base/string16.h"
 
 #if defined(OS_WIN)
+#include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
 #include "history_indexer.h"
 #endif
@@ -38,8 +39,6 @@ class HistoryPublisher {
   void PublishPageContent(const base::Time& time, const GURL& url,
                           const string16& title,
                           const string16& contents) const;
-  void DeleteUserHistoryBetween(const base::Time& begin_time,
-                                const base::Time& end_time) const;
 
  private:
   struct PageData {
@@ -71,6 +70,8 @@ class HistoryPublisher {
   // The Registry key under HKCU where the indexers need to register their
   // CLSID.
   static const wchar_t* const kRegKeyRegisteredIndexersInfo;
+
+  base::win::ScopedCOMInitializer com_initializer_;
 #endif
 
   // The format of the thumbnail we pass to indexers.

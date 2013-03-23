@@ -6,7 +6,7 @@
     <div id="update-screen-curtain">
       <div id="checking-updates-label" i18n-content="checkingForUpdatesMsg">
       </div>
-      <div id="update-checking-progress">
+      <div id="update-checking-progress" aria-live="polite">
         <p i18n-content="checkingForUpdates"></p>
         <p id="update-checking-ellipsis"></p>
       </div>
@@ -15,7 +15,14 @@
       <p id="update-upper-label"></p>
       <p id="update-bottom-label" i18n-content="installingUpdateDesc"></p>
       <progress id="update-progress-bar" max="100" value="0"></progress>
-      <p id="update-estimated-time-left" hidden></p>
+      <p id="estimated-time-left" class="progress-message" hidden></p>
+      <p id="progress-message" class="progress-message" hidden></p>
+    </div>
+  </div>
+  <div id="update-extra-controls" class="step-extra-controls">
+    <div id="update-accessibility">
+      <a id="update-accessibility-link" href="#"
+         i18n-content="accessibilityLink"></a>
     </div>
   </div>
 </div>

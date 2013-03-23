@@ -5,8 +5,7 @@
 #include "chrome/browser/chromeos/background/ash_user_wallpaper_delegate.h"
 
 #include "ash/shell.h"
-#include "ash/desktop_background/desktop_background_controller.h"
-#include "ash/desktop_background/desktop_background_resources.h"
+#include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/wm/window_animations.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -46,9 +45,15 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
   virtual ~UserWallpaperDelegate() {
   }
 
-  virtual ash::WindowVisibilityAnimationType GetAnimationType() OVERRIDE {
+  virtual int GetAnimationType() OVERRIDE {
+    return ShouldShowInitialAnimation() ?
+        ash::WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE :
+        static_cast<int>(views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+  }
+
+  virtual bool ShouldShowInitialAnimation() OVERRIDE {
     if (IsNormalWallpaperChange() || boot_animation_finished_)
-      return ash::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE;
+      return false;
 
     // It is a first boot case now. If kDisableBootAnimation flag
     // is passed, it only disables any transition after OOBE.
@@ -61,9 +66,13 @@ class UserWallpaperDelegate : public ash::UserWallpaperDelegate {
         HasSwitch(switches::kDisableOobeAnimation);
     if ((!is_registered && disable_oobe_animation) ||
         (is_registered && disable_boot_animation))
-      return ash::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE;
+      return false;
 
-    return ash::WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE;
+    return true;
+  }
+
+  virtual void UpdateWallpaper() OVERRIDE {
+    chromeos::WallpaperManager::Get()->UpdateWallpaper();
   }
 
   virtual void InitializeWallpaper() OVERRIDE {

@@ -15,12 +15,15 @@
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "webkit/glue/resource_type.h"
 
 class FilePath;
 class GURL;
 
+namespace content {
+
 class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
-    : NON_EXPORTED_BASE(public content::ChildProcessSecurityPolicy) {
+    : NON_EXPORTED_BASE(public ChildProcessSecurityPolicy) {
  public:
   // Object can only be created through GetInstance() so the constructor is
   // private.
@@ -108,6 +111,13 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // request the URL.
   bool CanRequestURL(int child_id, const GURL& url);
 
+  // Returns true if the process is permitted to load pages from
+  // the given origin in main frames or subframes.
+  // Only might return false if --site-per-process flag is used.
+  bool CanLoadPage(int child_id,
+                   const GURL& url,
+                   ResourceType::Type resource_type);
+
   // Before servicing a child process's request to enumerate a directory
   // the browser should call this method to check for the capability.
   bool CanReadDirectory(int child_id, const FilePath& directory);
@@ -126,15 +136,23 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // Returns true if the specified child_id has been granted ReadRawCookies.
   bool CanReadRawCookies(int child_id);
 
-  // Returns true if the process is permitted to see and use the cookies for
-  // the given origin.
+  // Returns true if the process is permitted to read and modify the cookies for
+  // the given origin.  Does not affect cookies attached to or set by network
+  // requests.
   // Only might return false if the very experimental
-  // --enable-strict-site-isolation is used.
-  bool CanUseCookiesForOrigin(int child_id, const GURL& gurl);
+  // --enable-strict-site-isolation or --site-per-process flags are used.
+  bool CanAccessCookiesForOrigin(int child_id, const GURL& gurl);
+
+  // Returns true if the process is permitted to attach cookies to (or have
+  // cookies set by) network requests.
+  // Only might return false if the very experimental
+  // --enable-strict-site-isolation or --site-per-process flags are used.
+  bool CanSendCookiesForOrigin(int child_id, const GURL& gurl);
 
   // Sets the process as only permitted to use and see the cookies for the
   // given origin.
-  // Only used if the very experimental --enable-strict-site-isolation is used.
+  // Only used if the very experimental --enable-strict-site-isolation or
+  // --site-per-process flags are used.
   void LockToOrigin(int child_id, const GURL& gurl);
 
   // Grants access permission to the given isolated file system
@@ -206,5 +224,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
 
   DISALLOW_COPY_AND_ASSIGN(ChildProcessSecurityPolicyImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_CHILD_PROCESS_SECURITY_POLICY_IMPL_H_

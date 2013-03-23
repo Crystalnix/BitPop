@@ -49,7 +49,7 @@ PolicyTestBase::PolicyTestBase()
 PolicyTestBase::~PolicyTestBase() {}
 
 void PolicyTestBase::TearDown() {
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 PolicyProviderTestHarness::PolicyProviderTestHarness(PolicyLevel level,
@@ -83,9 +83,10 @@ void ConfigurationPolicyProviderTest::SetUp() {
 
   provider_.reset(
       test_harness_->CreateProvider(&test_policy_definitions::kList));
+  provider_->Init();
   // Some providers do a reload on init. Make sure any notifications generated
   // are fired now.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   const PolicyBundle kEmptyBundle;
   EXPECT_TRUE(provider_->policies().Equals(kEmptyBundle));
@@ -93,6 +94,7 @@ void ConfigurationPolicyProviderTest::SetUp() {
 
 void ConfigurationPolicyProviderTest::TearDown() {
   // Give providers the chance to clean up after themselves on the file thread.
+  provider_->Shutdown();
   provider_.reset();
 
   PolicyTestBase::TearDown();
@@ -105,7 +107,7 @@ void ConfigurationPolicyProviderTest::CheckValue(
   // Install the value, reload policy and check the provider for the value.
   install_value.Run();
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   PolicyBundle expected_bundle;
   expected_bundle.Get(POLICY_DOMAIN_CHROME, "")
       .Set(policy_name,
@@ -119,7 +121,7 @@ void ConfigurationPolicyProviderTest::CheckValue(
 
 TEST_P(ConfigurationPolicyProviderTest, Empty) {
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   const PolicyBundle kEmptyBundle;
   EXPECT_TRUE(provider_->policies().Equals(kEmptyBundle));
 }
@@ -206,11 +208,10 @@ TEST_P(ConfigurationPolicyProviderTest, RefreshPolicies) {
 
   // OnUpdatePolicy is called even when there are no changes.
   MockConfigurationPolicyObserver observer;
-  ConfigurationPolicyObserverRegistrar registrar;
-  registrar.Init(provider_.get(), &observer);
+  provider_->AddObserver(&observer);
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_TRUE(provider_->policies().Equals(bundle));
@@ -220,7 +221,7 @@ TEST_P(ConfigurationPolicyProviderTest, RefreshPolicies) {
                                      "value");
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
 
   bundle.Get(POLICY_DOMAIN_CHROME, "")
@@ -229,6 +230,7 @@ TEST_P(ConfigurationPolicyProviderTest, RefreshPolicies) {
            test_harness_->policy_scope(),
            base::Value::CreateStringValue("value"));
   EXPECT_TRUE(provider_->policies().Equals(bundle));
+  provider_->RemoveObserver(&observer);
 }
 
 TEST(ConfigurationPolicyProviderTest, FixDeprecatedPolicies) {
@@ -250,6 +252,7 @@ TEST(ConfigurationPolicyProviderTest, FixDeprecatedPolicies) {
                  base::Value::CreateStringValue("http://example.com/wpad.dat"));
 
   MockConfigurationPolicyProvider provider;
+  provider.Init();
   provider.UpdateChromePolicy(policy_map);
 
   PolicyBundle expected_bundle;
@@ -259,6 +262,7 @@ TEST(ConfigurationPolicyProviderTest, FixDeprecatedPolicies) {
       .Set(key::kProxySettings, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
            expected_value);
   EXPECT_TRUE(provider.policies().Equals(expected_bundle));
+  provider.Shutdown();
 }
 
 Configuration3rdPartyPolicyProviderTest::
@@ -301,7 +305,7 @@ TEST_P(Configuration3rdPartyPolicyProviderTest, Load3rdParty) {
   test_harness_->Install3rdPartyPolicy(&policy_3rdparty);
 
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   PolicyMap expected_policy;
   expected_policy.Set(test_policy_definitions::kKeyDictionary,

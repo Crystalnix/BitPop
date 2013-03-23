@@ -4,20 +4,18 @@
 
 package org.chromium.content.browser;
 
-import android.content.Context;
 import android.os.SystemClock;
 import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.LargeTest;
 import android.test.suitebuilder.annotation.SmallTest;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ViewConfiguration;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.chromium.base.test.Feature;
-import org.chromium.base.test.ScalableTimeout;
+import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.ScalableTimeout;
 
 /**
  * Test suite for LongPressDetector.
@@ -42,7 +40,7 @@ public class LongPressDetectorTest extends InstrumentationTestCase {
      * @throws Exception
      */
     @SmallTest
-    @Feature({"Android-WebView"})
+    @Feature({"AndroidWebView"})
     public void testGestureSimpleLongPress() throws Exception {
         final long downTime = SystemClock.uptimeMillis();
         final long eventTime = SystemClock.uptimeMillis();
@@ -59,7 +57,7 @@ public class LongPressDetectorTest extends InstrumentationTestCase {
      * @throws Exception
      */
     @SmallTest
-    @Feature({"Android-WebView"})
+    @Feature({"AndroidWebView"})
     public void testGestureNoLongPress() throws Exception {
         final long downTime = SystemClock.uptimeMillis();
         final long eventTime = SystemClock.uptimeMillis();
@@ -82,7 +80,7 @@ public class LongPressDetectorTest extends InstrumentationTestCase {
      * @throws Exception
      */
     @SmallTest
-    @Feature({"Android-WebView"})
+    @Feature({"AndroidWebView"})
     public void testGestureLongWithDelayedUp() throws Exception {
         final long downTime = SystemClock.uptimeMillis();
         final long eventTime = SystemClock.uptimeMillis();
@@ -102,7 +100,7 @@ public class LongPressDetectorTest extends InstrumentationTestCase {
      * Verify that the touch move threshold (slop) is working for events offered to native.
      */
     @SmallTest
-    @Feature({"Android-WebView"})
+    @Feature({"AndroidWebView"})
     public void testConfirmOfferMoveEventToNative() {
         final int slop = ViewConfiguration.get(getInstrumentation().getTargetContext())
                 .getScaledTouchSlop();
@@ -137,7 +135,7 @@ public class LongPressDetectorTest extends InstrumentationTestCase {
      * @throws Exception
      */
     @LargeTest
-    @Feature({"Android-WebView"})
+    @Feature({"AndroidWebView"})
     public void testGestureLongPressDetected() throws Exception {
         final CountDownLatch longPressCalled = new CountDownLatch(1);
         getInstrumentation().runOnMainSync(new Runnable() {

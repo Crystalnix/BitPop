@@ -20,6 +20,7 @@
     '<(src_dir)/base/base.gyp:test_support_base',
     '<(src_dir)/net/net.gyp:net_test_support',
     '<(src_dir)/skia/skia.gyp:skia',
+    '<(src_dir)/testing/gmock.gyp:gmock',
     '<(src_dir)/testing/gtest.gyp:gtest',
     '<(src_dir)/third_party/icu/icu.gyp:icui18n',
     '<(src_dir)/third_party/icu/icu.gyp:icuuc',
@@ -54,12 +55,10 @@
         '<(SHARED_INTERMEDIATE_DIR)/chrome/browser_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/chrome/extensions_api_resources.rc',
-        '<(SHARED_INTERMEDIATE_DIR)/chrome/renderer_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/chrome_version/other_version.rc',
         '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
-        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.rc',
       ],
       'conditions': [
         ['win_use_allocator_shim==1', {
@@ -95,6 +94,16 @@
     ['toolkit_views==1', {
       'dependencies': [
        '<(src_dir)/ui/views/views.gyp:views',
+      ],
+    }],
+    ['OS=="android"', {
+      'dependencies!': [
+        'chrome',
+      ],
+      'dependencies': [
+        '<@(chromium_dependencies)',
+        'chrome_resources.gyp:packed_resources',
+        'chrome_resources.gyp:packed_extra_resources',
       ],
     }],
   ],

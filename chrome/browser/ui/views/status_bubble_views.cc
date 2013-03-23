@@ -26,12 +26,16 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/skia_util.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 
-using views::Widget;
+#if defined(USE_ASH)
+#include "ash/wm/property_util.h"
+#endif
 
 // The alpha and color of the bubble's shadow.
 static const SkColor kShadowColor = SkColorSetARGB(30, 0, 0, 0);
@@ -342,9 +346,8 @@ void StatusBubbleViews::StatusView::SetStyle(BubbleStyle style) {
 void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
-  paint.setFlags(SkPaint::kAntiAlias_Flag);
-  SkColor toolbar_color =
-      theme_service_->GetColor(ThemeService::COLOR_TOOLBAR);
+  paint.setAntiAlias(true);
+  SkColor toolbar_color = theme_service_->GetColor(ThemeService::COLOR_TOOLBAR);
   paint.setColor(toolbar_color);
 
   gfx::Rect popup_bounds = popup_->GetWindowBoundsInScreen();
@@ -409,14 +412,11 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
   // Draw the bubble's shadow.
   int width = popup_bounds.width();
   int height = popup_bounds.height();
-  SkRect rect;
-  rect.set(0, 0,
-           SkIntToScalar(width),
-           SkIntToScalar(height));
+  SkRect rect(gfx::RectToSkRect(gfx::Rect(popup_bounds.size())));
   SkPath shadow_path;
   shadow_path.addRoundRect(rect, rad, SkPath::kCW_Direction);
   SkPaint shadow_paint;
-  shadow_paint.setFlags(SkPaint::kAntiAlias_Flag);
+  shadow_paint.setAntiAlias(true);
   shadow_paint.setColor(kShadowColor);
   canvas->DrawPath(shadow_path, shadow_paint);
 
@@ -564,22 +564,26 @@ StatusBubbleViews::~StatusBubbleViews() {
 
 void StatusBubbleViews::Init() {
   if (!popup_.get()) {
-    popup_.reset(new Widget);
+    popup_.reset(new views::Widget);
     views::Widget* frame = base_view_->GetWidget();
     if (!view_)
       view_ = new StatusView(this, popup_.get(), frame->GetThemeProvider());
     if (!expand_view_.get())
       expand_view_.reset(new StatusViewExpander(this, view_));
-    Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+    views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.transparent = true;
     params.accept_events = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    params.parent_widget = frame;
+    params.parent = frame->GetNativeView();
+    params.context = frame->GetNativeView();
     popup_->Init(params);
     // We do our own animation and don't want any from the system.
     popup_->SetVisibilityChangedAnimationsEnabled(false);
     popup_->SetOpacity(0x00);
     popup_->SetContentsView(view_);
+#if defined(USE_ASH)
+    ash::SetIgnoredByShelf(popup_->GetNativeWindow(), true);
+#endif
     Reposition();
   }
 }
@@ -764,9 +768,9 @@ void StatusBubbleViews::AvoidMouse(const gfx::Point& location) {
 
     // Check if the bubble sticks out from the monitor or will obscure
     // download shelf.
-    gfx::NativeView widget = base_view_->GetWidget()->GetNativeView();
-    gfx::Rect monitor_rect =
-        gfx::Screen::GetDisplayNearestWindow(widget).work_area();
+    gfx::NativeView window = base_view_->GetWidget()->GetNativeView();
+    gfx::Rect monitor_rect = gfx::Screen::GetScreenFor(window)->
+        GetDisplayNearestWindow(window).work_area();
     const int bubble_bottom_y = top_left.y() + position_.y() + size_.height();
 
     if (bubble_bottom_y + offset > monitor_rect.height() ||
@@ -830,9 +834,10 @@ int StatusBubbleViews::GetStandardStatusBubbleWidth() {
 }
 
 int StatusBubbleViews::GetMaxStatusBubbleWidth() {
+  const ui::NativeTheme* theme = base_view_->GetNativeTheme();
   return static_cast<int>(std::max(0, base_view_->bounds().width() -
       (kShadowThickness * 2) - kTextPositionX - kTextHorizPadding - 1 -
-      views::NativeScrollBar::GetVerticalScrollBarWidth()));
+      views::NativeScrollBar::GetVerticalScrollBarWidth(theme)));
 }
 
 void StatusBubbleViews::SetBubbleWidth(int width) {

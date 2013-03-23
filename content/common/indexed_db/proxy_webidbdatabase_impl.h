@@ -15,35 +15,36 @@ class WebString;
 class WebIDBTransaction;
 }
 
+namespace content {
+
 class RendererWebIDBDatabaseImpl : public WebKit::WebIDBDatabase {
  public:
-  explicit RendererWebIDBDatabaseImpl(int32 idb_database_id);
+  explicit RendererWebIDBDatabaseImpl(int32 ipc_database_id);
   virtual ~RendererWebIDBDatabaseImpl();
 
   // WebKit::WebIDBDatabase
   virtual WebKit::WebIDBMetadata metadata() const;
   virtual WebKit::WebIDBObjectStore* createObjectStore(
+      long long objectstore_id,
       const WebKit::WebString& name,
       const WebKit::WebIDBKeyPath& key_path,
       bool auto_increment,
       const WebKit::WebIDBTransaction& transaction,
       WebKit::WebExceptionCode& ec);
   virtual void deleteObjectStore(
-      const WebKit::WebString& name,
+      long long object_store_id,
       const WebKit::WebIDBTransaction& transaction,
       WebKit::WebExceptionCode& ec);
-  virtual void setVersion(
-      const WebKit::WebString& version, WebKit::WebIDBCallbacks* callbacks,
-      WebKit::WebExceptionCode& ec);
-  virtual WebKit::WebIDBTransaction* transaction(
-      const WebKit::WebDOMStringList& names,
-      unsigned short mode,
-      WebKit::WebExceptionCode& ec);
+  virtual WebKit::WebIDBTransaction* createTransaction(
+      long long transaction_id,
+      const WebKit::WebVector<long long>& scope,
+      unsigned short mode);
   virtual void close();
-  virtual void open(WebKit::WebIDBDatabaseCallbacks*);
 
  private:
-  int32 idb_database_id_;
+  int32 ipc_database_id_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_

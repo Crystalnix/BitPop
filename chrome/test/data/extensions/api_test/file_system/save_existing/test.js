@@ -4,7 +4,7 @@
 
 chrome.test.runTests([
   function saveFile() {
-    chrome.fileSystem.chooseFile({type: 'saveFile'}, chrome.test.callbackFail(
-        'Operation requires fileSystemWrite permission',  function() {}));
+    chrome.fileSystem.chooseEntry({type: 'saveFile'}, chrome.test.callbackFail(
+        'Operation requires fileSystem.write permission',  function() {}));
   }
 ]);

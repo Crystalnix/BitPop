@@ -39,7 +39,6 @@ class PermissionMessage {
     kClipboard,
     kTtsEngine,
     kContentSettings,
-    kAllPageContent,
     kPrivacy,
     kManagedMode,
     kInput,
@@ -48,6 +47,15 @@ class PermissionMessage {
     kDownloads,
     kFileSystemWrite,
     kMediaGalleriesAllGalleries,
+    kSerial,
+    kSocketAnyHost,
+    kSocketDomainHosts,
+    kSocketSpecificHosts,
+    kBluetooth,
+    kUsb,
+    kSystemIndicator,
+    kBluetoothDevice,
+    kUsbDevice,
     kEnumBoundary
   };
 

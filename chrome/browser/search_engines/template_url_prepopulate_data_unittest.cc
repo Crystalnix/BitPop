@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_vector.h"
-#include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
@@ -97,16 +99,15 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   prefs->SetUserPref(prefs::kSearchProviderOverridesVersion,
                      Value::CreateIntegerValue(1));
   ListValue* overrides = new ListValue;
-  DictionaryValue* entry = new DictionaryValue;
+  scoped_ptr<DictionaryValue> entry(new DictionaryValue);
+  // Set only the minimal required settings for a search provider configuration.
   entry->SetString("name", "foo");
   entry->SetString("keyword", "fook");
   entry->SetString("search_url", "http://foo.com/s?q={searchTerms}");
   entry->SetString("favicon_url", "http://foi.com/favicon.ico");
-  entry->SetString("suggest_url", "");
-  entry->SetString("instant_url", "");
   entry->SetString("encoding", "UTF-8");
   entry->SetInteger("id", 1001);
-  overrides->Append(entry);
+  overrides->Append(entry->DeepCopy());
   prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
   int version = TemplateURLPrepopulateData::GetDataVersion(prefs);
@@ -124,6 +125,93 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   EXPECT_EQ("foi.com", t_urls[0]->favicon_url().host());
   EXPECT_EQ(1u, t_urls[0]->input_encodings().size());
   EXPECT_EQ(1001, t_urls[0]->prepopulate_id());
+  EXPECT_TRUE(t_urls[0]->suggestions_url().empty());
+  EXPECT_TRUE(t_urls[0]->instant_url().empty());
+  EXPECT_EQ(0u, t_urls[0]->alternate_urls().size());
+
+  // Test the optional settings too.
+  entry->SetString("suggest_url", "http://foo.com/suggest?q={searchTerms}");
+  entry->SetString("instant_url", "http://foo.com/instant?q={searchTerms}");
+  ListValue* alternate_urls = new ListValue;
+  alternate_urls->AppendString("http://foo.com/alternate?q={searchTerms}");
+  entry->Set("alternate_urls", alternate_urls);
+  overrides = new ListValue;
+  overrides->Append(entry->DeepCopy());
+  prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
+
+  t_urls.clear();
+  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
+                                                     &default_index);
+  ASSERT_EQ(1u, t_urls.size());
+  EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name());
+  EXPECT_EQ(ASCIIToUTF16("fook"), t_urls[0]->keyword());
+  EXPECT_EQ("foo.com", t_urls[0]->url_ref().GetHost());
+  EXPECT_EQ("foi.com", t_urls[0]->favicon_url().host());
+  EXPECT_EQ(1u, t_urls[0]->input_encodings().size());
+  EXPECT_EQ(1001, t_urls[0]->prepopulate_id());
+  EXPECT_EQ("http://foo.com/suggest?q={searchTerms}",
+            t_urls[0]->suggestions_url());
+  EXPECT_EQ("http://foo.com/instant?q={searchTerms}",
+            t_urls[0]->instant_url());
+  ASSERT_EQ(1u, t_urls[0]->alternate_urls().size());
+  EXPECT_EQ("http://foo.com/alternate?q={searchTerms}",
+            t_urls[0]->alternate_urls()[0]);
+
+  // Test that subsequent providers are loaded even if an intermediate
+  // provider has an incomplete configuration.
+  overrides = new ListValue;
+  overrides->Append(entry->DeepCopy());
+  entry->SetInteger("id", 1002);
+  entry->SetString("name", "bar");
+  entry->SetString("keyword", "bark");
+  entry->SetString("encoding", "");
+  overrides->Append(entry->DeepCopy());
+  entry->SetInteger("id", 1003);
+  entry->SetString("name", "baz");
+  entry->SetString("keyword", "bazk");
+  entry->SetString("encoding", "UTF-8");
+  overrides->Append(entry->DeepCopy());
+  prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
+
+  t_urls.clear();
+  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
+                                                     &default_index);
+  EXPECT_EQ(2u, t_urls.size());
+}
+
+// Verifies that built-in search providers are processed correctly.
+TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
+  // Use United States.
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kCountry, "US");
+  TestingProfile profile;
+  ScopedVector<TemplateURL> t_urls;
+  size_t default_index;
+  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
+                                                     &default_index);
+
+  // Ensure all the URLs have the required fields populated.
+  ASSERT_FALSE(t_urls.empty());
+  for (size_t i = 0; i < t_urls.size(); ++i) {
+    ASSERT_FALSE(t_urls[i]->short_name().empty());
+    ASSERT_FALSE(t_urls[i]->keyword().empty());
+    ASSERT_FALSE(t_urls[i]->favicon_url().host().empty());
+    ASSERT_FALSE(t_urls[i]->url_ref().GetHost().empty());
+    ASSERT_FALSE(t_urls[i]->input_encodings().empty());
+    EXPECT_GT(t_urls[i]->prepopulate_id(), 0);
+  }
+
+  // Ensures the default URL is Google and has the optional fields filled.
+  EXPECT_EQ(ASCIIToUTF16("Google"), t_urls[default_index]->short_name());
+  EXPECT_FALSE(t_urls[default_index]->suggestions_url().empty());
+  EXPECT_FALSE(t_urls[default_index]->instant_url().empty());
+  // Expect at least 2 alternate_urls.
+  // This caught a bug with static initialization of arrays, so leave this in.
+  EXPECT_GT(t_urls[default_index]->alternate_urls().size(), 1u);
+  for (size_t i = 0; i < t_urls[default_index]->alternate_urls().size(); ++i)
+    EXPECT_FALSE(t_urls[default_index]->alternate_urls()[i].empty());
+  EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
+      TemplateURLPrepopulateData::GetEngineType(t_urls[default_index]->url()));
 }
 
 TEST(TemplateURLPrepopulateDataTest, GetEngineTypeBasic) {
@@ -175,4 +263,38 @@ TEST_F(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
             TemplateURLPrepopulateData::GetEngineType(kExampleSearchURL));
   EXPECT_EQ(SEARCH_ENGINE_OTHER,
             TemplateURLPrepopulateData::GetEngineType("invalid:search:url"));
+}
+
+TEST(TemplateURLPrepopulateDataTest, GetLogoURLGoogle) {
+  TemplateURLData data;
+  data.SetURL("http://www.google.com/");
+  TemplateURL turl(NULL, data);
+  GURL logo_100_url = TemplateURLPrepopulateData::GetLogoURL(
+      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
+  GURL logo_200_url = TemplateURLPrepopulateData::GetLogoURL(
+      turl, TemplateURLPrepopulateData::LOGO_200_PERCENT);
+
+  EXPECT_EQ("www.google.com", logo_100_url.host());
+  EXPECT_EQ("www.google.com", logo_200_url.host());
+  EXPECT_NE(logo_100_url, logo_200_url);
+}
+
+TEST(TemplateURLPrepopulateDataTest, GetLogoURLUnknown) {
+  TemplateURLData data;
+  data.SetURL("http://webalta.ru/");
+  TemplateURL turl(NULL, data);
+  GURL logo_url = TemplateURLPrepopulateData::GetLogoURL(
+      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
+
+  EXPECT_TRUE(logo_url.is_empty());
+}
+
+TEST(TemplateURLPrepopulateDataTest, GetLogoURLInvalid) {
+  TemplateURLData data;
+  data.SetURL("http://invalid:search:url/");
+  TemplateURL turl(NULL, data);
+  GURL logo_url = TemplateURLPrepopulateData::GetLogoURL(
+      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
+
+  EXPECT_TRUE(logo_url.is_empty());
 }

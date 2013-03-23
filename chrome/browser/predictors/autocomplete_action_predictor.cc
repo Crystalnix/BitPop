@@ -58,21 +58,6 @@ enum DatabaseAction {
   DATABASE_ACTION_COUNT
 };
 
-bool IsAutocompleteMatchSearchType(const AutocompleteMatch& match) {
-  switch (match.type) {
-    // Matches using the user's default search engine.
-    case AutocompleteMatch::SEARCH_WHAT_YOU_TYPED:
-    case AutocompleteMatch::SEARCH_HISTORY:
-    case AutocompleteMatch::SEARCH_SUGGEST:
-    // A match that uses a non-default search engine (e.g. for tab-to-search).
-    case AutocompleteMatch::SEARCH_OTHER_ENGINE:
-      return true;
-
-    default:
-      return false;
-  }
-}
-
 }  // namespace
 
 namespace predictors {
@@ -102,16 +87,11 @@ AutocompleteActionPredictor::AutocompleteActionPredictor(Profile* profile)
     table_ =
         PredictorDatabaseFactory::GetForProfile(profile_)->autocomplete_table();
 
-    // Create local caches using the database as loaded. We will garbage collect
-    // rows from the caches and the database once the history service is
-    // available.
-    std::vector<AutocompleteActionPredictorTable::Row>* rows =
-        new std::vector<AutocompleteActionPredictorTable::Row>();
-    content::BrowserThread::PostTaskAndReply(content::BrowserThread::DB,
-        FROM_HERE,
-        base::Bind(&AutocompleteActionPredictorTable::GetAllRows, table_, rows),
-        base::Bind(&AutocompleteActionPredictor::CreateCaches, AsWeakPtr(),
-                   base::Owned(rows)));
+    // Observe all main frame loads so we can wait for the first to complete
+    // before accessing DB and IO threads to build the local cache.
+    notification_registrar_.Add(this,
+                                content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+                                content::NotificationService::AllSources());
   }
 }
 
@@ -158,12 +138,17 @@ void AutocompleteActionPredictor::ClearTransitionalMatches() {
 
 void AutocompleteActionPredictor::StartPrerendering(
     const GURL& url,
-    content::SessionStorageNamespace* session_storage_namespace,
+    const content::SessionStorageNamespaceMap& session_storage_namespace_map,
     const gfx::Size& size) {
-  if (prerender_handle_.get())
-    prerender_handle_->OnNavigateAway();
+  if (prerender_handle_)
+    prerender_handle_->OnCancel();
   if (prerender::PrerenderManager* prerender_manager =
           prerender::PrerenderManagerFactory::GetForProfile(profile_)) {
+    content::SessionStorageNamespace* session_storage_namespace = NULL;
+    content::SessionStorageNamespaceMap::const_iterator it =
+        session_storage_namespace_map.find("");
+    if (it != session_storage_namespace_map.end())
+      session_storage_namespace = it->second;
     prerender_handle_.reset(
         prerender_manager->AddPrerenderFromOmnibox(
             url, session_storage_namespace, size));
@@ -207,7 +192,7 @@ AutocompleteActionPredictor::Action
   // handle being prerendered and until they are we should avoid it.
   // http://crbug.com/117495
   if (action == ACTION_PRERENDER &&
-      (IsAutocompleteMatchSearchType(match) ||
+      (AutocompleteMatch::IsSearchType(match.type) ||
        !prerender::IsOmniboxEnabled(profile_))) {
     action = ACTION_PRECONNECT;
   }
@@ -220,7 +205,7 @@ AutocompleteActionPredictor::Action
 // static
 bool AutocompleteActionPredictor::IsPreconnectable(
     const AutocompleteMatch& match) {
-  return IsAutocompleteMatchSearchType(match);
+  return AutocompleteMatch::IsSearchType(match.type);
 }
 
 void AutocompleteActionPredictor::Observe(
@@ -228,6 +213,14 @@ void AutocompleteActionPredictor::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
+    case content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME:
+      CreateLocalCachesFromDatabase();
+      notification_registrar_.Remove(
+          this,
+          content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+          content::NotificationService::AllSources());
+      break;
+
     case chrome::NOTIFICATION_HISTORY_URLS_DELETED: {
       DCHECK(initialized_);
       const content::Details<const history::URLsDeletedDetails>
@@ -265,6 +258,19 @@ void AutocompleteActionPredictor::Observe(
       NOTREACHED() << "Unexpected notification observed.";
       break;
   }
+}
+
+void AutocompleteActionPredictor::CreateLocalCachesFromDatabase() {
+  // Create local caches using the database as loaded. We will garbage collect
+  // rows from the caches and the database once the history service is
+  // available.
+  std::vector<AutocompleteActionPredictorTable::Row>* rows =
+      new std::vector<AutocompleteActionPredictorTable::Row>();
+  content::BrowserThread::PostTaskAndReply(content::BrowserThread::DB,
+      FROM_HERE,
+      base::Bind(&AutocompleteActionPredictorTable::GetAllRows, table_, rows),
+      base::Bind(&AutocompleteActionPredictor::CreateCaches, AsWeakPtr(),
+                 base::Owned(rows)));
 }
 
 void AutocompleteActionPredictor::DeleteAllRows() {

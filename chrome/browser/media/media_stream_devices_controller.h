@@ -9,7 +9,7 @@
 
 #include "content/public/browser/web_contents_delegate.h"
 
-class GURL;
+class PrefService;
 class Profile;
 
 class MediaStreamDevicesController {
@@ -21,6 +21,9 @@ class MediaStreamDevicesController {
 
   virtual ~MediaStreamDevicesController();
 
+  // Registers the prefs backing the audio and video policies.
+  static void RegisterUserPrefs(PrefService* prefs);
+
   // Public method to be called before creating the MediaStreamInfoBarDelegate.
   // This function will check the content settings exceptions and take the
   // corresponding action on exception which matches the request.
@@ -29,48 +32,42 @@ class MediaStreamDevicesController {
   // Public methods to be called by MediaStreamInfoBarDelegate;
   bool has_audio() const { return has_audio_; }
   bool has_video() const { return has_video_; }
-  content::MediaStreamDevices GetAudioDevices() const;
-  content::MediaStreamDevices GetVideoDevices() const;
-  const GURL& GetSecurityOrigin() const;
-  void Accept(const std::string& audio_id,
-              const std::string& video_id,
-              bool always_allow);
-  void Deny();
+  const std::string& GetSecurityOriginSpec() const;
+  void Accept(bool update_content_setting);
+  void Deny(bool update_content_setting);
 
  private:
-  // Finds a device in the current request with the specified |id| and |type|,
-  // adds it to the |devices| array and also return the name of the device.
-  void AddDeviceWithId(content::MediaStreamDeviceType type,
-                       const std::string& id,
-                       content::MediaStreamDevices* devices,
-                       std::string* device_name);
+  // Returns true if audio capture is disabled by policy.
+  bool IsAudioDeviceBlockedByPolicy() const;
+
+  // Returns true if video capture is disabled by policy.
+  bool IsVideoDeviceBlockedByPolicy() const;
+
+  // Returns true if the origin of the request has been granted the media
+  // access before, otherwise returns false.
+  bool IsRequestAllowedByDefault() const;
+
+  // Returns true if the media access for the origin of the request has been
+  // blocked before. Otherwise returns false.
+  bool IsRequestBlockedByDefault() const;
 
   // Returns true if the media section in content settings is set to
   // |CONTENT_SETTING_BLOCK|, otherwise returns false.
-  bool IsMediaDeviceBlocked();
+  bool IsDefaultMediaAccessBlocked() const;
+
+  // Handles Tab Capture media request.
+  void HandleTapMediaRequest();
+
+  // Returns true if the origin is a secure scheme, otherwise returns false.
+  bool IsSchemeSecure() const;
 
   // Returns true if request's origin is from internal objects like
   // chrome://URLs, otherwise returns false.
-  bool ShouldAlwaysAllowOrigin();
+  bool ShouldAlwaysAllowOrigin() const;
 
-  // Grants "always allow" exception for the origin to use the selected devices.
-  void AlwaysAllowOriginAndDevices(const std::string& audio_device,
-                                   const std::string& video_device);
-
-  // Gets the respective "always allowed" devices for the origin in |request_|.
-  // |audio_id| and |video_id| will be empty if there is no "always allowed"
-  // device for the origin, or any of the devices is not listed on the devices
-  // list in |request_|.
-  void GetAlwaysAllowedDevices(std::string* audio_id,
-                               std::string* video_id);
-
-  std::string GetDeviceIdByName(content::MediaStreamDeviceType type,
-                                const std::string& name);
-
-  std::string GetFirstDeviceId(content::MediaStreamDeviceType type);
-
-  bool has_audio_;
-  bool has_video_;
+  // Sets the permission of the origin of the request. This is triggered when
+  // the users deny the request or allow the request for https sites.
+  void SetPermission(bool allowed) const;
 
   // The owner of this class needs to make sure it does not outlive the profile.
   Profile* profile_;
@@ -81,6 +78,9 @@ class MediaStreamDevicesController {
   // The callback that needs to be Run to notify WebRTC of whether access to
   // audio/video devices was granted or not.
   content::MediaResponseCallback callback_;
+
+  bool has_audio_;
+  bool has_video_;
   DISALLOW_COPY_AND_ASSIGN(MediaStreamDevicesController);
 };
 

@@ -11,9 +11,13 @@ This module accepts the following environment variable inputs:
       of performance/memory statistics.
 
   DEEP_MEMORY_PROFILE: Enable the Deep Memory Profiler if it's set to 'True'.
-  DEEP_MEMORY_PROFILE_INTERVAL: The number of seconds to wait in-between each
-      sampling for the Deep Memory Profiler.
   DEEP_MEMORY_PROFILE_SAVE: Don't clean up dump files if it's set to 'True'.
+
+  ENDURE_NO_WPR: Run tests without Web Page Replay if it's set.
+  WPR_RECORD: Run tests in record mode. If you want to make a fresh
+              archive, make sure to delete the old one, otherwise
+              it will append to the old one.
+  WPR_ARCHIVE_PATH: an alternative archive file to use.
 """
 
 from datetime import datetime
@@ -33,115 +37,43 @@ import pyauto_utils
 import remote_inspector_client
 import selenium.common.exceptions
 from selenium.webdriver.support.ui import WebDriverWait
+import webpagereplay
 
 
 class NotSupportedEnvironmentError(RuntimeError):
   """Represent an error raised since the environment (OS) is not supported."""
   pass
 
-class ChromeEndureBaseTest(perf.BasePerfTest):
-  """Implements common functionality for all Chrome Endure tests.
 
-  All Chrome Endure test classes should inherit from this class.
-  """
-
-  _DEFAULT_TEST_LENGTH_SEC = 60 * 60 * 6  # Tests run for 6 hours.
-  _GET_PERF_STATS_INTERVAL = 60 * 5  # Measure perf stats every 5 minutes.
-  # TODO(dennisjeffrey): Do we still need to tolerate errors?
-  _ERROR_COUNT_THRESHOLD = 50  # Number of ChromeDriver errors to tolerate.
-  _DEEP_MEMORY_PROFILE = False
-  _DEEP_MEMORY_PROFILE_INTERVAL = _GET_PERF_STATS_INTERVAL
-  _DEEP_MEMORY_PROFILE_SAVE = False
+class DeepMemoryProfiler(object):
+  """Controls Deep Memory Profiler (dmprof) for endurance tests."""
+  DEEP_MEMORY_PROFILE = False
+  DEEP_MEMORY_PROFILE_SAVE = False
 
   _DMPROF_DIR_PATH = os.path.join(
       os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
       'tools', 'deep_memory_profiler')
-
   _DMPROF_SCRIPT_PATH = os.path.join(_DMPROF_DIR_PATH, 'dmprof')
+  _POLICIES = ['l0', 'l1', 'l2', 't0']
 
-  _CHROME_BIN_PATH = os.path.join(perf.BasePerfTest.BrowserPath(), 'chrome')
+  def __init__(self):
+    self._enabled = self.GetEnvironmentVariable(
+        'DEEP_MEMORY_PROFILE', bool, self.DEEP_MEMORY_PROFILE)
+    self._save = self.GetEnvironmentVariable(
+        'DEEP_MEMORY_PROFILE_SAVE', bool, self.DEEP_MEMORY_PROFILE_SAVE)
+    self._json_file = None
+    self._last_json_filename = ''
+    self._proc = None
+    self._last_time = {}
+    for policy in self._POLICIES:
+      self._last_time[policy] = -1.0
 
-  def setUp(self):
-    # The environment variables for the Deep Memory Profiler must be set
-    # before perf.BasePerfTest.setUp() to inherit them to Chrome.
-    self._deep_memory_profile = self._GetDeepMemoryProfileEnv(
-        'DEEP_MEMORY_PROFILE', bool, self._DEEP_MEMORY_PROFILE)
+  def __nonzero__(self):
+    return self._enabled
 
-    self._deep_memory_profile_interval = self._GetDeepMemoryProfileEnv(
-        'DEEP_MEMORY_PROFILE_INTERVAL', int, self._DEEP_MEMORY_PROFILE_INTERVAL)
-
-    if self._deep_memory_profile:
-      if not self.IsLinux():
-        raise NotSupportedEnvironmentError(
-            'Deep Memory Profiler is not supported in this environment (OS).')
-      dir_prefix = 'endure.%s.' % datetime.today().strftime('%Y%m%d.%H%M%S')
-      self._deep_tempdir = tempfile.mkdtemp(prefix=dir_prefix)
-      os.environ['HEAPPROFILE'] = os.path.join(self._deep_tempdir, 'endure')
-      os.environ['HEAP_PROFILE_MMAP'] = 'True'
-      os.environ['DEEP_HEAP_PROFILE'] = 'True'
-      # TODO(dmikurube): Stop to set HEAP_PROFILE_TIME_INTERVAL when PyAuto
-      # supports to dump renderer heap profile.
-      os.environ['HEAP_PROFILE_TIME_INTERVAL'] = (
-          str(self._deep_memory_profile_interval))
-
-    perf.BasePerfTest.setUp(self)
-
-    self._test_length_sec = int(
-        os.environ.get('TEST_LENGTH', self._DEFAULT_TEST_LENGTH_SEC))
-    self._get_perf_stats_interval = int(
-        os.environ.get('PERF_STATS_INTERVAL', self._GET_PERF_STATS_INTERVAL))
-
-    self._deep_memory_profile_save = self._GetDeepMemoryProfileEnv(
-        'DEEP_MEMORY_PROFILE_SAVE', bool, self._DEEP_MEMORY_PROFILE_SAVE)
-
-    logging.info('Running test for %d seconds.', self._test_length_sec)
-    logging.info('Gathering perf stats every %d seconds.',
-                 self._get_perf_stats_interval)
-    if self._deep_memory_profile:
-      logging.info('Running with the Deep Memory Profiler every %d seconds.',
-                   self._deep_memory_profile_interval)
-      if self._deep_memory_profile_save:
-        logging.info('  Dumped files won\'t be cleaned.')
-      else:
-        logging.info('  Dumped files will be cleaned up after every test.')
-
-    # Set up a remote inspector client associated with tab 0.
-    logging.info('Setting up connection to remote inspector...')
-    self._remote_inspector_client = (
-        remote_inspector_client.RemoteInspectorClient())
-    logging.info('Connection to remote inspector set up successfully.')
-
-    self._test_start_time = 0
-    self._num_errors = 0
-    self._events_to_output = []
-    self._deep_memory_profile_json_file = None
-    self._deep_memory_profile_last_json_filename = ''
-    self._deep_memory_profile_proc = None
-
-  def tearDown(self):
-    logging.info('Terminating connection to remote inspector...')
-    self._remote_inspector_client.Stop()
-    logging.info('Connection to remote inspector terminated.')
-    if self._deep_memory_profile:
-      # TODO(dmikurube): Stop to set HEAP_PROFILE_TIME_INTERVAL in setUp when
-      # PyAuto supports to dump renderer heap profile.
-      del os.environ['HEAP_PROFILE_TIME_INTERVAL']
-      del os.environ['DEEP_HEAP_PROFILE']
-      del os.environ['HEAP_PROFILE_MMAP']
-      del os.environ['HEAPPROFILE']
-
-    # Must be done at end of this function except for post-cleaning after
-    # Chrome finishes.
-    perf.BasePerfTest.tearDown(self)
-
-    # Remove the temporary directory after Chrome finishes in tearDown.
-    if (self._deep_memory_profile and
-        not self._deep_memory_profile_save and
-        self._deep_tempdir):
-      pyauto_utils.RemovePath(self._deep_tempdir)
-
-  def _GetDeepMemoryProfileEnv(self, env_name, converter, default):
-    """Returns a converted environment variable for the Deep Memory Profiler.
+  @staticmethod
+  def GetEnvironmentVariable(env_name, converter, default):
+    """Returns a converted environment variable for Deep Memory Profiler.
 
     Args:
       env_name: A string name of an environment variable.
@@ -153,16 +85,246 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
     """
     return converter(os.environ.get(env_name, default))
 
+  def SetUp(self, is_linux):
+    """Sets up Deep Memory Profiler settings for a Chrome process.
+
+    It sets environment variables and makes a working directory.
+    """
+    if not self._enabled:
+      return
+
+    if not is_linux:
+      raise NotSupportedEnvironmentError(
+          'Deep Memory Profiler is not supported in this environment (OS).')
+    dir_prefix = 'endure.%s.' % datetime.today().strftime('%Y%m%d.%H%M%S')
+    self._tempdir = tempfile.mkdtemp(prefix=dir_prefix)
+    os.environ['HEAPPROFILE'] = os.path.join(self._tempdir, 'endure')
+    os.environ['HEAP_PROFILE_MMAP'] = '1'
+    os.environ['DEEP_HEAP_PROFILE'] = '1'
+
+  def TearDown(self):
+    """Tear down Deep Memory Profiler settings for the Chrome process.
+
+    It removes the environment variables and the temporary directory.
+    Call it after Chrome finishes.  Chrome may dump last files at the end.
+    """
+    if not self._enabled:
+      return
+
+    del os.environ['DEEP_HEAP_PROFILE']
+    del os.environ['HEAP_PROFILE_MMAP']
+    del os.environ['HEAPPROFILE']
+    if not self._save and self._tempdir:
+      pyauto_utils.RemovePath(self._tempdir)
+
+  def LogFirstMessage(self):
+    """Logs first messages."""
+    if not self._enabled:
+      return
+
+    logging.info('Running with the Deep Memory Profiler.')
+    if self._save:
+      logging.info('  Dumped files won\'t be cleaned.')
+    else:
+      logging.info('  Dumped files will be cleaned up after every test.')
+
+  def StartProfiler(self, proc_info, is_last):
+    """Starts Deep Memory Profiler in background."""
+    if not self._enabled:
+      return
+
+    logging.info('  Profiling with the Deep Memory Profiler...')
+
+    # Wait for a running dmprof process for last _GetPerformanceStat call to
+    # cover last dump files.
+    if is_last:
+      logging.info('    Waiting for the last dmprof.')
+      self._WaitForDeepMemoryProfiler()
+
+    if self._proc and self._proc.poll() is None:
+      logging.info('    Last dmprof is still running.')
+    else:
+      if self._json_file:
+        self._last_json_filename = self._json_file.name
+        self._json_file.close()
+        self._json_file = None
+      first_dump = ''
+      last_dump = ''
+      for filename in sorted(os.listdir(self._tempdir)):
+        if re.match('^endure.%05d.\d+.heap$' % proc_info['tab_pid'],
+                    filename):
+          logging.info('    Profiled dump file: %s' % filename)
+          last_dump = filename
+          if not first_dump:
+            first_dump = filename
+      if first_dump:
+        logging.info('    First dump file: %s' % first_dump)
+        matched = re.match('^endure.\d+.(\d+).heap$', last_dump)
+        last_sequence_id = matched.group(1)
+        self._json_file = open(
+            os.path.join(self._tempdir,
+                         'endure.%05d.%s.json' % (proc_info['tab_pid'],
+                                                  last_sequence_id)), 'w+')
+        self._proc = subprocess.Popen(
+            '%s json %s' % (self._DMPROF_SCRIPT_PATH,
+                            os.path.join(self._tempdir, first_dump)),
+            shell=True, stdout=self._json_file)
+        # Wait only when it is the last profiling.  dmprof may take long time.
+        if is_last:
+          self._WaitForDeepMemoryProfiler()
+      else:
+        logging.info('    No dump files.')
+
+  def ParseResultAndOutputPerfGraphValues(
+      self, webapp_name, test_description, output_perf_graph_value):
+    """Parses Deep Memory Profiler result, and outputs perf graph values."""
+    if not self._enabled:
+      return
+
+    results = {}
+    for policy in self._POLICIES:
+      if self._last_json_filename:
+        json_data = {}
+        with open(self._last_json_filename) as json_f:
+          json_data = json.load(json_f)
+        if json_data['version'] == 'JSON_DEEP_1':
+          results[policy] = json_data['snapshots']
+        elif json_data['version'] == 'JSON_DEEP_2':
+          results[policy] = json_data['policies'][policy]['snapshots']
+    for policy, result in results.iteritems():
+      if result and result[-1]['second'] > self._last_time[policy]:
+        started = False
+        for legend in json_data['policies'][policy]['legends']:
+          if legend == 'FROM_HERE_FOR_TOTAL':
+            started = True
+          elif legend == 'UNTIL_HERE_FOR_TOTAL':
+            break
+          elif started:
+            output_perf_graph_value(
+                legend.encode('utf-8'), [
+                    (int(round(snapshot['second'])), snapshot[legend] / 1024)
+                    for snapshot in result
+                    if snapshot['second'] > self._last_time[policy]],
+                'KB',
+                graph_name='%s%s-%s-DMP' % (
+                    webapp_name, test_description, policy),
+                units_x='seconds', is_stacked=True)
+        self._last_time[policy] = result[-1]['second']
+
   def _WaitForDeepMemoryProfiler(self):
     """Waits for the Deep Memory Profiler to finish if running."""
-    if self._deep_memory_profile and self._deep_memory_profile_proc:
-      self._deep_memory_profile_proc.wait()
-      self._deep_memory_profile_proc = None
-      if self._deep_memory_profile_json_file:
-        self._deep_memory_profile_last_json_filename = (
-            self._deep_memory_profile_json_file.name)
-        self._deep_memory_profile_json_file.close()
-        self._deep_memory_profile_json_file = None
+    if not self._enabled or not self._proc:
+      return
+
+    self._proc.wait()
+    self._proc = None
+    if self._json_file:
+      self._last_json_filename = self._json_file.name
+      self._json_file.close()
+      self._json_file = None
+
+
+class ChromeEndureBaseTest(perf.BasePerfTest):
+  """Implements common functionality for all Chrome Endure tests.
+
+  All Chrome Endure test classes should inherit from this class.
+  """
+
+  _DEFAULT_TEST_LENGTH_SEC = 60 * 60 * 6  # Tests run for 6 hours.
+  _GET_PERF_STATS_INTERVAL = 60 * 5  # Measure perf stats every 5 minutes.
+  # TODO(dennisjeffrey): Do we still need to tolerate errors?
+  _ERROR_COUNT_THRESHOLD = 50  # Number of errors to tolerate.
+
+  def setUp(self):
+    # The Web Page Replay environment variables must be parsed before
+    # perf.BasePerfTest.setUp()
+    self._ParseReplayEnv()
+    # The environment variables for the Deep Memory Profiler must be set
+    # before perf.BasePerfTest.setUp() to inherit them to Chrome.
+    self._dmprof = DeepMemoryProfiler()
+    if self._dmprof:
+      self._dmprof.SetUp(self.IsLinux())
+
+    perf.BasePerfTest.setUp(self)
+
+    self._test_length_sec = int(
+        os.environ.get('TEST_LENGTH', self._DEFAULT_TEST_LENGTH_SEC))
+    self._get_perf_stats_interval = int(
+        os.environ.get('PERF_STATS_INTERVAL', self._GET_PERF_STATS_INTERVAL))
+
+    logging.info('Running test for %d seconds.', self._test_length_sec)
+    logging.info('Gathering perf stats every %d seconds.',
+                 self._get_perf_stats_interval)
+
+    if self._dmprof:
+      self._dmprof.LogFirstMessage()
+
+    # Set up a remote inspector client associated with tab 0.
+    logging.info('Setting up connection to remote inspector...')
+    self._remote_inspector_client = (
+        remote_inspector_client.RemoteInspectorClient())
+    logging.info('Connection to remote inspector set up successfully.')
+
+    self._test_start_time = 0
+    self._num_errors = 0
+    self._events_to_output = []
+    self._StartReplayServerIfNecessary()
+
+  def tearDown(self):
+    logging.info('Terminating connection to remote inspector...')
+    self._remote_inspector_client.Stop()
+    logging.info('Connection to remote inspector terminated.')
+
+    # Must be done at end of this function except for post-cleaning after
+    # Chrome finishes.
+    perf.BasePerfTest.tearDown(self)
+
+    # Must be done after perf.BasePerfTest.tearDown()
+    self._StopReplayServerIfNecessary()
+    if self._dmprof:
+      self._dmprof.TearDown()
+
+  def _GetArchiveName(self):
+    """Return the Web Page Replay archive name that corresponds to a test.
+
+    Override this function to return the name of an archive that
+    corresponds to the test, e.g "ChromeEndureGmailTest.wpr".
+
+    Returns:
+      None, by default no archive name is provided.
+    """
+    return None
+
+  def _ParseReplayEnv(self):
+    """Parse Web Page Replay related envrionment variables."""
+    if 'ENDURE_NO_WPR' in os.environ:
+      self._use_wpr = False
+      logging.info('Skipping Web Page Replay since ENDURE_NO_WPR is set.')
+    else:
+      self._archive_path = None
+      if 'WPR_ARCHIVE_PATH' in os.environ:
+        self._archive_path = os.environ.get('WPR_ARCHIVE_PATH')
+      else:
+        if self._GetArchiveName():
+          self._archive_path = ChromeEndureReplay.Path(
+              'archive', archive_name=self._GetArchiveName())
+      self._is_record_mode = 'WPR_RECORD' in os.environ
+      if self._is_record_mode:
+        if self._archive_path:
+          self._use_wpr = True
+        else:
+          self._use_wpr = False
+          logging.info('Fail to record since a valid archive path can not ' +
+                       'be generated. Did you implement ' +
+                       '_GetArchiveName() in your test?')
+      else:
+        if self._archive_path and os.path.exists(self._archive_path):
+          self._use_wpr = True
+        else:
+          self._use_wpr = False
+          logging.info(
+              'Skipping Web Page Replay since archive file %sdoes not exist.',
+              self._archive_path + ' ' if self._archive_path else '')
 
   def ExtraChromeFlags(self):
     """Ensures Chrome is launched with custom flags.
@@ -172,15 +334,17 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
     """
     # The same with setUp, but need to fetch the environment variable since
     # ExtraChromeFlags is called before setUp.
-    deep_memory_profile = self._GetDeepMemoryProfileEnv(
-        'DEEP_MEMORY_PROFILE', bool, self._DEEP_MEMORY_PROFILE)
+    deep_memory_profile = DeepMemoryProfiler.GetEnvironmentVariable(
+        'DEEP_MEMORY_PROFILE', bool, DeepMemoryProfiler.DEEP_MEMORY_PROFILE)
 
     # Ensure Chrome enables remote debugging on port 9222.  This is required to
     # interact with Chrome's remote inspector.
     extra_flags = ['--remote-debugging-port=9222']
     if deep_memory_profile:
       extra_flags.append('--no-sandbox')
-    return (perf.BasePerfTest.ExtraChromeFlags(self) + extra_flags)
+    if self._use_wpr:
+      extra_flags.extend(ChromeEndureReplay.CHROME_FLAGS)
+    return perf.BasePerfTest.ExtraChromeFlags(self) + extra_flags
 
   def _OnTimelineEvent(self, event_info):
     """Invoked by the Remote Inspector Client when a timeline event occurs.
@@ -226,6 +390,8 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
     self._num_errors = 0
     self._test_start_time = time.time()
     last_perf_stats_time = time.time()
+    if self._dmprof:
+      self.HeapProfilerDump('renderer', 'Chrome Endure (first)')
     self._GetPerformanceStats(
         webapp_name, test_description, tab_title_substring)
     self._iteration_num = 0  # Available to |do_scenario| if needed.
@@ -241,12 +407,10 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
                       'early.' % self._ERROR_COUNT_THRESHOLD)
         break
 
-      # TODO(dmikurube): Call HeapProfilerDump when PyAuto supports dumping for
-      # renderer processes.
-      # TODO(dmikurube): Need pid of the target process.
-
       if time.time() - last_perf_stats_time >= self._get_perf_stats_interval:
         last_perf_stats_time = time.time()
+        if self._dmprof:
+          self.HeapProfilerDump('renderer', 'Chrome Endure')
         self._GetPerformanceStats(
             webapp_name, test_description, tab_title_substring)
 
@@ -271,12 +435,17 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
           window.domAutomationController.send('done');
         })();
       """
-      self.ExecuteJavascript(js, frame_xpath=frame_xpath)
+      try:
+        self.ExecuteJavascript(js, frame_xpath=frame_xpath)
+      except pyauto_errors.AutomationCommandTimeout:
+        self._num_errors += 1
+        logging.warning('Logging an automation timeout: delete chromedriver '
+                        'cache.')
 
     self._remote_inspector_client.StopTimelineEventMonitoring()
-    # TODO(dmikurube): Call HeapProfilerDump when PyAuto supports dumping for
-    # renderer processes.
 
+    if self._dmprof:
+      self.HeapProfilerDump('renderer', 'Chrome Endure (last)')
     self._GetPerformanceStats(
         webapp_name, test_description, tab_title_substring, is_last=True)
 
@@ -356,57 +525,8 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
     memory_counts = self._remote_inspector_client.GetMemoryObjectCounts()
     proc_info = self._GetProcessInfo(tab_title_substring)
 
-    # Run Deep Memory Profiler in background.
-    if self._deep_memory_profile:
-      logging.info('  Profiling with the Deep Memory Profiler...')
-
-      # Wait for a running dmprof process for last _GetPerformanceStat call to
-      # cover last dump files.
-      if is_last:
-        logging.info('    Waiting for the last dmprof.')
-        self._WaitForDeepMemoryProfiler()
-
-      if (self._deep_memory_profile_proc and
-          self._deep_memory_profile_proc.poll() is None):
-        logging.info('    Last dmprof is still running.')
-      else:
-        if self._deep_memory_profile_json_file:
-          self._deep_memory_profile_last_json_filename = (
-              self._deep_memory_profile_json_file.name)
-          self._deep_memory_profile_json_file.close()
-          self._deep_memory_profile_json_file = None
-        first_dump = ''
-        last_dump = ''
-        for filename in sorted(os.listdir(self._deep_tempdir)):
-          if re.match('^endure.%05d.\d+.heap$' % proc_info['tab_pid'],
-                      filename):
-            logging.info('    Profiled dump file: %s' % filename)
-            last_dump = filename
-            if not first_dump:
-              first_dump = filename
-        if first_dump:
-          logging.info('    First dump file: %s' % first_dump)
-          matched= re.match('^endure.\d+.(\d+).heap$', last_dump)
-          last_sequence_id = matched.group(1)
-          self._deep_memory_profile_json_file = open(
-              os.path.join(self._deep_tempdir,
-                           'endure.%05d.%s.json' % (proc_info['tab_pid'],
-                                                    last_sequence_id)), 'w+')
-          self._deep_memory_profile_proc = subprocess.Popen(
-              '%s --json %s %s %s' % (self._DMPROF_SCRIPT_PATH,
-                                      self._CHROME_BIN_PATH,
-                                      os.path.join(self._DMPROF_DIR_PATH,
-                                                   'policy.l0.txt'),
-                                      os.path.join(self._deep_tempdir,
-                                                   first_dump)),
-              shell=True, stdout=self._deep_memory_profile_json_file)
-          # Don't wait for the new process since dmprof may take long time.
-
-          if is_last:
-            self._WaitForDeepMemoryProfiler()
-
-        else:
-          logging.info('    No dump files.')
+    if self._dmprof:
+      self._dmprof.StartProfiler(proc_info, is_last)
 
     # DOM node count.
     dom_node_count = memory_counts['DOMNodeCount']
@@ -452,25 +572,9 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
         graph_name='%s%s-V8MemAllocated' % (webapp_name, test_description),
         units_x='seconds')
 
-    # Deep Memory Profiler result.
-    if self._deep_memory_profile:
-      deep_memory_profile_results = {}
-      if self._deep_memory_profile_last_json_filename:
-        json_data = {}
-        with open(self._deep_memory_profile_last_json_filename) as json_f:
-          json_data = json.load(json_f)
-        if json_data['version'] == 'JSON_DEEP_1':
-          deep_memory_profile_results = json_data['snapshots']
-      if deep_memory_profile_results:
-        self._OutputPerfGraphValue(
-            'DMP-TCMallocUsed', [
-                (snapshot['second'], snapshot['tc-used-all'] / 1024.0)
-                for snapshot in deep_memory_profile_results],
-            'KB',
-            graph_name='%s%s-DMP-TCUsed' % (webapp_name, test_description),
-            units_x='seconds')
-      # TODO(dmikurube): Output graph values (for multi-lined graphs), here.
-      # 'deep_memory_profile_results' is the value to be output.
+    if self._dmprof:
+      self._dmprof.ParseResultAndOutputPerfGraphValues(
+          webapp_name, test_description, self._OutputPerfGraphValue)
 
     logging.info('  Total DOM node count: %d nodes' % dom_node_count)
     logging.info('  Event listener count: %d listeners' % event_listener_count)
@@ -540,6 +644,26 @@ class ChromeEndureBaseTest(perf.BasePerfTest):
 
     return True
 
+  def _StartReplayServerIfNecessary(self):
+    """Start replay server if necessary."""
+    if self._use_wpr:
+      mode = 'record' if self._is_record_mode else 'replay'
+      self._wpr_server = ChromeEndureReplay.ReplayServer(self._archive_path)
+      self._wpr_server.StartServer()
+      logging.info('Web Page Replay server has started in %s mode.', mode)
+
+  def _StopReplayServerIfNecessary(self):
+    """Stop the Web Page Replay server if necessary.
+
+    This method has to be called AFTER all network connections which go
+    through Web Page Replay server have shut down. Otherwise the
+    Web Page Replay server will hang to wait for them. A good
+    place is to call it at the end of the teardown process.
+    """
+    if self._use_wpr:
+      self._wpr_server.StopServer()
+      logging.info('The Web Page Replay server stopped.')
+
 
 class ChromeEndureControlTest(ChromeEndureBaseTest):
   """Control tests for Chrome Endure."""
@@ -590,6 +714,8 @@ class ChromeEndureControlTest(ChromeEndureBaseTest):
                         test_description, lambda: scenario(driver))
 
 
+# TODO(dennisjeffrey): Make new WPR recordings of the Gmail tests so that we
+# can remove the special handling for when self._use_wpr is True.
 class ChromeEndureGmailTest(ChromeEndureBaseTest):
   """Long-running performance tests for Chrome using Gmail."""
 
@@ -600,13 +726,17 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
   def setUp(self):
     ChromeEndureBaseTest.setUp(self)
 
+    self._FRAME_XPATH = self._FRAME_XPATH if self._use_wpr else ''
+
     # Log into a test Google account and open up Gmail.
     self._LoginToGoogleAccount(account_key='test_google_account_gmail')
-    self.NavigateToURL('http://www.gmail.com')
-    loaded_tab_title = self.GetActiveTabTitle()
-    self.assertTrue(self._TAB_TITLE_SUBSTRING in loaded_tab_title,
-                    msg='Loaded tab title does not contain "%s": "%s"' %
-                        (self._TAB_TITLE_SUBSTRING, loaded_tab_title))
+    self.NavigateToURL(self._GetConfig().get('gmail_url'))
+    self.assertTrue(
+        self.WaitUntil(lambda: self._TAB_TITLE_SUBSTRING in
+                       self.GetActiveTabTitle(),
+                       timeout=60, expect_retval=True, retry_sleep=1),
+        msg='Timed out waiting for Gmail to load. Tab title is: %s' %
+        self.GetActiveTabTitle())
 
     self._driver = self.NewWebDriver()
     # Any call to wait.until() will raise an exception if the timeout is hit.
@@ -614,14 +744,30 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
     # DOM mutation observer mechanism.
     self._wait = WebDriverWait(self._driver, timeout=60)
 
-    # Wait until Gmail's 'canvas_frame' loads and the 'Inbox' link is present.
-    # TODO(dennisjeffrey): Check with the Gmail team to see if there's a better
-    # way to tell when the webpage is ready for user interaction.
-    self._wait.until(
-        self._SwitchToCanvasFrame)  # Raises exception if the timeout is hit.
+
+    if self._use_wpr:
+      # Wait until Gmail's 'canvas_frame' loads and the 'Inbox' link is present.
+      # TODO(dennisjeffrey): Check with the Gmail team to see if there's a
+      # better way to tell when the webpage is ready for user interaction.
+      self._wait.until(
+          self._SwitchToCanvasFrame)  # Raises exception if the timeout is hit.
+
     # Wait for the inbox to appear.
     self.WaitForDomNode('//a[starts-with(@title, "Inbox")]',
                         frame_xpath=self._FRAME_XPATH)
+
+    # Test whether latency dom element is available.
+    try:
+      self._GetLatencyDomElement(5000)
+      self._has_latency = True
+    except pyauto_errors.JSONInterfaceError:
+      logging.info('Skip recording latency as latency ' +
+                   'dom element is not available.')
+      self._has_latency = False
+
+  def _GetArchiveName(self):
+    """Return Web Page Replay archive name."""
+    return 'ChromeEndureGmailTest.wpr'
 
   def _SwitchToCanvasFrame(self, driver):
     """Switch the WebDriver to Gmail's 'canvas_frame', if it's available.
@@ -639,11 +785,20 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
     except selenium.common.exceptions.NoSuchFrameException:
       return False
 
-  def _GetLatencyDomElement(self):
-    """Returns a reference to the latency info element in the Gmail DOM."""
+  def _GetLatencyDomElement(self, timeout=-1):
+    """Returns a reference to the latency info element in the Gmail DOM.
+
+    Args:
+      timeout: The maximum amount of time (in milliseconds) to wait for
+               the latency dom element to appear, defaults to the
+               default automation timeout.
+    Returns:
+      A latency dom element.
+    """
     latency_xpath = (
         '//span[starts-with(text(), "Why was the last action slow?")]')
-    self.WaitForDomNode(latency_xpath, frame_xpath=self._FRAME_XPATH)
+    self.WaitForDomNode(latency_xpath, timeout=timeout,
+                        frame_xpath=self._FRAME_XPATH)
     return self._GetElement(self._driver.find_element_by_xpath, latency_xpath)
 
   def _WaitUntilDomElementRemoved(self, dom_element):
@@ -676,6 +831,9 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
       action_description: A string description of what action is being
           performed.  Should not contain spaces.  For example, 'Compose'.
     """
+    if not self._has_latency:
+      element.click()
+      return
     latency_dom_element = self._GetLatencyDomElement()
     element.click()
     # Wait for the old latency value to be removed, before getting the new one.
@@ -703,7 +861,7 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
     """
     test_description = 'ComposeDiscard'
 
-    def scenario():
+    def scenario_wpr():
       # Click the "Compose" button, enter some text into the "To" field, enter
       # some text into the "Subject" field, then click the "Discard" button to
       # discard the message.
@@ -736,24 +894,7 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
       self._wait.until(lambda _: not self._GetElement(
                            self._driver.find_element_by_name, 'to'))
 
-    self._RunEndureTest(self._WEBAPP_NAME, self._TAB_TITLE_SUBSTRING,
-                        test_description, scenario,
-                        frame_xpath=self._FRAME_XPATH)
-
-  # TODO(dennisjeffrey): Remove this test once the Gmail team is done analyzing
-  # the results after the test runs for a period of time.
-  def testGmailComposeDiscardSleep(self):
-    """Like testGmailComposeDiscard, but sleeps for 30s between iterations.
-
-    This is a temporary test requested by the Gmail team to compare against the
-    results from testGmailComposeDiscard above.
-    """
-    test_description = 'ComposeDiscardSleep'
-
-    def scenario():
-      # Click the "Compose" button, enter some text into the "To" field, enter
-      # some text into the "Subject" field, then click the "Discard" button to
-      # discard the message.  Finally, sleep for 30 seconds.
+    def scenario_live():
       compose_xpath = '//div[text()="COMPOSE"]'
       self.WaitForDomNode(compose_xpath, frame_xpath=self._FRAME_XPATH)
       compose_button = self._GetElement(self._driver.find_element_by_xpath,
@@ -761,33 +902,29 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
       self._ClickElementAndRecordLatency(
           compose_button, test_description, 'Compose')
 
-      to_xpath = '//textarea[@name="to"]'
+      to_xpath = '//input[@tabindex="1" and @spellcheck="false"]'
       self.WaitForDomNode(to_xpath, frame_xpath=self._FRAME_XPATH)
       to_field = self._GetElement(self._driver.find_element_by_xpath, to_xpath)
       to_field.send_keys('nobody@nowhere.com')
 
-      subject_xpath = '//input[@name="subject"]'
+      subject_xpath = '//input[@name="subjectbox"]'
       self.WaitForDomNode(subject_xpath, frame_xpath=self._FRAME_XPATH)
       subject_field = self._GetElement(self._driver.find_element_by_xpath,
                                        subject_xpath)
       subject_field.send_keys('This message is about to be discarded')
 
-      discard_xpath = '//div[text()="Discard"]'
+      discard_xpath = '//div[@aria-label="Discard draft"]'
       self.WaitForDomNode(discard_xpath, frame_xpath=self._FRAME_XPATH)
       discard_button = self._GetElement(self._driver.find_element_by_xpath,
                                         discard_xpath)
       discard_button.click()
 
       # Wait for the message to be discarded, assumed to be true after the
-      # "To" field is removed from the webpage DOM.
+      # "To" element is removed from the webpage DOM.
       self._wait.until(lambda _: not self._GetElement(
                            self._driver.find_element_by_name, 'to'))
 
-      # Sleep 2 minutes after every batch of 500 compose/discard iterations.
-      if self._iteration_num % 500 == 0:
-        logging.info('Sleeping 2 minutes.')
-        time.sleep(120)
-
+    scenario = scenario_wpr if self._use_wpr else scenario_live
     self._RunEndureTest(self._WEBAPP_NAME, self._TAB_TITLE_SUBSTRING,
                         test_description, scenario,
                         frame_xpath=self._FRAME_XPATH)
@@ -907,7 +1044,7 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
       self._ClickElementAndRecordLatency(expand, test_description, 'ExpandAll')
       self.WaitForDomNode(
           '//img[@alt="Expand all"]/parent::*/parent::*/parent::*'
-          '[@style="display: none; "]',
+          '[@style="display: none;"]',
           frame_xpath=self._FRAME_XPATH)
       time.sleep(1)
 
@@ -920,7 +1057,7 @@ class ChromeEndureGmailTest(ChromeEndureBaseTest):
       collapse.click()
       self.WaitForDomNode(
           '//img[@alt="Collapse all"]/parent::*/parent::*/parent::*'
-          '[@style="display: none; "]',
+          '[@style="display: none;"]',
           frame_xpath=self._FRAME_XPATH)
       time.sleep(1)
 
@@ -940,7 +1077,7 @@ class ChromeEndureDocsTest(ChromeEndureBaseTest):
 
     # Log into a test Google account and open up Google Docs.
     self._LoginToGoogleAccount()
-    self.NavigateToURL('http://docs.google.com')
+    self.NavigateToURL(self._GetConfig().get('docs_url'))
     self.assertTrue(
         self.WaitUntil(lambda: self._TAB_TITLE_SUBSTRING in
                                self.GetActiveTabTitle(),
@@ -949,6 +1086,10 @@ class ChromeEndureDocsTest(ChromeEndureBaseTest):
             self.GetActiveTabTitle())
 
     self._driver = self.NewWebDriver()
+
+  def _GetArchiveName(self):
+    """Return Web Page Replay archive name."""
+    return 'ChromeEndureDocsTest.wpr'
 
   def testDocsAlternatelyClickLists(self):
     """Alternates between two different document lists.
@@ -977,6 +1118,7 @@ class ChromeEndureDocsTest(ChromeEndureBaseTest):
       if not self._ClickElementByXpath(
           self._driver, '//span[starts-with(text(), "Shared with me")]'):
         self._num_errors += 1
+        logging.warning('Logging an automation error: click "shared with me".')
       try:
         self.WaitForDomNode('//div[text()="Share date"]')
       except pyauto_errors.JSONInterfaceError:
@@ -988,6 +1130,7 @@ class ChromeEndureDocsTest(ChromeEndureBaseTest):
       if not self._ClickElementByXpath(
           self._driver, '//span[starts-with(text(), "My Drive")]'):
         self._num_errors += 1
+        logging.warning('Logging an automation error: click "my drive".')
       try:
         self.WaitForDomNode('//div[text()="Quota used"]')
       except pyauto_errors.JSONInterfaceError:
@@ -1012,13 +1155,17 @@ class ChromeEndurePlusTest(ChromeEndureBaseTest):
 
     # Log into a test Google account and open up Google Plus.
     self._LoginToGoogleAccount()
-    self.NavigateToURL('http://plus.google.com')
+    self.NavigateToURL(self._GetConfig().get('plus_url'))
     loaded_tab_title = self.GetActiveTabTitle()
     self.assertTrue(self._TAB_TITLE_SUBSTRING in loaded_tab_title,
                     msg='Loaded tab title does not contain "%s": "%s"' %
                         (self._TAB_TITLE_SUBSTRING, loaded_tab_title))
 
     self._driver = self.NewWebDriver()
+
+  def _GetArchiveName(self):
+    """Return Web Page Replay archive name."""
+    return 'ChromeEndurePlusTest.wpr'
 
   def testPlusAlternatelyClickStreams(self):
     """Alternates between two different streams.
@@ -1039,12 +1186,14 @@ class ChromeEndurePlusTest(ChromeEndureBaseTest):
           '//div[text()="Friends" and '
           'starts-with(@data-dest, "stream/circles")]'):
         self._num_errors += 1
+        logging.warning('Logging an automation error: click "Friends" button.')
 
       try:
         self.WaitForDomNode('//span[contains(., "in Friends")]')
       except (pyauto_errors.JSONInterfaceError,
               pyauto_errors.JavascriptRuntimeError):
         self._num_errors += 1
+        logging.warning('Logging an automation error: wait for "in Friends".')
 
       time.sleep(1)
 
@@ -1054,12 +1203,14 @@ class ChromeEndurePlusTest(ChromeEndureBaseTest):
           '//div[text()="Family" and '
           'starts-with(@data-dest, "stream/circles")]'):
         self._num_errors += 1
+        logging.warning('Logging an automation error: click "Family" button.')
 
       try:
         self.WaitForDomNode('//span[contains(., "in Family")]')
       except (pyauto_errors.JSONInterfaceError,
               pyauto_errors.JavascriptRuntimeError):
         self._num_errors += 1
+        logging.warning('Logging an automation error: wait for "in Family".')
 
       time.sleep(1)
 
@@ -1098,29 +1249,62 @@ class IndexedDBOfflineTest(ChromeEndureBaseTest):
       # Click the "Online" button and let simulated sync run for 1 second.
       if not self._ClickElementByXpath(self._driver, 'id("online")'):
         self._num_errors += 1
+        logging.warning('Logging an automation error: click "online" button.')
 
       try:
         self.WaitForDomNode('id("state")[text()="online"]')
       except (pyauto_errors.JSONInterfaceError,
               pyauto_errors.JavascriptRuntimeError):
         self._num_errors += 1
+        logging.warning('Logging an automation error: wait for "online".')
 
       time.sleep(1)
 
       # Click the "Offline" button and let user input occur for 1 second.
       if not self._ClickElementByXpath(self._driver, 'id("offline")'):
         self._num_errors += 1
+        logging.warning('Logging an automation error: click "offline" button.')
 
       try:
         self.WaitForDomNode('id("state")[text()="offline"]')
       except (pyauto_errors.JSONInterfaceError,
               pyauto_errors.JavascriptRuntimeError):
         self._num_errors += 1
+        logging.warning('Logging an automation error: wait for "offline".')
 
       time.sleep(1)
 
     self._RunEndureTest(self._WEBAPP_NAME, self._TAB_TITLE_SUBSTRING,
                         test_description, scenario)
+
+
+class ChromeEndureReplay(object):
+  """Run Chrome Endure tests with network simulation via Web Page Replay."""
+
+  _PATHS = {
+      'archive':
+      'src/chrome/test/data/pyauto_private/webpagereplay/{archive_name}',
+      'scripts':
+      'src/chrome/test/data/chrome_endure/webpagereplay/wpr_deterministic.js',
+      }
+  CHROME_FLAGS = webpagereplay.CHROME_FLAGS
+
+  @classmethod
+  def Path(cls, key, **kwargs):
+    return perf.FormatChromePath(cls._PATHS[key], **kwargs)
+
+  @classmethod
+  def ReplayServer(cls, archive_path):
+    """Create a replay server."""
+    # Inject customized scripts for Google webapps.
+    # See the javascript file for details.
+    scripts = cls.Path('scripts')
+    if not os.path.exists(scripts):
+      raise IOError('Injected scripts %s not found.' % scripts)
+    replay_options = ['--inject_scripts', scripts]
+    if 'WPR_RECORD' in os.environ:
+      replay_options.append('--append')
+    return webpagereplay.ReplayServer(archive_path, replay_options)
 
 
 if __name__ == '__main__':

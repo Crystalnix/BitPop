@@ -31,7 +31,7 @@ cr.define('ntp', function() {
    * navigation dot UI.
    * @type {!Element|undefined}
    */
-  var infoBubble;
+  var promoBubble;
 
   /**
    * If non-null, an bubble confirming that the user has signed into sync. It
@@ -51,6 +51,13 @@ cr.define('ntp', function() {
    * @type {!Element|undefined}
    */
   var otherSessionsButton;
+
+  /**
+   * The time when all sections are ready.
+   * @type {number|undefined}
+   * @private
+   */
+  var startTime;
 
   /**
    * The time in milliseconds for most transitions.  This should match what's
@@ -94,12 +101,12 @@ cr.define('ntp', function() {
   NewTabView.prototype = {
     __proto__: ntp.PageListView.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     appendTilePage: function(page, title, titleIsEditable, opt_refNode) {
       ntp.PageListView.prototype.appendTilePage.apply(this, arguments);
 
-      if (infoBubble)
-        window.setTimeout(infoBubble.reposition.bind(infoBubble), 0);
+      if (promoBubble)
+        window.setTimeout(promoBubble.reposition.bind(promoBubble), 0);
     }
   };
 
@@ -108,7 +115,7 @@ cr.define('ntp', function() {
    */
   function onLoad() {
     sectionsToWaitFor = loadTimeData.getBoolean('showApps') ? 2 : 1;
-    if (loadTimeData.getBoolean('isSuggestionsPageEnabled'))
+    if (loadTimeData.getBoolean('isDiscoveryInNTPEnabled'))
       sectionsToWaitFor++;
     measureNavDots();
 
@@ -140,7 +147,7 @@ cr.define('ntp', function() {
                               false);
     chrome.send('getMostVisited');
 
-    if (loadTimeData.getBoolean('isSuggestionsPageEnabled')) {
+    if (loadTimeData.getBoolean('isDiscoveryInNTPEnabled')) {
       var suggestions_script = document.createElement('script');
       suggestions_script.src = 'suggestions_page.js';
       suggestions_script.onload = function() {
@@ -164,11 +171,11 @@ cr.define('ntp', function() {
     if (loadTimeData.getString('login_status_message')) {
       loginBubble = new cr.ui.Bubble;
       loginBubble.anchorNode = $('login-container');
-      loginBubble.setArrowLocation(cr.ui.ArrowLocation.TOP_END);
+      loginBubble.arrowLocation = cr.ui.ArrowLocation.TOP_END;
       loginBubble.bubbleAlignment =
           cr.ui.BubbleAlignment.BUBBLE_EDGE_TO_ANCHOR_EDGE;
       loginBubble.deactivateToDismissDelay = 2000;
-      loginBubble.setCloseButtonVisible(false);
+      loginBubble.closeButtonVisible = false;
 
       $('login-status-advanced').onclick = function() {
         chrome.send('showAdvancedLoginUI');
@@ -183,6 +190,30 @@ cr.define('ntp', function() {
       shouldShowLoginBubble = true;
     }
 
+    if (loadTimeData.valueExists('bubblePromoText')) {
+      promoBubble = new cr.ui.Bubble;
+      promoBubble.anchorNode = getRequiredElement('promo-bubble-anchor');
+      promoBubble.arrowLocation = cr.ui.ArrowLocation.BOTTOM_START;
+      promoBubble.bubbleAlignment = cr.ui.BubbleAlignment.ENTIRELY_VISIBLE;
+      promoBubble.deactivateToDismissDelay = 2000;
+      promoBubble.content = parseHtmlSubset(
+          loadTimeData.getString('bubblePromoText'), ['BR']);
+
+      var bubbleLink = promoBubble.querySelector('a');
+      if (bubbleLink) {
+        bubbleLink.addEventListener('click', function(e) {
+          chrome.send('bubblePromoLinkClicked');
+        });
+      }
+
+      promoBubble.handleCloseEvent = function() {
+        promoBubble.hide();
+        chrome.send('bubblePromoClosed');
+      };
+      promoBubble.show();
+      chrome.send('bubblePromoViewed');
+    }
+
     var loginContainer = getRequiredElement('login-container');
     loginContainer.addEventListener('click', showSyncLoginUI);
     chrome.send('initializeSyncLogin');
@@ -194,8 +225,8 @@ cr.define('ntp', function() {
       newTabView.cardSlider.currentCardValue.navigationDot.classList.add(
           'selected');
 
-      if (loadTimeData.valueExists('serverpromo')) {
-        var promo = loadTimeData.getString('serverpromo');
+      if (loadTimeData.valueExists('notificationPromoText')) {
+        var promoText = loadTimeData.getString('notificationPromoText');
         var tags = ['IMG'];
         var attrs = {
           src: function(node, value) {
@@ -203,15 +234,28 @@ cr.define('ntp', function() {
                    /^data\:image\/(?:png|gif|jpe?g)/.test(value);
           },
         };
-        showNotification(parseHtmlSubset(promo, tags, attrs), [], function() {
-          chrome.send('closeNotificationPromo');
+
+        var promo = parseHtmlSubset(promoText, tags, attrs);
+        var promoLink = promo.querySelector('a');
+        if (promoLink) {
+          promoLink.addEventListener('click', function(e) {
+            chrome.send('notificationPromoLinkClicked');
+          });
+        }
+
+        showNotification(promo, [], function() {
+          chrome.send('notificationPromoClosed');
         }, 60000);
         chrome.send('notificationPromoViewed');
       }
 
       cr.dispatchSimpleEvent(document, 'ntpLoaded', true, true);
       document.documentElement.classList.remove('starting-up');
+
+      startTime = Date.now();
     });
+
+    preventDefaultOnPoundLinkClicks();  // From shared/js/util.js.
   }
 
   /**
@@ -452,7 +496,7 @@ cr.define('ntp', function() {
    * @param {string} id The ID of a node.
    * @param {string} color The color represented as a CSS string.
    */
-  function setStripeColor(id, color) {
+  function setFaviconDominantColor(id, color) {
     var node = $(id);
     if (node)
       node.stripeColor = color;
@@ -505,6 +549,16 @@ cr.define('ntp', function() {
     var rect = e.currentTarget.getBoundingClientRect();
     chrome.send('showSyncLoginUI',
                 [rect.left, rect.top, rect.width, rect.height]);
+  }
+
+  /**
+   * Logs the time to click for the specified item.
+   * @param {string} item The item to log the time-to-click.
+   */
+  function logTimeToClick(item) {
+    var timeToClick = Date.now() - startTime;
+    chrome.send('logTimeToClick',
+        ['NewTabPage.TimeToClick' + item, timeToClick]);
   }
 
   /**
@@ -575,6 +629,7 @@ cr.define('ntp', function() {
     getCardSlider: getCardSlider,
     onLoad: onLoad,
     leaveRearrangeMode: leaveRearrangeMode,
+    logTimeToClick: logTimeToClick,
     NtpFollowAction: NtpFollowAction,
     saveAppPageName: saveAppPageName,
     setAppToBeHighlighted: setAppToBeHighlighted,
@@ -583,7 +638,7 @@ cr.define('ntp', function() {
     setMostVisitedPages: setMostVisitedPages,
     setSuggestionsPages: setSuggestionsPages,
     setRecentlyClosedTabs: setRecentlyClosedTabs,
-    setStripeColor: setStripeColor,
+    setFaviconDominantColor: setFaviconDominantColor,
     showNotification: showNotification,
     themeChanged: themeChanged,
     updateLogin: updateLogin

@@ -4,17 +4,16 @@
 
 #include "content/browser/ssl/ssl_cert_error_handler.h"
 
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/browser/ssl/ssl_policy.h"
 #include "net/base/cert_status_flags.h"
 #include "net/base/x509_certificate.h"
 
-using content::ResourceDispatcherHostImpl;
+namespace content {
 
 SSLCertErrorHandler::SSLCertErrorHandler(
     const base::WeakPtr<Delegate>& delegate,
-    const content::GlobalRequestID& id,
+    const GlobalRequestID& id,
     ResourceType::Type resource_type,
     const GURL& url,
     int render_process_id,
@@ -48,3 +47,5 @@ void SSLCertErrorHandler::OnDispatched() {
 }
 
 SSLCertErrorHandler::~SSLCertErrorHandler() {}
+
+}  // namespace content

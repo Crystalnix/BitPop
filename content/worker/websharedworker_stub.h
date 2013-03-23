@@ -9,12 +9,14 @@
 #include "content/worker/websharedworkerclient_proxy.h"
 #include "content/worker/worker_webapplicationcachehost_impl.h"
 #include "googleurl/src/gurl.h"
-#include "ipc/ipc_channel.h"
+#include "ipc/ipc_listener.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorker.h"
 
 namespace WebKit {
 class WebSharedWorker;
 }
+
+namespace content {
 
 class SharedWorkerDevToolsAgent;
 
@@ -76,5 +78,7 @@ class WebSharedWorkerStub : public IPC::Listener {
 
   DISALLOW_COPY_AND_ASSIGN(WebSharedWorkerStub);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_WORKER_WEBSHAREDWORKER_STUB_H_

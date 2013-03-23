@@ -9,26 +9,65 @@
 #endif
 
 #include "chrome/browser/extensions/browser_action_test_util.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_icon_factory.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "grit/theme_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/skia_util.h"
+
+#if defined (OS_MACOSX)
+#include "ui/gfx/image/image_unittest_util.h"
+#endif
 
 using content::WebContents;
-using extensions::Extension;
+
+namespace extensions {
+namespace {
+
+const char kEmptyImageDataError[] =
+    "The imageData property must contain an ImageData object or dictionary "
+    "of ImageData objects.";
+const char kEmptyPathError[] = "The path property must not be empty.";
+
+// Views implementation of browser action button will return icon whose
+// background will be set.
+gfx::ImageSkia AddBackgroundForViews(const gfx::ImageSkia& icon) {
+#if defined(TOOLKIT_VIEWS)
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  gfx::ImageSkia bg = *rb.GetImageSkiaNamed(IDR_BROWSER_ACTION);
+  return gfx::ImageSkiaOperations::CreateSuperimposedImage(bg, icon);
+#endif
+
+  return icon;
+}
+
+bool ImagesAreEqualAtScale(const gfx::ImageSkia& i1,
+                           const gfx::ImageSkia& i2,
+                           ui::ScaleFactor scale_factor) {
+  SkBitmap bitmap1 = i1.GetRepresentation(scale_factor).sk_bitmap();
+  SkBitmap bitmap2 = i2.GetRepresentation(scale_factor).sk_bitmap();
+  return gfx::BitmapsAreEqual(bitmap1, bitmap2);
+}
 
 class BrowserActionApiTest : public ExtensionApiTest {
  public:
@@ -50,6 +89,11 @@ class BrowserActionApiTest : public ExtensionApiTest {
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
     return GetBrowserActionsBar().HasPopup();
   }
+
+  ExtensionAction* GetBrowserAction(const Extension& extension) {
+    return ExtensionActionManager::Get(browser()->profile())->
+        GetBrowserAction(extension);
+  }
 };
 
 IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, Basic) {
@@ -65,10 +109,10 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, Basic) {
   ResultCatcher catcher;
   ui_test_utils::NavigateToURL(browser(),
       GURL(extension->GetResourceURL("update.html")));
-  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 
   // Test that we received the changes.
-  ExtensionAction* action = extension->browser_action();
+  ExtensionAction* action = GetBrowserAction(*extension);
   ASSERT_EQ("Modified", action->GetTitle(ExtensionAction::kDefaultTabId));
   ASSERT_EQ("badge", action->GetBadgeText(ExtensionAction::kDefaultTabId));
   ASSERT_EQ(SkColorSetARGB(255, 255, 255, 255),
@@ -78,19 +122,11 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, Basic) {
   ui_test_utils::NavigateToURL(browser(),
       test_server()->GetURL("files/extensions/test_file.txt"));
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   service->toolbar_model()->ExecuteBrowserAction(extension, browser(), NULL);
 
-  // Verify the command worked.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
-  bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'red'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
-      &result));
-  ASSERT_TRUE(result);
+  ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
 IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DynamicBrowserAction) {
@@ -98,37 +134,178 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DynamicBrowserAction) {
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension) << message_;
 
+#if defined (OS_MACOSX)
+  // We need this on mac so we don't loose 2x representations from browser icon
+  // in transformations gfx::ImageSkia -> NSImage -> gfx::ImageSkia.
+  gfx::test::SetSupportedScaleFactorsTo1xAnd2x();
+#endif
+
+  // We should not be creating icons asynchronously, so we don't need an
+  // observer.
+  ExtensionActionIconFactory icon_factory(
+      extension,
+      GetBrowserAction(*extension),
+      NULL);
   // Test that there is a browser action in the toolbar.
   ASSERT_EQ(1, GetBrowserActionsBar().NumberOfBrowserActions());
   EXPECT_TRUE(GetBrowserActionsBar().HasIcon(0));
 
-  // Set prev_id which holds the id of the previous image, and use it in the
-  // next test to see if the image changes.
-  uint32_t prev_id = extension->browser_action()->GetIcon(0).
-      ToSkBitmap()->getGenerationID();
+  gfx::Image action_icon = icon_factory.GetIcon(0);
+  uint32_t action_icon_last_id = action_icon.ToSkBitmap()->getGenerationID();
 
-  // Tell the extension to update the icon using setIcon({imageData:...}).
+  // Let's check that |GetIcon| doesn't always return bitmap with new id.
+  ASSERT_EQ(action_icon_last_id,
+            icon_factory.GetIcon(0).ToSkBitmap()->getGenerationID());
+
+  uint32_t action_icon_current_id = 0;
+
   ResultCatcher catcher;
-  ui_test_utils::NavigateToURL(browser(),
-      GURL(extension->GetResourceURL("update.html")));
+
+  // Tell the extension to update the icon using ImageData object.
+  GetBrowserActionsBar().Press(0);
   ASSERT_TRUE(catcher.GetNextResult());
 
-  // Test that we received the changes.
-  EXPECT_TRUE(GetBrowserActionsBar().HasIcon(0));
-  EXPECT_NE(prev_id,
-            extension->browser_action()->GetIcon(0).
-            ToSkBitmap()->getGenerationID());
-  prev_id = extension->browser_action()->GetIcon(0).
-      ToSkBitmap()->getGenerationID();
+  action_icon = icon_factory.GetIcon(0);
 
-  // Tell the extension to update the icon using setIcon({path:...}).
-  ui_test_utils::NavigateToURL(browser(),
-      GURL(extension->GetResourceURL("update2.html")));
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_FALSE(
+      action_icon.ToImageSkia()->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon.ToImageSkia()),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_100P));
+
+  // Tell the extension to update the icon using path.
+  GetBrowserActionsBar().Press(0);
   ASSERT_TRUE(catcher.GetNextResult());
-  EXPECT_TRUE(GetBrowserActionsBar().HasIcon(0));
-  EXPECT_NE(prev_id,
-            extension->browser_action()->GetIcon(0).
-            ToSkBitmap()->getGenerationID());
+
+  action_icon = icon_factory.GetIcon(0);
+
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_FALSE(
+      action_icon.ToImageSkia()->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon.ToImageSkia()),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_100P));
+
+  // Tell the extension to update the icon using dictionary of ImageData
+  // objects.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  action_icon = icon_factory.GetIcon(0);
+
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_TRUE(
+      action_icon.ToImageSkia()->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon.ToImageSkia()),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_100P));
+
+  // Tell the extension to update the icon using dictionary of paths.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  action_icon = icon_factory.GetIcon(0);
+
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_TRUE(
+      action_icon.ToImageSkia()->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon.ToImageSkia()),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_100P));
+
+  // Tell the extension to update the icon using dictionary of ImageData
+  // objects, but setting only size 19.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  action_icon = icon_factory.GetIcon(0);
+
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_FALSE(
+      action_icon.ToImageSkia()->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon.ToImageSkia()),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_100P));
+
+  // Tell the extension to update the icon using dictionary of paths, but
+  // setting only size 19.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  action_icon = icon_factory.GetIcon(0);
+
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_FALSE(
+      action_icon.ToImageSkia()->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon.ToImageSkia()),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_100P));
+
+  // Tell the extension to update the icon using dictionary of ImageData
+  // objects, but setting only size 38.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  action_icon = icon_factory.GetIcon(0);
+
+  const gfx::ImageSkia* action_icon_skia = action_icon.ToImageSkia();
+
+  EXPECT_FALSE(action_icon_skia->HasRepresentation(ui::SCALE_FACTOR_100P));
+  EXPECT_TRUE(action_icon_skia->HasRepresentation(ui::SCALE_FACTOR_200P));
+
+  action_icon_current_id = action_icon.ToSkBitmap()->getGenerationID();
+  EXPECT_GT(action_icon_current_id, action_icon_last_id);
+  action_icon_last_id = action_icon_current_id;
+
+  EXPECT_TRUE(gfx::BitmapsAreEqual(
+      *action_icon.ToSkBitmap(),
+      action_icon_skia->GetRepresentation(ui::SCALE_FACTOR_200P).sk_bitmap()));
+
+  EXPECT_TRUE(ImagesAreEqualAtScale(
+      AddBackgroundForViews(*action_icon_skia),
+      *GetBrowserActionsBar().GetIcon(0).ToImageSkia(),
+      ui::SCALE_FACTOR_200P));
+
+  // Try setting icon with empty dictionary of ImageData objects.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_FALSE(catcher.GetNextResult());
+  EXPECT_EQ(kEmptyImageDataError, catcher.message());
+
+  // Try setting icon with empty dictionary of path objects.
+  GetBrowserActionsBar().Press(0);
+  ASSERT_FALSE(catcher.GetNextResult());
+  EXPECT_EQ(kEmptyPathError, catcher.message());
 }
 
 // This test is flaky as per http://crbug.com/74557.
@@ -154,7 +331,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest,
   EXPECT_EQ("hi!", GetBrowserActionsBar().GetTooltip(0));
 
   // Go back to first tab, changed title should reappear.
-  chrome::ActivateTabAt(browser(), 0, true);
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
   EXPECT_EQ("Showing icon 2", GetBrowserActionsBar().GetTooltip(0));
 
   // Reload that tab, default title should come back.
@@ -205,9 +382,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BrowserActionAddPopup) {
   ASSERT_TRUE(extension) << message_;
 
   int tab_id = ExtensionTabUtil::GetTabId(
-      chrome::GetActiveWebContents(browser()));
+      browser()->tab_strip_model()->GetActiveWebContents());
 
-  ExtensionAction* browser_action = extension->browser_action();
+  ExtensionAction* browser_action = GetBrowserAction(*extension);
   ASSERT_TRUE(browser_action)
       << "Browser action test extension should have a browser action.";
 
@@ -261,9 +438,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BrowserActionRemovePopup) {
   ASSERT_TRUE(extension) << message_;
 
   int tab_id = ExtensionTabUtil::GetTabId(
-      chrome::GetActiveWebContents(browser()));
+      browser()->tab_strip_model()->GetActiveWebContents());
 
-  ExtensionAction* browser_action = extension->browser_action();
+  ExtensionAction* browser_action = GetBrowserAction(*extension);
   ASSERT_TRUE(browser_action)
       << "Browser action test extension should have a browser action.";
 
@@ -310,8 +487,8 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoBasic) {
   // Now enable the extension in incognito mode, and test that the browser
   // action shows up. Note that we don't update the existing window at the
   // moment, so we just create a new one.
-  browser()->profile()->GetExtensionService()->extension_prefs()->
-      SetIsIncognitoEnabled(extension->id(), true);
+  extensions::ExtensionSystem::Get(browser()->profile())->extension_service()->
+      extension_prefs()->SetIsIncognitoEnabled(extension->id(), true);
 
   chrome::CloseWindow(incognito_browser);
   incognito_browser = new Browser(Browser::CreateParams(incognito_profile));
@@ -323,7 +500,8 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoBasic) {
 }
 
 IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   // The tooltips for each respective browser action.
   const char kTooltipA[] = "Make this page red";
@@ -402,9 +580,9 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DISABLED_CloseBackgroundPage) {
 
   // There is a background page and a browser action with no badge text.
   ExtensionProcessManager* manager =
-      browser()->profile()->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(browser()->profile())->process_manager();
   ASSERT_TRUE(manager->GetBackgroundHostForExtension(extension->id()));
-  ExtensionAction* action = extension->browser_action();
+  ExtensionAction* action = GetBrowserAction(*extension);
   ASSERT_EQ("", action->GetBadgeText(ExtensionAction::kDefaultTabId));
 
   content::WindowedNotificationObserver host_destroyed_observer(
@@ -412,8 +590,8 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DISABLED_CloseBackgroundPage) {
       content::NotificationService::AllSources());
 
   // Click the browser action.
-  browser()->profile()->GetExtensionService()->toolbar_model()->
-      ExecuteBrowserAction(extension, browser(), NULL);
+  extensions::ExtensionSystem::Get(browser()->profile())->extension_service()->
+      toolbar_model()->ExecuteBrowserAction(extension, browser(), NULL);
 
   // It can take a moment for the background page to actually get destroyed
   // so we wait for the notification before checking that it's really gone
@@ -433,7 +611,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BadgeBackgroundColor) {
   ASSERT_EQ(1, GetBrowserActionsBar().NumberOfBrowserActions());
 
   // Test that CSS values (#FF0000) set color correctly.
-  ExtensionAction* action = extension->browser_action();
+  ExtensionAction* action = GetBrowserAction(*extension);
   ASSERT_EQ(SkColorSetARGB(255, 255, 0, 0),
             action->GetBadgeBackgroundColor(ExtensionAction::kDefaultTabId));
 
@@ -444,7 +622,6 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BadgeBackgroundColor) {
   ASSERT_TRUE(catcher.GetNextResult());
 
   // Test that CSS values (#0F0) set color correctly.
-  action = extension->browser_action();
   ASSERT_EQ(SkColorSetARGB(255, 0, 255, 0),
             action->GetBadgeBackgroundColor(ExtensionAction::kDefaultTabId));
 
@@ -453,7 +630,6 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BadgeBackgroundColor) {
   ASSERT_TRUE(catcher.GetNextResult());
 
   // Test that array values set color correctly.
-  action = extension->browser_action();
   ASSERT_EQ(SkColorSetARGB(255, 255, 255, 255),
             action->GetBadgeBackgroundColor(ExtensionAction::kDefaultTabId));
 }
@@ -477,3 +653,6 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, Getters) {
       GURL(extension->GetResourceURL("update2.html")));
   ASSERT_TRUE(catcher.GetNextResult());
 }
+
+}  // namespace
+}  // namespace extensions

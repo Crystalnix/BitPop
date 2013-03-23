@@ -12,7 +12,12 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
+
+#if defined(USE_SYSTEM_MINIZIP)
+#include <minizip/unzip.h>
+#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
+#endif
 
 namespace zip {
 
@@ -82,6 +87,11 @@ class ZipReader {
   // Returns true on success.
   bool OpenFromFd(int zip_fd);
 #endif
+
+  // Opens the zip data stored in |data|. This class uses a weak reference to
+  // the given sring while extracting files, i.e. the caller should keep the
+  // string until it finishes extracting files.
+  bool OpenFromString(const std::string& data);
 
   // Closes the currently opened zip file. This function is called in the
   // destructor of the class, so you usually don't need to call this.

@@ -4,6 +4,8 @@
 
 #include "content/test/layout_browsertest.h"
 
+namespace content {
+
 class AppCacheLayoutTest : public InProcessBrowserLayoutTest {
  public:
   AppCacheLayoutTest() : InProcessBrowserLayoutTest(
@@ -78,7 +80,7 @@ IN_PROC_BROWSER_TEST_F(AppCacheLayoutTest, DISABLED_PHP) {
   };
 
   // This tests loads a data url which calls notifyDone, this just
-  // doesn't work with the layoutTestController in this test harness.
+  // doesn't work with the testRunner in this test harness.
   // "fail-on-update.html",
 
   // Flaky for reasons i don't yet see?
@@ -95,3 +97,5 @@ IN_PROC_BROWSER_TEST_F(AppCacheLayoutTest, DISABLED_PHP) {
   for (size_t i = 0; i < arraysize(kPHPTests); ++i)
     RunHttpLayoutTest(kPHPTests[i]);
 }
+
+}  // namespace content

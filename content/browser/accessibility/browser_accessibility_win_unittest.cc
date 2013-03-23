@@ -10,8 +10,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/win/atl_module.h"
 
-using content::AccessibilityNodeData;
-
+namespace content {
 namespace {
 
 // Subclass of BrowserAccessibilityWin that counts the number of instances.
@@ -51,15 +50,15 @@ VARIANT CreateI4Variant(LONG value) {
 }
 
 class BrowserAccessibilityTest : public testing::Test {
- protected:
+ public:
+  BrowserAccessibilityTest() {}
+
+ private:
   virtual void SetUp() {
     ui::win::CreateATLModuleIfNeeded();
-    ::CoInitialize(NULL);
   }
 
-  virtual void TearDown() {
-    ::CoUninitialize();
-  }
+  DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityTest);
 };
 
 // Test that BrowserAccessibilityManager correctly releases the tree of
@@ -535,3 +534,5 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
   delete manager;
   ASSERT_EQ(0, CountedBrowserAccessibility::global_obj_count_);
 }
+
+}  // namespace content

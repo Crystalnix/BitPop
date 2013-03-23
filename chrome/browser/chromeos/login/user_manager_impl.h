@@ -8,57 +8,61 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/values.h"
+#include "chrome/browser/api/sync/profile_sync_service_observer.h"
 #include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_image_loader.h"
+#include "chrome/browser/chromeos/login/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
-#include "chrome/browser/profiles/profile_downloader_delegate.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chrome/browser/policy/device_local_account_policy_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class SkBitmap;
 class FilePath;
 class PrefService;
-class ProfileDownloader;
 class ProfileSyncService;
 
 namespace chromeos {
 
 class RemoveUserDelegate;
-class UserImage;
+class SessionLengthLimiter;
 
 // Implementation of the UserManager.
-class UserManagerImpl : public UserManager,
-                        public ProfileDownloaderDelegate,
-                        public ProfileSyncServiceObserver,
-                        public content::NotificationObserver {
+class UserManagerImpl
+    : public UserManager,
+      public ProfileSyncServiceObserver,
+      public content::NotificationObserver,
+      public policy::DeviceLocalAccountPolicyService::Observer {
  public:
-  // UserManager implementation:
   virtual ~UserManagerImpl();
 
+  // UserManager implementation:
+  virtual void Shutdown() OVERRIDE;
+  virtual UserImageManager* GetUserImageManager() OVERRIDE;
   virtual const UserList& GetUsers() const OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
                             bool browser_restart) OVERRIDE;
-  virtual void DemoUserLoggedIn() OVERRIDE;
+  virtual void RetailModeUserLoggedIn() OVERRIDE;
   virtual void GuestUserLoggedIn() OVERRIDE;
-  virtual void EphemeralUserLoggedIn(const std::string& email) OVERRIDE;
+  virtual void PublicAccountUserLoggedIn(User* user) OVERRIDE;
+  virtual void RegularUserLoggedIn(const std::string& email,
+                                   bool browser_restart) OVERRIDE;
+  virtual void RegularUserLoggedInAsEphemeral(
+      const std::string& email) OVERRIDE;
   virtual void SessionStarted() OVERRIDE;
   virtual void RemoveUser(const std::string& email,
                           RemoveUserDelegate* delegate) OVERRIDE;
   virtual void RemoveUserFromList(const std::string& email) OVERRIDE;
   virtual bool IsKnownUser(const std::string& email) const OVERRIDE;
   virtual const User* FindUser(const std::string& email) const OVERRIDE;
-  virtual const User& GetLoggedInUser() const OVERRIDE;
-  virtual User& GetLoggedInUser() OVERRIDE;
+  virtual const User* GetLoggedInUser() const OVERRIDE;
+  virtual User* GetLoggedInUser() OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE;
@@ -70,31 +74,23 @@ class UserManagerImpl : public UserManager,
                                     const std::string& display_email) OVERRIDE;
   virtual std::string GetUserDisplayEmail(
       const std::string& username) const OVERRIDE;
-  virtual void SaveLoggedInUserWallpaperProperties(User::WallpaperType type,
-                                                   int index) OVERRIDE;
-  virtual void SaveUserDefaultImageIndex(const std::string& username,
-                                         int image_index) OVERRIDE;
-  virtual void SaveUserImage(const std::string& username,
-                             const UserImage& user_image) OVERRIDE;
-  virtual void SetLoggedInUserCustomWallpaperLayout(
-      ash::WallpaperLayout layout) OVERRIDE;
-  virtual void SaveUserImageFromFile(const std::string& username,
-                                     const FilePath& path) OVERRIDE;
-  virtual void SaveUserImageFromProfileImage(
-      const std::string& username) OVERRIDE;
-  virtual void DownloadProfileImage(const std::string& reason) OVERRIDE;
   virtual bool IsCurrentUserOwner() const OVERRIDE;
   virtual bool IsCurrentUserNew() const OVERRIDE;
-  virtual bool IsCurrentUserEphemeral() const OVERRIDE;
+  virtual bool IsCurrentUserNonCryptohomeDataEphemeral() const OVERRIDE;
+  virtual bool CanCurrentUserLock() const OVERRIDE;
   virtual bool IsUserLoggedIn() const OVERRIDE;
+  virtual bool IsLoggedInAsRegularUser() const OVERRIDE;
   virtual bool IsLoggedInAsDemoUser() const OVERRIDE;
+  virtual bool IsLoggedInAsPublicAccount() const OVERRIDE;
   virtual bool IsLoggedInAsGuest() const OVERRIDE;
   virtual bool IsLoggedInAsStub() const OVERRIDE;
   virtual bool IsSessionStarted() const OVERRIDE;
-  virtual void AddObserver(Observer* obs) OVERRIDE;
-  virtual void RemoveObserver(Observer* obs) OVERRIDE;
+  virtual bool HasBrowserRestarted() const OVERRIDE;
+  virtual bool IsUserNonCryptohomeDataEphemeral(
+      const std::string& email) const OVERRIDE;
+  virtual void AddObserver(UserManager::Observer* obs) OVERRIDE;
+  virtual void RemoveObserver(UserManager::Observer* obs) OVERRIDE;
   virtual void NotifyLocalStateChanged() OVERRIDE;
-  virtual const SkBitmap& DownloadedProfileImage() const OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -104,16 +100,16 @@ class UserManagerImpl : public UserManager,
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
 
- protected:
-  UserManagerImpl();
-
-  // Returns image filepath for the given user.
-  FilePath GetImagePathForUser(const std::string& username);
+  // policy::DeviceLocalAccountPolicyService::Observer implementation.
+  virtual void OnPolicyUpdated(const std::string& account_id) OVERRIDE;
+  virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
 
  private:
   friend class UserManagerImplWrapper;
-  friend class UserManagerTest;
   friend class WallpaperManager;
+  friend class UserManagerTest;
+
+  UserManagerImpl();
 
   // Loads |users_| from Local State if the list has not been loaded yet.
   // Subsequent calls have no effect. Must be called on the UI thread.
@@ -128,10 +124,6 @@ class UserManagerImpl : public UserManager,
   // and ephemeral users are enabled.
   bool AreEphemeralUsersEnabled() const;
 
-  // Returns true if the user with the given email address is to be treated as
-  // ephemeral.
-  bool IsEphemeralUser(const std::string& email) const;
-
   // Returns the user with the given email address if found in the persistent
   // list. Returns |NULL| otherwise.
   const User* FindUserInList(const std::string& email) const;
@@ -144,103 +136,46 @@ class UserManagerImpl : public UserManager,
 
   void SetCurrentUserIsOwner(bool is_current_user_owner);
 
-  // Sets one of the default images for the specified user and saves this
-  // setting in local state.
-  // Does not send LOGIN_USER_IMAGE_CHANGED notification.
-  void SetInitialUserImage(const std::string& username);
-
-  // Migrate the old wallpaper index to a new wallpaper structure.
-  // The new wallpaper structure is:
-  // { WallpaperType: DAILY|CUSTOMIZED|DEFAULT,
-  //   index: index of the default wallpapers }
-  void MigrateWallpaperData();
-
-  // Sets image for user |username| and sends LOGIN_USER_IMAGE_CHANGED
-  // notification unless this is a new user and image is set for the first time.
-  // If |image| is empty, sets a stub image for the user.
-  void SetUserImage(const std::string& username,
-                    int image_index,
-                    const GURL& image_url,
-                    const UserImage& user_image);
-
-  // Saves image to file, updates local state preferences to given image index
-  // and sends LOGIN_USER_IMAGE_CHANGED notification.
-  void SaveUserImageInternal(const std::string& username,
-                             int image_index,
-                             const GURL& image_url,
-                             const UserImage& user_image);
-
-  // Saves image to file with specified path and sends LOGIN_USER_IMAGE_CHANGED
-  // notification. Runs on FILE thread. Posts task for saving image info to
-  // Local State on UI thread.
-  void SaveImageToFile(const std::string& username,
-                       const UserImage& user_image,
-                       const FilePath& image_path,
-                       int image_index,
-                       const GURL& image_url);
-
-  // Stores path to the image and its index in local state. Runs on UI thread.
-  // If |is_async| is true, it has been posted from the FILE thread after
-  // saving the image.
-  void SaveImageToLocalState(const std::string& username,
-                             const std::string& image_path,
-                             int image_index,
-                             const GURL& image_url,
-                             bool is_async);
-
-  // Stores layout and type preference in local state. Runs on UI thread.
-  void SaveWallpaperToLocalState(const std::string& username,
-                                 const std::string& wallpaper_path,
-                                 ash::WallpaperLayout layout,
-                                 User::WallpaperType type);
-
-  // Saves |image| to the specified |image_path|. Runs on FILE thread.
-  bool SaveBitmapToFile(const UserImage& user_image,
-                        const FilePath& image_path);
-
-  // Initializes |downloaded_profile_image_| with the picture of the logged-in
-  // user.
-  void InitDownloadedProfileImage();
-
-  // Download user's profile data, including full name and picture, when
-  // |download_image| is true.
-  // |reason| is an arbitrary string (used to report UMA histograms with
-  // download times).
-  void DownloadProfileData(const std::string& reason, bool download_image);
-
-  // Scheduled call for downloading profile data.
-  void DownloadProfileDataScheduled();
-
-  // Deletes user's image file. Runs on FILE thread.
-  void DeleteUserImage(const FilePath& image_path);
-
   // Updates current user ownership on UI thread.
-  void UpdateOwnership(bool is_owner);
+  void UpdateOwnership(DeviceSettingsService::OwnershipStatus status,
+                       bool is_owner);
 
-  // Checks current user's ownership on file thread.
+  // Triggers an asynchronous ownership check.
   void CheckOwnership();
 
-  // ProfileDownloaderDelegate implementation.
-  virtual bool NeedsProfilePicture() const OVERRIDE;
-  virtual int GetDesiredImageSideLength() const OVERRIDE;
-  virtual Profile* GetBrowserProfile() OVERRIDE;
-  virtual std::string GetCachedPictureURL() const OVERRIDE;
-  virtual void OnProfileDownloadSuccess(ProfileDownloader* downloader) OVERRIDE;
-  virtual void OnProfileDownloadFailure(ProfileDownloader* downloader) OVERRIDE;
+  // Removes data stored or cached outside the user's cryptohome (wallpaper,
+  // avatar, OAuth token status, display name, display email).
+  void RemoveNonCryptohomeData(const std::string& email);
 
-  // Creates a new User instance.
-  User* CreateUser(const std::string& email, bool is_ephemeral) const;
+  // Removes a regular user from the user list. Returns the user if found or
+  // NULL otherwise. Also removes the user from the persistent regular user
+  // list.
+  User *RemoveRegularUserFromList(const std::string& email);
 
-  // Removes the user from the persistent list only. Also removes the user's
-  // picture.
-  void RemoveUserFromListInternal(const std::string& email);
+  // Replaces the list of public accounts with |public_accounts|. Ensures that
+  // data belonging to accounts no longer on the list is removed. Returns |true|
+  // if the list has changed.
+  // Public accounts are defined by policy. This method is called whenever an
+  // updated list of public accounts is received from policy.
+  bool UpdateAndCleanUpPublicAccounts(const base::ListValue& public_accounts);
 
-  // Loads user image from its file.
-  scoped_refptr<UserImageLoader> image_loader_;
+  // Updates the display name for public account |username| from policy settings
+  // associated with that username.
+  void UpdatePublicAccountDisplayName(const std::string& username);
 
-  // List of all known users. User instances are owned by |this| and deleted
-  // when users are removed by |RemoveUserFromListInternal|.
-  mutable UserList users_;
+  // Interface to the signed settings store.
+  CrosSettings* cros_settings_;
+
+  // Interface to device-local account definitions and associated policy.
+  policy::DeviceLocalAccountPolicyService* device_local_account_policy_service_;
+
+  // True if users have been loaded from prefs already.
+  bool users_loaded_;
+
+  // List of all known users. User instances are owned by |this|. Regular users
+  // are removed by |RemoveUserFromList|, public accounts by
+  // |UpdateAndCleanUpPublicAccounts|.
+  UserList users_;
 
   // The logged-in user. NULL until a user has logged in, then points to one
   // of the User instances in |users_|, the |guest_user_| instance or an
@@ -259,14 +194,16 @@ class UserManagerImpl : public UserManager,
   // login.
   bool is_current_user_new_;
 
-  // Cached flag of whether the currently logged-in user is ephemeral. Storage
-  // of persistent information is avoided for such users by not adding them to
-  // the user list in local state, not downloading their custom user images and
-  // mounting their cryptohomes using tmpfs.
-  bool is_current_user_ephemeral_;
+  // Cached flag of whether the currently logged-in user is a regular user who
+  // logged in as ephemeral. Storage of persistent information is avoided for
+  // such users by not adding them to the persistent user list, not downloading
+  // their custom avatars and mounting their cryptohomes using tmpfs. Defaults
+  // to |false|.
+  bool is_current_user_ephemeral_regular_user_;
 
-  // Cached flag indicating whether ephemeral users are enabled. Defaults to
-  // |false| if the value has not been read from trusted device policy yet.
+  // Cached flag indicating whether the ephemeral user policy is enabled.
+  // Defaults to |false| if the value has not been read from trusted device
+  // policy yet.
   bool ephemeral_users_enabled_;
 
   // True if user pod row is showed at login screen.
@@ -283,37 +220,13 @@ class UserManagerImpl : public UserManager,
   // service, so do NOT use it outside |OnStateChanged| method.
   ProfileSyncService* observed_sync_service_;
 
-  ObserverList<Observer> observer_list_;
+  ObserverList<UserManager::Observer> observer_list_;
 
-  // Download user profile image on login to update it if it's changed.
-  scoped_ptr<ProfileDownloader> profile_image_downloader_;
+  // User avatar manager.
+  scoped_ptr<UserImageManagerImpl> user_image_manager_;
 
-  // Arbitrary string passed to the last |DownloadProfileImage| call.
-  std::string profile_image_download_reason_;
-
-  // Time when the profile image download has started.
-  base::Time profile_image_load_start_time_;
-
-  // True if the last user image required async save operation (which may not
-  // have been completed yet). This flag is used to avoid races when user image
-  // is first set with |SaveUserImage| and then with |SaveUserImagePath|.
-  bool last_image_set_async_;
-
-  // Result of the last successful profile image download, if any.
-  SkBitmap downloaded_profile_image_;
-
-  // Data URL for |downloaded_profile_image_|.
-  std::string downloaded_profile_image_data_url_;
-
-  // Original URL of |downloaded_profile_image_|, from which it was downloaded.
-  GURL profile_image_url_;
-
-  // True when |profile_image_downloader_| is fetching profile picture (not
-  // just full name).
-  bool downloading_profile_image_;
-
-  // Timer triggering DownloadProfileDataScheduled for refreshing profile data.
-  base::RepeatingTimer<UserManagerImpl> profile_download_timer_;
+  // Session length limiter.
+  scoped_ptr<SessionLengthLimiter> session_length_limiter_;
 
   DISALLOW_COPY_AND_ASSIGN(UserManagerImpl);
 };

@@ -15,15 +15,14 @@
 #include "media/audio/audio_input_controller.h"
 #include "net/url_request/url_request_context_getter.h"
 
-namespace content {
-class SpeechRecognitionEventListener;
-}
-
 namespace media {
 class AudioManager;
 }
 
-namespace speech {
+namespace content {
+
+class SpeechRecognitionEventListener;
+
 // Handles speech recognition for a session (identified by |session_id|), taking
 // care of audio capture, silence detection/endpointer and interaction with the
 // SpeechRecognitionEngine.
@@ -33,18 +32,17 @@ class CONTENT_EXPORT SpeechRecognizer
       public NON_EXPORTED_BASE(SpeechRecognitionEngineDelegate) {
  public:
   static const int kAudioSampleRate;
-  static const ChannelLayout kChannelLayout;
+  static const media::ChannelLayout kChannelLayout;
   static const int kNumBitsPerAudioSample;
   static const int kNoSpeechTimeoutMs;
   static const int kEndpointerEstimationTimeMs;
 
   static void SetAudioManagerForTests(media::AudioManager* audio_manager);
 
-  SpeechRecognizer(
-      content::SpeechRecognitionEventListener* listener,
-      int session_id,
-      bool is_single_shot,
-      SpeechRecognitionEngine* engine);
+  SpeechRecognizer(SpeechRecognitionEventListener* listener,
+                   int session_id,
+                   bool is_single_shot,
+                   SpeechRecognitionEngine* engine);
 
   void StartRecognition();
   void AbortRecognition();
@@ -85,8 +83,8 @@ class CONTENT_EXPORT SpeechRecognizer
     FSMEvent event;
     int audio_error_code;
     scoped_refptr<AudioChunk> audio_data;
-    content::SpeechRecognitionResult engine_result;
-    content::SpeechRecognitionError engine_error;
+    SpeechRecognitionResults engine_results;
+    SpeechRecognitionError engine_error;
   };
 
   virtual ~SpeechRecognizer();
@@ -111,7 +109,7 @@ class CONTENT_EXPORT SpeechRecognizer
   FSMState ProcessFinalResult(const FSMEventArgs& event_args);
   FSMState AbortSilently(const FSMEventArgs& event_args);
   FSMState AbortWithError(const FSMEventArgs& event_args);
-  FSMState Abort(const content::SpeechRecognitionError& error);
+  FSMState Abort(const SpeechRecognitionError& error);
   FSMState DetectEndOfSpeech(const FSMEventArgs& event_args);
   FSMState DoNothing(const FSMEventArgs& event_args) const;
   FSMState NotFeasible(const FSMEventArgs& event_args);
@@ -137,14 +135,14 @@ class CONTENT_EXPORT SpeechRecognizer
                       const uint8* data, uint32 size) OVERRIDE;
 
   // SpeechRecognitionEngineDelegate methods.
-  virtual void OnSpeechRecognitionEngineResult(
-      const content::SpeechRecognitionResult& result) OVERRIDE;
+  virtual void OnSpeechRecognitionEngineResults(
+      const SpeechRecognitionResults& results) OVERRIDE;
   virtual void OnSpeechRecognitionEngineError(
-      const content::SpeechRecognitionError& error) OVERRIDE;
+      const SpeechRecognitionError& error) OVERRIDE;
 
   static media::AudioManager* audio_manager_for_tests_;
 
-  content::SpeechRecognitionEventListener* listener_;
+  SpeechRecognitionEventListener* listener_;
   scoped_ptr<SpeechRecognitionEngine> recognition_engine_;
   Endpointer endpointer_;
   scoped_refptr<media::AudioInputController> audio_controller_;
@@ -158,6 +156,6 @@ class CONTENT_EXPORT SpeechRecognizer
   DISALLOW_COPY_AND_ASSIGN(SpeechRecognizer);
 };
 
-}  // namespace speech
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_SPEECH_SPEECH_RECOGNIZER_H_

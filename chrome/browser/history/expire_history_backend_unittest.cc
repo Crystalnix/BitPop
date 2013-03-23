@@ -10,9 +10,10 @@
 #include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
+#include "base/stl_util.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -84,9 +85,7 @@ class ExpireHistoryTest : public testing::Test,
 
   // Clears the list of notifications received.
   void ClearLastNotifications() {
-    for (size_t i = 0; i < notifications_.size(); i++)
-      delete notifications_[i].second;
-    notifications_.clear();
+    STLDeleteValues(&notifications_);
   }
 
   void StarURL(const GURL& url) {
@@ -100,7 +99,7 @@ class ExpireHistoryTest : public testing::Test,
   const FilePath& path() const { return tmp_dir_.path(); }
 
   // This must be destroyed last.
-  ScopedTempDir tmp_dir_;
+  base::ScopedTempDir tmp_dir_;
 
   BookmarkModel bookmark_model_;
 
@@ -133,7 +132,7 @@ class ExpireHistoryTest : public testing::Test,
 
     FilePath history_name = path().Append(kHistoryFile);
     main_db_.reset(new HistoryDatabase);
-    if (main_db_->Init(history_name, FilePath()) != sql::INIT_OK)
+    if (main_db_->Init(history_name, NULL) != sql::INIT_OK)
       main_db_.reset();
 
     FilePath archived_name = path().Append(kArchivedHistoryFile);
@@ -205,9 +204,9 @@ void ExpireHistoryTest::AddExampleData(URLID url_ids[3], Time visit_times[4]) {
   // Two favicons. The first two URLs will share the same one, while the last
   // one will have a unique favicon.
   FaviconID favicon1 = thumb_db_->AddFavicon(GURL("http://favicon/url1"),
-                                             FAVICON);
+      FAVICON, GetDefaultFaviconSizes());
   FaviconID favicon2 = thumb_db_->AddFavicon(GURL("http://favicon/url2"),
-                                             FAVICON);
+      FAVICON, GetDefaultFaviconSizes());
 
   // Three URLs.
   URLRow url_row1(GURL("http://www.google.com/1"));
@@ -237,9 +236,9 @@ void ExpireHistoryTest::AddExampleData(URLID url_ids[3], Time visit_times[4]) {
 
   Time time;
   GURL gurl;
-  top_sites_->SetPageThumbnail(url_row1.url(), &thumbnail, score);
-  top_sites_->SetPageThumbnail(url_row2.url(), &thumbnail, score);
-  top_sites_->SetPageThumbnail(url_row3.url(), &thumbnail, score);
+  top_sites_->SetPageThumbnail(url_row1.url(), thumbnail, score);
+  top_sites_->SetPageThumbnail(url_row2.url(), thumbnail, score);
+  top_sites_->SetPageThumbnail(url_row3.url(), thumbnail, score);
 
   // Four visits.
   VisitRow visit_row1;
@@ -319,18 +318,17 @@ void ExpireHistoryTest::AddExampleSourceData(const GURL& url, URLID* id) {
 bool ExpireHistoryTest::HasFavicon(FaviconID favicon_id) {
   if (!thumb_db_.get() || favicon_id == 0)
     return false;
-  Time last_updated;
-  std::vector<unsigned char> icon_data_unused;
-  GURL icon_url;
-  return thumb_db_->GetFavicon(favicon_id, &last_updated, &icon_data_unused,
-                               &icon_url, NULL);
+  return thumb_db_->GetFaviconHeader(favicon_id, NULL, NULL, NULL);
 }
 
 FaviconID ExpireHistoryTest::GetFavicon(const GURL& page_url,
                                         IconType icon_type) {
-  IconMapping icon_mapping;
-  thumb_db_->GetIconMappingForPageURL(page_url, icon_type, &icon_mapping);
-  return icon_mapping.icon_id;
+  std::vector<IconMapping> icon_mappings;
+  if (thumb_db_->GetIconMappingsForPageURL(page_url, icon_type,
+                                           &icon_mappings)) {
+    return icon_mappings[0].icon_id;
+  }
+  return 0;
 }
 
 bool ExpireHistoryTest::HasThumbnail(URLID url_id) {
@@ -404,7 +402,8 @@ void ExpireHistoryTest::EnsureURLInfoGone(const URLRow& row) {
 TEST_F(ExpireHistoryTest, DeleteFaviconsIfPossible) {
   // Add a favicon record.
   const GURL favicon_url("http://www.google.com/favicon.ico");
-  FaviconID icon_id = thumb_db_->AddFavicon(favicon_url, FAVICON);
+  FaviconID icon_id = thumb_db_->AddFavicon(favicon_url, FAVICON,
+      GetDefaultFaviconSizes());
   EXPECT_TRUE(icon_id);
   EXPECT_TRUE(HasFavicon(icon_id));
 
@@ -415,7 +414,8 @@ TEST_F(ExpireHistoryTest, DeleteFaviconsIfPossible) {
   EXPECT_FALSE(HasFavicon(icon_id));
 
   // Add back the favicon.
-  icon_id = thumb_db_->AddFavicon(favicon_url, TOUCH_ICON);
+  icon_id = thumb_db_->AddFavicon(favicon_url, TOUCH_ICON,
+      GetDefaultFaviconSizes());
   EXPECT_TRUE(icon_id);
   EXPECT_TRUE(HasFavicon(icon_id));
 
@@ -636,6 +636,64 @@ TEST_F(ExpireHistoryTest, FlushRecentURLsUnstarred) {
   // This should delete the last two visits.
   std::set<GURL> restrict_urls;
   expirer_.ExpireHistoryBetween(restrict_urls, visit_times[2], Time());
+
+  // Run the text database expirer. This will flush any pending entries so we
+  // can check that nothing was committed. We use a time far in the future so
+  // that anything added recently will get flushed.
+  TimeTicks expiration_time = TimeTicks::Now() + TimeDelta::FromDays(1);
+  text_db_->FlushOldChangesForTime(expiration_time);
+
+  // Verify that the middle URL had its last visit deleted only.
+  visits.clear();
+  main_db_->GetVisitsForURL(url_ids[1], &visits);
+  EXPECT_EQ(1U, visits.size());
+  EXPECT_EQ(0, CountTextMatchesForURL(url_row1.url()));
+
+  // Verify that the middle URL visit time and visit counts were updated.
+  URLRow temp_row;
+  ASSERT_TRUE(main_db_->GetURLRow(url_ids[1], &temp_row));
+  EXPECT_TRUE(visit_times[2] == url_row1.last_visit());  // Previous value.
+  EXPECT_TRUE(visit_times[1] == temp_row.last_visit());  // New value.
+  EXPECT_EQ(2, url_row1.visit_count());
+  EXPECT_EQ(1, temp_row.visit_count());
+  EXPECT_EQ(1, url_row1.typed_count());
+  EXPECT_EQ(0, temp_row.typed_count());
+
+  // Verify that the middle URL's favicon and thumbnail is still there.
+  FaviconID favicon_id = GetFavicon(url_row1.url(), FAVICON);
+  EXPECT_TRUE(HasFavicon(favicon_id));
+  // TODO(sky): fix this, see comment in HasThumbnail.
+  // EXPECT_TRUE(HasThumbnail(url_row1.id()));
+
+  // Verify that the last URL was deleted.
+  FaviconID favicon_id2 = GetFavicon(url_row2.url(), FAVICON);
+  EnsureURLInfoGone(url_row2);
+  EXPECT_FALSE(HasFavicon(favicon_id2));
+}
+
+// Expires all URLs with times in a given set.
+TEST_F(ExpireHistoryTest, FlushURLsForTimes) {
+  URLID url_ids[3];
+  Time visit_times[4];
+  AddExampleData(url_ids, visit_times);
+
+  URLRow url_row1, url_row2;
+  ASSERT_TRUE(main_db_->GetURLRow(url_ids[1], &url_row1));
+  ASSERT_TRUE(main_db_->GetURLRow(url_ids[2], &url_row2));
+
+  // In this test we also make sure that any pending entries in the text
+  // database manager are removed.
+  VisitVector visits;
+  main_db_->GetVisitsForURL(url_ids[2], &visits);
+  ASSERT_EQ(1U, visits.size());
+  text_db_->AddPageURL(url_row2.url(), url_row2.id(), visits[0].visit_id,
+                       visits[0].visit_time);
+
+  // This should delete the last two visits.
+  std::vector<base::Time> times;
+  times.push_back(visit_times[3]);
+  times.push_back(visit_times[2]);
+  expirer_.ExpireHistoryForTimes(times);
 
   // Run the text database expirer. This will flush any pending entries so we
   // can check that nothing was committed. We use a time far in the future so

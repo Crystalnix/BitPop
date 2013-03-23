@@ -18,6 +18,8 @@ using ::testing::Return;
 #define CAPABILITY_LARGE {320, 240, 30, media::VideoCaptureCapability::kI420, \
     0, false }
 
+namespace content {
+
 class MockVideoCaptureMessageFilter : public VideoCaptureMessageFilter {
  public:
   MockVideoCaptureMessageFilter() : VideoCaptureMessageFilter() {}
@@ -88,13 +90,13 @@ class VideoCaptureImplTest : public ::testing::Test {
                             const media::VideoCaptureParams& params) {
       media::VideoCaptureParams device_info = params;
       OnDeviceInfoReceived(device_info);
-      OnStateChanged(video_capture::kStarted);
+      OnStateChanged(VIDEO_CAPTURE_STATE_STARTED);
     }
 
     void DevicePauseCapture(int device_id) {}
 
     void DeviceStopCapture(int device_id) {
-      OnStateChanged(video_capture::kStopped);
+      OnStateChanged(VIDEO_CAPTURE_STATE_STOPPED);
     }
 
     void DeviceReceiveEmptyBuffer(int device_id, int buffer_id) {}
@@ -143,7 +145,7 @@ TEST_F(VideoCaptureImplTest, Simple) {
       .WillOnce(Return());
 
   video_capture_impl_->StartCapture(client.get(), capability);
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client, OnStopped(_))
       .WillOnce(Return());
@@ -151,7 +153,7 @@ TEST_F(VideoCaptureImplTest, Simple) {
       .WillOnce(Return());
 
   video_capture_impl_->StopCapture(client.get());
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(VideoCaptureImplTest, TwoClientsInSequence) {
@@ -165,7 +167,7 @@ TEST_F(VideoCaptureImplTest, TwoClientsInSequence) {
       .WillOnce(Return());
 
   video_capture_impl_->StartCapture(client.get(), capability);
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client, OnStopped(_))
       .WillOnce(Return());
@@ -173,7 +175,7 @@ TEST_F(VideoCaptureImplTest, TwoClientsInSequence) {
       .WillOnce(Return());
 
   video_capture_impl_->StopCapture(client.get());
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client, OnStarted(_))
       .WillOnce(Return());
@@ -181,7 +183,7 @@ TEST_F(VideoCaptureImplTest, TwoClientsInSequence) {
       .WillOnce(Return());
 
   video_capture_impl_->StartCapture(client.get(), capability);
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client, OnStopped(_))
       .WillOnce(Return());
@@ -189,7 +191,7 @@ TEST_F(VideoCaptureImplTest, TwoClientsInSequence) {
       .WillOnce(Return());
 
   video_capture_impl_->StopCapture(client.get());
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(VideoCaptureImplTest, LargeAndSmall) {
@@ -211,7 +213,7 @@ TEST_F(VideoCaptureImplTest, LargeAndSmall) {
 
   video_capture_impl_->StartCapture(client_large.get(), capability_large);
   video_capture_impl_->StartCapture(client_small.get(), capability_small);
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client_large, OnStopped(_))
       .WillOnce(Return());
@@ -224,7 +226,7 @@ TEST_F(VideoCaptureImplTest, LargeAndSmall) {
 
   video_capture_impl_->StopCapture(client_large.get());
   video_capture_impl_->StopCapture(client_small.get());
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(VideoCaptureImplTest, SmallAndLarge) {
@@ -247,7 +249,7 @@ TEST_F(VideoCaptureImplTest, SmallAndLarge) {
 
   video_capture_impl_->StartCapture(client_small.get(), capability_small);
   video_capture_impl_->StartCapture(client_large.get(), capability_large);
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client_large, OnStopped(_))
       .WillOnce(Return());
@@ -260,7 +262,7 @@ TEST_F(VideoCaptureImplTest, SmallAndLarge) {
 
   video_capture_impl_->StopCapture(client_small.get());
   video_capture_impl_->StopCapture(client_large.get());
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(VideoCaptureImplTest, TwoClientsWithSameSize) {
@@ -281,7 +283,7 @@ TEST_F(VideoCaptureImplTest, TwoClientsWithSameSize) {
 
   video_capture_impl_->StartCapture(client1.get(), capability);
   video_capture_impl_->StartCapture(client2.get(), capability);
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 
   EXPECT_CALL(*client1, OnStopped(_))
       .WillOnce(Return());
@@ -294,5 +296,7 @@ TEST_F(VideoCaptureImplTest, TwoClientsWithSameSize) {
 
   video_capture_impl_->StopCapture(client1.get());
   video_capture_impl_->StopCapture(client2.get());
-  message_loop_->RunAllPending();
+  message_loop_->RunUntilIdle();
 }
+
+}  // namespace content

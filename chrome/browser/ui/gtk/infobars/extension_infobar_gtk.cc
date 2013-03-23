@@ -7,6 +7,7 @@
 #include "base/debug/trace_event.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_host.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
@@ -14,6 +15,7 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_container_gtk.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "content/public/browser/render_view_host.h"
@@ -71,16 +73,16 @@ void ExtensionInfoBarGtk::OnImageLoaded(const gfx::Image& image,
 
   // TODO(erg): IDR_EXTENSIONS_SECTION should have an IDR_INFOBAR_EXTENSIONS
   // icon of the correct size with real subpixel shading and such.
-  const SkBitmap* icon = NULL;
+  const gfx::ImageSkia* icon = NULL;
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (image.IsEmpty())
-    icon = rb.GetBitmapNamed(IDR_EXTENSIONS_SECTION);
+    icon = rb.GetImageSkiaNamed(IDR_EXTENSIONS_SECTION);
   else
-    icon = image.ToSkBitmap();
+    icon = image.ToImageSkia();
 
-  SkBitmap* drop_image = rb.GetBitmapNamed(IDR_APP_DROPARROW);
+  gfx::ImageSkia* drop_image = rb.GetImageSkiaNamed(IDR_APP_DROPARROW);
 
-  int image_size = ExtensionIconSet::EXTENSION_ICON_BITTY;
+  int image_size = extension_misc::EXTENSION_ICON_BITTY;
   // The margin between the extension icon and the drop-down arrow bitmap.
   static const int kDropArrowLeftMargin = 3;
   scoped_ptr<gfx::Canvas> canvas(new gfx::Canvas(
@@ -112,11 +114,11 @@ void ExtensionInfoBarGtk::BuildWidgets() {
   const extensions::Extension* extension =
       delegate_->extension_host()->extension();
   ExtensionResource icon_resource = extension->GetIconResource(
-      ExtensionIconSet::EXTENSION_ICON_BITTY, ExtensionIconSet::MATCH_EXACTLY);
+      extension_misc::EXTENSION_ICON_BITTY, ExtensionIconSet::MATCH_EXACTLY);
   // Create a tracker to load the image. It will report back on OnImageLoaded.
   tracker_.LoadImage(extension, icon_resource,
-                     gfx::Size(ExtensionIconSet::EXTENSION_ICON_BITTY,
-                               ExtensionIconSet::EXTENSION_ICON_BITTY),
+                     gfx::Size(extension_misc::EXTENSION_ICON_BITTY,
+                               extension_misc::EXTENSION_ICON_BITTY),
                      ImageLoadingTracker::DONT_CACHE);
 
   // Pad the bottom of the infobar by one pixel for the border.
@@ -201,6 +203,6 @@ gboolean ExtensionInfoBarGtk::OnExpose(GtkWidget* sender,
   return FALSE;
 }
 
-InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
-  return new ExtensionInfoBarGtk(owner, this);
+InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
+  return new ExtensionInfoBarGtk(static_cast<InfoBarTabHelper*>(owner), this);
 }

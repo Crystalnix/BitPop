@@ -12,72 +12,8 @@ var fileCopyManagerWrapper = null;
  */
 function FileCopyManagerWrapper(root) {
   this.root_ = root;
-}
 
-/**
- * Extending cr.EventTarget.
- */
-FileCopyManagerWrapper.prototype.__proto__ = cr.EventTarget.prototype;
-
-/**
- * Create a new instance or get existing instance of FCMW.
- * @param {DirectoryEntry} root Root directory entry.
- * @return {FileCopyManagerWrapper}  A FileCopyManagerWrapper instance.
- */
-FileCopyManagerWrapper.getInstance = function(root) {
-  if (fileCopyManagerWrapper === null) {
-    fileCopyManagerWrapper = new FileCopyManagerWrapper(root);
-  }
-  return fileCopyManagerWrapper;
-};
-
-/**
- * @private
- * @return {FileCopyManager?} Copy manager instance in the background page or
- *     NULL if background page is not loaded.
- */
-FileCopyManagerWrapper.prototype.getCopyManagerSync_ = function() {
-  var bg = chrome.extension.getBackgroundPage();
-  if (!bg)
-    return null;
-  return bg.FileCopyManager.getInstance(this.root_);
-};
-
-/**
- * Load background page and call callback with copy manager as an argument.
- * @private
- * @param {Function} callback Function with FileCopyManager as a parameter.
- */
-FileCopyManagerWrapper.prototype.getCopyManagerAsync_ = function(callback) {
-  chrome.runtime.getBackgroundPage(
-      function(bg) {
-        callback(bg.FileCopyManager.getInstance(this.root_));
-      }.bind(this));
-};
-
-/**
- * Called be FileCopyManager to raise an event in this instance of FileManager.
- * @param {string} eventName Event name.
- * @param {Object} eventArgs Arbitratry field written to event object.
- */
-FileCopyManagerWrapper.prototype.onEvent = function(eventName, eventArgs) {
-  var event = new cr.Event(eventName);
-  for (var arg in eventArgs)
-    if (eventArgs.hasOwnProperty(arg))
-      event[arg] = eventArgs[arg];
-
-  this.dispatchEvent(event);
-};
-
-/**
- * @return {Object} Status object.
- */
-FileCopyManagerWrapper.prototype.getStatus = function() {
-  var cm = this.getCopyManagerSync_();
-  if (cm)
-    return cm.getStatus();
-
-  return {
+  this.status_ = {
     pendingItems: 0,
     pendingFiles: 0,
     pendingDirectories: 0,
@@ -98,30 +34,98 @@ FileCopyManagerWrapper.prototype.getStatus = function() {
     pendingMoves: 0,
     filename: ''  // In case pendingItems == 1
   };
+}
+
+/**
+ * Extending cr.EventTarget.
+ */
+FileCopyManagerWrapper.prototype.__proto__ = cr.EventTarget.prototype;
+
+/**
+ * Create a new instance or get existing instance of FCMW.
+ * @param {DirectoryEntry} root Root directory entry.
+ * @return {FileCopyManagerWrapper}  A FileCopyManagerWrapper instance.
+ */
+FileCopyManagerWrapper.getInstance = function(root) {
+  if (fileCopyManagerWrapper === null) {
+    fileCopyManagerWrapper = new FileCopyManagerWrapper(root);
+  }
+  return fileCopyManagerWrapper;
 };
 
 /**
- * Request that the current copy queue be abandoned.
- * @param {Function} opt_callback On cancel.
+ * Load background page and call callback with copy manager as an argument.
+ * @private
+ * @param {Function} callback Function with FileCopyManager as a parameter.
  */
-FileCopyManagerWrapper.prototype.requestCancel = function(opt_callback) {
-  this.getCopyManagerAsync_(
-      function(cm) {
-        cm.requestCancel(opt_callback);
-      });
+FileCopyManagerWrapper.prototype.getCopyManagerAsync_ = function(callback) {
+  var MAX_RETRIES = 10;
+  var TIMEOUT = 100;
+
+  var root = this.root_;
+  var retries = 0;
+
+  function tryOnce() {
+    function onGetBackgroundPage(bg) {
+      if (bg) {
+        callback(bg.FileCopyManager.getInstance(root));
+        return;
+      }
+      if (++retries < MAX_RETRIES)
+        setTimeout(tryOnce, TIMEOUT);
+      else
+        console.error('Can\'t get copy manager.');
+    }
+    if (chrome.runtime && chrome.runtime.getBackgroundPage)
+      chrome.runtime.getBackgroundPage(onGetBackgroundPage);
+    else
+      onGetBackgroundPage(chrome.extension.getBackgroundPage());
+  }
+
+  tryOnce();
 };
 
 /**
- * Convert string in clipboard to entries and kick off pasting.
- * @param {Object} clipboard Clipboard contents.
- * @param {string} targetPath Target path.
- * @param {boolean} targetOnGData If target is on GDrive.
+ * Called be FileCopyManager to raise an event in this instance of FileManager.
+ * @param {string} eventName Event name.
+ * @param {Object} eventArgs Arbitratry field written to event object.
  */
-FileCopyManagerWrapper.prototype.paste = function(clipboard, targetPath,
-                                                  targetOnGData) {
-  this.getCopyManagerAsync_(
-      function(cm) {
-        cm.paste(clipboard, targetPath, targetOnGData);
-      });
+FileCopyManagerWrapper.prototype.onEvent = function(eventName, eventArgs) {
+  this.status_ = eventArgs.status;
+
+  var event = new cr.Event(eventName);
+  for (var arg in eventArgs)
+    if (eventArgs.hasOwnProperty(arg))
+      event[arg] = eventArgs[arg];
+
+  this.dispatchEvent(event);
 };
 
+/**
+ * @return {Object} Status object.
+ */
+FileCopyManagerWrapper.prototype.getStatus = function() {
+  return this.status_;
+};
+
+/**
+ * Decorates a FileCopyManager method, so it will be executed after initializing
+ * the FileCopyManager instance in background page.
+ * @param {string} method The method name.
+ */
+FileCopyManagerWrapper.decorateAsyncMethod = function(method) {
+  FileCopyManagerWrapper.prototype[method] = function() {
+    var args = Array.prototype.slice.call(arguments);
+    this.getCopyManagerAsync_(function(cm) {
+      cm.willRunNewMethod();
+      cm[method].apply(cm, args);
+    });
+  };
+};
+
+FileCopyManagerWrapper.decorateAsyncMethod('requestCancel');
+FileCopyManagerWrapper.decorateAsyncMethod('paste');
+FileCopyManagerWrapper.decorateAsyncMethod('deleteEntries');
+FileCopyManagerWrapper.decorateAsyncMethod('forceDeleteTask');
+FileCopyManagerWrapper.decorateAsyncMethod('cancelDeleteTask');
+FileCopyManagerWrapper.decorateAsyncMethod('zipSelection');

@@ -4,6 +4,8 @@
 
 #include "content/common/indexed_db/proxy_webidbdatabase_impl.h"
 
+#include <vector>
+
 #include "content/common/child_thread.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "content/common/indexed_db/indexed_db_dispatcher.h"
@@ -27,8 +29,10 @@ using WebKit::WebString;
 using WebKit::WebVector;
 using webkit_glue::WorkerTaskRunner;
 
-RendererWebIDBDatabaseImpl::RendererWebIDBDatabaseImpl(int32 idb_database_id)
-    : idb_database_id_(idb_database_id) {
+namespace content {
+
+RendererWebIDBDatabaseImpl::RendererWebIDBDatabaseImpl(int32 ipc_database_id)
+    : ipc_database_id_(ipc_database_id) {
 }
 
 RendererWebIDBDatabaseImpl::~RendererWebIDBDatabaseImpl() {
@@ -37,21 +41,23 @@ RendererWebIDBDatabaseImpl::~RendererWebIDBDatabaseImpl() {
   // this object. But, if that ever changed, then we'd need to invalidate
   // any such pointers.
   IndexedDBDispatcher::Send(new IndexedDBHostMsg_DatabaseDestroyed(
-      idb_database_id_));
+      ipc_database_id_));
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->DatabaseDestroyed(idb_database_id_);
+  dispatcher->DatabaseDestroyed(ipc_database_id_);
 }
 
 WebIDBMetadata RendererWebIDBDatabaseImpl::metadata() const {
   IndexedDBDatabaseMetadata idb_metadata;
   IndexedDBDispatcher::Send(
-      new IndexedDBHostMsg_DatabaseMetadata(idb_database_id_, &idb_metadata));
+      new IndexedDBHostMsg_DatabaseMetadata(ipc_database_id_, &idb_metadata));
 
   WebIDBMetadata web_metadata;
+  web_metadata.id = idb_metadata.id;
   web_metadata.name = idb_metadata.name;
   web_metadata.version = idb_metadata.version;
-  web_metadata.intVersion = idb_metadata.intVersion;
+  web_metadata.intVersion = idb_metadata.int_version;
+  web_metadata.maxObjectStoreId = idb_metadata.max_object_store_id;
   web_metadata.objectStores = WebVector<WebIDBMetadata::ObjectStore>(
       idb_metadata.object_stores.size());
 
@@ -61,9 +67,11 @@ WebIDBMetadata RendererWebIDBDatabaseImpl::metadata() const {
     WebIDBMetadata::ObjectStore& web_store_metadata =
         web_metadata.objectStores[i];
 
+    web_store_metadata.id = idb_store_metadata.id;
     web_store_metadata.name = idb_store_metadata.name;
     web_store_metadata.keyPath = idb_store_metadata.keyPath;
     web_store_metadata.autoIncrement = idb_store_metadata.autoIncrement;
+    web_store_metadata.maxIndexId = idb_store_metadata.max_index_id;
     web_store_metadata.indexes = WebVector<WebIDBMetadata::Index>(
         idb_store_metadata.indexes.size());
 
@@ -73,6 +81,7 @@ WebIDBMetadata RendererWebIDBDatabaseImpl::metadata() const {
       WebIDBMetadata::Index& web_index_metadata =
           web_store_metadata.indexes[j];
 
+      web_index_metadata.id = idb_index_metadata.id;
       web_index_metadata.name = idb_index_metadata.name;
       web_index_metadata.keyPath = idb_index_metadata.keyPath;
       web_index_metadata.unique = idb_index_metadata.unique;
@@ -84,17 +93,19 @@ WebIDBMetadata RendererWebIDBDatabaseImpl::metadata() const {
 }
 
 WebKit::WebIDBObjectStore* RendererWebIDBDatabaseImpl::createObjectStore(
+    long long id,
     const WebKit::WebString& name,
     const WebKit::WebIDBKeyPath& key_path,
     bool auto_increment,
     const WebKit::WebIDBTransaction& transaction,
     WebExceptionCode& ec) {
   IndexedDBHostMsg_DatabaseCreateObjectStore_Params params;
+  params.id = id;
   params.name = name;
-  params.key_path = content::IndexedDBKeyPath(key_path);
+  params.key_path = IndexedDBKeyPath(key_path);
   params.auto_increment = auto_increment;
-  params.transaction_id = IndexedDBDispatcher::TransactionId(transaction);
-  params.idb_database_id = idb_database_id_;
+  params.ipc_transaction_id = IndexedDBDispatcher::TransactionId(transaction);
+  params.ipc_database_id = ipc_database_id_;
 
   int object_store;
   IndexedDBDispatcher::Send(
@@ -106,52 +117,38 @@ WebKit::WebIDBObjectStore* RendererWebIDBDatabaseImpl::createObjectStore(
 }
 
 void RendererWebIDBDatabaseImpl::deleteObjectStore(
-    const WebString& name,
+    long long object_store_id,
     const WebIDBTransaction& transaction,
     WebExceptionCode& ec) {
   IndexedDBDispatcher::Send(
       new IndexedDBHostMsg_DatabaseDeleteObjectStore(
-          idb_database_id_, name,
+          ipc_database_id_, object_store_id,
           IndexedDBDispatcher::TransactionId(transaction), &ec));
 }
 
-void RendererWebIDBDatabaseImpl::setVersion(
-    const WebString& version,
-    WebIDBCallbacks* callbacks,
-    WebExceptionCode& ec) {
-  IndexedDBDispatcher* dispatcher =
-      IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->RequestIDBDatabaseSetVersion(
-      version, callbacks, idb_database_id_, &ec);
-}
+WebKit::WebIDBTransaction* RendererWebIDBDatabaseImpl::createTransaction(
+    long long transaction_id,
+    const WebVector<long long>& object_store_ids,
+    unsigned short mode) {
+  std::vector<int64> object_stores;
+  object_stores.reserve(object_store_ids.size());
+  for (unsigned int i = 0; i < object_store_ids.size(); ++i)
+      object_stores.push_back(object_store_ids[i]);
 
-WebKit::WebIDBTransaction* RendererWebIDBDatabaseImpl::transaction(
-    const WebDOMStringList& names,
-    unsigned short mode,
-    WebExceptionCode& ec) {
-  std::vector<string16> object_stores;
-  object_stores.reserve(names.length());
-  for (unsigned int i = 0; i < names.length(); ++i)
-    object_stores.push_back(names.item(i));
-
-  int transaction_id;
-  IndexedDBDispatcher::Send(new IndexedDBHostMsg_DatabaseTransaction(
+  int ipc_transaction_id;
+  IndexedDBDispatcher::Send(new IndexedDBHostMsg_DatabaseCreateTransaction(
       WorkerTaskRunner::Instance()->CurrentWorkerId(),
-      idb_database_id_, object_stores, mode, &transaction_id, &ec));
+      ipc_database_id_, transaction_id, object_stores, mode,
+      &ipc_transaction_id));
   if (!transaction_id)
     return NULL;
-  return new RendererWebIDBTransactionImpl(transaction_id);
+  return new RendererWebIDBTransactionImpl(ipc_transaction_id);
 }
 
 void RendererWebIDBDatabaseImpl::close() {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->RequestIDBDatabaseClose(idb_database_id_);
+  dispatcher->RequestIDBDatabaseClose(ipc_database_id_);
 }
 
-void RendererWebIDBDatabaseImpl::open(WebIDBDatabaseCallbacks* callbacks) {
-  IndexedDBDispatcher* dispatcher =
-      IndexedDBDispatcher::ThreadSpecificInstance();
-  DCHECK(dispatcher);
-  dispatcher->RequestIDBDatabaseOpen(callbacks, idb_database_id_);
-}
+}  // namespace content

@@ -6,6 +6,7 @@
 
 #include "base/shared_memory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/visitedlink/visitedlink_master_factory.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -118,6 +119,8 @@ VisitedLinkEventListener::VisitedLinkEventListener(Profile* profile)
 }
 
 VisitedLinkEventListener::~VisitedLinkEventListener() {
+  if (!pending_visited_links_.empty())
+    pending_visited_links_.clear();
 }
 
 void VisitedLinkEventListener::NewTable(base::SharedMemory* table_memory) {
@@ -133,7 +136,8 @@ void VisitedLinkEventListener::NewTable(base::SharedMemory* table_memory) {
       continue;
     Profile* profile = Profile::FromBrowserContext(
         process->GetBrowserContext());
-    VisitedLinkMaster* master = profile->GetVisitedLinkMaster();
+    VisitedLinkMaster* master =
+        VisitedLinkMasterFactory::GetForProfile(profile);
     if (master && master->shared_memory() == table_memory)
       i->second->SendVisitedLinkTable(table_memory);
   }
@@ -186,7 +190,8 @@ void VisitedLinkEventListener::Observe(
 
       // Initialize support for visited links. Send the renderer process its
       // initial set of visited links.
-      VisitedLinkMaster* master = profile->GetVisitedLinkMaster();
+      VisitedLinkMaster* master =
+        VisitedLinkMasterFactory::GetForProfile(profile);
       if (!master)
         return;
 

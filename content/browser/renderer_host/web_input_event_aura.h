@@ -8,36 +8,34 @@
 #include "content/common/content_export.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
-namespace aura {
+namespace ui {
 class GestureEvent;
 class KeyEvent;
 class MouseEvent;
+class MouseWheelEvent;
 class ScrollEvent;
 class TouchEvent;
 }
 
 namespace content {
 
+// Used for scrolling. This matches Firefox behavior.
+const int kPixelsPerTick = 53;
+
 CONTENT_EXPORT WebKit::WebMouseEvent MakeWebMouseEvent(
-    aura::MouseEvent* event);
+    ui::MouseEvent* event);
 CONTENT_EXPORT WebKit::WebMouseWheelEvent MakeWebMouseWheelEvent(
-    aura::MouseEvent* event);
+    ui::MouseWheelEvent* event);
 CONTENT_EXPORT WebKit::WebMouseWheelEvent MakeWebMouseWheelEvent(
-    aura::ScrollEvent* event);
+    ui::ScrollEvent* event);
 CONTENT_EXPORT WebKit::WebKeyboardEvent MakeWebKeyboardEvent(
-    aura::KeyEvent* event);
+    ui::KeyEvent* event);
 CONTENT_EXPORT WebKit::WebGestureEvent MakeWebGestureEvent(
-    aura::GestureEvent* event);
+    ui::GestureEvent* event);
 CONTENT_EXPORT WebKit::WebGestureEvent MakeWebGestureEvent(
-    aura::ScrollEvent* event);
+    ui::ScrollEvent* event);
 CONTENT_EXPORT WebKit::WebGestureEvent MakeWebGestureEventFlingCancel();
 
-// Updates the WebTouchEvent based on the TouchEvent. It returns the updated
-// WebTouchPoint contained in the WebTouchEvent, or NULL if no point was
-// updated.
-WebKit::WebTouchPoint* UpdateWebTouchEvent(aura::TouchEvent* event,
-                                           WebKit::WebTouchEvent* web_event);
-
-}
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_WEB_INPUT_EVENT_AURA_H_

@@ -5,8 +5,7 @@
 #include "chrome/browser/history/android/android_provider_backend.h"
 
 #include "base/i18n/case_conversion.h"
-#include "chrome/browser/bookmarks/bookmark_service.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/api/bookmarks/bookmark_service.h"
 #include "chrome/browser/history/android/android_time.h"
 #include "chrome/browser/history/android/android_urls_sql_handler.h"
 #include "chrome/browser/history/android/bookmark_model_sql_handler.h"
@@ -16,6 +15,7 @@
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/thumbnail_database.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "content/public/common/page_transition_types.h"
 #include "sql/connection.h"
 
@@ -176,7 +176,7 @@ AndroidURLID AndroidProviderBackend::InsertHistoryAndBookmark(
 
   ScopedTransaction transaction(history_db_, thumbnail_db_);
 
-  AndroidURLID id = InsertHistoryAndBookmark(values, &notifications);
+  AndroidURLID id = InsertHistoryAndBookmark(values, &notifications, true);
   if (id) {
     transaction.Commit();
     BroadcastNotifications(notifications);
@@ -236,7 +236,8 @@ AndroidProviderBackend::ScopedTransaction::ScopedTransaction(
       thumbnail_db_(thumbnail_db),
       committed_(false),
       history_transaction_nesting_(history_db_->transaction_nesting()),
-      thumbnail_transaction_nesting_(thumbnail_db_->transaction_nesting()) {
+      thumbnail_transaction_nesting_(
+          thumbnail_db_ ? thumbnail_db_->transaction_nesting() : 0) {
   // Commit all existing transactions since the AndroidProviderBackend's
   // transaction is very like to be rolled back when compared with the others.
   // The existing transactions have been scheduled to commit by
@@ -246,37 +247,42 @@ AndroidProviderBackend::ScopedTransaction::ScopedTransaction(
   int count = history_transaction_nesting_;
   while (count--)
     history_db_->CommitTransaction();
-
-  count = thumbnail_transaction_nesting_;
-  while (count--)
-    thumbnail_db_->CommitTransaction();
-
   history_db_->BeginTransaction();
-  thumbnail_db_->BeginTransaction();
+
+  if (thumbnail_db_) {
+    count = thumbnail_transaction_nesting_;
+    while (count--)
+      thumbnail_db_->CommitTransaction();
+    thumbnail_db_->BeginTransaction();
+  }
 }
 
 AndroidProviderBackend::ScopedTransaction::~ScopedTransaction() {
   if (!committed_) {
     history_db_->RollbackTransaction();
-    thumbnail_db_->RollbackTransaction();
+    if (thumbnail_db_)
+      thumbnail_db_->RollbackTransaction();
   }
   // There is no transaction now.
   DCHECK_EQ(0, history_db_->transaction_nesting());
-  DCHECK_EQ(0, thumbnail_db_->transaction_nesting());
+  DCHECK(!thumbnail_db_ || 0 == thumbnail_db_->transaction_nesting());
 
   int count = history_transaction_nesting_;
   while (count--)
     history_db_->BeginTransaction();
 
-  count = thumbnail_transaction_nesting_;
-  while (count--)
-    thumbnail_db_->BeginTransaction();
+  if (thumbnail_db_) {
+    count = thumbnail_transaction_nesting_;
+    while (count--)
+      thumbnail_db_->BeginTransaction();
+  }
 }
 
 void AndroidProviderBackend::ScopedTransaction::Commit() {
   DCHECK(!committed_);
   history_db_->CommitTransaction();
-  thumbnail_db_->CommitTransaction();
+  if (thumbnail_db_)
+    thumbnail_db_->CommitTransaction();
   committed_ = true;
 }
 
@@ -340,7 +346,8 @@ bool AndroidProviderBackend::UpdateHistoryAndBookmarks(
         return false;
       modified->changed_urls.push_back(url_row);
     }
-    if (row.is_value_set_explicitly(HistoryAndBookmarkRow::FAVICON))
+    if (thumbnail_db_ &&
+        row.is_value_set_explicitly(HistoryAndBookmarkRow::FAVICON))
       favicon->urls.insert(i->url);
   }
 
@@ -357,11 +364,12 @@ bool AndroidProviderBackend::UpdateHistoryAndBookmarks(
 
 AndroidURLID AndroidProviderBackend::InsertHistoryAndBookmark(
     const HistoryAndBookmarkRow& values,
-    HistoryNotifications* notifications) {
+    HistoryNotifications* notifications,
+    bool ensure_initialized_and_updated) {
   if (!IsHistoryAndBookmarkRowValid(values))
     return false;
 
-  if (!EnsureInitializedAndUpdated())
+  if (ensure_initialized_and_updated && !EnsureInitializedAndUpdated())
     return 0;
 
   DCHECK(values.is_value_set_explicitly(HistoryAndBookmarkRow::URL));
@@ -383,8 +391,9 @@ AndroidURLID AndroidProviderBackend::InsertHistoryAndBookmark(
   modified->changed_urls.push_back(url_row);
 
   scoped_ptr<FaviconChangeDetails> favicon;
+  // No favicon should be changed if the thumbnail_db_ is not available.
   if (row.is_value_set_explicitly(HistoryAndBookmarkRow::FAVICON) &&
-      !row.favicon().empty()) {
+      row.favicon_valid() && thumbnail_db_) {
     favicon.reset(new FaviconChangeDetails);
     if (!favicon.get())
       return false;
@@ -456,7 +465,7 @@ bool AndroidProviderBackend::DeleteHistory(
       row.set_raw_url(android_url_row.raw_url);
       row.set_url(i->url);
       // Set the visit time to the UnixEpoch since that's when the Android
-      // system time starts.
+      // system time starts. The Android have a CTS testcase for this.
       row.set_last_visit_time(Time::UnixEpoch());
       row.set_visit_count(0);
       // We don't want to change the bookmark model, so set_is_bookmark() is
@@ -471,10 +480,13 @@ bool AndroidProviderBackend::DeleteHistory(
 
   for (std::vector<HistoryAndBookmarkRow>::const_iterator i = bookmarks.begin();
        i != bookmarks.end(); ++i) {
-    if (!InsertHistoryAndBookmark(*i, notifications))
+    // Don't update the tables, otherwise, the bookmarks will be added to
+    // database during UpdateBookmark(), then the insertion will fail.
+    // We can't rely on UpdateBookmark() to insert the bookmarks into history
+    // database as the raw_url will be lost.
+    if (!InsertHistoryAndBookmark(*i, notifications, false))
       return false;
   }
-
   return true;
 }
 
@@ -620,6 +632,9 @@ bool AndroidProviderBackend::DeleteSearchTerms(
     const std::string& selection,
     const std::vector<string16>& selection_args,
     int * deleted_count) {
+  if (!EnsureInitializedAndUpdated())
+    return false;
+
   SearchTerms rows;
   if (!GetSelectedSearchTerms(selection, selection_args, &rows))
     return false;
@@ -649,14 +664,16 @@ bool AndroidProviderBackend::Init() {
   urls_handler_.reset(new UrlsSQLHandler(history_db_));
   visit_handler_.reset(new VisitSQLHandler(history_db_));
   android_urls_handler_.reset(new AndroidURLsSQLHandler(history_db_));
-  favicon_handler_.reset(new FaviconSQLHandler(thumbnail_db_));
+  if (thumbnail_db_)
+    favicon_handler_.reset(new FaviconSQLHandler(thumbnail_db_));
   bookmark_model_handler_.reset(new BookmarkModelSQLHandler(history_db_));
   // The urls_handler must be pushed first, because the subsequent handlers
   // depend on its output.
   sql_handlers_.push_back(urls_handler_.get());
   sql_handlers_.push_back(visit_handler_.get());
   sql_handlers_.push_back(android_urls_handler_.get());
-  sql_handlers_.push_back(favicon_handler_.get());
+  if (favicon_handler_.get())
+    sql_handlers_.push_back(favicon_handler_.get());
   sql_handlers_.push_back(bookmark_model_handler_.get());
 
   if (!history_db_->CreateAndroidURLsTable())
@@ -759,11 +776,24 @@ bool AndroidProviderBackend::UpdateBookmarks() {
   for (std::vector<BookmarkService::URLAndTitle>::const_iterator i =
            bookmarks.begin(); i != bookmarks.end(); ++i) {
     URLID url_id = history_db_->GetRowForURL(i->url, NULL);
-    if (url_id == 0)
-      // TODO(michaelbai): Add a row to url and android_url table as the
-      // bookmark could be added manually by user or insertted by sync.
-      continue;
-
+    if (url_id == 0) {
+      URLRow url_row(i->url);
+      url_row.set_title(i->title);
+      // Set the visit time to the UnixEpoch since that's when the Android
+      // system time starts. The Android have a CTS testcase for this.
+      url_row.set_last_visit(Time::UnixEpoch());
+      url_row.set_hidden(true);
+      url_id = history_db_->AddURL(url_row);
+      if (url_id == 0) {
+        LOG(ERROR) << "Can not add url for the new bookmark";
+        return false;
+      }
+      if (!history_db_->AddAndroidURLRow(i->url.spec(), url_id))
+        return false;
+      if (!history_db_->AddBookmarkCacheRow(Time::UnixEpoch(),
+                            Time::UnixEpoch(), url_id))
+        return false;
+    }
     url_ids.push_back(url_id);
   }
 
@@ -772,6 +802,11 @@ bool AndroidProviderBackend::UpdateBookmarks() {
 
 bool AndroidProviderBackend::UpdateFavicon() {
   ThumbnailDatabase::IconMappingEnumerator enumerator;
+
+  // We want the AndroidProviderBackend run without thumbnail_db_
+  if (!thumbnail_db_)
+    return true;
+
   if (!thumbnail_db_->InitIconMappingEnumerator(FAVICON, &enumerator))
     return false;
 
@@ -949,11 +984,14 @@ bool AndroidProviderBackend::SimulateUpdateURL(
 
   FaviconID favicon_id = statement->statement()->ColumnInt64(4);
   if (favicon_id) {
-    std::vector<unsigned char> favicon;
-    if (!thumbnail_db_->GetFavicon(favicon_id, NULL, &favicon, NULL, NULL))
+    std::vector<FaviconBitmap> favicon_bitmaps;
+    if (!thumbnail_db_ ||
+        !thumbnail_db_->GetFaviconBitmaps(favicon_id, &favicon_bitmaps))
       return false;
-    if (!favicon.empty())
-      new_row.set_favicon(favicon);
+   scoped_refptr<base::RefCountedMemory> bitmap_data =
+       favicon_bitmaps[0].bitmap_data;
+   if (bitmap_data.get() && bitmap_data->size())
+      new_row.set_favicon(bitmap_data);
     favicon_details->urls.insert(old_url_row.url());
     favicon_details->urls.insert(row.url());
   }
@@ -968,7 +1006,7 @@ bool AndroidProviderBackend::SimulateUpdateURL(
   if (!visit_handler_->Delete(ids))
     return false;
 
-  if (!favicon_handler_->Delete(ids))
+  if (favicon_handler_ && !favicon_handler_->Delete(ids))
     return false;
 
   if (!bookmark_model_handler_->Delete(ids))
@@ -1003,7 +1041,7 @@ bool AndroidProviderBackend::SimulateUpdateURL(
   if (!android_urls_handler_->Update(new_row, ids))
     return false;
 
-  if (!favicon_handler_->Insert(&new_row))
+  if (favicon_handler_ && !favicon_handler_->Insert(&new_row))
     return false;
 
   if (!bookmark_model_handler_->Insert(&new_row))
@@ -1072,7 +1110,8 @@ bool AndroidProviderBackend::DeleteHistoryInternal(
     if (!history_db_->GetURLRow(i->url_id, &url_row))
       return false;
     deleted_details->rows.push_back(url_row);
-    if (thumbnail_db_->GetIconMappingsForPageURL(url_row.url(), NULL))
+    if (thumbnail_db_ &&
+        thumbnail_db_->GetIconMappingsForPageURL(url_row.url(), NULL))
       favicon->urls.insert(url_row.url());
   }
 

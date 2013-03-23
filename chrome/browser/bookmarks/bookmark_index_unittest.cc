@@ -51,7 +51,7 @@ class BookmarkIndexTest : public testing::Test {
   }
 
   void ExpectMatches(const std::string& query,
-                     const std::vector<std::string> expected_titles) {
+                     const std::vector<std::string>& expected_titles) {
     std::vector<bookmark_utils::TitleMatch> matches;
     model_->GetBookmarksWithTitlesMatching(ASCIIToUTF16(query), 1000, &matches);
     ASSERT_EQ(expected_titles.size(), matches.size());
@@ -135,6 +135,9 @@ TEST_F(BookmarkIndexTest, Tests) {
 
     // Make sure quotes don't do a prefix match.
     { "think",                      "\"thi\"",  ""},
+
+    // Prefix matches against multiple candidates.
+    { "abc1 abc2 abc3 abc4", "abc", "abc1 abc2 abc3 abc4"},
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
     std::vector<std::string> titles;
@@ -162,6 +165,11 @@ TEST_F(BookmarkIndexTest, MatchPositions) {
     { "a",                        "A",        "0,1" },
     { "foo bar",                  "bar",      "4,7" },
     { "fooey bark",               "bar foo",  "0,3:6,9"},
+    // Non-trivial tests.
+    { "foobar foo",               "foobar foo",   "0,6:7,10" },
+    { "foobar foo",               "foo foobar",   "0,6:7,10" },
+    { "foobar foobar",            "foobar foo",   "0,6:7,13" },
+    { "foobar foobar",            "foo foobar",   "0,6:7,13" },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
     std::vector<std::string> titles;

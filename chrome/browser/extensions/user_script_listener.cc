@@ -9,11 +9,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/url_pattern.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_throttle.h"
+#include "extensions/common/url_pattern.h"
 #include "net/url_request/url_request.h"
 
 using content::BrowserThread;
@@ -25,14 +25,29 @@ class UserScriptListener::Throttle
     : public ResourceThrottle,
       public base::SupportsWeakPtr<UserScriptListener::Throttle> {
  public:
+  Throttle() : should_defer_(true), did_defer_(false) {
+  }
+
   void Resume() {
-    controller()->Resume();
+    DCHECK(should_defer_);
+    should_defer_ = false;
+    // Only resume the request if |this| has deferred it.
+    if (did_defer_)
+      controller()->Resume();
   }
 
   // ResourceThrottle implementation:
   virtual void WillStartRequest(bool* defer) {
-    *defer = true;
+    // Only defer requests if Resume has not yet been called.
+    if (should_defer_) {
+      *defer = true;
+      did_defer_ = true;
+    }
   }
+
+ private:
+  bool should_defer_;
+  bool did_defer_;
 };
 
 struct UserScriptListener::ProfileData {

@@ -17,6 +17,8 @@ namespace WebKit {
 class WebInputEvent;
 }
 
+namespace content {
+
 class InputEventFilter;
 
 // The CompositorThread class manages the background thread for the compositor.
@@ -39,6 +41,8 @@ class CompositorThread {
                        const base::WeakPtr<RenderViewImpl>& render_view_impl);
 
   webkit_glue::WebThreadImpl* GetWebThread() { return &thread_; }
+
+  MessageLoop* message_loop() { return thread_.message_loop(); }
 
  private:
   // Callback only from the compositor's thread.
@@ -65,5 +69,7 @@ class CompositorThread {
   webkit_glue::WebThreadImpl thread_;
   scoped_refptr<InputEventFilter> filter_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_GPU_COMPOSITOR_THREAD_H_

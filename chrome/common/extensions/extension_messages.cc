@@ -7,11 +7,16 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "content/public/common/common_param_traits.h"
 
 using extensions::APIPermission;
+using extensions::APIPermissionInfo;
+using extensions::APIPermissionMap;
+using extensions::APIPermissionSet;
 using extensions::Extension;
 using extensions::PermissionSet;
+using extensions::URLPatternSet;
 
 ExtensionMsg_Loaded_Params::ExtensionMsg_Loaded_Params()
     : location(Extension::INVALID),
@@ -138,6 +143,48 @@ bool ParamTraits<APIPermission::ID>::Read(
 void ParamTraits<APIPermission::ID>::Log(
     const param_type& p, std::string* l) {
   LogParam(static_cast<int>(p), l);
+}
+
+void ParamTraits<APIPermission*>::Log(
+    const param_type& p, std::string* l) {
+  p->Log(l);
+}
+
+void ParamTraits<APIPermissionSet>::Write(
+    Message* m, const param_type& p) {
+  APIPermissionSet::const_iterator it = p.begin();
+  const APIPermissionSet::const_iterator end = p.end();
+  WriteParam(m, p.size());
+  for (; it != end; ++it) {
+    WriteParam(m, it->id());
+    it->Write(m);
+  }
+}
+
+bool ParamTraits<APIPermissionSet>::Read(
+    const Message* m, PickleIterator* iter, param_type* r) {
+  size_t size;
+  if (!ReadParam(m, iter, &size))
+    return false;
+  for (size_t i = 0; i < size; ++i) {
+    APIPermission::ID id;
+    if (!ReadParam(m, iter, &id))
+      return false;
+    const APIPermissionInfo* permission_info =
+      extensions::PermissionsInfo::GetInstance()->GetByID(id);
+    if (!permission_info)
+      return false;
+    scoped_ptr<APIPermission> p(permission_info->CreateAPIPermission());
+    if (!p->Read(m, iter))
+      return false;
+    r->insert(p.release());
+  }
+  return true;
+}
+
+void ParamTraits<APIPermissionSet>::Log(
+    const param_type& p, std::string* l) {
+  LogParam(p.map(), l);
 }
 
 void ParamTraits<ExtensionMsg_Loaded_Params>::Write(Message* m,

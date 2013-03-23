@@ -7,13 +7,6 @@
  */
 
 cr.define('login', function() {
-  // Network state constants.
-  const NET_STATE = {
-    OFFLINE: 0,
-    ONLINE: 1,
-    PORTAL: 2
-  };
-
   /**
    * Creates a header bar element.
    * @constructor
@@ -24,27 +17,28 @@ cr.define('login', function() {
   HeaderBar.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @inheritDoc */
+    // Whether guest button should be shown when header bar is in normal mode.
+    showGuest_: false,
+
+    // Current UI state of the sign-in screen.
+    signinUIState_: SIGNIN_UI_STATE.HIDDEN,
+
+    /** @override */
     decorate: function() {
       $('shutdown-header-bar-item').addEventListener('click',
           this.handleShutdownClick_);
       $('shutdown-button').addEventListener('click',
           this.handleShutdownClick_);
-      $('add-user-button').addEventListener('click', function(e) {
-        chrome.send('loginRequestNetworkState',
-                    ['login.HeaderBar.handleAddUser',
-                     'check']);
-      });
-      $('cancel-add-user-button').addEventListener('click', function(e) {
-        this.hidden = true;
-        $('add-user-button').hidden = false;
-        Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
-        Oobe.resetSigninUI(true);
-      });
-      $('sign-out-user-button').addEventListener('click', function(e) {
-        this.disabled = true;
-        chrome.send('signOutUser');
-      });
+      $('add-user-button').addEventListener('click',
+          this.handleAddUserClick_);
+      $('cancel-add-user-button').addEventListener('click',
+          this.handleCancelAddUserClick_);
+      $('guest-user-header-bar-item').addEventListener('click',
+          this.handleGuestClick_);
+      $('guest-user-button').addEventListener('click',
+          this.handleGuestClick_);
+      $('sign-out-user-button').addEventListener('click',
+          this.handleSignoutClick_);
     },
 
     /**
@@ -64,9 +58,65 @@ cr.define('login', function() {
      */
     set disabled(value) {
       var buttons = this.getElementsByTagName('button');
-      for (var i = 0, button; button = buttons[i]; ++i) {
-        button.disabled = value;
+      for (var i = 0, button; button = buttons[i]; ++i)
+        if (!button.classList.contains('button-restricted'))
+          button.disabled = value;
+    },
+
+    /**
+     * Add user button click handler.
+     * @private
+     */
+    handleAddUserClick_: function(e) {
+      Oobe.showSigninUI();
+      // Prevent further propagation of click event. Otherwise, the click event
+      // handler of document object will set wallpaper to user's wallpaper when
+      // there is only one existing user. See http://crbug.com/166477
+      e.stopPropagation();
+    },
+
+    /**
+     * Cancel add user button click handler.
+     * @private
+     */
+    handleCancelAddUserClick_: function(e) {
+      // Let screen handle cancel itself if that is capable of doing so.
+      if (Oobe.getInstance().currentScreen &&
+          Oobe.getInstance().currentScreen.cancel) {
+        Oobe.getInstance().currentScreen.cancel();
+        return;
       }
+
+      $('pod-row').loadLastWallpaper();
+
+      // TODO(ygorshenin@): workaround for crbug.com/164832.
+      // Must be deleted as a part of
+      // https://codereview.chromium.org/11565011/.
+      $('error-message').onBeforeHide();
+      $('error-message').showOfflineMessage(false);
+
+      Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
+      Oobe.resetSigninUI(true);
+    },
+
+    /**
+     * Guest button click handler.
+     * @private
+     */
+    handleGuestClick_: function(e) {
+      Oobe.disableSigninUI();
+      chrome.send('launchIncognito');
+      e.stopPropagation();
+    },
+
+    /**
+     * Sign out button click handler.
+     * @private
+     */
+    handleSignoutClick_: function(e) {
+      this.disabled = true;
+      chrome.send('signOutUser');
+      e.stopPropagation();
     },
 
     /**
@@ -76,45 +126,77 @@ cr.define('login', function() {
     handleShutdownClick_: function(e) {
       chrome.send('shutdownSystem');
       e.stopPropagation();
-    }
-  };
+    },
 
-  /**
-   * Continues add user button click handling after network state has
-   * been recieved.
-   * @param {Integer} state Current state of the network (see NET_STATE).
-   * @param {string} network Name of the network.
-   * @param {string} reason Reason the callback was called.
-   * @param {int} last Last active network type.
-   */
-  HeaderBar.handleAddUser = function(state, network, reason, last) {
-    if (state != NET_STATE.OFFLINE) {
-      Oobe.showSigninUI();
-    } else {
-      const BUBBLE_OFFSET = 8;
-      const BUBBLE_PADDING = 5;
-      $('bubble').showTextForElement(
-          $('add-user-button'),
-          localStrings.getString('addUserErrorMessage'),
-          cr.ui.Bubble.Attachment.TOP, BUBBLE_OFFSET, BUBBLE_PADDING);
-      chrome.send('loginAddNetworkStateObserver',
-                  ['login.HeaderBar.bubbleWatchdog']);
-    }
-  };
+    /**
+     * If true then "Browse as Guest" button is shown.
+     * @type {boolean}
+     */
+    set showGuestButton(value) {
+      this.showGuest_ = value;
+      this.updateUI_();
+    },
 
-  /**
-   * Observes network state, and close the bubble when network becomes online.
-   * @param {Integer} state Current state of the network (see NET_STATE).
-   * @param {string} network Name of the network.
-   * @param {string} reason Reason the callback was called.
-   * @param {int} last Last active network type.
-   */
-  HeaderBar.bubbleWatchdog = function(state, network, reason, last) {
-    if (state != NET_STATE.OFFLINE) {
-      $('bubble').hideForElement($('add-user-button'));
-      chrome.send('loginRemoveNetworkStateObserver',
-                  ['login.HeaderBar.bubbleWatchdog']);
-    }
+    /**
+     * Update current header bar UI.
+     * @type {number} state Current state of the sign-in screen
+     *                      (see SIGNIN_UI_STATE).
+     */
+    set signinUIState(state) {
+      this.signinUIState_ = state;
+      this.updateUI_();
+    },
+
+    /**
+     * Whether the Cancel button is enabled during Gaia sign-in.
+     * @type {boolean}
+     */
+    set allowCancel(value) {
+      this.allowCancel_ = value;
+      this.updateUI_();
+    },
+
+    /**
+     * Updates visibility state of action buttons.
+     * @private
+     */
+    updateUI_: function() {
+      var gaiaIsActive = (this.signinUIState_ == SIGNIN_UI_STATE.GAIA_SIGNIN);
+      var accountPickerIsActive =
+          (this.signinUIState_ == SIGNIN_UI_STATE.ACCOUNT_PICKER);
+
+      $('add-user-button').hidden = !accountPickerIsActive;
+      $('cancel-add-user-button').hidden = accountPickerIsActive ||
+          !this.allowCancel_;
+      $('guest-user-header-bar-item').hidden = gaiaIsActive || !this.showGuest_;
+      $('add-user-header-bar-item').hidden =
+          $('add-user-button').hidden && $('cancel-add-user-button').hidden;
+    },
+
+    /**
+     * Animates Header bar to hide from the screen.
+     * @param {function()} callback will be called once animation is finished.
+     */
+    animateOut: function(callback) {
+      var launcher = this;
+      launcher.addEventListener(
+          'webkitTransitionEnd', function f(e) {
+            launcher.removeEventListener('webkitTransitionEnd', f);
+            callback();
+          });
+      this.classList.remove('login-header-bar-animate-slow');
+      this.classList.add('login-header-bar-animate-fast');
+      this.classList.add('login-header-bar-hidden');
+    },
+
+    /**
+     * Animates Header bar to slowly appear on the screen.
+     */
+    animateIn: function() {
+      this.classList.remove('login-header-bar-animate-fast');
+      this.classList.add('login-header-bar-animate-slow');
+      this.classList.remove('login-header-bar-hidden');
+    },
   };
 
   return {

@@ -10,31 +10,29 @@
 #include "base/timer.h"
 #include "base/win/win_util.h"
 #include "content/common/content_export.h"
+#include "content/common/drag_event_source_info.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/public/browser/web_contents_view.h"
 #include "ui/base/win/window_impl.h"
-
-class WebDragDest;
-class WebContentsDragWin;
-class WebContentsImpl;
-
-namespace content {
-class RenderWidgetHostViewWin;
-class WebContentsViewDelegate;
-}
 
 namespace ui {
 class HWNDMessageFilter;
 }
 
+namespace content {
+class WebContentsDragWin;
+class WebContentsImpl;
+class WebContentsViewDelegate;
+class WebDragDest;
+
 // An implementation of WebContentsView for Windows.
 class CONTENT_EXPORT WebContentsViewWin
-    : public content::WebContentsView,
-      public content::RenderViewHostDelegateView,
+    : public WebContentsView,
+      public RenderViewHostDelegateView,
       public ui::WindowImpl {
  public:
   WebContentsViewWin(WebContentsImpl* web_contents,
-                     content::WebContentsViewDelegate* delegate);
+                     WebContentsViewDelegate* delegate);
   virtual ~WebContentsViewWin();
 
   BEGIN_MSG_MAP_EX(WebContentsViewWin)
@@ -55,9 +53,10 @@ class CONTENT_EXPORT WebContentsViewWin
   END_MSG_MAP()
 
   // Overridden from WebContentsView:
-  virtual void CreateView(const gfx::Size& initial_size) OVERRIDE;
-  virtual content::RenderWidgetHostView* CreateViewForWidget(
-      content::RenderWidgetHost* render_widget_host) OVERRIDE;
+  virtual void CreateView(
+      const gfx::Size& initial_size, gfx::NativeView context) OVERRIDE;
+  virtual RenderWidgetHostView* CreateViewForWidget(
+      RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
@@ -66,13 +65,11 @@ class CONTENT_EXPORT WebContentsViewWin
   virtual void OnTabCrashed(base::TerminationStatus status,
                             int error_code) OVERRIDE;
   virtual void SizeContents(const gfx::Size& size) OVERRIDE;
-  virtual void RenderViewCreated(content::RenderViewHost* host) OVERRIDE;
+  virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void SetInitialFocus() OVERRIDE;
   virtual void StoreFocus() OVERRIDE;
   virtual void RestoreFocus() OVERRIDE;
-  virtual bool IsDoingDrag() const OVERRIDE;
-  virtual void CancelDragAndCloseTab() OVERRIDE;
   virtual WebDropData* GetDropData() const OVERRIDE;
   virtual bool IsEventTracking() const OVERRIDE;
   virtual void CloseTabAfterEventTracking() OVERRIDE;
@@ -80,7 +77,8 @@ class CONTENT_EXPORT WebContentsViewWin
 
   // Implementation of RenderViewHostDelegateView.
   virtual void ShowContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
+      const ContextMenuParams& params,
+      ContextMenuSourceType type) OVERRIDE;
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
@@ -91,7 +89,8 @@ class CONTENT_EXPORT WebContentsViewWin
   virtual void StartDragging(const WebDropData& drop_data,
                              WebKit::WebDragOperationsMask operations,
                              const gfx::ImageSkia& image,
-                             const gfx::Point& image_offset) OVERRIDE;
+                             const gfx::Vector2d& image_offset,
+                             const DragEventSourceInfo& event_info) OVERRIDE;
   virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
@@ -128,9 +127,7 @@ class CONTENT_EXPORT WebContentsViewWin
   // The WebContentsImpl whose contents we display.
   WebContentsImpl* web_contents_;
 
-  content::RenderWidgetHostViewWin* view_;
-
-  scoped_ptr<content::WebContentsViewDelegate> delegate_;
+  scoped_ptr<WebContentsViewDelegate> delegate_;
 
   // The helper object that handles drag destination related interactions with
   // Windows.
@@ -139,16 +136,11 @@ class CONTENT_EXPORT WebContentsViewWin
   // Used to handle the drag-and-drop.
   scoped_refptr<WebContentsDragWin> drag_handler_;
 
-  // Set to true if we want to close the tab after the system drag operation
-  // has finished.
-  bool close_tab_after_drag_ends_;
-
-  // Used to close the tab after the stack has unwound.
-  base::OneShotTimer<WebContentsViewWin> close_tab_timer_;
-
   scoped_ptr<ui::HWNDMessageFilter> hwnd_message_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewWin);
 };
+
+} // namespace content
 
 #endif  // CONTENT_BROWSER_WEB_CONTENTS_WEB_CONTENTS_VIEW_WIN_H_

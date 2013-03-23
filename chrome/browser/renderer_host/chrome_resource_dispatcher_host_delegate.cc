@@ -9,6 +9,7 @@
 #include "base/base64.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_metrics_helper.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_resource_throttle.h"
@@ -16,14 +17,14 @@
 #include "chrome/browser/extensions/user_script_listener.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/instant/instant_loader.h"
 #include "chrome/browser/net/load_timing_observer.h"
 #include "chrome/browser/net/resource_prefetch_predictor_observer.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
+#include "chrome/browser/prerender/prerender_util.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/renderer_host/chrome_url_request_user_data.h"
-#include "chrome/browser/renderer_host/safe_browsing_resource_throttle.h"
+#include "chrome/browser/renderer_host/safe_browsing_resource_throttle_factory.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/ui/auto_login_prompter.h"
 #include "chrome/browser/ui/login/login_prompt.h"
@@ -31,8 +32,6 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/user_script.h"
-#include "chrome/common/metrics/experiments_helper.h"
-#include "chrome/common/metrics/proto/chrome_experiments.pb.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -44,7 +43,18 @@
 #include "net/base/ssl_config_service.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
+
+#if defined(USE_SYSTEM_PROTOBUF)
+#include <google/protobuf/repeated_field.h>
+#else
 #include "third_party/protobuf/src/google/protobuf/repeated_field.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "content/components/navigation_interception/intercept_navigation_delegate.h"
+#else
+#include "chrome/browser/managed_mode/managed_mode_resource_throttle.h"
+#endif
 
 // TODO(oshima): Enable this for other platforms.
 #if defined(OS_CHROMEOS)
@@ -77,8 +87,7 @@ ChromeResourceDispatcherHostDelegate::ChromeResourceDispatcherHostDelegate(
     : download_request_limiter_(g_browser_process->download_request_limiter()),
       safe_browsing_(g_browser_process->safe_browsing_service()),
       user_script_listener_(new extensions::UserScriptListener()),
-      prerender_tracker_(prerender_tracker),
-      variation_ids_cache_initialized_(false) {
+      prerender_tracker_(prerender_tracker) {
 }
 
 ChromeResourceDispatcherHostDelegate::~ChromeResourceDispatcherHostDelegate() {
@@ -120,6 +129,7 @@ bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
 void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
+    appcache::AppCacheService* appcache_service,
     ResourceType::Type resource_type,
     int child_id,
     int route_id,
@@ -130,21 +140,47 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 
   ChromeURLRequestUserData* user_data =
       ChromeURLRequestUserData::Create(request);
-  if (prerender_tracker_->IsPrerenderingOnIOThread(child_id, route_id)) {
+  bool is_prerendering = prerender_tracker_->IsPrerenderingOnIOThread(
+      child_id, route_id);
+  if (is_prerendering) {
     user_data->set_is_prerender(true);
     request->set_priority(net::IDLE);
   }
 
+#if defined(OS_ANDROID)
+  if (!is_prerendering && resource_type == ResourceType::MAIN_FRAME) {
+    throttles->push_back(
+        content::InterceptNavigationDelegate::CreateThrottleFor(
+            request));
+  }
+#endif
 #if defined(OS_CHROMEOS)
   if (resource_type == ResourceType::MAIN_FRAME) {
     // We check offline first, then check safe browsing so that we still can
     // block unsafe site after we remove offline page.
     throttles->push_back(new OfflineResourceThrottle(
-        child_id, route_id, request, resource_context));
+        child_id, route_id, request, appcache_service));
   }
 #endif
 
-  AppendChromeMetricsHeaders(request, resource_context, resource_type);
+  // Don't attempt to append headers to requests that have already started.
+  // TODO(stevet): Remove this once the request ordering issues are resolved
+  // in crbug.com/128048.
+  if (!request->is_pending()) {
+    net::HttpRequestHeaders headers;
+    headers.CopyFrom(request->extra_request_headers());
+    ProfileIOData* io_data = ProfileIOData::FromResourceContext(
+        resource_context);
+    bool incognito = io_data->is_incognito();
+    ChromeMetricsHelper::GetInstance()->AppendHeaders(
+        request->url(), incognito,
+        !incognito && io_data->GetMetricsEnabledStateOnIOThread(), &headers);
+    request->SetExtraRequestHeaders(headers);
+  }
+
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+  AppendChromeSyncGaiaHeader(request, resource_context);
+#endif
 
   AppendStandardResourceThrottles(request,
                                   resource_context,
@@ -237,43 +273,48 @@ bool ChromeResourceDispatcherHostDelegate::AcceptAuthRequest(
 ResourceDispatcherHostLoginDelegate*
     ChromeResourceDispatcherHostDelegate::CreateLoginDelegate(
         net::AuthChallengeInfo* auth_info, net::URLRequest* request) {
-  std::string instant_header_value;
-  // For instant, return a NULL delegate. Auth navigations don't commit the load
-  // (the load remains pending) until the user cancels or succeeds in
-  // authorizing. Since we don't allow merging of WebContents with pending loads
-  // we disallow auth dialogs from showing during instant. Returning NULL does
-  // that.
-  // TODO: see if we can handle this case more robustly.
-  if (request->extra_request_headers().GetHeader(
-          InstantLoader::kInstantHeader, &instant_header_value) &&
-      instant_header_value == InstantLoader::kInstantHeaderValue)
-    return NULL;
   return CreateLoginPrompt(auth_info, request);
 }
 
-void ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
+bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
     const GURL& url, int child_id, int route_id) {
+#if defined(OS_ANDROID)
+  // Android use a resource throttle to handle external as well as internal
+  // protocols.
+  return false;
+#else
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&ExternalProtocolHandler::LaunchUrl, url, child_id, route_id));
+  return true;
+#endif
 }
 
 void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
-    const net::URLRequest* request,
+    net::URLRequest* request,
     content::ResourceContext* resource_context,
     int child_id,
     int route_id,
     ResourceType::Type resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
   // Insert safe browsing at the front of the list, so it gets to decide on
   // policies first.
-  bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
   if (io_data->safe_browsing_enabled()->GetValue()) {
-    throttles->push_back(SafeBrowsingResourceThrottle::Create(
-        request, child_id, route_id, is_subresource_request, safe_browsing_));
+    bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
+    content::ResourceThrottle* throttle =
+        SafeBrowsingResourceThrottleFactory::Create(request, child_id, route_id,
+            is_subresource_request, safe_browsing_);
+    if (throttle)
+      throttles->push_back(throttle);
   }
+#endif
+
+#if !defined(OS_ANDROID)
+  bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
+  throttles->push_back(new ManagedModeResourceThrottle(
+        request, child_id, route_id, !is_subresource_request));
 #endif
 
   content::ResourceThrottle* throttle =
@@ -283,43 +324,27 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
     throttles->push_back(throttle);
 }
 
-void ChromeResourceDispatcherHostDelegate::AppendChromeMetricsHeaders(
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+void ChromeResourceDispatcherHostDelegate::AppendChromeSyncGaiaHeader(
     net::URLRequest* request,
-    content::ResourceContext* resource_context,
-    ResourceType::Type resource_type) {
-  // Don't attempt to append headers to requests that have already started.
-  // TODO(stevet): Remove this once we've resolved the request ordering issues
-  // in crbug.com/128048.
-  if (request->is_pending())
-    return;
+    content::ResourceContext* resource_context) {
+  static const char kAllowChromeSignIn[] = "Allow-Chrome-SignIn";
 
-  // Note our criteria for attaching Chrome experiment headers:
-  // 1. We only transmit to *.google.<TLD> domains. NOTE that this use of
-  //    google_util helpers to check this does not guarantee that the URL is
-  //    Google-owned, only that it is of the form *.google.<TLD>. In the future
-  //    we may choose to reinforce this check.
-  // 2. We only transmit for non-Incognito profiles.
-  // 3. For the X-Chrome-UMA-Enabled bit, we only set it if UMA is in fact
-  //    enabled for this install of Chrome.
-  // 4. For the X-Chrome-Variations, we only include non-empty variation IDs.
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
-  if (io_data->is_incognito() ||
-      !google_util::IsGoogleDomainUrl(request->url().spec(),
-                                      google_util::ALLOW_SUBDOMAIN))
-    return;
-
-  if (io_data->GetMetricsEnabledStateOnIOThread())
-    request->SetExtraRequestHeaderByName("X-Chrome-UMA-Enabled", "1", false);
-
-  // Lazily initialize the header, if not already done, before we attempt to
-  // transmit it.
-  InitVariationIDsCacheIfNeeded();
-  if (!variation_ids_header_.empty()) {
-    request->SetExtraRequestHeaderByName("X-Chrome-Variations",
-        variation_ids_header_,
-        false);
+  OneClickSigninHelper::Offer offer =
+      OneClickSigninHelper::CanOfferOnIOThread(request, io_data);
+  switch (offer) {
+    case OneClickSigninHelper::CAN_OFFER:
+      request->SetExtraRequestHeaderByName(kAllowChromeSignIn, "1", false);
+      break;
+    case OneClickSigninHelper::DONT_OFFER:
+      request->RemoveRequestHeaderByName(kAllowChromeSignIn);
+      break;
+    case OneClickSigninHelper::IGNORE_REQUEST:
+      break;
   }
 }
+#endif
 
 bool ChromeResourceDispatcherHostDelegate::ShouldForceDownloadResource(
     const GURL& url, const std::string& mime_type) {
@@ -357,6 +382,14 @@ void ChromeResourceDispatcherHostDelegate::OnResponseStarted(
   AutoLoginPrompter::ShowInfoBarIfPossible(request, info->GetChildID(),
                                            info->GetRouteID());
 
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+  // See if the response contains the Google-Accounts-SignIn header.  If so,
+  // then the user has just finished signing in, and the server is allowing the
+  // browser to suggest connecting the user's profile to the account.
+  OneClickSigninHelper::ShowInfoBarIfPossible(request, info->GetChildID(),
+                                              info->GetRouteID());
+#endif
+
   // Build in additional protection for the chrome web store origin.
   GURL webstore_url(extension_urls::GetWebstoreLaunchURL());
   if (request->url().DomainIs(webstore_url.host().c_str())) {
@@ -371,6 +404,8 @@ void ChromeResourceDispatcherHostDelegate::OnResponseStarted(
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
   if (io_data->resource_prefetch_predictor_observer())
     io_data->resource_prefetch_predictor_observer()->OnResponseStarted(request);
+
+  prerender::URLRequestResponseStarted(request);
 }
 
 void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
@@ -383,6 +418,8 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
 
+  AppendChromeSyncGaiaHeader(request, resource_context);
+
   // See if the response contains the Google-Accounts-SignIn header.  If so,
   // then the user has just finished signing in, and the server is allowing the
   // browser to suggest connecting the user's profile to the account.
@@ -394,65 +431,5 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
   if (io_data->resource_prefetch_predictor_observer()) {
     io_data->resource_prefetch_predictor_observer()->OnRequestRedirected(
         redirect_url, request);
-  }
-}
-
-void ChromeResourceDispatcherHostDelegate::OnFieldTrialGroupFinalized(
-    const std::string& trial_name,
-    const std::string& group_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  chrome_variations::VariationID new_id =
-      experiments_helper::GetGoogleVariationID(trial_name, group_name);
-  if (new_id == chrome_variations::kEmptyID)
-    return;
-  variation_ids_set_.insert(new_id);
-  UpdateVariationIDsHeaderValue();
-}
-
-void ChromeResourceDispatcherHostDelegate::InitVariationIDsCacheIfNeeded() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (variation_ids_cache_initialized_)
-    return;
-
-  // Register for additional cache updates. We do this first to avoid a race
-  // that could cause us to miss registered FieldTrials.
-  base::FieldTrialList::AddObserver(this);
-
-  base::FieldTrial::SelectedGroups initial_groups;
-  base::FieldTrialList::GetFieldTrialSelectedGroups(&initial_groups);
-  for (base::FieldTrial::SelectedGroups::const_iterator it =
-       initial_groups.begin(); it != initial_groups.end(); ++it) {
-    chrome_variations::VariationID id =
-        experiments_helper::GetGoogleVariationID(it->trial, it->group);
-    if (id != chrome_variations::kEmptyID)
-      variation_ids_set_.insert(id);
-  }
-  UpdateVariationIDsHeaderValue();
-
-  variation_ids_cache_initialized_ = true;
-}
-
-void ChromeResourceDispatcherHostDelegate::UpdateVariationIDsHeaderValue() {
-  // The header value is a serialized protobuffer of Variation IDs which we
-  // base64 encode before transmitting as a string.
-  if (variation_ids_set_.empty())
-    return;
-  metrics::ChromeVariations proto;
-  for (std::set<chrome_variations::VariationID>::const_iterator it =
-      variation_ids_set_.begin(); it != variation_ids_set_.end(); ++it)
-    proto.add_variation_id(*it);
-
-  std::string serialized;
-  proto.SerializeToString(&serialized);
-
-  std::string hashed;
-  if (base::Base64Encode(serialized, &hashed)) {
-    // If successful, swap the header value with the new one.
-    // Note that the list of IDs and the header could be temporarily out of sync
-    // if IDs are added as we are recreating the header, but we're OK with those
-    // descrepancies.
-    variation_ids_header_ = hashed;
-  } else {
-    DVLOG(1) << "Failed to base64 encode Variation IDs value: " << serialized;
   }
 }

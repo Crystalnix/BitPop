@@ -16,6 +16,7 @@
 #include "content/shell/shell_resource_context.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/shell_url_request_context_getter.h"
+#include "content/public/common/content_switches.h"
 
 #if defined(OS_WIN)
 #include "base/base_paths_win.h"
@@ -28,7 +29,8 @@
 namespace content {
 
 ShellBrowserContext::ShellBrowserContext(bool off_the_record)
-    : off_the_record_(off_the_record) {
+    : off_the_record_(off_the_record),
+      ignore_certificate_errors_(false) {
   InitWhileIOAllowed();
 }
 
@@ -41,10 +43,12 @@ ShellBrowserContext::~ShellBrowserContext() {
 
 void ShellBrowserContext::InitWhileIOAllowed() {
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kContentBrowserTest) ||
+  if (cmd_line->HasSwitch(switches::kIgnoreCertificateErrors) ||
       cmd_line->HasSwitch(switches::kDumpRenderTree)) {
-    CHECK(testing_path_.CreateUniqueTempDir());
-    path_ = testing_path_.path();
+    ignore_certificate_errors_ = true;
+  }
+  if (cmd_line->HasSwitch(switches::kContentShellDataPath)) {
+    path_ = cmd_line->GetSwitchValuePath(switches::kContentShellDataPath);
     return;
   }
 #if defined(OS_WIN)
@@ -80,13 +84,20 @@ bool ShellBrowserContext::IsOffTheRecord() const {
 }
 
 DownloadManagerDelegate* ShellBrowserContext::GetDownloadManagerDelegate()  {
-  download_manager_delegate_ = new ShellDownloadManagerDelegate();
+  DownloadManager* manager = BrowserContext::GetDownloadManager(this);
+
+  if (!download_manager_delegate_.get()) {
+    download_manager_delegate_ = new ShellDownloadManagerDelegate();
+    download_manager_delegate_->SetDownloadManager(manager);
+  }
+
   return download_manager_delegate_.get();
 }
 
 net::URLRequestContextGetter* ShellBrowserContext::GetRequestContext()  {
   if (!url_request_getter_) {
     url_request_getter_ = new ShellURLRequestContextGetter(
+        ignore_certificate_errors_,
         GetPath(),
         BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO),
         BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::FILE));
@@ -101,8 +112,28 @@ net::URLRequestContextGetter*
 }
 
 net::URLRequestContextGetter*
-    ShellBrowserContext::GetRequestContextForMedia()  {
+    ShellBrowserContext::GetMediaRequestContext()  {
   return GetRequestContext();
+}
+
+net::URLRequestContextGetter*
+    ShellBrowserContext::GetMediaRequestContextForRenderProcess(
+        int renderer_child_id)  {
+  return GetRequestContext();
+}
+
+net::URLRequestContextGetter*
+    ShellBrowserContext::GetMediaRequestContextForStoragePartition(
+        const FilePath& partition_path,
+        bool in_memory) {
+  return GetRequestContext();
+}
+
+net::URLRequestContextGetter*
+    ShellBrowserContext::GetRequestContextForStoragePartition(
+        const FilePath& partition_path,
+        bool in_memory) {
+  return NULL;
 }
 
 ResourceContext* ShellBrowserContext::GetResourceContext()  {
@@ -121,10 +152,6 @@ GeolocationPermissionContext*
 SpeechRecognitionPreferences*
     ShellBrowserContext::GetSpeechRecognitionPreferences() {
   return NULL;
-}
-
-bool ShellBrowserContext::DidLastSessionExitCleanly()  {
-  return true;
 }
 
 quota::SpecialStoragePolicy* ShellBrowserContext::GetSpecialStoragePolicy() {

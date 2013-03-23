@@ -43,12 +43,12 @@ different from the topmost or focused window.
 creates a few tabs or windows from a single HTML file,
 and that the HTML file
 contains a call to
-<a href="tabs.html#method-getSelected">chrome.tabs.getSelected</a>.
+$ref:tabs.query.
 The current window is the window that contains the page that made
 the call, no matter what the topmost window is.
 </p>
 
-<p>In the case of the <a href="background_pages.html">background page</a>,
+<p>In the case of the <a href="event_pages.html">event page</a>,
 the value of the current window falls back to the last active window. Under some
 circumstances, there may be no current window for background pages.
 </p>

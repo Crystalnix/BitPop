@@ -52,11 +52,6 @@ const wchar_t kChromeGuid[] = L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
 const wchar_t kBrowserAppId[] = L"Chrome";
 const wchar_t kCommandExecuteImplUuid[] =
     L"{5C65F4B0-3651-4514-B207-D10CB699B14B}";
-const wchar_t kDelegateExecuteLibUuid[] =
-    L"{4E805ED8-EBA0-4601-9681-12815A56EBFD}";
-const wchar_t kDelegateExecuteLibVersion[] = L"1.0";
-const wchar_t kICommandExecuteImplUuid[] =
-    L"{0BA0D4E9-2259-4963-B9AE-A839F7CB7544}";
 
 // The following strings are the possible outcomes of the toast experiment
 // as recorded in the |client| field.
@@ -65,7 +60,6 @@ const wchar_t kToastExpCancelGroup[] =         L"02";
 const wchar_t kToastExpUninstallGroup[] =      L"04";
 const wchar_t kToastExpTriesOkGroup[] =        L"18";
 const wchar_t kToastExpTriesErrorGroup[] =     L"28";
-const wchar_t kToastExpTriesOkDefaultGroup[] = L"48";
 const wchar_t kToastActiveGroup[] =            L"40";
 const wchar_t kToastUDDirFailure[] =           L"40";
 const wchar_t kToastExpBaseGroup[] =           L"80";
@@ -349,7 +343,7 @@ bool GoogleChromeDistribution::ExtractUninstallMetrics(
     return false;
   }
 
-  const DictionaryValue* uninstall_metrics_dict;
+  const DictionaryValue* uninstall_metrics_dict = NULL;
   if (!root.HasKey(installer::kUninstallMetricsName) ||
       !root.GetDictionary(installer::kUninstallMetricsName,
                           &uninstall_metrics_dict)) {
@@ -543,19 +537,18 @@ string16 GoogleChromeDistribution::GetVersionKey() {
   return key;
 }
 
-bool GoogleChromeDistribution::GetDelegateExecuteHandlerData(
-    string16* handler_class_uuid,
-    string16* type_lib_uuid,
-    string16* type_lib_version,
-    string16* interface_uuid) {
+string16 GoogleChromeDistribution::GetIconFilename() {
+  return installer::kChromeExe;
+}
+
+bool GoogleChromeDistribution::GetCommandExecuteImplClsid(
+    string16* handler_class_uuid) {
   if (handler_class_uuid)
     *handler_class_uuid = kCommandExecuteImplUuid;
-  if (type_lib_uuid)
-    *type_lib_uuid = kDelegateExecuteLibUuid;
-  if (type_lib_version)
-    *type_lib_version = kDelegateExecuteLibVersion;
-  if (interface_uuid)
-    *interface_uuid = kICommandExecuteImplUuid;
+  return true;
+}
+
+bool GoogleChromeDistribution::AppHostIsSupported() {
   return true;
 }
 
@@ -622,12 +615,17 @@ bool GoogleChromeDistribution::GetExperimentDetails(
   // This struct determines which experiment flavors we show for each locale and
   // brand.
   //
-  // The big experiment in Dec 2009 used TGxx and THxx.
-  // The big experiment in Feb 2010 used TKxx and TLxx.
-  // The big experiment in Apr 2010 used TMxx and TNxx.
-  // The big experiment in Oct 2010 used TVxx TWxx TXxx TYxx.
-  // The big experiment in Feb 2011 used SJxx SKxx SLxx SMxx.
-  // Note: the plugin infobar experiment uses PIxx codes.
+  // Plugin infobar experiment:
+  // The experiment in 2011 used PIxx codes.
+  //
+  // Inactive user toast experiment:
+  // The experiment in Dec 2009 used TGxx and THxx.
+  // The experiment in Feb 2010 used TKxx and TLxx.
+  // The experiment in Apr 2010 used TMxx and TNxx.
+  // The experiment in Oct 2010 used TVxx TWxx TXxx TYxx.
+  // The experiment in Feb 2011 used SJxx SKxx SLxx SMxx.
+  // The experiment in Mar 2012 used ZAxx ZBxx ZCxx.
+  // The experiment in Jan 2013 uses DAxx.
   using namespace attrition_experiments;
 
   static const struct UserExperimentDetails {
@@ -640,21 +638,21 @@ bool GoogleChromeDistribution::GetExperimentDetails(
   } kExperiments[] = {
     // The first match from top to bottom is used so this list should be ordered
     // most-specific rule first.
-    { L"*", L"CHMA",  // All locales, CHMA brand.
-      25,             // 25 percent control group.
-      L"ZA",          // Experiment is ZAxx, ZBxx, ZCxx, ZDxx etc.
-      // Three flavors.
-      { { IDS_TRY_TOAST_HEADING3, kDontBugMeAsButton | kUninstall | kWhyLink },
-        { IDS_TRY_TOAST_HEADING3, 0 },
-        { IDS_TRY_TOAST_HEADING3, kMakeDefault },
-        { 0, 0 },
-      }
-    },
     { L"*", L"GGRV",  // All locales, GGRV is enterprise.
       0,              // 0 percent control group.
       L"EA",          // Experiment is EAxx, EBxx, etc.
       // No flavors means no experiment.
       { { 0, 0 },
+        { 0, 0 },
+        { 0, 0 },
+        { 0, 0 }
+      }
+    },
+    { L"*", L"*",     // All locales, all brands.
+      5,              // 5 percent control group.
+      L"DA",          // Experiment is DAxx.
+      // One single flavor.
+      { { IDS_TRY_TOAST_HEADING3, kMakeDefault },
         { 0, 0 },
         { 0, 0 },
         { 0, 0 }
@@ -775,7 +773,7 @@ void GoogleChromeDistribution::LaunchUserExperiment(
         dir_age_hours = this_age;
     }
 
-    const bool experiment_enabled = true;
+    const bool experiment_enabled = false;
     const int kThirtyDays = 30 * 24;
 
     if (!experiment_enabled) {
@@ -855,23 +853,11 @@ void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
     default:
       outcome = kToastExpTriesErrorGroup;
   };
-
-  if (outcome == kToastExpTriesOkGroup) {
-    // User tried chrome, but if it had the default group button it belongs
-    // to a different outcome group.
-    UserExperiment experiment;
-    if (GetExperimentDetails(&experiment, flavor)) {
-      outcome = experiment.flags & kMakeDefault ? kToastExpTriesOkDefaultGroup :
-                                                  kToastExpTriesOkGroup;
-    }
-  }
-
   // Write to the |client| key for the last time.
   SetClient(experiment_group + outcome, true);
 
   if (outcome != kToastExpUninstallGroup)
     return;
-
   // The user wants to uninstall. This is a best effort operation. Note that
   // we waited for chrome to exit so the uninstall would not detect chrome
   // running.
@@ -882,4 +868,5 @@ void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
                                                      GetType()));
   base::LaunchProcess(cmd, base::LaunchOptions(), NULL);
 }
+
 #endif

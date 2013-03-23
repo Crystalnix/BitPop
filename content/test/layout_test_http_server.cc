@@ -16,6 +16,7 @@
 #include "base/win/windows_version.h"
 #endif
 
+namespace content {
 namespace {
 
 bool PrepareCommandLine(CommandLine* cmd_line) {
@@ -23,10 +24,8 @@ bool PrepareCommandLine(CommandLine* cmd_line) {
   if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_path))
     return false;
 
-  FilePath python_runtime;
-  if (!GetPythonRunTime(&python_runtime))
+  if (!GetPythonCommand(cmd_line))
     return false;
-  cmd_line->SetProgram(python_runtime);
 
   FilePath script_path(src_path);
   script_path = script_path.AppendASCII("third_party");
@@ -69,7 +68,7 @@ bool LayoutTestHttpServer::Start() {
   cmd_line.AppendArg("--port=" + base::IntToString(port_));
 
   FilePath layout_tests_dir;
-  if (!PathService::Get(content::DIR_LAYOUT_TESTS, &layout_tests_dir))
+  if (!PathService::Get(DIR_LAYOUT_TESTS, &layout_tests_dir))
     return false;
   cmd_line.AppendArgNative(FILE_PATH_LITERAL("--layout_tests_dir=") +
                            layout_tests_dir.value());
@@ -132,3 +131,5 @@ bool LayoutTestHttpServer::Stop() {
 
   return stopped;
 }
+
+}  // namespace content

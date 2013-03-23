@@ -20,6 +20,7 @@
 #include "content/common/content_export.h"
 #include "content/common/message_router.h"
 #include "content/public/common/gpu_info.h"
+#include "content/public/common/gpu_memory_stats.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 
@@ -36,12 +37,12 @@ namespace IPC {
 class Message;
 }
 
+namespace content {
 void RouteToGpuProcessHostUIShimTask(int host_id, const IPC::Message& msg);
 
-class GpuProcessHostUIShim
-    : public IPC::Listener,
-      public IPC::Sender,
-      public base::NonThreadSafe {
+class GpuProcessHostUIShim : public IPC::Listener,
+                             public IPC::Sender,
+                             public base::NonThreadSafe {
  public:
   // Create a GpuProcessHostUIShim with the given ID.  The object can be found
   // using FromID with the same id.
@@ -89,7 +90,7 @@ class GpuProcessHostUIShim
                     gfx::Size size);
 #endif
 
-  void OnGraphicsInfoCollected(const content::GPUInfo& gpu_info);
+  void OnGraphicsInfoCollected(const GPUInfo& gpu_info);
 
   void OnAcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
@@ -100,9 +101,16 @@ class GpuProcessHostUIShim
       const GpuHostMsg_AcceleratedSurfaceNew_Params& params);
   void OnAcceleratedSurfaceRelease(
       const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
+  void OnVideoMemoryUsageStatsReceived(
+      const GPUVideoMemoryUsageStats& video_memory_usage_stats);
+  void OnUpdateVSyncParameters(int surface_id,
+                               base::TimeTicks timebase,
+                               base::TimeDelta interval);
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
   int host_id_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_GPU_GPU_PROCESS_HOST_UI_SHIM_H_

@@ -7,6 +7,7 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "ui/base/x/x11_util.h"
@@ -27,23 +28,6 @@ int GetXInputOpCode() {
     return -1;
   }
   return xi_opcode;
-}
-
-// Starts listening to the XI_HierarchyChanged, XI_KeyPress, and XI_KeyRelease
-// events.
-void SelectXInputEvents() {
-  XIEventMask evmask;
-  unsigned char mask[XIMaskLen(XI_LASTEVENT)] = {};
-  XISetMask(mask, XI_HierarchyChanged);
-  XISetMask(mask, XI_KeyPress);
-  XISetMask(mask, XI_KeyRelease);
-
-  evmask.deviceid = XIAllDevices;
-  evmask.mask_len = sizeof(mask);
-  evmask.mask = mask;
-
-  Display* display = ui::GetXDisplay();
-  XISelectEvents(display, ui::GetX11RootWindow(), &evmask, 1);
 }
 
 // Checks the |event| and asynchronously sets the XKB layout when necessary.
@@ -71,7 +55,7 @@ void HandleHierarchyChangedEvent(
 
   if (update_keyboard_status) {
     chromeos::input_method::InputMethodManager* input_method_manager =
-        chromeos::input_method::InputMethodManager::GetInstance();
+        chromeos::input_method::GetInputMethodManager();
     chromeos::input_method::XKeyboard* xkeyboard =
         input_method_manager->GetXKeyboard();
     xkeyboard->ReapplyCurrentModifierLockStatus();
@@ -90,7 +74,6 @@ XInputHierarchyChangedEventListener::GetInstance() {
 XInputHierarchyChangedEventListener::XInputHierarchyChangedEventListener()
     : stopped_(false),
       xiopcode_(GetXInputOpCode()) {
-  SelectXInputEvents();
   Init();
 }
 

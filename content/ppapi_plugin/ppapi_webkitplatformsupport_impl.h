@@ -9,8 +9,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/common/webkitplatformsupport_impl.h"
 
-class PpapiWebKitPlatformSupportImpl :
-    public content::WebKitPlatformSupportImpl {
+namespace content {
+
+class PpapiWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl {
  public:
   PpapiWebKitPlatformSupportImpl();
   virtual ~PpapiWebKitPlatformSupportImpl();
@@ -44,17 +45,8 @@ class PpapiWebKitPlatformSupportImpl :
       const WebKit::WebString& oldValue, const WebKit::WebString& newValue,
       const WebKit::WebString& origin, const WebKit::WebURL& url,
       bool isLocalStorage);
-  virtual WebKit::WebSharedWorkerRepository* sharedWorkerRepository();
   virtual int databaseDeleteFile(const WebKit::WebString& vfs_file_name,
                                  bool sync_dir);
-  virtual void createIDBKeysFromSerializedValuesAndKeyPath(
-      const WebKit::WebVector<WebKit::WebSerializedScriptValue>& values,
-      const WebKit::WebIDBKeyPath& keyPath,
-      WebKit::WebVector<WebKit::WebIDBKey>& keys);
-  virtual WebKit::WebSerializedScriptValue injectIDBKeyIntoSerializedValue(
-      const WebKit::WebIDBKey& key,
-      const WebKit::WebSerializedScriptValue& value,
-      const WebKit::WebIDBKeyPath& keyPath);
 
  private:
   class SandboxSupport;
@@ -62,5 +54,7 @@ class PpapiWebKitPlatformSupportImpl :
 
   DISALLOW_COPY_AND_ASSIGN(PpapiWebKitPlatformSupportImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_PPAPI_PLUGIN_PPAPI_WEBKITPLATFORMSUPPORT_IMPL_H_

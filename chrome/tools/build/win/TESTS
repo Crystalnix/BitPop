@@ -1,6 +1,7 @@
 reliability_tests.exe
 test_shell.exe
 automated_ui_tests.exe
+interactive_ui_tests.exe
 icudt38.dll
 icudt42.dll
 icudt46.dll
@@ -10,3 +11,4 @@ pyautolib.py
 _pyautolib.pyd
 fonts\*
 chromedriver.exe
+chromedriver2.dll

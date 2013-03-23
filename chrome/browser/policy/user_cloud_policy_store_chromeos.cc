@@ -11,23 +11,27 @@
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/policy/proto/cloud_policy.pb.h"
 #include "chrome/browser/policy/proto/device_management_local.pb.h"
 #include "chrome/browser/policy/user_policy_disk_cache.h"
 #include "chrome/browser/policy/user_policy_token_cache.h"
-#include "chrome/common/net/gaia/gaia_auth_util.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 
 namespace em = enterprise_management;
 
 namespace policy {
 
-// Decodes a CloudPolicySettings object into a policy map. The implementation is
-// generated code in policy/cloud_policy_generated.cc.
-void DecodePolicy(const em::CloudPolicySettings& policy,
-                  PolicyMap* policies);
+namespace {
+// Subdirectory in the user's profile for storing user policies.
+const FilePath::CharType kPolicyDir[] = FILE_PATH_LITERAL("Device Management");
+// File in the above directory for stroing user policy dmtokens.
+const FilePath::CharType kTokenCacheFile[] = FILE_PATH_LITERAL("Token");
+// File in the above directory for storing user policy data.
+const FilePath::CharType kPolicyCacheFile[] = FILE_PATH_LITERAL("Policy");
+}  // namespace
+
 
 // Helper class for loading legacy policy caches.
 class LegacyPolicyCacheLoader : public UserPolicyTokenCache::Delegate,
@@ -143,9 +147,11 @@ CloudPolicyStore::Status LegacyPolicyCacheLoader::TranslateLoadResult(
 
 UserCloudPolicyStoreChromeOS::UserCloudPolicyStoreChromeOS(
     chromeos::SessionManagerClient* session_manager_client,
+    const std::string& username,
     const FilePath& legacy_token_cache_file,
     const FilePath& legacy_policy_cache_file)
     : session_manager_client_(session_manager_client),
+      username_(username),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       legacy_cache_dir_(legacy_token_cache_file.DirName()),
       legacy_loader_(new LegacyPolicyCacheLoader(legacy_token_cache_file,
@@ -158,10 +164,10 @@ void UserCloudPolicyStoreChromeOS::Store(
     const em::PolicyFetchResponse& policy) {
   // Cancel all pending requests.
   weak_factory_.InvalidateWeakPtrs();
-  Validate(scoped_ptr<em::PolicyFetchResponse>(
-               new em::PolicyFetchResponse(policy)),
-           base::Bind(&UserCloudPolicyStoreChromeOS::OnPolicyToStoreValidated,
-                      weak_factory_.GetWeakPtr()));
+  Validate(
+      scoped_ptr<em::PolicyFetchResponse>(new em::PolicyFetchResponse(policy)),
+      base::Bind(&UserCloudPolicyStoreChromeOS::OnPolicyToStoreValidated,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void UserCloudPolicyStoreChromeOS::Load() {
@@ -262,33 +268,21 @@ void UserCloudPolicyStoreChromeOS::OnPolicyStored(bool success) {
   }
 }
 
-void UserCloudPolicyStoreChromeOS::InstallPolicy(
-    scoped_ptr<em::PolicyData> policy_data,
-    scoped_ptr<em::CloudPolicySettings> payload) {
-  // Decode the payload.
-  policy_map_.Clear();
-  DecodePolicy(*payload, &policy_map_);
-  policy_ = policy_data.Pass();
-}
-
 void UserCloudPolicyStoreChromeOS::Validate(
     scoped_ptr<em::PolicyFetchResponse> policy,
     const UserCloudPolicyValidator::CompletionCallback& callback) {
   // Configure the validator.
-  UserCloudPolicyValidator* validator =
-      UserCloudPolicyValidator::Create(policy.Pass(), callback);
-  validator->ValidateUsername(
-      chromeos::UserManager::Get()->GetLoggedInUser().email());
-  validator->ValidatePolicyType(dm_protocol::kChromeUserPolicyType);
-  validator->ValidateAgainstCurrentPolicy(policy_.get());
-  validator->ValidatePayload();
+  scoped_ptr<UserCloudPolicyValidator> validator =
+      CreateValidator(policy.Pass());
+  validator->ValidateUsername(username_);
 
   // TODO(mnissler): Do a signature check here as well. The key is stored by
   // session_manager in the root-owned cryptohome area, which is currently
   // inaccessible to Chrome though.
 
-  // Start validation.
-  validator->StartValidation();
+  // Start validation. The Validator will free itself once validation is
+  // complete.
+  validator.release()->StartValidation(callback);
 }
 
 void UserCloudPolicyStoreChromeOS::OnLegacyLoadFinished(

@@ -8,31 +8,31 @@
 #include "base/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/accessibility/accessibility_extension_api_constants.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/error_utils.h"
 
 namespace keys = extension_accessibility_api_constants;
 
 // Returns the AccessibilityControlInfo serialized into a JSON string,
 // consisting of an array of a single object of type AccessibilityObject,
 // as defined in the accessibility extension api's json schema.
-std::string ControlInfoToJsonString(const AccessibilityEventInfo* info) {
-  ListValue args;
+scoped_ptr<ListValue> ControlInfoToEventArguments(
+    const AccessibilityEventInfo* info) {
   DictionaryValue* dict = new DictionaryValue();
   info->SerializeToDict(dict);
-  args.Append(dict);
-  std::string json_args;
-  base::JSONWriter::Write(&args, &json_args);
-  return json_args;
+
+  scoped_ptr<ListValue> args(new ListValue());
+  args->Append(dict);
+  return args.Pass();
 }
 
 ExtensionAccessibilityEventRouter*
@@ -116,55 +116,58 @@ bool ExtensionAccessibilityEventRouter::IsAccessibilityEnabled() const {
 
 void ExtensionAccessibilityEventRouter::OnWindowOpened(
     const AccessibilityWindowInfo* info) {
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnWindowOpened, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnWindowOpened, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::OnWindowClosed(
     const AccessibilityWindowInfo* info) {
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnWindowClosed, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnWindowClosed, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::OnControlFocused(
     const AccessibilityControlInfo* info) {
   last_focused_control_dict_.Clear();
   info->SerializeToDict(&last_focused_control_dict_);
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnControlFocused, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnControlFocused, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::OnControlAction(
     const AccessibilityControlInfo* info) {
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnControlAction, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnControlAction, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::OnTextChanged(
     const AccessibilityControlInfo* info) {
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnTextChanged, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnTextChanged, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::OnMenuOpened(
     const AccessibilityMenuInfo* info) {
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnMenuOpened, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnMenuOpened, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::OnMenuClosed(
     const AccessibilityMenuInfo* info) {
-  std::string json_args = ControlInfoToJsonString(info);
-  DispatchEvent(info->profile(), keys::kOnMenuClosed, json_args);
+  scoped_ptr<ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(), keys::kOnMenuClosed, args.Pass());
 }
 
 void ExtensionAccessibilityEventRouter::DispatchEvent(
     Profile* profile,
     const char* event_name,
-    const std::string& json_args) {
-  if (enabled_ && profile && profile->GetExtensionEventRouter()) {
-    profile->GetExtensionEventRouter()->DispatchEventToRenderers(
-        event_name, json_args, NULL, GURL(), extensions::EventFilteringInfo());
+    scoped_ptr<base::ListValue> event_args) {
+  if (enabled_ && profile &&
+      extensions::ExtensionSystem::Get(profile)->event_router()) {
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        event_name, event_args.Pass()));
+    extensions::ExtensionSystem::Get(profile)->event_router()->
+        BroadcastEvent(event.Pass());
   }
 }
 
@@ -197,11 +200,11 @@ bool GetAlertsForTabFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &tab_id));
 
   TabStripModel* tab_strip = NULL;
-  TabContents* contents = NULL;
+  content::WebContents* contents = NULL;
   int tab_index = -1;
   if (!ExtensionTabUtil::GetTabById(tab_id, profile(), include_incognito(),
                                     NULL, &tab_strip, &contents, &tab_index)) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id));
     return false;
@@ -209,8 +212,9 @@ bool GetAlertsForTabFunction::RunImpl() {
 
   ListValue* alerts_value = new ListValue;
 
-  InfoBarTabHelper* infobar_helper = contents->infobar_tab_helper();
-  for (size_t i = 0; i < infobar_helper->infobar_count(); ++i) {
+  InfoBarTabHelper* infobar_helper =
+      InfoBarTabHelper::FromWebContents(contents);
+  for (size_t i = 0; i < infobar_helper->GetInfoBarCount(); ++i) {
     // TODO(hashimoto): Make other kind of alerts available.  crosbug.com/24281
     InfoBarDelegate* infobar_delegate = infobar_helper->GetInfoBarDelegateAt(i);
     ConfirmInfoBarDelegate* confirm_infobar_delegate =

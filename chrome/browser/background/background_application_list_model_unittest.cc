@@ -17,9 +17,11 @@
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_registrar.h"
@@ -31,6 +33,7 @@
 // operations to produce a repeatable sequence.
 #define RANDOM_SEED (0x33F7A7A7)
 
+using extensions::APIPermission;
 using extensions::Extension;
 
 // For ExtensionService interface when it requires a path that is not used.
@@ -97,7 +100,7 @@ void AddBackgroundPermission(ExtensionService* service,
     return;
   }
 
-  static scoped_refptr<Extension> temporary =
+  scoped_refptr<Extension> temporary =
       CreateExtension(GenerateUniqueExtensionName(), true);
   scoped_refptr<const extensions::PermissionSet> permissions =
       temporary->GetActivePermissions();
@@ -116,11 +119,19 @@ void RemoveBackgroundPermission(ExtensionService* service,
 }
 }  // namespace
 
+// Crashes on Mac tryslaves.
+// http://crbug.com/165458
+#if defined(OS_MACOSX)
+#define MAYBE_ExplicitTest DISABLED_ExplicitTest
+#else
+#define MAYBE_ExplicitTest ExplicitTest
+#endif
 // With minimal test logic, verifies behavior over an explicit set of
 // extensions, of which some are Background Apps and others are not.
-TEST_F(BackgroundApplicationListModelTest, ExplicitTest) {
+TEST_F(BackgroundApplicationListModelTest, MAYBE_ExplicitTest) {
   InitializeAndLoadEmptyExtensionService();
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_.get())->
+      extension_service();
   ASSERT_TRUE(service);
   ASSERT_TRUE(service->is_ready());
   ASSERT_TRUE(service->extensions());
@@ -186,7 +197,8 @@ TEST_F(BackgroundApplicationListModelTest, ExplicitTest) {
 // With minimal test logic, verifies behavior with dynamic permissions.
 TEST_F(BackgroundApplicationListModelTest, AddRemovePermissionsTest) {
   InitializeAndLoadEmptyExtensionService();
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_.get())->
+      extension_service();
   ASSERT_TRUE(service);
   ASSERT_TRUE(service->is_ready());
   ASSERT_TRUE(service->extensions());
@@ -196,7 +208,9 @@ TEST_F(BackgroundApplicationListModelTest, AddRemovePermissionsTest) {
   ASSERT_EQ(0U, model->size());
 
   scoped_refptr<Extension> ext = CreateExtension("extension", false);
+  ASSERT_FALSE(ext->HasAPIPermission(APIPermission::kBackground));
   scoped_refptr<Extension> bgapp = CreateExtension("application", true);
+  ASSERT_TRUE(bgapp->HasAPIPermission(APIPermission::kBackground));
   ASSERT_TRUE(service->extensions() != NULL);
   ASSERT_EQ(0U, service->extensions()->size());
   ASSERT_EQ(0U, model->size());
@@ -213,15 +227,19 @@ TEST_F(BackgroundApplicationListModelTest, AddRemovePermissionsTest) {
 
   // Change permissions back and forth
   AddBackgroundPermission(service, ext.get());
+  ASSERT_TRUE(ext->HasAPIPermission(APIPermission::kBackground));
   ASSERT_EQ(2U, service->extensions()->size());
   ASSERT_EQ(2U, model->size());
   RemoveBackgroundPermission(service, bgapp.get());
+  ASSERT_FALSE(bgapp->HasAPIPermission(APIPermission::kBackground));
   ASSERT_EQ(2U, service->extensions()->size());
   ASSERT_EQ(1U, model->size());
   RemoveBackgroundPermission(service, ext.get());
+  ASSERT_FALSE(ext->HasAPIPermission(APIPermission::kBackground));
   ASSERT_EQ(2U, service->extensions()->size());
   ASSERT_EQ(0U, model->size());
   AddBackgroundPermission(service, bgapp.get());
+  ASSERT_TRUE(bgapp->HasAPIPermission(APIPermission::kBackground));
   ASSERT_EQ(2U, service->extensions()->size());
   ASSERT_EQ(1U, model->size());
 }
@@ -329,7 +347,8 @@ void TogglePermission(ExtensionService* service,
 // removing extensions, of which some are Background Apps and others are not.
 TEST_F(BackgroundApplicationListModelTest, RandomTest) {
   InitializeAndLoadEmptyExtensionService();
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_.get())->
+      extension_service();
   ASSERT_TRUE(service);
   ASSERT_TRUE(service->is_ready());
   ASSERT_TRUE(service->extensions());

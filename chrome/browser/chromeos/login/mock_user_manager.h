@@ -9,6 +9,8 @@
 
 #include "base/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/chromeos/login/mock_user_image_manager.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_image.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -20,11 +22,14 @@ class MockUserManager : public UserManager {
   MockUserManager();
   virtual ~MockUserManager();
 
+  MOCK_METHOD0(Shutdown, void(void));
   MOCK_CONST_METHOD0(GetUsers, const UserList&(void));
   MOCK_METHOD2(UserLoggedIn, void(const std::string&, bool));
-  MOCK_METHOD0(DemoUserLoggedIn, void(void));
+  MOCK_METHOD0(RetailModeUserLoggedIn, void(void));
   MOCK_METHOD0(GuestUserLoggedIn, void(void));
-  MOCK_METHOD1(EphemeralUserLoggedIn, void(const std::string&));
+  MOCK_METHOD1(PublicAccountUserLoggedIn, void(User*));
+  MOCK_METHOD2(RegularUserLoggedIn, void(const std::string&, bool));
+  MOCK_METHOD1(RegularUserLoggedInAsEphemeral, void(const std::string&));
   MOCK_METHOD0(SessionStarted, void(void));
   MOCK_METHOD2(RemoveUser, void(const std::string&, RemoveUserDelegate*));
   MOCK_METHOD1(RemoveUserFromList, void(const std::string&));
@@ -37,42 +42,40 @@ class MockUserManager : public UserManager {
   MOCK_CONST_METHOD1(GetUserDisplayName, string16(const std::string&));
   MOCK_METHOD2(SaveUserDisplayEmail, void(const std::string&,
                                           const std::string&));
-  MOCK_METHOD2(SaveLoggedInUserWallpaperProperties, void(User::WallpaperType,
-                                                         int));
   MOCK_CONST_METHOD1(GetUserDisplayEmail, std::string(const std::string&));
-  MOCK_METHOD2(SaveUserDefaultImageIndex, void(const std::string&, int));
-  MOCK_METHOD2(SaveUserImage, void(const std::string&, const UserImage&));
-  MOCK_METHOD1(SetLoggedInUserCustomWallpaperLayout,void(
-      ash::WallpaperLayout));
-  MOCK_METHOD2(SaveUserImageFromFile, void(const std::string&,
-                                           const FilePath&));
-  MOCK_METHOD1(SaveUserImageFromProfileImage, void(const std::string&));
-  MOCK_METHOD1(DownloadProfileImage, void(const std::string&));
   MOCK_CONST_METHOD0(IsCurrentUserOwner, bool(void));
   MOCK_CONST_METHOD0(IsCurrentUserNew, bool(void));
-  MOCK_CONST_METHOD0(IsCurrentUserEphemeral, bool(void));
+  MOCK_CONST_METHOD0(IsCurrentUserNonCryptohomeDataEphemeral, bool(void));
+  MOCK_CONST_METHOD0(CanCurrentUserLock, bool(void));
   MOCK_CONST_METHOD0(IsUserLoggedIn, bool(void));
+  MOCK_CONST_METHOD0(IsLoggedInAsRegularUser, bool(void));
   MOCK_CONST_METHOD0(IsLoggedInAsDemoUser, bool(void));
+  MOCK_CONST_METHOD0(IsLoggedInAsPublicAccount, bool(void));
   MOCK_CONST_METHOD0(IsLoggedInAsGuest, bool(void));
   MOCK_CONST_METHOD0(IsLoggedInAsStub, bool(void));
   MOCK_CONST_METHOD0(IsSessionStarted, bool(void));
+  MOCK_CONST_METHOD0(HasBrowserRestarted, bool(void));
+  MOCK_CONST_METHOD1(IsUserNonCryptohomeDataEphemeral,
+                     bool(const std::string&));
   MOCK_METHOD1(AddObserver, void(UserManager::Observer*));
   MOCK_METHOD1(RemoveObserver, void(UserManager::Observer*));
   MOCK_METHOD0(NotifyLocalStateChanged, void(void));
-  MOCK_CONST_METHOD0(DownloadedProfileImage, const SkBitmap& (void));
 
   // You can't mock this function easily because nobody can create User objects
   // but the UserManagerImpl and us.
-  virtual const User& GetLoggedInUser() const OVERRIDE;
+  virtual const User* GetLoggedInUser() const OVERRIDE;
 
   // You can't mock this function easily because nobody can create User objects
   // but the UserManagerImpl and us.
-  virtual User& GetLoggedInUser() OVERRIDE;
+  virtual User* GetLoggedInUser() OVERRIDE;
+
+  virtual UserImageManager* GetUserImageManager() OVERRIDE;
 
   // Sets a new User instance.
   void SetLoggedInUser(const std::string& email);
 
   User* user_;
+  scoped_ptr<MockUserImageManager> user_image_manager_;
 };
 
 // Class that provides easy life-cycle management for mocking the UserManager

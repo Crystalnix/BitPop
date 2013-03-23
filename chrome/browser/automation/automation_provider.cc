@@ -56,7 +56,6 @@
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/login/login_prompt.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
@@ -295,16 +294,16 @@ void AutomationProvider::DisableInitialLoadObservers() {
 int AutomationProvider::GetIndexForNavigationController(
     const NavigationController* controller, const Browser* parent) const {
   DCHECK(parent);
-  return chrome::GetIndexOfTab(parent, controller->GetWebContents());
+  return parent->tab_strip_model()->GetIndexOfWebContents(
+      controller->GetWebContents());
 }
 
 // TODO(phajdan.jr): move to TestingAutomationProvider.
 DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
-    const DownloadItem* download) {
+    const DownloadItem* download, bool incognito) {
   std::map<DownloadItem::DownloadState, std::string> state_to_string;
   state_to_string[DownloadItem::IN_PROGRESS] = std::string("IN_PROGRESS");
   state_to_string[DownloadItem::CANCELLED] = std::string("CANCELLED");
-  state_to_string[DownloadItem::REMOVING] = std::string("REMOVING");
   state_to_string[DownloadItem::INTERRUPTED] = std::string("INTERRUPTED");
   state_to_string[DownloadItem::COMPLETE] = std::string("COMPLETE");
 
@@ -326,7 +325,7 @@ DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
   dl_item_value->SetBoolean("open_when_complete",
                             download->GetOpenWhenComplete());
   dl_item_value->SetBoolean("is_temporary", download->IsTemporary());
-  dl_item_value->SetBoolean("is_otr", download->IsOtr());  // incognito
+  dl_item_value->SetBoolean("is_otr", incognito);
   dl_item_value->SetString("state", state_to_string[download->GetState()]);
   dl_item_value->SetString("safety_state",
                            safety_state_to_string[download->GetSafetyState()]);
@@ -472,7 +471,7 @@ Browser* AutomationProvider::FindAndActivateTab(
   content::WebContentsDelegate* d = controller->GetWebContents()->GetDelegate();
   if (d)
     d->ActivateContents(controller->GetWebContents());
-  return browser::FindBrowserWithWebContents(controller->GetWebContents());
+  return chrome::FindBrowserWithWebContents(controller->GetWebContents());
 }
 
 void AutomationProvider::HandleFindRequest(
@@ -514,9 +513,9 @@ void AutomationProvider::SendFindRequest(
   if (!with_json) {
     find_in_page_observer_.reset(observer);
   }
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
-  if (tab_contents)
-    tab_contents->find_tab_helper()->set_current_find_request_id(request_id);
+  FindTabHelper* find_tab_helper = FindTabHelper::FromWebContents(web_contents);
+  if (find_tab_helper)
+    find_tab_helper->set_current_find_request_id(request_id);
 
   WebFindOptions options;
   options.forward = forward;
@@ -675,9 +674,7 @@ void AutomationProvider::OnSetPageFontSize(int tab_handle,
 
 void AutomationProvider::RemoveBrowsingData(int remove_mask) {
   BrowsingDataRemover* remover;
-  remover = new BrowsingDataRemover(profile(),
-      BrowsingDataRemover::EVERYTHING,  // All time periods.
-      base::Time());
+  remover = BrowsingDataRemover::CreateForUnboundedRange(profile());
   remover->Remove(remove_mask, BrowsingDataHelper::UNPROTECTED_WEB);
   // BrowsingDataRemover deletes itself.
 }

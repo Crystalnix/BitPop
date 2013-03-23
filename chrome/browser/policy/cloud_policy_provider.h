@@ -21,27 +21,26 @@ class BrowserPolicyConnector;
 class CloudPolicyProvider : public ConfigurationPolicyProvider,
                             public CloudPolicyCacheBase::Observer {
  public:
-  CloudPolicyProvider(BrowserPolicyConnector* browser_policy_connector,
-                      PolicyLevel level);
+  explicit CloudPolicyProvider(BrowserPolicyConnector* connector);
   virtual ~CloudPolicyProvider();
 
   // Sets the user policy cache. This must be invoked only once, and |cache|
-  // must not be NULL.
+  // must not be NULL. |cache| must be valid until Shutdown() has been called.
   void SetUserPolicyCache(CloudPolicyCacheBase* cache);
 
 #if defined(OS_CHROMEOS)
   // Sets the device policy cache. This must be invoked only once, and |cache|
-  // must not be NULL.
+  // must not be NULL. |cache| must be valid until Shutdown() has been called.
   void SetDevicePolicyCache(CloudPolicyCacheBase* cache);
 #endif
 
   // ConfigurationPolicyProvider implementation.
+  virtual void Shutdown() OVERRIDE;
   virtual bool IsInitializationComplete() const OVERRIDE;
   virtual void RefreshPolicies() OVERRIDE;
 
   // CloudPolicyCacheBase::Observer implementation.
   virtual void OnCacheUpdate(CloudPolicyCacheBase* cache) OVERRIDE;
-  virtual void OnCacheGoingAway(CloudPolicyCacheBase* cache) OVERRIDE;
 
  private:
   // Indices of the known caches in |caches_|.
@@ -63,9 +62,6 @@ class CloudPolicyProvider : public ConfigurationPolicyProvider,
 
   // Weak pointer to the connector. Guaranteed to outlive |this|.
   BrowserPolicyConnector* browser_policy_connector_;
-
-  // The policy level published by this provider.
-  PolicyLevel level_;
 
   // Whether all caches are present and fully initialized.
   bool initialization_complete_;

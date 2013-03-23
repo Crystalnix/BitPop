@@ -10,13 +10,17 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_test_util.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class AutocompleteResultTest : public testing::Test  {
  public:
   struct TestData {
     // Used to build a url for the AutocompleteMatch. The URL becomes
-    // 'http://' + |url_id|.
+    // "http://" + ('a' + |url_id|) (e.g. an ID of 2 yields "http://b").
     int url_id;
 
     // ID of the provider.
@@ -27,6 +31,19 @@ class AutocompleteResultTest : public testing::Test  {
   };
 
   AutocompleteResultTest() {}
+
+  virtual void SetUp() OVERRIDE {
+#if defined(OS_ANDROID)
+    TemplateURLPrepopulateData::InitCountryCode(
+        std::string() /* unknown country code */);
+#endif
+    test_util_.SetUp();
+    test_util_.VerifyLoad();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    test_util_.TearDown();
+  }
 
   // Configures |match| from |data|.
   static void PopulateAutocompleteMatch(const TestData& data,
@@ -47,6 +64,9 @@ class AutocompleteResultTest : public testing::Test  {
   void RunCopyOldMatchesTest(const TestData* last, size_t last_size,
                              const TestData* current, size_t current_size,
                              const TestData* expected, size_t expected_size);
+
+ protected:
+  TemplateURLServiceTestUtil test_util_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AutocompleteResultTest);
@@ -95,21 +115,21 @@ void AutocompleteResultTest::RunCopyOldMatchesTest(
     const TestData* last, size_t last_size,
     const TestData* current, size_t current_size,
     const TestData* expected, size_t expected_size) {
-  AutocompleteInput input(ASCIIToUTF16("a"), string16(), false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(ASCIIToUTF16("a"), string16::npos, string16(), false,
+                          false, false, AutocompleteInput::ALL_MATCHES);
 
   ACMatches last_matches;
   PopulateAutocompleteMatches(last, last_size, &last_matches);
   AutocompleteResult last_result;
   last_result.AppendMatches(last_matches);
-  last_result.SortAndCull(input);
+  last_result.SortAndCull(input, test_util_.profile());
 
   ACMatches current_matches;
   PopulateAutocompleteMatches(current, current_size, &current_matches);
   AutocompleteResult current_result;
   current_result.AppendMatches(current_matches);
-  current_result.SortAndCull(input);
-  current_result.CopyOldMatches(input, last_result);
+  current_result.SortAndCull(input, test_util_.profile());
+  current_result.CopyOldMatches(input, last_result, test_util_.profile());
 
   AssertResultMatches(current_result, expected, expected_size);
 }
@@ -127,11 +147,11 @@ TEST_F(AutocompleteResultTest, Swap) {
   // Swap with a single match.
   ACMatches matches;
   AutocompleteMatch match;
-  AutocompleteInput input(ASCIIToUTF16("a"), string16(), false, false, false,
-                          AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(ASCIIToUTF16("a"), string16::npos, string16(), false,
+                          false, false, AutocompleteInput::ALL_MATCHES);
   matches.push_back(match);
   r1.AppendMatches(matches);
-  r1.SortAndCull(input);
+  r1.SortAndCull(input, test_util_.profile());
   EXPECT_EQ(r1.begin(), r1.default_match());
   EXPECT_EQ("http://a/", r1.alternate_nav_url().spec());
   r1.Swap(&r2);
@@ -187,4 +207,84 @@ TEST_F(AutocompleteResultTest, CopyOldMatches2) {
       RunCopyOldMatchesTest(last, ARRAYSIZE_UNSAFE(last),
                             current, ARRAYSIZE_UNSAFE(current),
                             result, ARRAYSIZE_UNSAFE(result)));
+}
+
+// Tests that matches with empty destination URLs aren't treated as duplicates
+// and culled.
+TEST_F(AutocompleteResultTest, SortAndCullEmptyDestinationURLs) {
+  TestData data[] = {
+    { 1, 0, 500 },
+    { 0, 0, 1100 },
+    { 1, 0, 1000 },
+    { 0, 0, 1300 },
+    { 0, 0, 1200 },
+  };
+
+  ACMatches matches;
+  PopulateAutocompleteMatches(data, arraysize(data), &matches);
+  matches[1].destination_url = GURL();
+  matches[3].destination_url = GURL();
+  matches[4].destination_url = GURL();
+
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  AutocompleteInput input(string16(), string16::npos, string16(), false, false,
+                          false, AutocompleteInput::ALL_MATCHES);
+  result.SortAndCull(input, test_util_.profile());
+
+  // Of the two results with the same non-empty destination URL, the
+  // lower-relevance one should be dropped.  All of the results with empty URLs
+  // should be kept.
+  ASSERT_EQ(4U, result.size());
+  EXPECT_TRUE(result.match_at(0)->destination_url.is_empty());
+  EXPECT_EQ(1300, result.match_at(0)->relevance);
+  EXPECT_TRUE(result.match_at(1)->destination_url.is_empty());
+  EXPECT_EQ(1200, result.match_at(1)->relevance);
+  EXPECT_TRUE(result.match_at(2)->destination_url.is_empty());
+  EXPECT_EQ(1100, result.match_at(2)->relevance);
+  EXPECT_EQ("http://b/", result.match_at(3)->destination_url.spec());
+  EXPECT_EQ(1000, result.match_at(3)->relevance);
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
+  // Register a template URL that corresponds to 'foo' search engine.
+  TemplateURLData url_data;
+  url_data.short_name = ASCIIToUTF16("unittest");
+  url_data.SetKeyword(ASCIIToUTF16("foo"));
+  url_data.SetURL("http://www.foo.com/s?q={searchTerms}");
+  test_util_.model()->Add(new TemplateURL(test_util_.profile(), url_data));
+
+  TestData data[] = {
+    { 0, 0, 1300 },
+    { 1, 0, 1200 },
+    { 2, 0, 1100 },
+    { 3, 0, 1000 },
+    { 4, 1, 900 },
+  };
+
+  ACMatches matches;
+  PopulateAutocompleteMatches(data, arraysize(data), &matches);
+  matches[0].destination_url = GURL("http://www.foo.com/s?q=foo");
+  matches[1].destination_url = GURL("http://www.foo.com/s?q=foo2");
+  matches[2].destination_url = GURL("http://www.foo.com/s?q=foo&oq=f");
+  matches[3].destination_url = GURL("http://www.foo.com/s?q=foo&aqs=0");
+  matches[4].destination_url = GURL("http://www.foo.com/");
+
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  AutocompleteInput input(string16(), string16::npos, string16(), false, false,
+                          false, AutocompleteInput::ALL_MATCHES);
+  result.SortAndCull(input, test_util_.profile());
+
+  // We expect the 3rd and 4th results to be removed.
+  ASSERT_EQ(3U, result.size());
+  EXPECT_EQ("http://www.foo.com/s?q=foo",
+            result.match_at(0)->destination_url.spec());
+  EXPECT_EQ(1300, result.match_at(0)->relevance);
+  EXPECT_EQ("http://www.foo.com/s?q=foo2",
+            result.match_at(1)->destination_url.spec());
+  EXPECT_EQ(1200, result.match_at(1)->relevance);
+  EXPECT_EQ("http://www.foo.com/",
+            result.match_at(2)->destination_url.spec());
+  EXPECT_EQ(900, result.match_at(2)->relevance);
 }

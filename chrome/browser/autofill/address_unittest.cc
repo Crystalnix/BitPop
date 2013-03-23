@@ -45,15 +45,15 @@ TEST_F(AddressTest, GetCountry) {
   EXPECT_EQ(std::string(), address.country_code());
 
   // Make sure that nothing breaks when the country code is missing.
-  string16 country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  string16 country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ(string16(), country);
 
   address.set_country_code("US");
-  country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ(ASCIIToUTF16("United States"), country);
 
   address.set_country_code("CA");
-  country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ(ASCIIToUTF16("Canada"), country);
 }
 
@@ -63,32 +63,32 @@ TEST_F(AddressTest, SetCountry) {
   EXPECT_EQ(std::string(), address.country_code());
 
   // Test basic conversion.
-  address.SetInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("United States"));
-  string16 country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  address.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("United States"));
+  string16 country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ("US", address.country_code());
   EXPECT_EQ(ASCIIToUTF16("United States"), country);
 
   // Test basic synonym detection.
-  address.SetInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("USA"));
-  country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  address.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("USA"));
+  country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ("US", address.country_code());
   EXPECT_EQ(ASCIIToUTF16("United States"), country);
 
   // Test case-insensitivity.
-  address.SetInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("canADA"));
-  country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  address.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("canADA"));
+  country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ("CA", address.country_code());
   EXPECT_EQ(ASCIIToUTF16("Canada"), country);
 
   // Test country code detection.
-  address.SetInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("JP"));
-  country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  address.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("JP"));
+  country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ("JP", address.country_code());
   EXPECT_EQ(ASCIIToUTF16("Japan"), country);
 
   // Test that we ignore unknown countries.
-  address.SetInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("Unknown"));
-  country = address.GetInfo(ADDRESS_HOME_COUNTRY);
+  address.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("Unknown"));
+  country = address.GetRawInfo(ADDRESS_HOME_COUNTRY);
   EXPECT_EQ(std::string(), address.country_code());
   EXPECT_EQ(string16(), country);
 }
@@ -108,7 +108,8 @@ TEST_F(AddressTest, IsCountry) {
   for (size_t i = 0; i < arraysize(kValidMatches); ++i) {
     SCOPED_TRACE(kValidMatches[i]);
     FieldTypeSet matching_types;
-    address.GetMatchingTypes(ASCIIToUTF16(kValidMatches[i]), &matching_types);
+    address.GetMatchingTypes(ASCIIToUTF16(kValidMatches[i]), "US",
+                             &matching_types);
     ASSERT_EQ(1U, matching_types.size());
     EXPECT_EQ(ADDRESS_HOME_COUNTRY, *matching_types.begin());
   }
@@ -119,7 +120,8 @@ TEST_F(AddressTest, IsCountry) {
   };
   for (size_t i = 0; i < arraysize(kInvalidMatches); ++i) {
     FieldTypeSet matching_types;
-    address.GetMatchingTypes(ASCIIToUTF16(kInvalidMatches[i]), &matching_types);
+    address.GetMatchingTypes(ASCIIToUTF16(kInvalidMatches[i]), "US",
+                             &matching_types);
     EXPECT_EQ(0U, matching_types.size());
   }
 
@@ -127,6 +129,6 @@ TEST_F(AddressTest, IsCountry) {
   address.set_country_code("");
   EXPECT_EQ(std::string(), address.country_code());
   FieldTypeSet matching_types;
-  address.GetMatchingTypes(ASCIIToUTF16("Garbage"), &matching_types);
+  address.GetMatchingTypes(ASCIIToUTF16("Garbage"), "US", &matching_types);
   EXPECT_EQ(0U, matching_types.size());
 }

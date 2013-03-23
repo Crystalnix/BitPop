@@ -8,7 +8,6 @@
 #include "base/file_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_details.h"
@@ -33,8 +32,6 @@ namespace {
 // Error messages.
 const char* const kFileTooBigError = "The MHTML file generated is too big.";
 const char* const kMHTMLGenerationFailedError = "Failed to generate MHTML.";
-const char* const kSizeRetrievalError =
-    "Failed to retrieve size of generated MHTML.";
 const char* const kTemporaryFileError = "Failed to create a temporary file.";
 const char* const kTabClosedError = "Cannot find the tab for thie request.";
 
@@ -47,8 +44,10 @@ PageCaptureSaveAsMHTMLFunction::PageCaptureSaveAsMHTMLFunction() {
 
 PageCaptureSaveAsMHTMLFunction::~PageCaptureSaveAsMHTMLFunction() {
   if (mhtml_file_.get()) {
-    BrowserThread::ReleaseSoon(BrowserThread::IO, FROM_HERE,
-                               mhtml_file_.release());
+    webkit_blob::ShareableFileReference* to_release = mhtml_file_.get();
+    to_release->AddRef();
+    mhtml_file_ = NULL;
+    BrowserThread::ReleaseSoon(BrowserThread::IO, FROM_HERE, to_release);
   }
 }
 
@@ -188,12 +187,12 @@ void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64 file_size) {
 
 WebContents* PageCaptureSaveAsMHTMLFunction::GetWebContents() {
   Browser* browser = NULL;
-  TabContents* tab_contents = NULL;
+  content::WebContents* web_contents = NULL;
 
   if (!ExtensionTabUtil::GetTabById(params_->details.tab_id, profile(),
                                     include_incognito(), &browser, NULL,
-                                    &tab_contents, NULL)) {
+                                    &web_contents, NULL)) {
     return NULL;
   }
-  return tab_contents->web_contents();
+  return web_contents;
 }

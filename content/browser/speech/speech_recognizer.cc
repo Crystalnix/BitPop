@@ -17,16 +17,12 @@
 #include "content/public/common/speech_recognition_result.h"
 #include "net/url_request/url_request_context_getter.h"
 
-using content::BrowserMainLoop;
-using content::BrowserThread;
-using content::SpeechRecognitionError;
-using content::SpeechRecognitionEventListener;
-using content::SpeechRecognitionGrammar;
-using content::SpeechRecognitionResult;
 using media::AudioInputController;
 using media::AudioManager;
 using media::AudioParameters;
+using media::ChannelLayout;
 
+namespace content {
 namespace {
 
 // The following constants are related to the volume level indicator shown in
@@ -46,7 +42,7 @@ const float kAudioMeterDbRange = kAudioMeterMaxDb - kAudioMeterMinDb;
 const float kAudioMeterRangeMaxUnclipped = 47.0f / 48.0f;
 
 // Returns true if more than 5% of the samples are at min or max value.
-bool DetectClipping(const speech::AudioChunk& chunk) {
+bool DetectClipping(const AudioChunk& chunk) {
   const int num_samples = chunk.NumSamples();
   const int16* samples = chunk.SamplesData16();
   const int kThreshold = num_samples / 20;
@@ -66,10 +62,9 @@ void KeepAudioControllerRefcountedForDtor(scoped_refptr<AudioInputController>) {
 
 }  // namespace
 
-namespace speech {
-
 const int SpeechRecognizer::kAudioSampleRate = 16000;
-const ChannelLayout SpeechRecognizer::kChannelLayout = CHANNEL_LAYOUT_MONO;
+const ChannelLayout SpeechRecognizer::kChannelLayout =
+    media::CHANNEL_LAYOUT_MONO;
 const int SpeechRecognizer::kNumBitsPerAudioSample = 16;
 const int SpeechRecognizer::kNoSpeechTimeoutMs = 8000;
 const int SpeechRecognizer::kEndpointerEstimationTimeMs = 300;
@@ -191,17 +186,17 @@ void SpeechRecognizer::OnData(AudioInputController* controller,
 
 void SpeechRecognizer::OnAudioClosed(AudioInputController*) {}
 
-void SpeechRecognizer::OnSpeechRecognitionEngineResult(
-    const content::SpeechRecognitionResult& result) {
+void SpeechRecognizer::OnSpeechRecognitionEngineResults(
+    const SpeechRecognitionResults& results) {
   FSMEventArgs event_args(EVENT_ENGINE_RESULT);
-  event_args.engine_result = result;
+  event_args.engine_results = results;
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SpeechRecognizer::DispatchEvent,
                                      this, event_args));
 }
 
 void SpeechRecognizer::OnSpeechRecognitionEngineError(
-    const content::SpeechRecognitionError& error) {
+    const SpeechRecognitionError& error) {
   FSMEventArgs event_args(EVENT_ENGINE_ERROR);
   event_args.engine_error = error;
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
@@ -255,12 +250,13 @@ SpeechRecognizer::ExecuteTransitionAndGetNextState(
         // TODO(primiano): restore UNREACHABLE_CONDITION on EVENT_ABORT and
         // EVENT_STOP_CAPTURE below once speech input extensions are fixed.
         case EVENT_ABORT:
-          return DoNothing(event_args);
+          return AbortSilently(event_args);
         case EVENT_START:
           return StartRecording(event_args);
-        case EVENT_STOP_CAPTURE:  // Corner cases related to queued messages
-        case EVENT_AUDIO_DATA:    // being lately dispatched.
-        case EVENT_ENGINE_RESULT:
+        case EVENT_STOP_CAPTURE:
+          return AbortSilently(event_args);
+        case EVENT_AUDIO_DATA:     // Corner cases related to queued messages
+        case EVENT_ENGINE_RESULT:  // being lately dispatched.
         case EVENT_ENGINE_ERROR:
         case EVENT_AUDIO_ERROR:
           return DoNothing(event_args);
@@ -403,15 +399,13 @@ SpeechRecognizer::StartRecording(const FSMEventArgs&) {
   listener_->OnRecognitionStart(session_id_);
 
   if (!audio_manager->HasAudioInputDevices()) {
-    return Abort(SpeechRecognitionError(
-        content::SPEECH_RECOGNITION_ERROR_AUDIO,
-        content::SPEECH_AUDIO_ERROR_DETAILS_NO_MIC));
+    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO,
+                                        SPEECH_AUDIO_ERROR_DETAILS_NO_MIC));
   }
 
   if (audio_manager->IsRecordingInProcess()) {
-    return Abort(SpeechRecognitionError(
-        content::SPEECH_RECOGNITION_ERROR_AUDIO,
-        content::SPEECH_AUDIO_ERROR_DETAILS_IN_USE));
+    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO,
+                                        SPEECH_AUDIO_ERROR_DETAILS_IN_USE));
   }
 
   const int samples_per_packet = (kAudioSampleRate *
@@ -422,8 +416,7 @@ SpeechRecognizer::StartRecording(const FSMEventArgs&) {
   audio_controller_ = AudioInputController::Create(audio_manager, this, params);
 
   if (audio_controller_.get() == NULL) {
-    return Abort(
-        SpeechRecognitionError(content::SPEECH_RECOGNITION_ERROR_AUDIO));
+    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
   }
 
   // The endpointer needs to estimate the environment/background noise before
@@ -468,8 +461,7 @@ SpeechRecognizer::DetectUserSpeechOrTimeout(const FSMEventArgs&) {
     listener_->OnSoundStart(session_id_);
     return STATE_RECOGNIZING;
   } else if (GetElapsedTimeMs() >= kNoSpeechTimeoutMs) {
-    return Abort(
-        SpeechRecognitionError(content::SPEECH_RECOGNITION_ERROR_NO_SPEECH));
+    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_NO_SPEECH));
   }
   return STATE_WAITING_FOR_SPEECH;
 }
@@ -500,20 +492,17 @@ SpeechRecognizer::FSMState
 SpeechRecognizer::AbortSilently(const FSMEventArgs& event_args) {
   DCHECK_NE(event_args.event, EVENT_AUDIO_ERROR);
   DCHECK_NE(event_args.event, EVENT_ENGINE_ERROR);
-  return Abort(
-      SpeechRecognitionError(content::SPEECH_RECOGNITION_ERROR_NONE));
+  return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_NONE));
 }
 
 SpeechRecognizer::FSMState
 SpeechRecognizer::AbortWithError(const FSMEventArgs& event_args) {
   if (event_args.event == EVENT_AUDIO_ERROR) {
-    return Abort(
-        SpeechRecognitionError(content::SPEECH_RECOGNITION_ERROR_AUDIO));
+    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
   } else if (event_args.event == EVENT_ENGINE_ERROR) {
     return Abort(event_args.engine_error);
   }
-  return Abort(
-      SpeechRecognitionError(content::SPEECH_RECOGNITION_ERROR_ABORTED));
+  return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_ABORTED));
 }
 
 SpeechRecognizer::FSMState SpeechRecognizer::Abort(
@@ -535,7 +524,7 @@ SpeechRecognizer::FSMState SpeechRecognizer::Abort(
   if (state_ > STATE_STARTING && state_ < STATE_WAITING_FINAL_RESULT)
     listener_->OnAudioEnd(session_id_);
 
-  if (error.code != content::SPEECH_RECOGNITION_ERROR_NONE)
+  if (error.code != SPEECH_RECOGNITION_ERROR_NONE)
     listener_->OnRecognitionError(session_id_, error);
 
   listener_->OnRecognitionEnd(session_id_);
@@ -565,23 +554,37 @@ SpeechRecognizer::FSMState SpeechRecognizer::ProcessIntermediateResult(
     DCHECK_EQ(STATE_RECOGNIZING, state_);
   }
 
-  const SpeechRecognitionResult& result = event_args.engine_result;
-  listener_->OnRecognitionResult(session_id_, result);
+  listener_->OnRecognitionResults(session_id_, event_args.engine_results);
   return STATE_RECOGNIZING;
 }
 
 SpeechRecognizer::FSMState
 SpeechRecognizer::ProcessFinalResult(const FSMEventArgs& event_args) {
-  const SpeechRecognitionResult& result = event_args.engine_result;
-  if (result.is_provisional) {
-    DCHECK(!is_single_shot_);
-    listener_->OnRecognitionResult(session_id_, result);
+  const SpeechRecognitionResults& results = event_args.engine_results;
+  SpeechRecognitionResults::const_iterator i = results.begin();
+  bool provisional_results_pending = false;
+  bool results_are_empty = true;
+  for (; i != results.end(); ++i) {
+    const SpeechRecognitionResult& result = *i;
+    if (result.is_provisional) {
+      provisional_results_pending = true;
+      DCHECK(!is_single_shot_);
+    } else if (results_are_empty) {
+      results_are_empty = result.hypotheses.empty();
+    }
+  }
+
+  if (provisional_results_pending) {
+    listener_->OnRecognitionResults(session_id_, results);
     // We don't end the recognition if a provisional result is received in
     // STATE_WAITING_FINAL_RESULT. A definitive result will come next and will
     // end the recognition.
     return state_;
-  } else {
-    recognition_engine_->EndRecognition();
+  }
+
+  recognition_engine_->EndRecognition();
+
+  if (!results_are_empty) {
     // We could receive an empty result (which we won't propagate further)
     // in the following (continuous) scenario:
     //  1. The caller start pushing audio and receives some results;
@@ -591,11 +594,11 @@ SpeechRecognizer::ProcessFinalResult(const FSMEventArgs& event_args) {
     //  4. The speech recognition engine, therefore, emits an empty result to
     //     notify that the recognition is ended with no error, yet neither any
     //     further result.
-    if (result.hypotheses.size() > 0)
-      listener_->OnRecognitionResult(session_id_, result);
-    listener_->OnRecognitionEnd(session_id_);
-    return STATE_IDLE;
+    listener_->OnRecognitionResults(session_id_, results);
   }
+
+  listener_->OnRecognitionEnd(session_id_);
+  return STATE_IDLE;
 }
 
 SpeechRecognizer::FSMState
@@ -657,10 +660,10 @@ SpeechRecognizer::FSMEventArgs::FSMEventArgs(FSMEvent event_value)
     : event(event_value),
       audio_error_code(0),
       audio_data(NULL),
-      engine_error(content::SPEECH_RECOGNITION_ERROR_NONE) {
+      engine_error(SPEECH_RECOGNITION_ERROR_NONE) {
 }
 
 SpeechRecognizer::FSMEventArgs::~FSMEventArgs() {
 }
 
-}  // namespace speech
+}  // namespace content

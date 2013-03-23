@@ -10,13 +10,12 @@
 #include "base/sequenced_task_runner.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "sync/internal_api/public/base/model_type.h"
 #include "sync/notifier/invalidation_util.h"
 
 class Profile;
 
 namespace syncer {
-class SyncNotifierObserver;
+class InvalidationHandler;
 }  // namespace
 
 namespace browser_sync {
@@ -42,12 +41,15 @@ class ChromeSyncNotificationBridge : public content::NotificationObserver {
   void StopForShutdown();
 
   // Must be called on the sync task runner.
-  void UpdateEnabledTypes(syncer::ModelTypeSet enabled_types);
-  // Marked virtual for tests.
-  virtual void RegisterHandler(syncer::SyncNotifierObserver* handler);
-  virtual void UpdateRegisteredIds(syncer::SyncNotifierObserver* handler,
-                                   const syncer::ObjectIdSet& ids);
-  virtual void UnregisterHandler(syncer::SyncNotifierObserver* handler);
+  void RegisterHandler(syncer::InvalidationHandler* handler);
+  void UpdateRegisteredIds(syncer::InvalidationHandler* handler,
+                           const syncer::ObjectIdSet& ids);
+  void UnregisterHandler(syncer::InvalidationHandler* handler);
+
+  bool IsHandlerRegisteredForTest(
+      syncer::InvalidationHandler* handler) const;
+  syncer::ObjectIdSet GetRegisteredIdsForTest(
+      syncer::InvalidationHandler* handler) const;
 
   // NotificationObserver implementation. Called on UI thread.
   virtual void Observe(int type,

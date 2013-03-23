@@ -6,20 +6,21 @@
 #define CONTENT_RENDERER_ANDROID_EMAIL_DETECTOR_H_
 
 #include "base/compiler_specific.h"
+#include "content/common/content_export.h"
 #include "content/renderer/android/content_detector.h"
-
-class EmailDetectorTest;
 
 namespace content {
 
+class EmailDetectorTest;
+
 // Finds email addresses (in most common formats, but not including special
 // characters) in the given text string.
-class EmailDetector : public ContentDetector {
+class CONTENT_EXPORT EmailDetector : public ContentDetector {
  public:
   EmailDetector();
 
  private:
-  friend class ::EmailDetectorTest;
+  friend class EmailDetectorTest;
 
   // Implementation of ContentDetector.
   virtual bool FindContent(const string16::const_iterator& begin,

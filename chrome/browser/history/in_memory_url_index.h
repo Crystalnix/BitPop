@@ -19,7 +19,7 @@
 #include "base/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/history_provider_util.h"
-#include "chrome/browser/cancelable_request.h"
+#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/in_memory_url_index_types.h"
@@ -45,9 +45,9 @@ namespace imui = in_memory_url_index;
 
 class HistoryDatabase;
 class URLIndexPrivateData;
-struct URLVisitedDetails;
-struct URLsModifiedDetails;
 struct URLsDeletedDetails;
+struct URLsModifiedDetails;
+struct URLVisitedDetails;
 
 // The URL history source.
 // Holds portions of the URL database in memory in an indexed form.  Used to
@@ -120,6 +120,9 @@ class InMemoryURLIndex : public content::NotificationObserver,
   // refer to that class.
   ScoredHistoryMatches HistoryItemsForTerms(const string16& term_string);
 
+  // Deletes the index entry, if any, for the given |url|.
+  void DeleteURL(const GURL& url);
+
   // Sets the optional observers for completion of restoral and saving of the
   // index's private data.
   void set_restore_cache_observer(
@@ -128,6 +131,11 @@ class InMemoryURLIndex : public content::NotificationObserver,
   }
   void set_save_cache_observer(SaveCacheObserver* save_cache_observer) {
     save_cache_observer_ = save_cache_observer;
+  }
+
+  // Indicates that the index restoration is complete.
+  bool restored() const {
+    return restored_;
   }
 
  private:
@@ -217,7 +225,7 @@ class InMemoryURLIndex : public content::NotificationObserver,
 
   // Notifies the observer, if any, of the success of the private data caching.
   // |succeeded| is true on a successful save.
-  void OnCacheSaveDone(scoped_refptr<RefCountedBool> succeeded);
+  void OnCacheSaveDone(bool succeeded);
 
   // Handles notifications of history changes.
   virtual void Observe(int notification_type,
@@ -265,6 +273,9 @@ class InMemoryURLIndex : public content::NotificationObserver,
 
   // Set to true once the shutdown process has begun.
   bool shutdown_;
+
+  // Set to true once the index restoration is complete.
+  bool restored_;
 
   // Set to true when changes to the index have been made and the index needs
   // to be cached. Set to false when the index has been cached. Used as a

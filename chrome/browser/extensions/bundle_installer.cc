@@ -13,11 +13,11 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/extension_install_dialog.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -107,6 +107,7 @@ BundleInstaller::BundleInstaller(Browser* browser,
                                  const BundleInstaller::ItemList& items)
     : approved_(false),
       browser_(browser),
+      host_desktop_type_(browser->host_desktop_type()),
       profile_(browser->profile()),
       delegate_(NULL) {
   BrowserList::AddObserver(this);
@@ -272,9 +273,12 @@ void BundleInstaller::ShowPrompt() {
     if (!browser) {
       // The browser that we got initially could have gone away during our
       // thread hopping.
-      browser = browser::FindLastActiveWithProfile(profile_);
+      browser = chrome::FindLastActiveWithProfile(profile_, host_desktop_type_);
     }
-    install_ui_.reset(chrome::CreateExtensionInstallPromptWithBrowser(browser));
+    content::WebContents* web_contents = NULL;
+    if (browser)
+      web_contents = browser->tab_strip_model()->GetActiveWebContents();
+    install_ui_.reset(new ExtensionInstallPrompt(web_contents));
     install_ui_->ConfirmBundleInstall(this, permissions);
   }
 }
@@ -327,8 +331,10 @@ void BundleInstaller::OnExtensionInstallSuccess(const std::string& id) {
   ShowInstalledBubbleIfDone();
 }
 
-void BundleInstaller::OnExtensionInstallFailure(const std::string& id,
-                                                const std::string& error) {
+void BundleInstaller::OnExtensionInstallFailure(
+    const std::string& id,
+    const std::string& error,
+    WebstoreInstaller::FailureReason reason) {
   items_[id].state = Item::STATE_FAILED;
 
   ExtensionList::iterator i = std::find_if(

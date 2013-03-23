@@ -43,23 +43,6 @@ class SocketUnitTest : public BrowserWithTestWindowTest {
     return result ? utils::ToDictionary(result) : NULL;
   }
 
-  base::ListValue* RunFunctionAndReturnList(
-      UIThreadExtensionFunction* function, const std::string& args) {
-    base::Value* result = RunFunctionWithExtension(function, args);
-    return result ? utils::ToList(result) : NULL;
-  }
-
-  void RunFunction(UIThreadExtensionFunction* function,
-                   const std::string& args) {
-    scoped_ptr<base::Value> result(RunFunctionWithExtension(function, args));
-  }
-
-  std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
-                                        const std::string& args) {
-    function->set_extension(extension_.get());
-    return utils::RunFunctionAndReturnError(function, args, browser());
-  }
-
  protected:
   scoped_refptr<extensions::Extension> extension_;
 };
@@ -73,11 +56,6 @@ TEST_F(SocketUnitTest, Create) {
     scoped_ptr<base::DictionaryValue> result(RunFunctionAndReturnDict(
         new SocketCreateFunction(), "[\"tcp\"]"));
     ASSERT_TRUE(result.get());
-  }
-  {
-    std::string error = RunFunctionAndReturnError(
-        new SocketCreateFunction(), "[\"nonexistent-socket-type\"]");
-    ASSERT_FALSE(error.empty()) << "Expected error. Got nothing instead.";
   }
 }
 

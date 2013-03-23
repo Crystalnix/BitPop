@@ -115,8 +115,8 @@ TaskManager.prototype = {
     var COLUMNS_SORTED_BY_VALUE = [
         'cpuUsage', 'physicalMemory', 'sharedMemory', 'privateMemory',
         'networkUsage', 'webCoreImageCacheSize', 'webCoreScriptsCacheSize',
-        'webCoreCSSCacheSize', 'fps', 'sqliteMemoryUsed', 'goatsTeleported',
-        'v8MemoryAllocatedSize'];
+        'webCoreCSSCacheSize', 'fps', 'videoMemory', 'sqliteMemoryUsed',
+        'goatsTeleported', 'v8MemoryAllocatedSize'];
 
     for (var i = 0; i < DEFAULT_COLUMNS.length; i++) {
       var columnId = DEFAULT_COLUMNS[i][0];
@@ -206,7 +206,9 @@ TaskManager.prototype = {
     }
 
     this.isFinishedInitDelayed_ = true;
-    this.table_.redraw();
+    var t = this.table_;
+    t.redraw();
+    addEventListener('resize', t.redraw.bind(t));
   },
 
   initColumnModel_: function() {

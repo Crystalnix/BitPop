@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/feedback/proto/common.pb.h"
+#include "chrome/browser/feedback/proto/dom.pb.h"
 #include "chrome/browser/feedback/proto/extension.pb.h"
 #include "chrome/browser/feedback/proto/math.pb.h"
 #include "chrome/browser/ui/webui/screenshot_source.h"
@@ -28,6 +29,12 @@ class Profile;
 namespace content {
 class WebContents;
 }
+
+extern const char kSyncDataKey[];
+
+#if defined(OS_CHROMEOS)
+extern const char kHUDLogDataKey[];
+#endif
 
 class FeedbackUtil {
  public:
@@ -77,6 +84,8 @@ class FeedbackUtil {
       , int zipped_logs_length
       , const chromeos::system::LogDictionaryType* const sys_info
       , const std::string& timestamp
+      , const std::string& attached_filename
+      , const std::string& attached_filedata
 #endif
   );
   // Redirects the user to Google's phishing reporting page.

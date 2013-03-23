@@ -11,6 +11,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/win/scoped_com_initializer.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/test/logging/win/test_log_collector.h"
 #include "chrome_frame/crash_server_init.h"
 #include "chrome_frame/test/chrome_frame_test_utils.h"
@@ -24,14 +25,13 @@
 class ChromeFrameUnittestsModule
     : public CAtlExeModuleT<ChromeFrameUnittestsModule> {
  public:
-  static HRESULT InitializeCom() {
-    // Note that this only gets called in versions of ATL included in
-    // VS2008 and earlier. We still need it however since this gets called
-    // at static initialization time, before the ScopedCOMInitializer in main()
-    // and the default implementation of InitializeCom CoInitializes into the
-    // MTA.
-    return CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-  }
+  // Called at static init time, for versions of ATL included in VS2008 and
+  // earlier only.  The default implementation initializes COM in MTA mode,
+  // which we don't want.  We could init STA mode here, but since we have to
+  // init in main() for VS2010 and above anyway, we simply do nothing, since
+  // nothing needs COM before main() runs.
+  static HRESULT InitializeCom() { return S_OK; }
+  static void UninitializeCom() {}
 };
 
 ChromeFrameUnittestsModule _AtlModule;
@@ -45,7 +45,10 @@ void PureCall() {
 }
 
 int main(int argc, char **argv) {
-  base::win::ScopedCOMInitializer com_initializer;
+  // For ATL in VS2010 and up, ChromeFrameUnittestsModule::InitializeCom() is
+  // not called, so we init COM here.
+  base::win::ScopedCOMInitializer com_initializer_;
+
   ScopedChromeFrameRegistrar::RegisterAndExitProcessIfDirected();
   base::EnableTerminationOnHeapCorruption();
   base::PlatformThread::SetName("ChromeFrame tests");
@@ -54,7 +57,7 @@ int main(int argc, char **argv) {
 
   // Set up a FieldTrialList to keep any field trials we have going in
   // Chrome Frame happy.
-  base::FieldTrialList field_trial_list("42");
+  base::FieldTrialList field_trial_list(new metrics::SHA1EntropyProvider("42"));
 
   base::TestSuite test_suite(argc, argv);
 

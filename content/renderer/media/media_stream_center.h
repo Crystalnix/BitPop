@@ -15,11 +15,13 @@ class WebMediaStreamCenterClient;
 }
 
 namespace content {
+class MediaStreamDependencyFactory;
 
 class CONTENT_EXPORT MediaStreamCenter
     : NON_EXPORTED_BASE(public WebKit::WebMediaStreamCenter) {
  public:
-  explicit MediaStreamCenter(WebKit::WebMediaStreamCenterClient* client);
+  MediaStreamCenter(WebKit::WebMediaStreamCenterClient* client,
+                    MediaStreamDependencyFactory* factory);
 
   virtual void queryMediaStreamSources(
       const WebKit::WebMediaStreamSourcesRequest& request) OVERRIDE;
@@ -38,15 +40,10 @@ class CONTENT_EXPORT MediaStreamCenter
   virtual void didCreateMediaStream(
       WebKit::WebMediaStreamDescriptor& stream) OVERRIDE;
 
-  virtual WebKit::WebString constructSDP(
-      const WebKit::WebICECandidateDescriptor& candidate) OVERRIDE;
-
-  virtual WebKit::WebString constructSDP(
-      const WebKit::WebSessionDescriptionDescriptor& description) OVERRIDE;
-
  private:
-  // Weak pointer, owned by WebKit.
-  WebKit::WebMediaStreamCenterClient* client_;
+  // |rtc_factory_| is a weak pointer and is owned by the RenderThreadImpl.
+  // It is valid as long as  RenderThreadImpl exist.
+  MediaStreamDependencyFactory* rtc_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamCenter);
 };

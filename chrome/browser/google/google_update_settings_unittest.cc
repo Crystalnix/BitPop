@@ -2,12 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/path_service.h"
+#include "base/test/scoped_path_override.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
 class GoogleUpdateTest : public PlatformTest {
+ protected:
+  GoogleUpdateTest() : user_data_dir_override_(chrome::DIR_USER_DATA) {}
+  virtual ~GoogleUpdateTest() {}
+
+ private:
+  base::ScopedPathOverride user_data_dir_override_;
+
+  DISALLOW_COPY_AND_ASSIGN(GoogleUpdateTest);
 };
 
 TEST_F(GoogleUpdateTest, StatsConsent) {

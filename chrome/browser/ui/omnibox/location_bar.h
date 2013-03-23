@@ -33,8 +33,7 @@ class LocationBar {
 
   // Sets the suggested text to show in the omnibox. This is shown in addition
   // to the current text of the omnibox.
-  virtual void SetSuggestedText(const string16& text,
-                                InstantCompleteBehavior behavior) = 0;
+  virtual void SetInstantSuggestion(const InstantSuggestion& suggestion) = 0;
 
   // Returns the string of text entered in the location bar.
   virtual string16 GetInputString() const = 0;
@@ -66,6 +65,12 @@ class LocationBar {
   // Called when the page-action data needs to be refreshed, e.g. when an
   // extension is unloaded or crashes.
   virtual void InvalidatePageActions() = 0;
+
+  // Updates the state of the web intents use-another-service button.
+  virtual void UpdateWebIntentsButton() = 0;
+
+  // Updates the state of the button to open a PDF in Adobe Reader.
+  virtual void UpdateOpenPDFInReaderPrompt() = 0;
 
   // Saves the state of the location bar to the specified WebContents, so that
   // it can be restored later. (Done when switching tabs).
@@ -101,6 +106,13 @@ class LocationBarTesting {
 
   // Simulates a left mouse pressed on the visible page action at |index|.
   virtual void TestPageActionPressed(size_t index) = 0;
+
+  // Simulates a left mouse pressed on the action box decoration, followed by
+  // a menu item selection.
+  virtual void TestActionBoxMenuItemSelected(int command_id) = 0;
+
+  // Returns whether or not the bookmark star decoration is visible.
+  virtual bool GetBookmarkStarVisibility() = 0;
 
  protected:
   virtual ~LocationBarTesting() {}

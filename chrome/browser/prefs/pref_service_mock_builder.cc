@@ -5,14 +5,14 @@
 #include "chrome/browser/prefs/pref_service_mock_builder.h"
 
 #include "base/message_loop_proxy.h"
+#include "base/prefs/default_pref_store.h"
+#include "base/prefs/json_pref_store.h"
+#include "base/prefs/testing_pref_store.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
-#include "chrome/browser/prefs/default_pref_store.h"
 #include "chrome/browser/prefs/pref_notifier_impl.h"
-#include "chrome/browser/prefs/pref_value_store.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prefs/testing_pref_store.h"
-#include "chrome/common/json_pref_store.h"
+#include "chrome/browser/prefs/pref_value_store.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -77,16 +77,17 @@ PrefServiceMockBuilder::WithCommandLine(CommandLine* command_line) {
 
 PrefServiceMockBuilder&
 PrefServiceMockBuilder::WithUserFilePrefs(const FilePath& prefs_file) {
-  return WithUserFilePrefs(prefs_file,
-                           BrowserThread::GetMessageLoopProxyForThread(
-                               BrowserThread::FILE));
+  return WithUserFilePrefs(
+      prefs_file,
+      JsonPrefStore::GetTaskRunnerForFile(prefs_file,
+                                          BrowserThread::GetBlockingPool()));
 }
 
 PrefServiceMockBuilder&
 PrefServiceMockBuilder::WithUserFilePrefs(
     const FilePath& prefs_file,
-    base::MessageLoopProxy* message_loop_proxy) {
-  user_prefs_ = new JsonPrefStore(prefs_file, message_loop_proxy);
+    base::SequencedTaskRunner* task_runner) {
+  user_prefs_ = new JsonPrefStore(prefs_file, task_runner);
   return *this;
 }
 

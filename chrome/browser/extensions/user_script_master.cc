@@ -17,6 +17,7 @@
 #include "base/threading/thread.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
@@ -162,6 +163,8 @@ void UserScriptMaster::ScriptReloader::StartLoad(
       base::Bind(
           &UserScriptMaster::ScriptReloader::RunLoad, this, user_scripts));
 }
+
+UserScriptMaster::ScriptReloader::~ScriptReloader() {}
 
 void UserScriptMaster::ScriptReloader::NotifyMaster(
     base::SharedMemory* memory) {
@@ -357,8 +360,8 @@ void UserScriptMaster::Observe(int type,
       extensions_info_[extension->id()] =
           ExtensionSet::ExtensionPathAndDefaultLocale(
               extension->path(), extension->default_locale());
-      bool incognito_enabled = profile_->GetExtensionService()->
-          IsIncognitoEnabled(extension->id());
+      bool incognito_enabled = extensions::ExtensionSystem::Get(profile_)->
+          extension_service()->IsIncognitoEnabled(extension->id());
       const UserScriptList& scripts = extension->content_scripts();
       for (UserScriptList::const_iterator iter = scripts.begin();
            iter != scripts.end(); ++iter) {

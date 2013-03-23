@@ -10,9 +10,14 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/api/runtime/runtime_api.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/management_policy.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
@@ -53,6 +58,21 @@ ManifestReloadReason ShouldReloadExtensionManifest(const ExtensionInfo& info) {
     return NEEDS_RELOCALIZATION;
 
   return NOT_NEEDED;
+}
+
+void DispatchOnInstalledEvent(
+    Profile* profile,
+    const std::string& extension_id,
+    const Version& old_version,
+    bool chrome_updated) {
+  // profile manager can be NULL in unit tests.
+  if (!g_browser_process->profile_manager())
+    return;
+  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+    return;
+
+  extensions::RuntimeEventRouter::DispatchOnInstalledEvent(
+      profile, extension_id, old_version, chrome_updated);
 }
 
 }  // namespace
@@ -126,9 +146,35 @@ void InstalledLoader::LoadAllExtensions() {
 
   std::vector<int> reload_reason_counts(NUM_MANIFEST_RELOAD_REASONS, 0);
   bool should_write_prefs = false;
+  int update_count = 0;
 
   for (size_t i = 0; i < extensions_info->size(); ++i) {
     ExtensionInfo* info = extensions_info->at(i).get();
+
+    scoped_ptr<ExtensionInfo> pending_update(
+        extension_prefs_->GetDelayedInstallInfo(info->extension_id));
+    if (pending_update) {
+      if (!extension_prefs_->FinishDelayedInstallInfo(info->extension_id))
+        NOTREACHED();
+
+      Version old_version;
+      if (info->extension_manifest) {
+        std::string version_str;
+        if (info->extension_manifest->GetString(
+            extension_manifest_keys::kVersion, &version_str)) {
+          old_version = Version(version_str);
+        }
+      }
+      MessageLoop::current()->PostTask(FROM_HERE,
+          base::Bind(&DispatchOnInstalledEvent, extension_service_->profile(),
+                     info->extension_id, old_version, false));
+
+      info = extension_prefs_->GetInstalledExtensionInfo(
+          info->extension_id).release();
+      extensions_info->at(i).reset(info);
+
+      update_count++;
+    }
 
     ManifestReloadReason reload_reason = ShouldReloadExtensionManifest(*info);
     ++reload_reason_counts[reload_reason];
@@ -184,6 +230,8 @@ void InstalledLoader::LoadAllExtensions() {
                            extension_service_->extensions()->size());
   UMA_HISTOGRAM_COUNTS_100("Extensions.Disabled",
                            extension_service_->disabled_extensions()->size());
+  UMA_HISTOGRAM_COUNTS_100("Extensions.UpdateOnLoad",
+                           update_count);
 
   UMA_HISTOGRAM_TIMES("Extensions.LoadAllTime",
                       base::TimeTicks::Now() - start_time);
@@ -191,7 +239,8 @@ void InstalledLoader::LoadAllExtensions() {
   int app_user_count = 0;
   int app_external_count = 0;
   int hosted_app_count = 0;
-  int packaged_app_count = 0;
+  int legacy_packaged_app_count = 0;
+  int platform_app_count = 0;
   int user_script_count = 0;
   int extension_user_count = 0;
   int extension_external_count = 0;
@@ -242,8 +291,16 @@ void InstalledLoader::LoadAllExtensions() {
           ++app_user_count;
         }
         break;
-      case Extension::TYPE_PACKAGED_APP:
-        ++packaged_app_count;
+      case Extension::TYPE_LEGACY_PACKAGED_APP:
+        ++legacy_packaged_app_count;
+        if (Extension::IsExternalLocation(location)) {
+          ++app_external_count;
+        } else {
+          ++app_user_count;
+        }
+        break;
+      case Extension::TYPE_PLATFORM_APP:
+        ++platform_app_count;
         if (Extension::IsExternalLocation(location)) {
           ++app_external_count;
         } else {
@@ -261,9 +318,11 @@ void InstalledLoader::LoadAllExtensions() {
     }
     if (!Extension::IsExternalLocation((*ex)->location()))
       ++item_user_count;
-    if ((*ex)->page_action() != NULL)
+    ExtensionActionManager* extension_action_manager =
+        ExtensionActionManager::Get(extension_service_->profile());
+    if (extension_action_manager->GetPageAction(**ex))
       ++page_action_count;
-    if ((*ex)->browser_action() != NULL)
+    if (extension_action_manager->GetBrowserAction(**ex))
       ++browser_action_count;
 
     extension_service_->RecordPermissionMessagesHistogram(
@@ -285,7 +344,9 @@ void InstalledLoader::LoadAllExtensions() {
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadAppUser", app_user_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadAppExternal", app_external_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadHostedApp", hosted_app_count);
-  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPackagedApp", packaged_app_count);
+  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPackagedApp",
+                           legacy_packaged_app_count);
+  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPlatformApp", platform_app_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadExtension",
                            extension_user_count + extension_external_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadExtensionUser",
@@ -302,15 +363,11 @@ void InstalledLoader::LoadAllExtensions() {
 }
 
 int InstalledLoader::GetCreationFlags(const ExtensionInfo* info) {
-  int flags = Extension::NO_FLAGS;
+  int flags = extension_prefs_->GetCreationFlags(info->extension_id);
   if (info->extension_location != Extension::LOAD)
     flags |= Extension::REQUIRE_KEY;
   if (extension_prefs_->AllowFileAccess(info->extension_id))
     flags |= Extension::ALLOW_FILE_ACCESS;
-  if (extension_prefs_->IsFromWebStore(info->extension_id))
-    flags |= Extension::FROM_WEBSTORE;
-  if (extension_prefs_->IsFromBookmark(info->extension_id))
-    flags |= Extension::FROM_BOOKMARK;
   return flags;
 }
 

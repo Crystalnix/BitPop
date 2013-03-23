@@ -146,7 +146,9 @@ TEST_F(AvatarMenuModelTest, ChangeOnNotify) {
   // Four changes happened via the call to CreateTestingProfile: adding the
   // profile to the cache, setting the user name, rebuilding the list of
   // profiles after the name change, and changing the avatar.
-  EXPECT_EQ(4, observer.change_count());
+  // On Windows, an extra change happens to set the shortcut name for the
+  // profile.
+  EXPECT_GE(observer.change_count(), 4);
   ASSERT_EQ(3U, model.GetNumberOfItems());
 
   const AvatarMenuModel::Item& item1 = model.GetItemAt(0);

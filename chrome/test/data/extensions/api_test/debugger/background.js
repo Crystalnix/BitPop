@@ -18,6 +18,13 @@ chrome.test.runTests([
     });
   },
 
+  function attachUnsupportedMinorVersion() {
+    chrome.tabs.getSelected(null, function(tab) {
+      chrome.debugger.attach({tabId: tab.id}, "1.5",
+          fail("Requested protocol version is not supported: 1.5."));
+    });
+  },
+
   function attachUnsupportedVersion() {
     chrome.tabs.getSelected(null, function(tab) {
       chrome.debugger.attach({tabId: tab.id}, "100.0",
@@ -69,8 +76,9 @@ chrome.test.runTests([
 
   function closeTab() {
     chrome.tabs.create({url:"inspected.html"}, function(tab) {
-      function onDetach(debuggee) {
+      function onDetach(debuggee, reason) {
         chrome.test.assertEq(tab.id, debuggee.tabId);
+        chrome.test.assertEq("target_closed", reason);
         chrome.debugger.onDetach.removeListener(onDetach);
         chrome.test.succeed();
       }

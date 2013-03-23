@@ -16,8 +16,10 @@
 #include "third_party/npapi/bindings/npruntime.h"
 #include "ui/gfx/native_widget_types.h"
 
-class NPChannelBase;
 struct NPObject;
+
+namespace content {
+class NPChannelBase;
 
 // When running a plugin in a different process from the renderer, we need to
 // proxy calls to NPObjects across process boundaries.  This happens both ways,
@@ -35,7 +37,7 @@ class NPObjectProxy : public IPC::Listener,
 
   static NPObject* Create(NPChannelBase* channel,
                           int route_id,
-                          gfx::NativeViewId containing_window,
+                          int render_view_id,
                           const GURL& page_url);
 
   // IPC::Sender implementation:
@@ -98,7 +100,7 @@ class NPObjectProxy : public IPC::Listener,
  private:
   NPObjectProxy(NPChannelBase* channel,
                 int route_id,
-                gfx::NativeViewId containing_window,
+                int render_view_id,
                 const GURL& page_url);
 
   // IPC::Listener implementation:
@@ -114,10 +116,12 @@ class NPObjectProxy : public IPC::Listener,
 
   scoped_refptr<NPChannelBase> channel_;
   int route_id_;
-  gfx::NativeViewId containing_window_;
+  int render_view_id_;
 
   // The url of the main frame hosting the plugin.
   GURL page_url_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_NPOBJECT_PROXY_H_

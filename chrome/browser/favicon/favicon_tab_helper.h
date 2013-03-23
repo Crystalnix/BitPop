@@ -11,8 +11,9 @@
 #include "base/callback.h"
 #include "chrome/browser/favicon/favicon_handler_delegate.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/common/favicon_url.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
+#include "content/public/common/favicon_url.h"
 
 namespace gfx {
 class Image;
@@ -29,13 +30,10 @@ class SkBitmap;
 // history backend. If the icon is not available or expired, the icon will be
 // downloaded and saved in the history backend.
 //
-// DownloadImage downloads the specified icon and returns it through the given
-// callback.
-//
 class FaviconTabHelper : public content::WebContentsObserver,
-                         public FaviconHandlerDelegate {
+                         public FaviconHandlerDelegate,
+                         public content::WebContentsUserData<FaviconTabHelper> {
  public:
-  explicit FaviconTabHelper(content::WebContents* web_contents);
   virtual ~FaviconTabHelper();
 
   // Initiates loading the favicon for the specified url.
@@ -54,27 +52,14 @@ class FaviconTabHelper : public content::WebContentsObserver,
   // space is provided for the favicon, and the favicon is never displayed.
   virtual bool ShouldDisplayFavicon();
 
+  // content::WebContentsObserver override. Must be public, because also
+  // called from PrerenderContents.
+  virtual void DidUpdateFaviconURL(
+      int32 page_id,
+      const std::vector<content::FaviconURL>& candidates) OVERRIDE;
+
   // Saves the favicon for the current page.
   void SaveFavicon();
-
-  // Initiates loading an image from given |image_url|. Returns a download id
-  // for caller to track the request. When download completes, |callback| is
-  // called with the three params: the download_id, a boolean flag to indicate
-  // whether the download succeeds and a SkBitmap as the downloaded image.
-  // Note that |image_size| is a hint for images with multiple sizes. The
-  // downloaded image is not resized to the given image_size. If 0 is passed,
-  // the first frame of the image is returned.
-  typedef base::Callback<void(int, bool, const SkBitmap&)>
-      ImageDownloadCallback;
-  int DownloadImage(const GURL& image_url,
-                    int image_size,
-                    history::IconType icon_type,
-                    const ImageDownloadCallback& callback);
-
-  // Message Handler.  Must be public, because also called from
-  // PrerenderContents.
-  void OnUpdateFaviconURL(int32 page_id,
-                          const std::vector<FaviconURL>& candidates);
 
   // FaviconHandlerDelegate methods.
   virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
@@ -82,6 +67,9 @@ class FaviconTabHelper : public content::WebContentsObserver,
   virtual void NotifyFaviconUpdated() OVERRIDE;
 
  private:
+  explicit FaviconTabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<FaviconTabHelper>;
+
   // content::WebContentsObserver overrides.
   virtual void NavigateToPendingEntry(
       const GURL& url,
@@ -89,13 +77,14 @@ class FaviconTabHelper : public content::WebContentsObserver,
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  void OnDidDownloadFavicon(int id,
-                            const GURL& image_url,
-                            bool errored,
-                            int requested_size,
-                            const std::vector<SkBitmap>& bitmaps);
+  // Favicon download callback.
+  void DidDownloadFavicon(
+      int id,
+      const GURL& image_url,
+      bool errored,
+      int requested_size,
+      const std::vector<SkBitmap>& bitmaps);
 
   Profile* profile_;
 

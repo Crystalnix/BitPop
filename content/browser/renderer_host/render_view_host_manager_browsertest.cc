@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/utf_string_conversions.h"
+#include "content/common/content_constants_internal.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -28,6 +30,63 @@
 #include "net/test/test_server.h"
 
 namespace content {
+namespace {
+
+bool CompareTrees(base::DictionaryValue* first, base::DictionaryValue* second) {
+  string16 name1;
+  string16 name2;
+  if (!first->GetString(kFrameTreeNodeNameKey, &name1) ||
+      !second->GetString(kFrameTreeNodeNameKey, &name2))
+    return false;
+  if (name1 != name2)
+    return false;
+
+  int id1 = 0;
+  int id2 = 0;
+  if (!first->GetInteger(kFrameTreeNodeIdKey, &id1) ||
+      !second->GetInteger(kFrameTreeNodeIdKey, &id2)) {
+    return false;
+  }
+  if (id1 != id2)
+    return false;
+
+  ListValue* subtree1 = NULL;
+  ListValue* subtree2 = NULL;
+  bool result1 = first->GetList(kFrameTreeNodeSubtreeKey, &subtree1);
+  bool result2 = second->GetList(kFrameTreeNodeSubtreeKey, &subtree2);
+  if (!result1 && !result2)
+    return true;
+  if (!result1 || !result2)
+    return false;
+
+  if (subtree1->GetSize() != subtree2->GetSize())
+    return false;
+
+  base::DictionaryValue* child1 = NULL;
+  base::DictionaryValue* child2 = NULL;
+  for (size_t i = 0; i < subtree1->GetSize(); ++i) {
+    if (!subtree1->GetDictionary(i, &child1) ||
+        !subtree2->GetDictionary(i, &child2)) {
+      return false;
+    }
+    if (!CompareTrees(child1, child2))
+      return false;
+  }
+
+  return true;
+}
+
+base::DictionaryValue* GetTree(RenderViewHostImpl* rvh) {
+  std::string frame_tree = rvh->frame_tree();
+  EXPECT_FALSE(frame_tree.empty());
+  base::Value* v = base::JSONReader::Read(frame_tree);
+  base::DictionaryValue* tree = NULL;
+  EXPECT_TRUE(v->IsType(base::Value::TYPE_DICTIONARY));
+  EXPECT_TRUE(v->GetAsDictionary(&tree));
+  return tree;
+}
+
+} // namespace
 
 class RenderViewHostManagerTest : public ContentBrowserTest {
  public:
@@ -395,6 +454,87 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   close_observer.Wait();
 }
 
+// Test that setting the opener to null in a window affects cross-process
+// navigations, including those to existing entries.  http://crbug.com/156669.
+IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownOpener) {
+  // Start two servers with different sites.
+  ASSERT_TRUE(test_server()->Start());
+  net::TestServer https_server(
+      net::TestServer::TYPE_HTTPS,
+      net::TestServer::kLocalhost,
+      FilePath(FILE_PATH_LITERAL("content/test/data")));
+  ASSERT_TRUE(https_server.Start());
+
+  // Load a page with links that open in a new window.
+  std::string replacement_path;
+  ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
+      "files/click-noreferrer-links.html",
+      https_server.host_port_pair(),
+      &replacement_path));
+  NavigateToURL(shell(), test_server()->GetURL(replacement_path));
+
+  // Get the original SiteInstance for later comparison.
+  scoped_refptr<SiteInstance> orig_site_instance(
+      shell()->web_contents()->GetSiteInstance());
+  EXPECT_TRUE(orig_site_instance != NULL);
+
+  // Test clicking a target=_blank link.
+  ShellAddedObserver new_shell_observer;
+  bool success = false;
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      shell()->web_contents()->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(clickSameSiteTargetBlankLink());",
+      &success));
+  EXPECT_TRUE(success);
+  Shell* new_shell = new_shell_observer.GetShell();
+
+  // Wait for the navigation in the new tab to finish, if it hasn't.
+  WaitForLoadStop(new_shell->web_contents());
+  EXPECT_EQ("/files/title2.html",
+            new_shell->web_contents()->GetURL().path());
+
+  // Should have the same SiteInstance.
+  scoped_refptr<SiteInstance> blank_site_instance(
+      new_shell->web_contents()->GetSiteInstance());
+  EXPECT_EQ(orig_site_instance, blank_site_instance);
+
+  // Now navigate the new tab to a different site.
+  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  scoped_refptr<SiteInstance> new_site_instance(
+      new_shell->web_contents()->GetSiteInstance());
+  EXPECT_NE(orig_site_instance, new_site_instance);
+
+  // Now disown the opener.
+  EXPECT_TRUE(ExecuteJavaScript(
+      new_shell->web_contents()->GetRenderViewHost(), L"",
+      L"window.opener = null;"));
+
+  // Go back and ensure the opener is still null.
+  {
+    WindowedNotificationObserver back_nav_load_observer(
+        NOTIFICATION_NAV_ENTRY_COMMITTED,
+        Source<NavigationController>(
+            &new_shell->web_contents()->GetController()));
+    new_shell->web_contents()->GetController().GoBack();
+    back_nav_load_observer.Wait();
+  }
+  success = false;
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      new_shell->web_contents()->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(window.opener == null);",
+      &success));
+  EXPECT_TRUE(success);
+
+  // Now navigate forward again (creating a new process) and check opener.
+  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  success = false;
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      new_shell->web_contents()->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(window.opener == null);",
+      &success));
+  EXPECT_TRUE(success);
+}
+
 // Test for crbug.com/99202.  PostMessage calls should still work after
 // navigating the source and target windows to different sites.
 // Specifically:
@@ -402,6 +542,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
 // 2) Fail to post a message from "foo" to opener with the wrong target origin.
 // 3) Post a message from "foo" to opener, which replies back to "foo".
 // 4) Post a message from _blank to "foo".
+// 5) Post a message from "foo" to a subframe of opener, which replies back.
+// 6) Post a message from _blank to a subframe of "foo".
 IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
                        SupportCrossProcessPostMessage) {
   // Start two servers with different sites.
@@ -486,6 +628,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
       L"'http://google.com'));",
       &success));
   EXPECT_TRUE(success);
+  ASSERT_FALSE(opener_manager->GetSwappedOutRenderViewHost(orig_site_instance));
 
   // 3) Post a message from the foo window to the opener.  The opener will
   // reply, causing the foo window to update its own title.
@@ -497,6 +640,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
       L"window.domAutomationController.send(postToOpener('msg','*'));",
       &success));
   EXPECT_TRUE(success);
+  ASSERT_FALSE(opener_manager->GetSwappedOutRenderViewHost(orig_site_instance));
   title_observer.Wait();
 
   // We should have received only 1 message in the opener and "foo" tabs,
@@ -531,6 +675,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // This postMessage should have created a swapped out RVH for the new
   // SiteInstance in the target=_blank window.
   EXPECT_TRUE(new_manager->GetSwappedOutRenderViewHost(foo_site_instance));
+
+  // TODO(nasko): Test subframe targeting of postMessage once
+  // http://crbug.com/153701 is fixed.
 }
 
 // Test for crbug.com/116192.  Navigations to a window's opener should
@@ -975,7 +1122,9 @@ class RenderViewHostObserverArray {
 
 // Test for crbug.com/90867. Make sure we don't leak render view hosts since
 // they may cause crashes or memory corruptions when trying to call dead
-// delegate_.
+// delegate_. This test also verifies crbug.com/117420 and crbug.com/143255 to
+// ensure that a separate SiteInstance is created when navigating to view-source
+// URLs, regardless of current URL.
 IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
   // Start two servers with different sites.
   ASSERT_TRUE(test_server()->Start());
@@ -985,20 +1134,38 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
       FilePath(FILE_PATH_LITERAL("content/test/data")));
   ASSERT_TRUE(https_server.Start());
 
+  // Observe the created render_view_host's to make sure they will not leak.
+  RenderViewHostObserverArray rvh_observers;
+
+  GURL navigated_url(test_server()->GetURL("files/title2.html"));
+  GURL view_source_url(chrome::kViewSourceScheme + std::string(":") +
+      navigated_url.spec());
+
+  // Let's ensure that when we start with a blank window, navigating away to a
+  // view-source URL, we create a new SiteInstance.
+  RenderViewHost* blank_rvh = shell()->web_contents()->
+      GetRenderViewHost();
+  SiteInstance* blank_site_instance = blank_rvh->GetSiteInstance();
+  EXPECT_EQ(shell()->web_contents()->GetURL(), GURL::EmptyGURL());
+  EXPECT_EQ(blank_site_instance->GetSiteURL(), GURL::EmptyGURL());
+  rvh_observers.AddObserverToRVH(blank_rvh);
+
+  // Now navigate to the view-source URL and ensure we got a different
+  // SiteInstance and RenderViewHost.
+  NavigateToURL(shell(), view_source_url);
+  EXPECT_NE(blank_rvh, shell()->web_contents()->GetRenderViewHost());
+  EXPECT_NE(blank_site_instance, shell()->web_contents()->
+      GetRenderViewHost()->GetSiteInstance());
+  rvh_observers.AddObserverToRVH(shell()->web_contents()->GetRenderViewHost());
+
   // Load a random page and then navigate to view-source: of it.
   // This used to cause two RVH instances for the same SiteInstance, which
   // was a problem.  This is no longer the case.
-  GURL navigated_url(test_server()->GetURL("files/title2.html"));
   NavigateToURL(shell(), navigated_url);
   SiteInstance* site_instance1 = shell()->web_contents()->
       GetRenderViewHost()->GetSiteInstance();
-
-  // Observe the newly created render_view_host to make sure it will not leak.
-  RenderViewHostObserverArray rvh_observers;
   rvh_observers.AddObserverToRVH(shell()->web_contents()->GetRenderViewHost());
 
-  GURL view_source_url(chrome::kViewSourceScheme + std::string(":") +
-      navigated_url.spec());
   NavigateToURL(shell(), view_source_url);
   rvh_observers.AddObserverToRVH(shell()->web_contents()->GetRenderViewHost());
   SiteInstance* site_instance2 = shell()->web_contents()->
@@ -1017,6 +1184,236 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
   RunAllPendingInMessageLoop();  // Needed on ChromeOS.
 
   EXPECT_EQ(0U, rvh_observers.GetNumObservers());
+}
+
+// Test for correct propagation of the frame hierarchy across processes in the
+// same BrowsingInstance. The test starts by navigating to a page that has
+// multiple nested frames. It then opens two windows and navigates each one
+// to a separate site, so at the end we have 3 SiteInstances. The opened
+// windows have swapped out RenderViews corresponding to the opener, so those
+// swapped out views must have a matching frame hierarchy. The test checks
+// that frame hierarchies are kept in sync through navigations, reloading, and
+// JavaScript manipulation of the frame tree.
+//
+// Disable the test until http://crbug.com/153701 is fixed.
+IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DISABLED_FrameTreeUpdates) {
+  // Start two servers to allow using different sites.
+  EXPECT_TRUE(test_server()->Start());
+  net::TestServer https_server(
+      net::TestServer::TYPE_HTTPS,
+      net::TestServer::kLocalhost,
+      FilePath(FILE_PATH_LITERAL("content/test/data")));
+  EXPECT_TRUE(https_server.Start());
+
+  GURL frame_tree_url(test_server()->GetURL("files/frame_tree/top.html"));
+
+  // Replace the 127.0.0.1 with localhost, which will give us a different
+  // site instance.
+  GURL::Replacements replacements;
+  std::string new_host("localhost");
+  replacements.SetHostStr(new_host);
+  GURL remote_frame = test_server()->GetURL(
+      "files/frame_tree/1-1.html").ReplaceComponents(replacements);
+
+  bool success = false;
+  base::DictionaryValue* frames = NULL;
+  base::ListValue* subtree = NULL;
+
+  // First navigate to a page with no frames and ensure the frame tree has no
+  // subtrees.
+  NavigateToURL(shell(), test_server()->GetURL("files/simple_page.html"));
+  WebContents* opener_contents = shell()->web_contents();
+  RenderViewHostManager* opener_rvhm = static_cast<WebContentsImpl*>(
+      opener_contents)->GetRenderManagerForTesting();
+  frames = GetTree(opener_rvhm->current_host());
+  EXPECT_FALSE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
+
+  NavigateToURL(shell(), frame_tree_url);
+  frames = GetTree(opener_rvhm->current_host());
+  EXPECT_TRUE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
+  EXPECT_TRUE(subtree->GetSize() == 3);
+
+  scoped_refptr<SiteInstance> orig_site_instance(
+      opener_contents->GetSiteInstance());
+  EXPECT_TRUE(orig_site_instance != NULL);
+
+  ShellAddedObserver shell_observer1;
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      opener_contents->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(openWindow('1-3.html'));",
+      &success));
+  EXPECT_TRUE(success);
+
+  Shell* shell1 = shell_observer1.GetShell();
+  WebContents* contents1 = shell1->web_contents();
+  WaitForLoadStop(contents1);
+  RenderViewHostManager* rvhm1 = static_cast<WebContentsImpl*>(
+      contents1)->GetRenderManagerForTesting();
+  EXPECT_EQ("/files/frame_tree/1-3.html", contents1->GetURL().path());
+
+  // Now navigate the new window to a different SiteInstance.
+  NavigateToURL(shell1, https_server.GetURL("files/title1.html"));
+  EXPECT_EQ("/files/title1.html", contents1->GetURL().path());
+  scoped_refptr<SiteInstance> site_instance1(
+      contents1->GetSiteInstance());
+  EXPECT_NE(orig_site_instance, site_instance1);
+
+  ShellAddedObserver shell_observer2;
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      opener_contents->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(openWindow('../title2.html'));",
+      &success));
+  EXPECT_TRUE(success);
+
+  Shell* shell2 = shell_observer2.GetShell();
+  WebContents* contents2 = shell2->web_contents();
+  WaitForLoadStop(contents2);
+  EXPECT_EQ("/files/title2.html", contents2->GetURL().path());
+
+  // Navigate the second new window to a different SiteInstance as well.
+  NavigateToURL(shell2, remote_frame);
+  EXPECT_EQ("/files/frame_tree/1-1.html", contents2->GetURL().path());
+  scoped_refptr<SiteInstance> site_instance2(
+      contents2->GetSiteInstance());
+  EXPECT_NE(orig_site_instance, site_instance2);
+  EXPECT_NE(site_instance1, site_instance2);
+
+  RenderViewHostManager* rvhm2 = static_cast<WebContentsImpl*>(
+      contents2)->GetRenderManagerForTesting();
+
+  EXPECT_TRUE(CompareTrees(
+      GetTree(opener_rvhm->current_host()),
+      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance1))));
+  EXPECT_TRUE(CompareTrees(
+      GetTree(opener_rvhm->current_host()),
+      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance2))));
+
+  EXPECT_TRUE(CompareTrees(
+      GetTree(rvhm1->current_host()),
+      GetTree(rvhm1->GetSwappedOutRenderViewHost(orig_site_instance))));
+  EXPECT_TRUE(CompareTrees(
+      GetTree(rvhm2->current_host()),
+      GetTree(rvhm2->GetSwappedOutRenderViewHost(orig_site_instance))));
+
+  // Verify that the frame trees from different windows aren't equal.
+  EXPECT_FALSE(CompareTrees(
+      GetTree(opener_rvhm->current_host()), GetTree(rvhm1->current_host())));
+  EXPECT_FALSE(CompareTrees(
+      GetTree(opener_rvhm->current_host()), GetTree(rvhm2->current_host())));
+
+  // Reload the original page, which will cause subframe ids to change. This
+  // will ensure that the ids are properly replicated across reload.
+  NavigateToURL(shell(), frame_tree_url);
+
+  EXPECT_TRUE(CompareTrees(
+      GetTree(opener_rvhm->current_host()),
+      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance1))));
+  EXPECT_TRUE(CompareTrees(
+      GetTree(opener_rvhm->current_host()),
+      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance2))));
+
+  EXPECT_FALSE(CompareTrees(
+      GetTree(opener_rvhm->current_host()), GetTree(rvhm1->current_host())));
+  EXPECT_FALSE(CompareTrees(
+      GetTree(opener_rvhm->current_host()), GetTree(rvhm2->current_host())));
+
+  // Now let's ensure that using JS to add/remove frames results in proper
+  // updates.
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      opener_contents->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(removeFrame());",
+      &success));
+  EXPECT_TRUE(success);
+  frames = GetTree(opener_rvhm->current_host());
+  EXPECT_TRUE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
+  EXPECT_EQ(subtree->GetSize(), 2U);
+
+  // Create a load observer for the iframe that will be created by the
+  // JavaScript code we will execute.
+  WindowedNotificationObserver load_observer(
+      NOTIFICATION_LOAD_STOP,
+      Source<NavigationController>(
+              &opener_contents->GetController()));
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      opener_contents->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(addFrame());",
+      &success));
+  EXPECT_TRUE(success);
+  load_observer.Wait();
+
+  frames = GetTree(opener_rvhm->current_host());
+  EXPECT_TRUE(frames->GetList(kFrameTreeNodeSubtreeKey, &subtree));
+  EXPECT_EQ(subtree->GetSize(), 3U);
+
+  EXPECT_TRUE(CompareTrees(
+      GetTree(opener_rvhm->current_host()),
+      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance1))));
+  EXPECT_TRUE(CompareTrees(
+      GetTree(opener_rvhm->current_host()),
+      GetTree(opener_rvhm->GetSwappedOutRenderViewHost(site_instance2))));
+}
+
+// Test for crbug.com/143155.  Frame tree updates during unload should not
+// interrupt the intended navigation and show swappedout:// instead.
+// Specifically:
+// 1) Open 2 tabs in an HTTP SiteInstance, with a subframe in the opener.
+// 2) Send the second tab to a different HTTPS SiteInstance.
+//    This creates a swapped out opener for the first tab in the HTTPS process.
+// 3) Navigate the first tab to the HTTPS SiteInstance, and have the first
+//    tab's unload handler remove its frame.
+// This used to cause an update to the frame tree of the swapped out RV,
+// just as it was navigating to a real page.  That pre-empted the real
+// navigation and visibly sent the tab to swappedout://.
+IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
+                       DontPreemptNavigationWithFrameTreeUpdate) {
+  // Start two servers with different sites.
+  ASSERT_TRUE(test_server()->Start());
+  net::TestServer https_server(
+      net::TestServer::TYPE_HTTPS,
+      net::TestServer::kLocalhost,
+      FilePath(FILE_PATH_LITERAL("content/test/data")));
+  ASSERT_TRUE(https_server.Start());
+
+  // 1. Load a page that deletes its iframe during unload.
+  NavigateToURL(shell(),
+                test_server()->GetURL("files/remove_frame_on_unload.html"));
+
+  // Get the original SiteInstance for later comparison.
+  scoped_refptr<SiteInstance> orig_site_instance(
+      shell()->web_contents()->GetSiteInstance());
+
+  // Open a same-site page in a new window.
+  ShellAddedObserver new_shell_observer;
+  bool success = false;
+  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
+      shell()->web_contents()->GetRenderViewHost(), L"",
+      L"window.domAutomationController.send(openWindow());",
+      &success));
+  EXPECT_TRUE(success);
+  Shell* new_shell = new_shell_observer.GetShell();
+
+  // Wait for the navigation in the new window to finish, if it hasn't.
+  WaitForLoadStop(new_shell->web_contents());
+  EXPECT_EQ("/files/title1.html",
+            new_shell->web_contents()->GetURL().path());
+
+  // Should have the same SiteInstance.
+  EXPECT_EQ(orig_site_instance, new_shell->web_contents()->GetSiteInstance());
+
+  // 2. Send the second tab to a different process.
+  NavigateToURL(new_shell, https_server.GetURL("files/title1.html"));
+  scoped_refptr<SiteInstance> new_site_instance(
+      new_shell->web_contents()->GetSiteInstance());
+  EXPECT_NE(orig_site_instance, new_site_instance);
+
+  // 3. Send the first tab to the second tab's process.
+  NavigateToURL(shell(), https_server.GetURL("files/title1.html"));
+
+  // Make sure it ends up at the right page.
+  WaitForLoadStop(shell()->web_contents());
+  EXPECT_EQ(https_server.GetURL("files/title1.html"),
+            shell()->web_contents()->GetURL());
+  EXPECT_EQ(new_site_instance, shell()->web_contents()->GetSiteInstance());
 }
 
 }  // namespace content

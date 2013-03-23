@@ -6,6 +6,8 @@ package org.chromium.chrome.browser;
 
 /**
  * A set of utility methods related to the various Chrome processes.
+ * TODO(pliard): Remove this class when JavaScript timers toggling is handled directly on the native
+ * side by using the system monitor.
  */
 public class ProcessUtils {
     // To prevent this class from being instantiated.

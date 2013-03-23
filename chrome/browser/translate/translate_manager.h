@@ -14,8 +14,8 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/time.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/common/translate_errors.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -25,6 +25,7 @@ template <typename T> struct DefaultSingletonTraits;
 class GURL;
 struct PageTranslatedDetails;
 class PrefService;
+class PrefServiceBase;
 class TranslateInfoBarDelegate;
 
 namespace content {
@@ -150,7 +151,7 @@ class TranslateManager : public content::NotificationObserver,
                                  int render_id,
                                  const std::string& page_lang);
 
-  // Sends a translation request to the RenderView of |tab_contents|.
+  // Sends a translation request to the RenderView of |web_contents|.
   void DoTranslatePage(content::WebContents* web_contents,
                        const std::string& translate_script,
                        const std::string& source_lang,
@@ -167,7 +168,7 @@ class TranslateManager : public content::NotificationObserver,
 
   // Initializes the |accept_languages_| language table based on the associated
   // preference in |prefs|.
-  void InitAcceptLanguages(PrefService* prefs);
+  void InitAcceptLanguages(PrefServiceBase* prefs);
 
   // Fetches the JS translate script (the script that is injected in the page
   // to translate it).
@@ -199,7 +200,7 @@ class TranslateManager : public content::NotificationObserver,
 
   // A map that associates a profile with its parsed "accept languages".
   typedef std::set<std::string> LanguageSet;
-  typedef std::map<PrefService*, LanguageSet> PrefServiceLanguagesMap;
+  typedef std::map<PrefServiceBase*, LanguageSet> PrefServiceLanguagesMap;
   PrefServiceLanguagesMap accept_languages_;
 
   base::WeakPtrFactory<TranslateManager> weak_method_factory_;

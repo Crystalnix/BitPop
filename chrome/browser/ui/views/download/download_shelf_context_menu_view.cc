@@ -15,7 +15,7 @@
 #include "ui/views/controls/menu/menu_runner.h"
 
 DownloadShelfContextMenuView::DownloadShelfContextMenuView(
-    BaseDownloadItemModel* model,
+    DownloadItemModel* model,
     content::PageNavigator* navigator)
     : DownloadShelfContextMenu(model, navigator) {
 }
@@ -43,5 +43,5 @@ void DownloadShelfContextMenuView::Run(views::Widget* parent_widget,
       NULL,
       rect,
       position,
-      views::MenuRunner::HAS_MNEMONICS));
+      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
 }

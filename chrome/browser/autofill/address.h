@@ -23,9 +23,11 @@ class Address : public FormGroup {
   Address& operator=(const Address& address);
 
   // FormGroup:
-  virtual string16 GetInfo(AutofillFieldType type) const OVERRIDE;
-  virtual void SetInfo(AutofillFieldType type, const string16& value) OVERRIDE;
+  virtual string16 GetRawInfo(AutofillFieldType type) const OVERRIDE;
+  virtual void SetRawInfo(AutofillFieldType type,
+                          const string16& value) OVERRIDE;
   virtual void GetMatchingTypes(const string16& text,
+                                const std::string& app_locale,
                                 FieldTypeSet* matching_types) const OVERRIDE;
 
   const std::string& country_code() const { return country_code_; }

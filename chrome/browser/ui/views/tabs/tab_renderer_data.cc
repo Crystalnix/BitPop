@@ -13,19 +13,14 @@ TabRendererData::TabRendererData()
       mini(false),
       blocked(false),
       app(false),
-      mode(chrome::search::Mode::MODE_DEFAULT),
-      background_state(
-          chrome::search::ToolbarSearchAnimator::BACKGROUND_STATE_DEFAULT),
-      search_background_opacity(-1.0f) {
+      capture_state(CAPTURE_STATE_NONE) {
 }
 
 TabRendererData::~TabRendererData() {}
 
 bool TabRendererData::Equals(const TabRendererData& data) {
   return
-      favicon.pixelRef() &&
-      favicon.pixelRef() == data.favicon.pixelRef() &&
-      favicon.pixelRefOffset() == data.favicon.pixelRefOffset() &&
+      favicon.BackedBySameObjectAs(data.favicon) &&
       network_state == data.network_state &&
       title == data.title &&
       url == data.url &&
@@ -36,7 +31,5 @@ bool TabRendererData::Equals(const TabRendererData& data) {
       mini == data.mini &&
       blocked == data.blocked &&
       app == data.app &&
-      mode == data.mode &&
-      background_state == data.background_state &&
-      search_background_opacity == data.search_background_opacity;
+      capture_state == data.capture_state;
 }

@@ -17,8 +17,9 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/private/net_address_private_impl.h"
 
-using content::BrowserThread;
 using ppapi::NetAddressPrivateImpl;
+
+namespace content {
 
 PepperTCPServerSocket::PepperTCPServerSocket(
     PepperMessageFilter* manager,
@@ -42,9 +43,10 @@ void PepperTCPServerSocket::Listen(const PP_NetAddress_Private& addr,
                                    int32 backlog) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  net::IPEndPoint ip_end_point;
+  net::IPAddressNumber address;
+  int port;
   if (state_ != BEFORE_LISTENING ||
-      !NetAddressPrivateImpl::NetAddressToIPEndPoint(addr, &ip_end_point)) {
+      !NetAddressPrivateImpl::NetAddressToIPEndPoint(addr, &address, &port)) {
     CancelListenRequest();
     return;
   }
@@ -52,7 +54,7 @@ void PepperTCPServerSocket::Listen(const PP_NetAddress_Private& addr,
   state_ = LISTEN_IN_PROGRESS;
 
   socket_.reset(new net::TCPServerSocket(NULL, net::NetLog::Source()));
-  int result = socket_->Listen(ip_end_point, backlog);
+  int result = socket_->Listen(net::IPEndPoint(address, port), backlog);
   if (result != net::ERR_IO_PENDING)
     OnListenCompleted(result);
 }
@@ -134,11 +136,15 @@ void PepperTCPServerSocket::OnAcceptCompleted(
         NetAddressPrivateImpl::kInvalidNetAddress;
 
     if (socket->GetLocalAddress(&ip_end_point_local) != net::OK ||
-        !NetAddressPrivateImpl::IPEndPointToNetAddress(ip_end_point_local,
-                                                       &local_addr) ||
+        !NetAddressPrivateImpl::IPEndPointToNetAddress(
+            ip_end_point_local.address(),
+            ip_end_point_local.port(),
+            &local_addr) ||
         socket->GetPeerAddress(&ip_end_point_remote) != net::OK ||
-        !NetAddressPrivateImpl::IPEndPointToNetAddress(ip_end_point_remote,
-                                                       &remote_addr)) {
+        !NetAddressPrivateImpl::IPEndPointToNetAddress(
+            ip_end_point_remote.address(),
+            ip_end_point_remote.port(),
+            &remote_addr)) {
       SendAcceptACKError();
     } else {
       uint32 accepted_socket_id =
@@ -161,3 +167,5 @@ void PepperTCPServerSocket::OnAcceptCompleted(
 
   state_ = LISTENING;
 }
+
+}  // namespace content

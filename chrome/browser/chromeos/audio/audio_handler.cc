@@ -16,6 +16,7 @@
 #include "chrome/browser/chromeos/audio/audio_mixer_alsa.h"
 #endif
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -28,6 +29,13 @@ namespace {
 
 // Default value for the volume pref, as a percent in the range [0.0, 100.0].
 const double kDefaultVolumePercent = 75.0;
+
+// Default value for unmuting, as a percent in the range [0.0, 100.0].
+// Used when sound is unmuted, but volume was less than kMuteThresholdPercent.
+const double kDefaultUnmuteVolumePercent = 4.0;
+
+// Volume value which should be considered as muted in range [0.0, 100.0].
+const double kMuteThresholdPercent = 1.0;
 
 // Values used for muted preference.
 const int kPrefMuteOff = 0;
@@ -71,23 +79,30 @@ AudioHandler* AudioHandler::GetInstance() {
 
 // static
 void AudioHandler::RegisterPrefs(PrefService* local_state) {
-  if (!local_state->FindPreference(prefs::kAudioVolumePercent))
+  if (!local_state->FindPreference(prefs::kAudioVolumePercent)) {
     local_state->RegisterDoublePref(prefs::kAudioVolumePercent,
                                     kDefaultVolumePercent,
                                     PrefService::UNSYNCABLE_PREF);
-  if (!local_state->FindPreference(prefs::kAudioMute))
+  }
+  if (!local_state->FindPreference(prefs::kAudioMute)) {
     local_state->RegisterIntegerPref(prefs::kAudioMute,
                                      kPrefMuteOff,
                                      PrefService::UNSYNCABLE_PREF);
+  }
 
-  // Register the old decibel-based pref so we can clear it.
-  // TODO(derat): Remove this after R20: http://crbug.com/112039
-  if (!local_state->FindPreference(prefs::kAudioVolumeDb))
-    local_state->RegisterDoublePref(prefs::kAudioVolumeDb,
-                                    0,
-                                    PrefService::UNSYNCABLE_PREF);
-  local_state->ClearPref(prefs::kAudioVolumeDb);
-  local_state->UnregisterPreference(prefs::kAudioVolumeDb);
+  if (!local_state->FindPreference(prefs::kAudioOutputAllowed)) {
+    // Register the prefs backing the audio muting policies.
+    local_state->RegisterBooleanPref(prefs::kAudioOutputAllowed,
+                                     true,
+                                     PrefService::UNSYNCABLE_PREF);
+  }
+  // This pref has moved to the media subsystem but we should verify it is there
+  // before we use it.
+  if (!local_state->FindPreference(prefs::kAudioCaptureAllowed)) {
+    local_state->RegisterBooleanPref(prefs::kAudioCaptureAllowed,
+                                     true,
+                                     PrefService::UNSYNCABLE_PREF);
+  }
 }
 
 double AudioHandler::GetVolumePercent() {
@@ -96,10 +111,18 @@ double AudioHandler::GetVolumePercent() {
 
 void AudioHandler::SetVolumePercent(double volume_percent) {
   volume_percent = min(max(volume_percent, 0.0), 100.0);
+  if (volume_percent <= kMuteThresholdPercent)
+    volume_percent = 0.0;
   if (IsMuted() && volume_percent > 0.0)
     SetMuted(false);
+  if (!IsMuted() && volume_percent == 0.0)
+    SetMuted(true);
+  SetVolumePercentInternal(volume_percent);
+}
+
+void AudioHandler::SetVolumePercentInternal(double volume_percent) {
   mixer_->SetVolumePercent(volume_percent);
-  prefs_->SetDouble(prefs::kAudioVolumePercent, volume_percent);
+  local_state_->SetDouble(prefs::kAudioVolumePercent, volume_percent);
   FOR_EACH_OBSERVER(VolumeObserver, volume_observers_, OnVolumeChanged());
 }
 
@@ -112,9 +135,29 @@ bool AudioHandler::IsMuted() {
 }
 
 void AudioHandler::SetMuted(bool mute) {
-  mixer_->SetMuted(mute);
-  prefs_->SetInteger(prefs::kAudioMute, mute ? kPrefMuteOn : kPrefMuteOff);
-  FOR_EACH_OBSERVER(VolumeObserver, volume_observers_, OnMuteToggled());
+  if (!mixer_->IsMuteLocked()) {
+    mixer_->SetMuted(mute);
+    local_state_->SetInteger(prefs::kAudioMute,
+                             mute ? kPrefMuteOn : kPrefMuteOff);
+
+    if (!mute) {
+      if (GetVolumePercent() <= kMuteThresholdPercent) {
+        // Avoid the situation when sound has been unmuted, but the volume
+        // is set to a very low value, so user still can't hear any sound.
+        SetVolumePercentInternal(kDefaultUnmuteVolumePercent);
+      }
+    }
+    FOR_EACH_OBSERVER(VolumeObserver, volume_observers_, OnMuteToggled());
+  }
+}
+
+bool AudioHandler::IsCaptureMuted() {
+  return mixer_->IsCaptureMuted();
+}
+
+void AudioHandler::SetCaptureMuted(bool mute) {
+  if (!mixer_->IsCaptureMuteLocked())
+    mixer_->SetCaptureMuted(mute);
 }
 
 void AudioHandler::AddVolumeObserver(VolumeObserver* observer) {
@@ -127,14 +170,43 @@ void AudioHandler::RemoveVolumeObserver(VolumeObserver* observer) {
 
 AudioHandler::AudioHandler(AudioMixer* mixer)
     : mixer_(mixer),
-      prefs_(g_browser_process->local_state()) {
-  mixer_->SetVolumePercent(prefs_->GetDouble(prefs::kAudioVolumePercent));
-  mixer_->SetMuted(prefs_->GetInteger(prefs::kAudioMute) == kPrefMuteOn);
+      local_state_(g_browser_process->local_state()) {
+  InitializePrefObservers();
   mixer_->Init();
+  ApplyAudioPolicy();
+  SetMuted(local_state_->GetInteger(prefs::kAudioMute) == kPrefMuteOn);
+  SetVolumePercentInternal(local_state_->GetDouble(prefs::kAudioVolumePercent));
 }
 
 AudioHandler::~AudioHandler() {
   mixer_.reset();
 };
+
+void AudioHandler::InitializePrefObservers() {
+  pref_change_registrar_.Init(local_state_);
+  base::Closure callback = base::Bind(&AudioHandler::ApplyAudioPolicy,
+                                      base::Unretained(this));
+  pref_change_registrar_.Add(prefs::kAudioOutputAllowed, callback);
+  pref_change_registrar_.Add(prefs::kAudioCaptureAllowed, callback);
+}
+
+void AudioHandler::ApplyAudioPolicy() {
+  mixer_->SetMuteLocked(false);
+  if (local_state_->GetBoolean(prefs::kAudioOutputAllowed)) {
+    mixer_->SetMuted(
+        local_state_->GetInteger(prefs::kAudioMute) == kPrefMuteOn);
+  } else {
+    mixer_->SetMuted(true);
+    mixer_->SetMuteLocked(true);
+  }
+  FOR_EACH_OBSERVER(VolumeObserver, volume_observers_, OnMuteToggled());
+  mixer_->SetCaptureMuteLocked(false);
+  if (local_state_->GetBoolean(prefs::kAudioCaptureAllowed)) {
+    mixer_->SetCaptureMuted(false);
+  } else {
+    mixer_->SetCaptureMuted(true);
+    mixer_->SetCaptureMuteLocked(true);
+  }
+}
 
 }  // namespace chromeos

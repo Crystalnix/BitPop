@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/tabs/tab_gtk.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -81,14 +82,8 @@ class TopMostFinder : public BaseWindowFinder {
       return false;
     }
 
-    gfx::Rect rect;
-    if (ui::GetWindowRect(window, &rect) && rect.Contains(screen_loc_)) {
-      // At this point we haven't found our target window, so this window is
-      // higher in the z-order than the target window.  If this window contains
-      // the point, then we can stop the search now because this window is
-      // obscuring the target window at this point.
+    if (ui::WindowContainsPoint(window, screen_loc_))
       return true;
-    }
 
     return false;
   }
@@ -149,8 +144,7 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
     if (!ui::IsWindowVisible(window))
       return false;
 
-    gfx::Rect rect;
-    if (ui::GetWindowRect(window, &rect) && rect.Contains(screen_loc_)) {
+    if (ui::WindowContainsPoint(window, screen_loc_)) {
       result_ = window;
       return true;
     }
@@ -178,7 +172,8 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
 };
 
 // static
-DockInfo DockInfo::GetDockInfoAtPoint(const gfx::Point& screen_point,
+DockInfo DockInfo::GetDockInfoAtPoint(chrome::HostDesktopType host_desktop_type,
+                                      const gfx::Point& screen_point,
                                       const std::set<GtkWidget*>& ignore) {
   NOTIMPLEMENTED();
   return DockInfo();
@@ -186,6 +181,7 @@ DockInfo DockInfo::GetDockInfoAtPoint(const gfx::Point& screen_point,
 
 // static
 GtkWindow* DockInfo::GetLocalProcessWindowAtPoint(
+    chrome::HostDesktopType host_desktop_type,
     const gfx::Point& screen_point,
     const std::set<GtkWidget*>& ignore) {
   XID xid =

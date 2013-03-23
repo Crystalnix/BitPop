@@ -34,6 +34,8 @@ class BrowserViewLayout : public views::LayoutManager {
   BrowserViewLayout();
   virtual ~BrowserViewLayout();
 
+  bool GetConstrainedWindowTopY(int* top_y);
+
   // Returns the minimum size of the browser view.
   virtual gfx::Size GetMinimumSize();
 
@@ -70,8 +72,13 @@ class BrowserViewLayout : public views::LayoutManager {
   // of the bottom of the control, for laying out the next control.
   virtual int LayoutToolbar(int top);
   virtual int LayoutBookmarkAndInfoBars(int top);
-  int LayoutBookmarkBar(int top);
+  int LayoutBookmarkBarAtTop(int top);
   int LayoutInfoBar(int top);
+
+  // If search mode is |MODE_NTP|, bookmark bar is detached and should be
+  // floating at bottom of content view in the y-direction, so lay it out as
+  // such.
+  void LayoutBookmarkBarAtBottom();
 
   // Layout the WebContents container, between the coordinates |top| and
   // |bottom|.
@@ -98,11 +105,8 @@ class BrowserViewLayout : public views::LayoutManager {
   }
 
   // Child views that the layout manager manages.
-  TabStrip* tabstrip_;
-  ToolbarView* toolbar_;
   views::SingleSplitView* contents_split_;
   ContentsContainer* contents_container_;
-  views::View* infobar_container_;
   DownloadShelfView* download_shelf_;
   BookmarkBarView* active_bookmark_bar_;
 
@@ -115,6 +119,10 @@ class BrowserViewLayout : public views::LayoutManager {
 
   // The distance the FindBar is from the top of the window, in pixels.
   int find_bar_y_;
+
+  // The distance the constrained window is from the top of the window,
+  // in pixels.
+  int constrained_window_top_y_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserViewLayout);
 };

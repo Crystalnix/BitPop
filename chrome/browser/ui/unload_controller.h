@@ -13,7 +13,6 @@
 #include "content/public/browser/notification_registrar.h"
 
 class Browser;
-class TabContents;
 class TabStripModel;
 
 namespace content {
@@ -71,18 +70,19 @@ class UnloadController : public content::NotificationObserver,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // Overridden from TabStripModelObserver:
-  virtual void TabInsertedAt(TabContents* contents,
+  virtual void TabInsertedAt(content::WebContents* contents,
                              int index,
                              bool foreground) OVERRIDE;
-  virtual void TabDetachedAt(TabContents* contents, int index) OVERRIDE;
+  virtual void TabDetachedAt(content::WebContents* contents,
+                             int index) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
   virtual void TabStripEmpty() OVERRIDE;
 
-  void TabAttachedImpl(TabContents* contents);
-  void TabDetachedImpl(TabContents* contents);
+  void TabAttachedImpl(content::WebContents* contents);
+  void TabDetachedImpl(content::WebContents* contents);
 
   // Processes the next tab that needs it's beforeunload/unload event fired.
   void ProcessPendingTabs();

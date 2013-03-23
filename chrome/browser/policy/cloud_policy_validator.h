@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_POLICY_CLOUD_POLICY_VALIDATOR_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -33,9 +34,10 @@ class PolicyFetchResponse;
 namespace policy {
 
 // Helper class that implements the gory details of validating a policy blob.
-// Since signature checks are expensive, validation is happening on the FILE
+// Since signature checks are expensive, validation can happen on the FILE
 // thread. The pattern is to create a validator, configure its behavior through
-// the ValidateXYZ() functions, and then call StartValidation().
+// the ValidateXYZ() functions, and then call StartValidation(). Alternatively,
+// RunValidation() can be used to perform validation on the current thread.
 class CloudPolicyValidatorBase {
  public:
   // Validation result codes.
@@ -77,7 +79,9 @@ class CloudPolicyValidatorBase {
 
   // Instructs the validator to check that the policy timestamp is not before
   // |not_before| and not after |now| + grace interval.
-  void ValidateTimestamp(base::Time not_before, base::Time now);
+  void ValidateTimestamp(base::Time not_before,
+                         base::Time now,
+                         bool allow_missing_timestamp);
 
   // Validates the username in the policy blob matches |expected_user|.
   void ValidateUsername(const std::string& expected_user);
@@ -95,11 +99,12 @@ class CloudPolicyValidatorBase {
   // Validates that the payload can be decoded successfully.
   void ValidatePayload();
 
-  // Verifies that the signature on the policy blob verifies against |key|. If
-  // there is a key rotation present in the policy blob, this checks the
-  // signature on the new key against |key| and the policy blob against the new
-  // key.
-  void ValidateSignature(const std::string& key);
+  // Verifies that the signature on the policy blob verifies against |key|. If |
+  // |allow_key_rotation| is true and there is a key rotation present in the
+  // policy blob, this checks the signature on the new key against |key| and the
+  // policy blob against the new key.
+  void ValidateSignature(const std::vector<uint8>& key,
+                         bool allow_key_rotation);
 
   // Similar to StartSignatureVerification(), this checks the signature on the
   // policy blob. However, this variant expects a new policy key set in the
@@ -113,11 +118,11 @@ class CloudPolicyValidatorBase {
   // timestamp validation will drop the lower bound and no token validation will
   // be configured.
   void ValidateAgainstCurrentPolicy(
-      const enterprise_management::PolicyData* policy_data);
+      const enterprise_management::PolicyData* policy_data,
+      bool allow_missing_timestamp);
 
-  // Kicks off validation. From this point on, the validator manages its own
-  // lifetime. |completion_callback| is invoked when done.
-  void StartValidation();
+  // Immediately performs validation on the current thread.
+  void RunValidation();
 
  protected:
   // Create a new validator that checks |policy_response|. |payload| is the
@@ -125,7 +130,12 @@ class CloudPolicyValidatorBase {
   // valid for the lifetime of the validator.
   CloudPolicyValidatorBase(
       scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response,
-      google::protobuf::MessageLite* payload,
+      google::protobuf::MessageLite* payload);
+
+  // Performs validation, called on a background thread.
+  static void PerformValidation(
+      scoped_ptr<CloudPolicyValidatorBase> self,
+      scoped_refptr<base::MessageLoopProxy> message_loop,
       const base::Closure& completion_callback);
 
  private:
@@ -141,13 +151,9 @@ class CloudPolicyValidatorBase {
     VALIDATE_INITIAL_KEY = 1 << 7,
   };
 
-  // Performs validation, called on a background thread.
-  static void PerformValidation(
-      scoped_ptr<CloudPolicyValidatorBase> self,
-      scoped_refptr<base::MessageLoopProxy> message_loop);
-
-  // Reports completion to |self|'s |completion_callback_|.
-  static void ReportCompletion(scoped_ptr<CloudPolicyValidatorBase> self);
+  // Reports completion to the |completion_callback_|.
+  static void ReportCompletion(scoped_ptr<CloudPolicyValidatorBase> self,
+                               const base::Closure& completion_callback);
 
   // Invokes all the checks and reports the result.
   void RunChecks();
@@ -171,16 +177,17 @@ class CloudPolicyValidatorBase {
   scoped_ptr<enterprise_management::PolicyFetchResponse> policy_;
   scoped_ptr<enterprise_management::PolicyData> policy_data_;
   google::protobuf::MessageLite* payload_;
-  base::Closure completion_callback_;
 
   int validation_flags_;
-  base::Time timestamp_not_before_;
-  base::Time timestamp_not_after_;
+  int64 timestamp_not_before_;
+  int64 timestamp_not_after_;
+  bool allow_missing_timestamp_;
   std::string user_;
   std::string domain_;
   std::string token_;
   std::string policy_type_;
   std::string key_;
+  bool allow_key_rotation_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPolicyValidatorBase);
 };
@@ -197,18 +204,22 @@ class CloudPolicyValidator : public CloudPolicyValidatorBase {
 
   // Creates a new validator.
   static CloudPolicyValidator<PayloadProto>* Create(
-      scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response,
-      const CompletionCallback& completion_callback);
+      scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response);
 
   scoped_ptr<PayloadProto>& payload() {
     return payload_;
   }
 
+  // Kicks off asynchronous validation. |completion_callback| is invoked when
+  // done. From this point on, the validator manages its own lifetime - this
+  // allows callers to provide a WeakPtr in the callback without leaking the
+  // validator.
+  void StartValidation(const CompletionCallback& completion_callback);
+
  private:
   CloudPolicyValidator(
       scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response,
-      scoped_ptr<PayloadProto> payload,
-      const CompletionCallback& completion_callback);
+      scoped_ptr<PayloadProto> payload);
 
   scoped_ptr<PayloadProto> payload_;
 

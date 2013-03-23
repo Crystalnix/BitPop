@@ -186,7 +186,7 @@ void SpeechRecognitionBubbleGtk::Show() {
       target_rect.x() > container_rect.width() ||
       target_rect.y() > container_rect.height()) {
     // Target is not in screen view, so point to wrench.
-    Browser* browser = browser::FindBrowserWithWebContents(GetWebContents());
+    Browser* browser = chrome::FindBrowserWithWebContents(GetWebContents());
     BrowserWindowGtk* browser_window =
         BrowserWindowGtk::GetBrowserWindowForNativeWindow(
             browser->window()->GetNativeWindow());
@@ -277,7 +277,7 @@ void SpeechRecognitionBubbleGtk::UpdateImage() {
   if (image.isNull() || !bubble_)
     return;
 
-  GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(image);
+  GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(*image.bitmap());
   gtk_image_set_from_pixbuf(GTK_IMAGE(icon_), pixbuf);
   g_object_unref(pixbuf);
 }

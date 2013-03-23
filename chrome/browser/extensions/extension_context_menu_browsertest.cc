@@ -5,7 +5,6 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
-#include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
@@ -39,36 +38,6 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
 
   virtual ~TestRenderViewContextMenu() {}
 
-  bool HasExtensionItemWithLabel(const std::string& label) {
-    string16 label16 = UTF8ToUTF16(label);
-    std::map<int, MenuItem::Id>::iterator i;
-    for (i = extension_item_map_.begin(); i != extension_item_map_.end(); ++i) {
-      const MenuItem::Id& id = i->second;
-      string16 tmp_label;
-      EXPECT_TRUE(GetItemLabel(id, &tmp_label));
-      if (tmp_label == label16)
-        return true;
-    }
-    return false;
-  }
-
-  // Looks in the menu for an extension item with |id|, and if it is found and
-  // has a label, that is put in |result| and we return true. Otherwise returns
-  // false.
-  bool GetItemLabel(const MenuItem::Id& id, string16* result) {
-    int command_id = 0;
-    if (!FindCommandId(id, &command_id))
-      return false;
-
-    MenuModel* model = NULL;
-    int index = -1;
-    if (!GetMenuModelAndItemIndex(command_id, &model, &index)) {
-      return false;
-    }
-    *result = model->GetLabelAt(index);
-    return true;
-  }
-
   // Searches for an menu item with |command_id|. If it's found, the return
   // value is true and the model and index where it appears in that model are
   // returned in |found_model| and |found_index|. Otherwise returns false.
@@ -95,17 +64,8 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
     return false;
   }
 
-  // Given an extension menu item id, tries to find the corresponding command id
-  // in the menu.
-  bool FindCommandId(const MenuItem::Id& id, int* command_id) {
-    std::map<int, MenuItem::Id>::const_iterator i;
-    for (i = extension_item_map_.begin(); i != extension_item_map_.end(); ++i) {
-      if (i->second == id) {
-        *command_id = i->first;
-        return true;
-      }
-    }
-    return false;
+  extensions::ContextMenuMatcher& extension_items() {
+    return extension_items_;
   }
 
  protected:
@@ -197,7 +157,7 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
                             const std::string& label) {
     scoped_ptr<TestRenderViewContextMenu> menu(
         CreateMenu(browser(), page_url, link_url, frame_url));
-    return menu->HasExtensionItemWithLabel(label);
+    return MenuHasExtensionItemWithLabel(menu.get(), label);
   }
 
   // This creates an extension that starts |enabled| and then switches to
@@ -232,6 +192,56 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
     // Update the item and make sure it is now |!enabled|.
     ASSERT_TRUE(update.WaitUntilSatisfied());
     ASSERT_EQ(!enabled, menu->IsCommandIdEnabled(command_id));
+  }
+
+ bool MenuHasExtensionItemWithLabel(TestRenderViewContextMenu* menu,
+                                     const std::string& label) {
+    string16 label16 = UTF8ToUTF16(label);
+    std::map<int, MenuItem::Id>::iterator i;
+    for (i = menu->extension_items().extension_item_map_.begin();
+         i != menu->extension_items().extension_item_map_.end(); ++i) {
+      const MenuItem::Id& id = i->second;
+      string16 tmp_label;
+      EXPECT_TRUE(GetItemLabel(menu, id, &tmp_label));
+      if (tmp_label == label16)
+        return true;
+    }
+    return false;
+  }
+
+  // Looks in the menu for an extension item with |id|, and if it is found and
+  // has a label, that is put in |result| and we return true. Otherwise returns
+  // false.
+  bool GetItemLabel(TestRenderViewContextMenu* menu,
+                    const MenuItem::Id& id,
+                    string16* result) {
+    int command_id = 0;
+    if (!FindCommandId(menu, id, &command_id))
+      return false;
+
+    MenuModel* model = NULL;
+    int index = -1;
+    if (!menu->GetMenuModelAndItemIndex(command_id, &model, &index)) {
+      return false;
+    }
+    *result = model->GetLabelAt(index);
+    return true;
+  }
+
+  // Given an extension menu item id, tries to find the corresponding command id
+  // in the menu.
+  bool FindCommandId(TestRenderViewContextMenu* menu,
+                     const MenuItem::Id& id,
+                     int* command_id) {
+    std::map<int, MenuItem::Id>::const_iterator i;
+    for (i = menu->extension_items().extension_item_map_.begin();
+         i != menu->extension_items().extension_item_map_.end(); ++i) {
+      if (i->second == id) {
+        *command_id = i->first;
+        return true;
+      }
+    }
+    return false;
   }
 };
 
@@ -302,7 +312,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, LongTitle) {
   ASSERT_TRUE(listener.WaitUntilSatisfied());
 
   // Make sure we have an item registered with a long title.
-  size_t limit = RenderViewContextMenu::kMaxExtensionItemTitleLength;
+  size_t limit = extensions::ContextMenuMatcher::kMaxExtensionItemTitleLength;
   MenuItem::List items = GetItems();
   ASSERT_EQ(1u, items.size());
   MenuItem* item = items.at(0);
@@ -315,7 +325,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, LongTitle) {
       CreateMenu(browser(), url, GURL(), GURL()));
 
   string16 label;
-  ASSERT_TRUE(menu->GetItemLabel(item->id(), &label));
+  ASSERT_TRUE(GetItemLabel(menu.get(), item->id(), &label));
   ASSERT_TRUE(label.size() <= limit);
 }
 
@@ -514,41 +524,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Enabled) {
   TestEnabledContextMenu(false);
 }
 
-// Tests that applicable menu items are disabled when a ManagementPolicy
-// prohibits them.
-IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, PolicyDisablesItems) {
-  ASSERT_TRUE(LoadContextMenuExtension("simple"));
-  ExtensionService* service = browser()->profile()->GetExtensionService();
-  ASSERT_TRUE(service != NULL);
-  ASSERT_FALSE(service->extensions()->is_empty());
-
-  // We need an extension to pass to the menu constructor, but we don't care
-  // which one.
-  ExtensionSet::const_iterator i = service->extensions()->begin();
-  const extensions::Extension* extension = *i;
-  ASSERT_TRUE(extension != NULL);
-
-  scoped_refptr<ExtensionContextMenuModel> menu(
-      new ExtensionContextMenuModel(extension, browser(), NULL));
-
-  extensions::ExtensionSystem::Get(
-      browser()->profile())->management_policy()->UnregisterAllProviders();
-
-  // Actions should be enabled.
-  ASSERT_TRUE(menu->IsCommandIdEnabled(ExtensionContextMenuModel::DISABLE));
-  ASSERT_TRUE(menu->IsCommandIdEnabled(ExtensionContextMenuModel::UNINSTALL));
-
-  extensions::TestManagementPolicyProvider policy_provider(
-    extensions::TestManagementPolicyProvider::PROHIBIT_MODIFY_STATUS);
-  extensions::ExtensionSystem::Get(
-      browser()->profile())->management_policy()->RegisterProvider(
-      &policy_provider);
-
-  // Now the actions are disabled.
-  ASSERT_FALSE(menu->IsCommandIdEnabled(ExtensionContextMenuModel::DISABLE));
-  ASSERT_FALSE(menu->IsCommandIdEnabled(ExtensionContextMenuModel::UNINSTALL));
-}
-
 class ExtensionContextMenuBrowserLazyTest :
     public ExtensionContextMenuBrowserTest {
   void SetUpCommandLine(CommandLine* command_line) {
@@ -580,7 +555,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserLazyTest, EventPage) {
   MenuItem::Id id(false, extension->id());
   id.string_uid = "checkbox1";
   int command_id = -1;
-  ASSERT_TRUE(menu->FindCommandId(id, &command_id));
+  ASSERT_TRUE(FindCommandId(menu.get(), id, &command_id));
   EXPECT_FALSE(menu->IsCommandIdChecked(command_id));
 
   // Executing the checkbox also fires the onClicked event.
@@ -590,4 +565,23 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserLazyTest, EventPage) {
 
   EXPECT_TRUE(menu->IsCommandIdChecked(command_id));
   ASSERT_TRUE(listener.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest,
+                       IncognitoSplitContextMenuCount) {
+  ExtensionTestMessageListener created("created item regular", false);
+  ExtensionTestMessageListener created_incognito("created item incognito",
+                                                 false);
+
+  // Create an incognito profile.
+  ASSERT_TRUE(browser()->profile()->GetOffTheRecordProfile());
+  ASSERT_TRUE(LoadContextMenuExtensionIncognito("incognito"));
+
+  // Wait for the extension's processes to tell us they've created an item.
+  ASSERT_TRUE(created.WaitUntilSatisfied());
+  ASSERT_TRUE(created_incognito.WaitUntilSatisfied());
+  ASSERT_EQ(2u, GetItems().size());
+
+  browser()->profile()->DestroyOffTheRecordProfile();
+  ASSERT_EQ(1u, GetItems().size());
 }

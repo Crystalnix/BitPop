@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 
 #include "base/logging.h"
 #include "base/version.h"
@@ -24,12 +25,10 @@ BrowserDistribution::Type
 }
 
 void InstallationValidator::ChromeRules::AddUninstallSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   const bool is_multi_install =
-      product_state.uninstall_command().HasSwitch(switches::kMultiInstall);
+      ctx.state.uninstall_command().HasSwitch(switches::kMultiInstall);
 
   // --chrome should be present for uninstall iff --multi-install.  This wasn't
   // the case in Chrome 10 (between r68996 and r72497), though, so consider it
@@ -38,8 +37,8 @@ void InstallationValidator::ChromeRules::AddUninstallSwitchExpectations(
   // --chrome-frame --ready-mode should be present for uninstall iff CF in ready
   // mode.
   const ProductState* cf_state =
-      machine_state.GetProductState(system_install,
-                                    BrowserDistribution::CHROME_FRAME);
+      ctx.machine_state.GetProductState(ctx.system_install,
+                                        BrowserDistribution::CHROME_FRAME);
   const bool ready_mode =
       cf_state != NULL &&
       cf_state->uninstall_command().HasSwitch(switches::kChromeFrameReadyMode);
@@ -50,12 +49,10 @@ void InstallationValidator::ChromeRules::AddUninstallSwitchExpectations(
 }
 
 void InstallationValidator::ChromeRules::AddRenameSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   const bool is_multi_install =
-      product_state.uninstall_command().HasSwitch(switches::kMultiInstall);
+      ctx.state.uninstall_command().HasSwitch(switches::kMultiInstall);
 
   // --chrome should not be present for rename.  It was for a time, so we'll be
   // lenient so that mini_installer tests pass.
@@ -68,10 +65,10 @@ void InstallationValidator::ChromeRules::AddRenameSwitchExpectations(
 }
 
 bool InstallationValidator::ChromeRules::UsageStatsAllowed(
-    const ProductState& product_state) const {
+    const ProductContext& ctx) const {
   // Products must not have usagestats consent values when multi-install
   // (only the multi-install binaries may).
-  return !product_state.is_multi_install();
+  return !ctx.state.is_multi_install();
 }
 
 BrowserDistribution::Type
@@ -80,9 +77,7 @@ BrowserDistribution::Type
 }
 
 void InstallationValidator::ChromeFrameRules::AddUninstallSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   // --chrome-frame must be present.
   expectations->push_back(std::make_pair(std::string(switches::kChromeFrame),
@@ -93,23 +88,21 @@ void InstallationValidator::ChromeFrameRules::AddUninstallSwitchExpectations(
 }
 
 void InstallationValidator::ChromeFrameRules::AddRenameSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   // --chrome-frame must be present for SxS rename.
   expectations->push_back(std::make_pair(std::string(switches::kChromeFrame),
-                                         !product_state.is_multi_install()));
+                                         !ctx.state.is_multi_install()));
   // --chrome must not be present.
   expectations->push_back(std::make_pair(std::string(switches::kChrome),
                                          false));
 }
 
 bool InstallationValidator::ChromeFrameRules::UsageStatsAllowed(
-    const ProductState& product_state) const {
+    const ProductContext& ctx) const {
   // Products must not have usagestats consent values when multi-install
   // (only the multi-install binaries may).
-  return !product_state.is_multi_install();
+  return !ctx.state.is_multi_install();
 }
 
 BrowserDistribution::Type
@@ -118,34 +111,35 @@ BrowserDistribution::Type
 }
 
 void InstallationValidator::ChromeAppHostRules::AddUninstallSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
-  DCHECK(!system_install);
+  DCHECK(!ctx.system_install);
 
-  // --chrome-app-host must be present.
-  expectations->push_back(std::make_pair(std::string(switches::kChromeAppHost),
-                                         true));
+  // Either --app-launcher or --app-host must be present.
+  if (ctx.state.channel().IsAppLauncher()) {
+    expectations->push_back(
+        std::make_pair(std::string(switches::kChromeAppLauncher), true));
+  } else {
+    expectations->push_back(
+        std::make_pair(std::string(switches::kChromeAppHost), true));
+  }
+
   // --chrome must not be present.
   expectations->push_back(std::make_pair(std::string(switches::kChrome),
                                          false));
-
   // --chrome-frame must not be present.
   expectations->push_back(std::make_pair(std::string(switches::kChromeFrame),
                                          false));
 }
 
 void InstallationValidator::ChromeAppHostRules::AddRenameSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   // TODO(erikwright): I guess there will be none?
 }
 
 bool InstallationValidator::ChromeAppHostRules::UsageStatsAllowed(
-    const ProductState& product_state) const {
+    const ProductContext& ctx) const {
   // App Host doesn't manage usage stats. The Chrome Binaries will.
   return false;
 }
@@ -156,23 +150,19 @@ BrowserDistribution::Type
 }
 
 void InstallationValidator::ChromeBinariesRules::AddUninstallSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   NOTREACHED();
 }
 
 void InstallationValidator::ChromeBinariesRules::AddRenameSwitchExpectations(
-    const InstallationState& machine_state,
-    bool system_install,
-    const ProductState& product_state,
+    const ProductContext& ctx,
     SwitchExpectations* expectations) const {
   NOTREACHED();
 }
 
 bool InstallationValidator::ChromeBinariesRules::UsageStatsAllowed(
-    const ProductState& product_state) const {
+    const ProductContext& ctx) const {
   // UsageStats consent values are always allowed on the binaries.
   return true;
 }
@@ -219,11 +209,10 @@ void InstallationValidator::ValidateInstallAppCommand(
                << the_command.GetProgram().value();
   }
 
-
   SwitchExpectations expected;
 
   expected.push_back(
-      std::make_pair(std::string(::switches::kAppsInstallFromManifestURL),
+      std::make_pair(std::string(::switches::kInstallFromWebstore),
                      true));
 
   ValidateCommandExpectations(ctx, the_command, expected, "install application",
@@ -238,6 +227,46 @@ void InstallationValidator::ValidateInstallAppCommand(
   if (!command.is_web_accessible()) {
     *is_valid = false;
     LOG(ERROR) << "install-application command is not web accessible.";
+  }
+}
+
+// Validates the "on-os-upgrade" Google Update internal command.
+void InstallationValidator::ValidateOnOsUpgradeCommand(
+    const ProductContext& ctx,
+    const AppCommand& command,
+    bool* is_valid) {
+  DCHECK(is_valid);
+
+  CommandLine the_command(CommandLine::FromString(command.command_line()));
+
+  ValidateSetupPath(ctx, the_command.GetProgram(), "on os upgrade", is_valid);
+
+  SwitchExpectations expected;
+  expected.push_back(std::make_pair(std::string(switches::kOnOsUpgrade), true));
+  expected.push_back(std::make_pair(std::string(switches::kSystemLevel),
+                                    ctx.system_install));
+  expected.push_back(std::make_pair(std::string(switches::kMultiInstall),
+                                    ctx.state.is_multi_install()));
+  // Expecting kChrome if and only if kMultiInstall.
+  expected.push_back(std::make_pair(std::string(switches::kChrome),
+                                    ctx.state.is_multi_install()));
+
+  ValidateCommandExpectations(ctx, the_command, expected, "on os upgrade",
+                              is_valid);
+
+  if (!command.is_auto_run_on_os_upgrade()) {
+    *is_valid = false;
+    LOG(ERROR) << "On-os-upgrade command is not marked to run on OS upgrade.";
+  }
+
+  if (command.sends_pings()) {
+    *is_valid = false;
+    LOG(ERROR) << "On-os-upgrade command should not be able to send pings.";
+  }
+
+  if (command.is_web_accessible()) {
+    *is_valid = false;
+    LOG(ERROR) << "On-os-upgrade command should not be web accessible.";
   }
 }
 
@@ -291,12 +320,14 @@ void InstallationValidator::ValidateQuickEnableApplicationHostCommand(
 
   SwitchExpectations expected;
 
-  expected.push_back(
-      std::make_pair(std::string(switches::kChromeAppHost), true));
-  expected.push_back(std::make_pair(std::string(switches::kSystemLevel),
-                                    false));
-  expected.push_back(std::make_pair(std::string(switches::kMultiInstall),
-                                    true));
+  expected.push_back(std::make_pair(
+      std::string(switches::kChromeAppLauncher), true));
+  expected.push_back(std::make_pair(
+      std::string(switches::kSystemLevel), false));
+  expected.push_back(std::make_pair(
+      std::string(switches::kMultiInstall), true));
+  expected.push_back(std::make_pair(
+      std::string(switches::kEnsureGoogleUpdatePresent), true));
 
   ValidateCommandExpectations(ctx,
                               the_command,
@@ -331,7 +362,7 @@ void InstallationValidator::ValidateAppCommandExpectations(
       ctx.state.commands().GetIterators());
   CommandExpectations::iterator expectation;
   for (; cmd_iterators.first != cmd_iterators.second; ++cmd_iterators.first) {
-    const std::wstring& cmd_id = cmd_iterators.first->first;
+    const string16& cmd_id = cmd_iterators.first->first;
     // Do we have an expectation for this command?
     expectation = the_expectations.find(cmd_id);
     if (expectation != the_expectations.end()) {
@@ -454,15 +485,21 @@ void InstallationValidator::ValidateBinaries(
       *is_valid = false;
       LOG(ERROR) << "Chrome App Host is installed in non-multi mode.";
     }
-    if (!channel.IsAppHost()) {
+    if (!channel.IsAppHost() && !channel.IsAppLauncher()) {
       *is_valid = false;
-      LOG(ERROR) << "Chrome Binaries are missing \"-apphost\" in channel"
-                    " name: \"" << channel.value() << "\"";
+      LOG(ERROR) << "Chrome Binaries are missing \"-apphost\" and"
+                    " \"-applauncher\" in channel name: \""
+                 << channel.value() << "\"";
     }
   } else if (channel.IsAppHost()) {
     *is_valid = false;
     LOG(ERROR) << "Chrome Binaries have \"-apphost\" in channel name, yet "
                   "Chrome App Host is not installed: \"" << channel.value()
+               << "\"";
+  } else if (channel.IsAppLauncher()) {
+    *is_valid = false;
+    LOG(ERROR) << "Chrome Binaries have \"-applauncher\" in channel name, yet "
+                  "Chrome App Launcher is not installed: \"" << channel.value()
                << "\"";
   }
 
@@ -488,14 +525,8 @@ void InstallationValidator::ValidateBinaries(
   }
 
   ChromeBinariesRules binaries_rules;
-  ProductContext ctx = {
-    machine_state,
-    system_install,
-    BrowserDistribution::GetSpecificDistribution(
-        BrowserDistribution::CHROME_BINARIES),
-    binaries_state,
-    binaries_rules
-  };
+  ProductContext ctx(machine_state, system_install, binaries_state,
+                     binaries_rules);
 
   ValidateBinariesCommands(ctx, is_valid);
 
@@ -569,10 +600,7 @@ void InstallationValidator::ValidateUninstallCommand(const ProductContext& ctx,
                                     ctx.system_install));
   expected.push_back(std::make_pair(std::string(switches::kMultiInstall),
                                     is_multi_install));
-  ctx.rules.AddUninstallSwitchExpectations(ctx.machine_state,
-                                         ctx.system_install,
-                                         ctx.state,
-                                         &expected);
+  ctx.rules.AddUninstallSwitchExpectations(ctx, &expected);
 
   ValidateCommandExpectations(ctx, command, expected, source, is_valid);
 }
@@ -595,10 +623,7 @@ void InstallationValidator::ValidateRenameCommand(const ProductContext& ctx,
                                     ctx.system_install));
   expected.push_back(std::make_pair(std::string(switches::kMultiInstall),
                                     ctx.state.is_multi_install()));
-  ctx.rules.AddRenameSwitchExpectations(ctx.machine_state,
-                                        ctx.system_install,
-                                        ctx.state,
-                                        &expected);
+  ctx.rules.AddRenameSwitchExpectations(ctx, &expected);
 
   ValidateCommandExpectations(ctx, command, expected, "in-use renamer",
                               is_valid);
@@ -691,6 +716,9 @@ void InstallationValidator::ValidateAppCommands(
   if (ctx.dist->GetType() == BrowserDistribution::CHROME_APP_HOST) {
     expectations[kCmdInstallApp] = &ValidateInstallAppCommand;
   }
+  if (ctx.dist->GetType() == BrowserDistribution::CHROME_BROWSER) {
+    expectations[kCmdOnOsUpgrade] = &ValidateOnOsUpgradeCommand;
+  }
 
   ValidateAppCommandExpectations(ctx, expectations, is_valid);
 }
@@ -700,7 +728,7 @@ void InstallationValidator::ValidateUsageStats(const ProductContext& ctx,
                                                bool* is_valid) {
   DWORD usagestats = 0;
   if (ctx.state.GetUsageStats(&usagestats)) {
-    if (!ctx.rules.UsageStatsAllowed(ctx.state)) {
+    if (!ctx.rules.UsageStatsAllowed(ctx)) {
       *is_valid = false;
       LOG(ERROR) << ctx.dist->GetAppShortCutName()
                  << " has a usagestats value (" << usagestats
@@ -722,20 +750,15 @@ void InstallationValidator::ValidateProduct(
     const ProductRules& rules,
     bool* is_valid) {
   DCHECK(is_valid);
-  ProductContext ctx = {
-    machine_state,
-    system_install,
-    BrowserDistribution::GetSpecificDistribution(rules.distribution_type()),
-    product_state,
-    rules
-  };
 
-  ValidateUninstallCommand(ctx, product_state.uninstall_command(),
+  ProductContext ctx(machine_state, system_install, product_state, rules);
+
+  ValidateUninstallCommand(ctx, ctx.state.uninstall_command(),
                            "Google Update uninstall command", is_valid);
 
   ValidateOldVersionValues(ctx, is_valid);
 
-  if (product_state.is_multi_install())
+  if (ctx.state.is_multi_install())
     ValidateMultiInstallProduct(ctx, is_valid);
 
   ValidateAppCommands(ctx, is_valid);

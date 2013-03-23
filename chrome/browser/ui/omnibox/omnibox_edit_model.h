@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/common/instant_types.h"
 #include "chrome/common/metrics/proto/omnibox_event.pb.h"
 #include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
@@ -21,15 +20,43 @@
 
 class AutocompleteController;
 class AutocompleteResult;
+struct InstantSuggestion;
 class OmniboxEditController;
 class OmniboxPopupModel;
 class OmniboxView;
 class Profile;
-class SkBitmap;
 
 namespace gfx {
+class Image;
 class Rect;
 }
+
+// Omnibox focus state.
+enum OmniboxFocusState {
+  // Not focused.
+  OMNIBOX_FOCUS_NONE,
+
+  // Visibly focused.
+  OMNIBOX_FOCUS_VISIBLE,
+
+  // Invisibly focused, i.e. focused with a hidden caret.
+  OMNIBOX_FOCUS_INVISIBLE,
+};
+
+// Reasons why the Omnibox focus state could change.
+enum OmniboxFocusChangeReason {
+  // Includes any explicit changes to focus. (e.g. user clicking to change
+  // focus, user tabbing to change focus, any explicit calls to SetFocus,
+  // etc.)
+  OMNIBOX_FOCUS_CHANGE_EXPLICIT,
+
+  // Focus changed to restore state from a tab the user switched to.
+  OMNIBOX_FOCUS_CHANGE_TAB_SWITCH,
+
+  // Focus changed because user started typing. This only happens when focus
+  // state is INVISIBLE (and this results in a change to VISIBLE).
+  OMNIBOX_FOCUS_CHANGE_TYPING,
+};
 
 class OmniboxEditModel : public AutocompleteControllerDelegate {
  public:
@@ -37,13 +64,15 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
     State(bool user_input_in_progress,
           const string16& user_text,
           const string16& keyword,
-          bool is_keyword_hint);
+          bool is_keyword_hint,
+          OmniboxFocusState focus_state);
     ~State();
 
     bool user_input_in_progress;
     const string16 user_text;
     const string16 keyword;
     const bool is_keyword_hint;
+    OmniboxFocusState focus_state;
   };
 
   OmniboxEditModel(OmniboxView* view,
@@ -80,9 +109,9 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
 
   // Called when the user wants to export the entire current text as a URL.
   // Sets the url, and if known, the title and favicon.
-  void GetDataForURLExport(GURL* url, string16* title, SkBitmap* favicon);
+  void GetDataForURLExport(GURL* url, string16* title, gfx::Image* favicon);
 
-  // Returns true if a verbatim query should be used for instant. A verbatim
+  // Returns true if a verbatim query should be used for Instant. A verbatim
   // query is forced in certain situations, such as pressing delete at the end
   // of the edit.
   bool UseVerbatimInstant();
@@ -130,15 +159,14 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   void SetUserText(const string16& text);
 
   // Calls through to SearchProvider::FinalizeInstantQuery.
-  // If |skip_inline_autocomplete| is true then the |suggest_text| will be
+  // If |skip_inline_autocomplete| is true then the |suggestion| text will be
   // turned into final text instead of inline autocomplete suggest.
   void FinalizeInstantQuery(const string16& input_text,
-                            const string16& suggest_text,
+                            const InstantSuggestion& suggestion,
                             bool skip_inline_autocomplete);
 
   // Sets the suggestion text.
-  void SetSuggestedText(const string16& text,
-                        InstantCompleteBehavior behavior);
+  void SetInstantSuggestion(const InstantSuggestion& suggestion);
 
   // Commits the suggested text. If |skip_inline_autocomplete| is true then the
   // suggested text will be committed as final text as if it's inputted by the
@@ -147,11 +175,11 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   // TODO: can the return type be void?
   bool CommitSuggestedText(bool skip_inline_autocomplete);
 
-  // Accepts the currently showing instant preview, if any, and returns true.
-  // Returns false if there is no instant preview showing.
+  // Accepts the currently showing Instant preview, if any, and returns true.
+  // Returns false if there is no Instant preview showing.
   bool AcceptCurrentInstantPreview();
 
-  // Invoked any time the text may have changed in the edit. Updates instant and
+  // Invoked any time the text may have changed in the edit. Updates Instant and
   // notifies the controller.
   void OnChanged();
 
@@ -190,7 +218,11 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
                  const GURL& alternate_nav_url,
                  size_t index);
 
-  bool has_focus() const { return has_focus_; }
+  OmniboxFocusState focus_state() const { return focus_state_; }
+  bool has_focus() const { return focus_state_ != OMNIBOX_FOCUS_NONE; }
+  bool is_caret_visible() const {
+    return focus_state_ == OMNIBOX_FOCUS_VISIBLE;
+  }
 
   // Accessors for keyword-related state (see comments on keyword_ and
   // is_keyword_hint_).
@@ -213,6 +245,18 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   // Called when the view is gaining focus.  |control_down| is whether the
   // control key is down (at the time we're gaining focus).
   void OnSetFocus(bool control_down);
+
+  // Sets the visibility of the caret in the omnibox, if it has focus. The
+  // visibility of the caret is reset to visible if either
+  //   - The user starts typing, or
+  //   - We explicitly focus the omnibox again.
+  // The latter case must be handled in three separate places--OnSetFocus(),
+  // OmniboxView::SetFocus(), and the mouse handlers in OmniboxView. See
+  // accompanying comments for why each of these is necessary.
+  //
+  // Caret visibility is tracked per-tab and updates automatically upon
+  // switching tabs.
+  void SetCaretVisibility(bool visible);
 
   // Sent before |OnKillFocus| and before the popup is closed.
   void OnWillKillFocus(gfx::NativeView view_gaining_focus);
@@ -274,14 +318,9 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
                              bool just_deleted_text,
                              bool allow_keyword_ui_change);
 
-  // Invoked when the popup is going to change its bounds to |bounds|.
-  void PopupBoundsChangedTo(const gfx::Rect& bounds);
-
-#if defined(UNIT_TEST)
-  InstantCompleteBehavior instant_complete_behavior() const {
-    return instant_complete_behavior_;
-  }
-#endif
+  // Invoked when the popup has changed its bounds to |bounds|. |bounds| here
+  // is in screen coordinates.
+  void OnPopupBoundsChanged(const gfx::Rect& bounds);
 
  private:
   enum PasteState {
@@ -373,9 +412,9 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   // Notifies the SearchTabHelper that autocomplete state has changed.
   void NotifySearchTabHelper();
 
-  // Tries to start an instant preview for |match|. Returns true if instant
+  // Tries to start an Instant preview for |match|. Returns true if Instant
   // processed the match.
-  bool DoInstant(const AutocompleteMatch& match, string16* suggested_text);
+  bool DoInstant(const AutocompleteMatch& match);
 
   // Starts a prerender for the given |match|.
   void DoPrerender(const AutocompleteMatch& match);
@@ -400,6 +439,12 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
                                    AutocompleteMatch* match,
                                    GURL* alternate_nav_url) const;
 
+  // If focus_state_ does not match |state|, we update it and notify the
+  // InstantController about the change (passing along the |reason| for the
+  // change). If the caret visibility changes, we call ApplyCaretVisibility() on
+  // the view.
+  void SetFocusState(OmniboxFocusState state, OmniboxFocusChangeReason reason);
+
   scoped_ptr<AutocompleteController> autocomplete_controller_;
 
   OmniboxView* view_;
@@ -408,8 +453,7 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
 
   OmniboxEditController* controller_;
 
-  // Whether the edit has focus.
-  bool has_focus_;
+  OmniboxFocusState focus_state_;
 
   // The URL of the currently displayed page.
   string16 permanent_text_;
@@ -473,6 +517,12 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   bool has_temporary_text_;
   GURL original_url_;
 
+  // True if Instant set the current temporary text, as opposed to it being set
+  // due to the user arrowing up/down through the popup.
+  // TODO(sreeram): This is a temporary hack. Remove it once the omnibox edit
+  // model/view code is decoupled from Instant (among other things).
+  bool is_temporary_text_set_by_instant_;
+
   // When the user's last action was to paste, we disallow inline autocomplete
   // (on the theory that the user is trying to paste in a new URL or part of
   // one, and in either case inline autocomplete would get in the way).
@@ -497,9 +547,14 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   Profile* profile_;
 
   // This is needed as prior to accepting the current text the model is
-  // reverted, which triggers resetting instant. We don't want to update instant
+  // reverted, which triggers resetting Instant. We don't want to update Instant
   // in this case, so we use the flag to determine if this is happening.
   bool in_revert_;
+
+  // InstantController needs this in extended mode to distinguish the case in
+  // which it should instruct a committed search results page to revert to
+  // showing results for the original query.
+  bool in_escape_handler_;
 
   // Indicates if the upcoming autocomplete search is allowed to be treated as
   // an exact keyword match.  If this is true then keyword mode will be
@@ -507,9 +562,6 @@ class OmniboxEditModel : public AutocompleteControllerDelegate {
   // allow this when CreatedKeywordSearchByInsertingSpaceInMiddle() is true.
   // This has no effect if we're already in keyword mode.
   bool allow_exact_keyword_match_;
-
-  // Last value of InstantCompleteBehavior supplied to |SetSuggestedText|.
-  InstantCompleteBehavior instant_complete_behavior_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxEditModel);
 };

@@ -4,14 +4,14 @@
 
 #include "chrome/browser/autofill/autofill_common_test.h"
 
+#include "base/prefs/public/pref_service_base.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/autofill_profile.h"
 #include "chrome/browser/autofill/credit_card.h"
 #include "chrome/browser/password_manager/encryptor.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/form_field_data.h"
 #include "chrome/common/pref_names.h"
-#include "webkit/forms/form_field.h"
 
 namespace autofill_test {
 
@@ -19,17 +19,17 @@ void CreateTestFormField(const char* label,
                          const char* name,
                          const char* value,
                          const char* type,
-                         webkit::forms::FormField* field) {
+                         FormFieldData* field) {
   field->label = ASCIIToUTF16(label);
   field->name = ASCIIToUTF16(name);
   field->value = ASCIIToUTF16(value);
-  field->form_control_type = ASCIIToUTF16(type);
+  field->form_control_type = type;
 }
 
 inline void check_and_set(
     FormGroup* profile, AutofillFieldType type, const char* value) {
   if (value)
-    profile->SetInfo(type, UTF8ToUTF16(value));
+    profile->SetRawInfo(type, UTF8ToUTF16(value));
 }
 
 void SetProfileInfo(AutofillProfile* profile,
@@ -83,8 +83,8 @@ void DisableSystemServices(Profile* profile) {
   // Disable auxiliary profiles for unit testing.  These reach out to system
   // services on the Mac.
   if (profile) {
-    profile->GetPrefs()->SetBoolean(prefs::kAutofillAuxiliaryProfilesEnabled,
-                                    false);
+    PrefServiceBase::FromBrowserContext(profile)->SetBoolean(
+        prefs::kAutofillAuxiliaryProfilesEnabled, false);
   }
 }
 

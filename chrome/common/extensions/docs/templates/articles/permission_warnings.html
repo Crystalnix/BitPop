@@ -115,7 +115,7 @@ although the <code>chrome.tabs</code> API
 might be used only to open new tabs,
 it can also be used to see the URL that's associated
 with every newly opened tab
-(using their <a href="tabs.html#type-Tab">Tab</a> objects).
+(using their $ref:tabs.Tab objects).
 </p>
 
 <p class="note">
@@ -135,10 +135,11 @@ that trigger them.
 
 <p>
 <table>
-<tr>
-  <th>Warning&nbsp;message</th> <th>Manifest&nbsp;entry&nbsp;that&nbsp;causes&nbsp;it</th> <th>Notes</th>
-</tr>
-
+  <tr>
+    <th> Warning message </th>
+    <th> Manifest entry that caused it </th>
+    <th> Notes </th>
+  </tr>
 <tr>
   <td style="font-weight:bold">
     <!-- IDS_EXTENSION_PROMPT_WARNING_FULL_ACCESS -->
@@ -174,12 +175,20 @@ that trigger them.
   </td>
   <td>
     <!-- HasEffectiveBrowsingHistoryPermission -->
-     "history" permission
+     Any of the following:
+    <ul>
+      <li> "history" permission </li>
+      <li> "topSites" permission </li>
+    </ul>
   </td>
   <td>
     <p>
       The "history" permission is required by
       <a href="history.html"><code>chrome.history</code></a>.
+    </p>
+    <p>
+      The "topSites" permission is required by
+      <a href="topSites.html"><code>chrome.topSites</code></a>.
     </p>
   </td>
 </tr>
@@ -237,6 +246,7 @@ that trigger them.
     Any of the following:
     <ul>
       <li> "debugger" permission </li>
+      <li> "pageCapture" permission </li>
       <li> "proxy" permission </li>
       <li> A match pattern in the "permissions" field
         that matches all hosts </li>
@@ -265,6 +275,7 @@ that trigger them.
       <li> <code>*://*/*</code> </li>
       <li> <code>&lt;all_urls&gt;</code> </li>
     </ul>
+    <strong>Note that you may be able to avoid declaring all host permissions using the <code><a href="activeTab.html">activeTab</a></code> permission.</strong>
   </td>
 </tr>
 <tr>
@@ -298,19 +309,6 @@ that trigger them.
     or vice versa,
     also triggers a warning.
     </p>
-  </td>
-</tr>
-<tr>
-  <td style="font-weight:bold">
-    <!-- IDS_EXTENSION_PROMPT_WARNING_ALL_PAGES_CONTENT -->
-    Access the content of pages you visit
-  </td>
-  <td>
-    "pageCapture" permission
-  </td>
-  <td>
-    The "pageCapture" permission is required by the
-    <a href="pageCapture.html"><code>chrome.pageCapture</code></a> module.
   </td>
 </tr>
 
@@ -399,6 +397,7 @@ The following permissions don't result in a warning:
 </p>
 
 <ul>
+  <li>"activeTab"</li>
   <li>"browsingData"</li>
   <li>"chrome://favicon/"</li>
   <li>"clipboardWrite"</li>
@@ -445,5 +444,5 @@ by clicking the <b>chrome://extensions</b> page's
 
 <p>
 You can get a list of permission warnings for any manifest with
-<a href="management.html#method-getPermissionWarnings">chrome.management.getPermissionWarnings()</a>.
+$ref:management.getPermissionWarningsByManifest.
 </p>

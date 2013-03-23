@@ -16,6 +16,7 @@
 using WebKit::WebInputEvent;
 using WebKit::WebMouseEvent;
 
+namespace content {
 namespace {
 
 const int kTestRoutingID = 13;
@@ -106,13 +107,11 @@ void AddEventsToFilter(IPC::ChannelProxy::MessageFilter* message_filter,
                        const WebMouseEvent events[],
                        size_t count) {
   for (size_t i = 0; i < count; ++i) {
-    ViewMsg_HandleInputEvent message(kTestRoutingID);
-    message.WriteData(reinterpret_cast<const char*>(&events[i]),
-                      events[i].size);
+    ViewMsg_HandleInputEvent message(kTestRoutingID, &events[i], false);
     message_filter->OnMessageReceived(message);
   }
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 }  // namespace
@@ -161,11 +160,11 @@ TEST(InputEventFilterTest, Basic) {
     EXPECT_EQ(ViewHostMsg_HandleInputEvent_ACK::ID, message->type());
 
     WebInputEvent::Type event_type = WebInputEvent::Undefined;
-    bool processed = false;
+    InputEventAckState ack_result = INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
     EXPECT_TRUE(ViewHostMsg_HandleInputEvent_ACK::Read(message, &event_type,
-                                                       &processed));
+                                                       &ack_result));
     EXPECT_EQ(kEvents[i].type, event_type);
-    EXPECT_FALSE(processed);
+    EXPECT_EQ(ack_result, INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
 
     const WebInputEvent* event = event_recorder.record_at(i);
     ASSERT_TRUE(event);
@@ -210,12 +209,14 @@ TEST(InputEventFilterTest, Basic) {
     EXPECT_EQ(ViewHostMsg_HandleInputEvent_ACK::ID, message->type());
 
     WebInputEvent::Type event_type = WebInputEvent::Undefined;
-    bool processed = false;
+    InputEventAckState ack_result = INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
     EXPECT_TRUE(ViewHostMsg_HandleInputEvent_ACK::Read(message, &event_type,
-                                                       &processed));
+                                                       &ack_result));
     EXPECT_EQ(kEvents[i].type, event_type);
-    EXPECT_TRUE(processed);
+    EXPECT_EQ(ack_result, INPUT_EVENT_ACK_STATE_CONSUMED);
   }
 
   filter->OnFilterRemoved();
 }
+
+}  // namespace content

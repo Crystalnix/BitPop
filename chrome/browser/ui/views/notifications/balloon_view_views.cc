@@ -27,7 +27,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path.h"
 #include "ui/views/bubble/bubble_border.h"
@@ -39,7 +38,6 @@
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/native/native_view_host.h"
-#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_CHROMEOS)
@@ -54,23 +52,18 @@ const int kTopMargin = 2;
 const int kBottomMargin = 0;
 const int kLeftMargin = 4;
 const int kRightMargin = 4;
-const int kShelfBorderTopOverlap = 0;
 
-// Properties of the dismiss button.
-const int kDismissButtonWidth = 14;
-const int kDismissButtonHeight = 14;
-const int kDismissButtonTopMargin = 6;
-const int kDismissButtonRightMargin = 6;
+// Margin between various shelf buttons/label and the shelf border.
+const int kShelfMargin = 2;
 
-// Properties of the options menu.
-const int kOptionsButtonWidth = 21;
-const int kOptionsButtonHeight = 14;
-const int kOptionsButtonTopMargin = 5;
-const int kOptionsButtonRightMargin = 4;
+// Spacing between the options and close buttons.
+const int kOptionsDismissSpacing = 4;
 
-// Properties of the origin label.
-const int kLabelLeftMargin = 10;
-const int kLabelTopMargin = 6;
+// Spacing between the options button and label text.
+const int kLabelOptionsSpacing = 4;
+
+// Margin between shelf border and title label.
+const int kLabelLeftMargin = 6;
 
 // Size of the drop shadow.  The shadow is provided by BubbleBorder,
 // not this class.
@@ -82,10 +75,6 @@ const int kBottomShadowWidth = 6;
 // Optional animation.
 const bool kAnimateEnabled = true;
 
-// The shelf height for the system default font size.  It is scaled
-// with changes in the default font size.
-const int kDefaultShelfHeight = 22;
-
 // Menu commands
 const int kRevokePermissionCommand = 0;
 
@@ -96,20 +85,24 @@ const SkColor kControlBarSeparatorLineColor = SkColorSetRGB(180, 180, 180);
 
 }  // namespace
 
+// static
+int BalloonView::GetHorizontalMargin() {
+  return kLeftMargin + kRightMargin + kLeftShadowWidth + kRightShadowWidth;
+}
+
 BalloonViewImpl::BalloonViewImpl(BalloonCollection* collection)
     : balloon_(NULL),
       collection_(collection),
       frame_container_(NULL),
       html_container_(NULL),
       html_contents_(NULL),
-      method_factory_(this),
       close_button_(NULL),
       animation_(NULL),
       options_menu_model_(NULL),
       options_menu_button_(NULL),
-      enable_web_ui_(false) {
-  // This object is not to be deleted by the views hierarchy,
-  // as it is owned by the balloon.
+      enable_web_ui_(false),
+      closed_by_user_(false) {
+  // We're owned by Balloon and don't want to be deleted by our parent View.
   set_owned_by_client();
 
   views::BubbleBorder* bubble_border =
@@ -124,19 +117,16 @@ BalloonViewImpl::~BalloonViewImpl() {
 void BalloonViewImpl::Close(bool by_user) {
   animation_->Stop();
   html_contents_->Shutdown();
-  // Detach contents from widget before then close.
+  // Detach contents from the widget before they close.
   // This is necessary because a widget may be deleted
   // after this when chrome is shutting down.
   html_container_->GetRootView()->RemoveAllChildViews(true);
   html_container_->Close();
   frame_container_->GetRootView()->RemoveAllChildViews(true);
   frame_container_->Close();
-  // Post the tast at the end to sure this this WidgetDelegate
-  // instance is avaiable when Widget::CloseNow gets called.
-  MessageLoop::current()->PostTask(FROM_HERE,
-                                   base::Bind(&BalloonViewImpl::DelayedClose,
-                                              method_factory_.GetWeakPtr(),
-                                              by_user));
+  closed_by_user_ = by_user;
+  // |frame_container_->::Close()| is async. When processed it'll call back to
+  // DeleteDelegate() and we'll cleanup.
 }
 
 gfx::Size BalloonViewImpl::GetSize() const {
@@ -178,15 +168,14 @@ void BalloonViewImpl::OnWorkAreaChanged() {
   collection_->DisplayChanged();
 }
 
-void BalloonViewImpl::ButtonPressed(views::Button* sender,
-                                    const views::Event&) {
-  // The only button currently is the close button.
-  DCHECK(sender == close_button_);
-  Close(true);
+void BalloonViewImpl::DeleteDelegate() {
+  balloon_->OnClose(closed_by_user_);
 }
 
-void BalloonViewImpl::DelayedClose(bool by_user) {
-  balloon_->OnClose(by_user);
+void BalloonViewImpl::ButtonPressed(views::Button* sender, const ui::Event&) {
+  // The only button currently is the close button.
+  DCHECK_EQ(close_button_, sender);
+  Close(true);
 }
 
 gfx::Size BalloonViewImpl::GetPreferredSize() {
@@ -216,9 +205,7 @@ void BalloonViewImpl::RepositionToBalloon() {
   DCHECK(balloon_);
 
   if (!kAnimateEnabled) {
-    frame_container_->SetBounds(
-        gfx::Rect(balloon_->GetPosition().x(), balloon_->GetPosition().y(),
-                  GetTotalWidth(), GetTotalHeight()));
+    frame_container_->SetBounds(GetBoundsForFrameContainer());
     gfx::Rect contents_rect = GetContentsRectangle();
     html_container_->SetBounds(contents_rect);
     html_contents_->SetPreferredSize(contents_rect.size());
@@ -229,17 +216,18 @@ void BalloonViewImpl::RepositionToBalloon() {
     return;
   }
 
-  anim_frame_end_ = gfx::Rect(
-      balloon_->GetPosition().x(), balloon_->GetPosition().y(),
-      GetTotalWidth(), GetTotalHeight());
+  anim_frame_end_ = GetBoundsForFrameContainer();
   anim_frame_start_ = frame_container_->GetClientAreaBoundsInScreen();
   animation_.reset(new ui::SlideAnimation(this));
   animation_->Show();
 }
 
 void BalloonViewImpl::Update() {
-  DCHECK(html_contents_.get()) << "BalloonView::Update called before Show";
-  if (!html_contents_->web_contents())
+  // Tls might get called before html_contents_ is set in Show() if more than
+  // one update with the same replace_id occurs, or if an update occurs after
+  // the ballon has been closed (e.g. during shutdown) but before this has been
+  // destroyed.
+  if (!html_contents_.get() || !html_contents_->web_contents())
     return;
   html_contents_->web_contents()->GetController().LoadURL(
       balloon_->notification().content_url(), content::Referrer(),
@@ -247,21 +235,11 @@ void BalloonViewImpl::Update() {
 }
 
 void BalloonViewImpl::AnimationProgressed(const ui::Animation* animation) {
-  DCHECK(animation == animation_.get());
+  DCHECK_EQ(animation_.get(), animation);
 
   // Linear interpolation from start to end position.
-  double e = animation->GetCurrentValue();
-  double s = (1.0 - e);
-
-  gfx::Rect frame_position(
-    static_cast<int>(s * anim_frame_start_.x() +
-                     e * anim_frame_end_.x()),
-    static_cast<int>(s * anim_frame_start_.y() +
-                     e * anim_frame_end_.y()),
-    static_cast<int>(s * anim_frame_start_.width() +
-                     e * anim_frame_end_.width()),
-    static_cast<int>(s * anim_frame_start_.height() +
-                     e * anim_frame_end_.height()));
+  gfx::Rect frame_position(animation_->CurrentValueBetween(
+                               anim_frame_start_, anim_frame_end_));
   frame_container_->SetBounds(frame_position);
 
   gfx::Path path;
@@ -278,40 +256,41 @@ void BalloonViewImpl::AnimationProgressed(const ui::Animation* animation) {
 }
 
 gfx::Rect BalloonViewImpl::GetCloseButtonBounds() const {
-  return gfx::Rect(
-      width() - kDismissButtonWidth -
-          kDismissButtonRightMargin - kRightShadowWidth,
-      kDismissButtonTopMargin,
-      kDismissButtonWidth,
-      kDismissButtonHeight);
+  gfx::Rect bounds(GetContentsBounds());
+  bounds.set_height(GetShelfHeight());
+  const gfx::Size& pref_size(close_button_->GetPreferredSize());
+  bounds.Inset(bounds.width() - kShelfMargin - pref_size.width(), 0,
+      kShelfMargin, 0);
+  bounds.ClampToCenteredSize(pref_size);
+  return bounds;
 }
 
 gfx::Rect BalloonViewImpl::GetOptionsButtonBounds() const {
-  gfx::Rect close_rect = GetCloseButtonBounds();
-
-  return gfx::Rect(
-      close_rect.x() - kOptionsButtonWidth - kOptionsButtonRightMargin,
-      kOptionsButtonTopMargin,
-      kOptionsButtonWidth,
-      kOptionsButtonHeight);
+  gfx::Rect bounds(GetContentsBounds());
+  bounds.set_height(GetShelfHeight());
+  const gfx::Size& pref_size(options_menu_button_->GetPreferredSize());
+  bounds.set_x(GetCloseButtonBounds().x() - kOptionsDismissSpacing -
+      pref_size.width());
+  bounds.set_width(pref_size.width());
+  bounds.ClampToCenteredSize(pref_size);
+  return bounds;
 }
 
 gfx::Rect BalloonViewImpl::GetLabelBounds() const {
-  return gfx::Rect(
-      kLeftShadowWidth + kLabelLeftMargin,
-      kLabelTopMargin,
-      std::max(0, width() - kOptionsButtonWidth -
-               kRightMargin),
-      kOptionsButtonHeight);
+  gfx::Rect bounds(GetContentsBounds());
+  bounds.set_height(GetShelfHeight());
+  gfx::Size pref_size(source_label_->GetPreferredSize());
+  bounds.Inset(kLabelLeftMargin, 0, bounds.width() -
+      GetOptionsButtonBounds().x() + kLabelOptionsSpacing, 0);
+  pref_size.set_width(bounds.width());
+  bounds.ClampToCenteredSize(pref_size);
+  return bounds;
 }
 
 void BalloonViewImpl::Show(Balloon* balloon) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   balloon_ = balloon;
-
-  SetBounds(balloon_->GetPosition().x(), balloon_->GetPosition().y(),
-            GetTotalWidth(), GetTotalHeight());
 
   const string16 source_label_text = l10n_util::GetStringFUTF16(
       IDS_NOTIFICATION_BALLOON_SOURCE_LABEL,
@@ -347,7 +326,6 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   //
   // We don't let the OS manage the RTL layout of these widgets, because
   // this code is already taking care of correctly reversing the layout.
-  gfx::Rect contents_rect = GetContentsRectangle();
 #if defined(OS_CHROMEOS) && defined(USE_AURA)
   html_contents_.reset(new chromeos::BalloonViewHost(balloon));
 #else
@@ -359,29 +337,32 @@ void BalloonViewImpl::Show(Balloon* balloon) {
 
   html_container_ = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-  params.bounds = contents_rect;
   html_container_->Init(params);
   html_container_->SetContentsView(html_contents_->view());
 
-  gfx::Rect balloon_rect(x(), y(), GetTotalWidth(), GetTotalHeight());
   frame_container_ = new views::Widget;
   params.delegate = this;
   params.transparent = true;
-  params.bounds = balloon_rect;
+  params.bounds = GetBoundsForFrameContainer();
   frame_container_->Init(params);
   frame_container_->SetContentsView(this);
   frame_container_->StackAboveWidget(html_container_);
+
+  // GetContentsRectangle() is calculated relative to |frame_container_|. Make
+  // sure |frame_container_| has bounds before we ask for
+  // GetContentsRectangle().
+  html_container_->SetBounds(GetContentsRectangle());
 
   // SetAlwaysOnTop should be called after StackAboveWidget because otherwise
   // the top-most flag will be removed.
   html_container_->SetAlwaysOnTop(true);
   frame_container_->SetAlwaysOnTop(true);
 
-  close_button_->SetImage(views::CustomButton::BS_NORMAL,
+  close_button_->SetImage(views::CustomButton::STATE_NORMAL,
                           rb.GetImageSkiaNamed(IDR_TAB_CLOSE));
-  close_button_->SetImage(views::CustomButton::BS_HOT,
+  close_button_->SetImage(views::CustomButton::STATE_HOVERED,
                           rb.GetImageSkiaNamed(IDR_TAB_CLOSE_H));
-  close_button_->SetImage(views::CustomButton::BS_PUSHED,
+  close_button_->SetImage(views::CustomButton::STATE_PRESSED,
                           rb.GetImageSkiaNamed(IDR_TAB_CLOSE_P));
   close_button_->SetBoundsRect(GetCloseButtonBounds());
   close_button_->SetBackground(SK_ColorBLACK,
@@ -400,7 +381,8 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   source_label_->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
   source_label_->SetBackgroundColor(kControlBarBackgroundColor);
   source_label_->SetEnabledColor(kControlBarTextColor);
-  source_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  source_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  source_label_->SetElideBehavior(views::Label::ELIDE_AT_END);
   source_label_->SetBoundsRect(GetLabelBounds());
 
   SizeContentsWindow();
@@ -473,9 +455,18 @@ gfx::Point BalloonViewImpl::GetContentsOffset() const {
                     kTopShadowWidth + kTopMargin);
 }
 
+gfx::Rect BalloonViewImpl::GetBoundsForFrameContainer() const {
+  return gfx::Rect(balloon_->GetPosition().x(), balloon_->GetPosition().y(),
+                   GetTotalWidth(), GetTotalHeight());
+}
+
 int BalloonViewImpl::GetShelfHeight() const {
   // TODO(johnnyg): add scaling here.
-  return kDefaultShelfHeight;
+  int max_button_height = std::max(std::max(
+      close_button_->GetPreferredSize().height(),
+      options_menu_button_->GetPreferredSize().height()),
+      source_label_->GetPreferredSize().height());
+  return max_button_height + kShelfMargin * 2;
 }
 
 int BalloonViewImpl::GetBalloonFrameHeight() const {
@@ -483,14 +474,14 @@ int BalloonViewImpl::GetBalloonFrameHeight() const {
 }
 
 int BalloonViewImpl::GetTotalWidth() const {
-  return balloon_->content_size().width()
-      + kLeftMargin + kRightMargin + kLeftShadowWidth + kRightShadowWidth;
+  return balloon_->content_size().width() +
+      kLeftMargin + kRightMargin + kLeftShadowWidth + kRightShadowWidth;
 }
 
 int BalloonViewImpl::GetTotalHeight() const {
-  return balloon_->content_size().height()
-      + kTopMargin + kBottomMargin + kTopShadowWidth + kBottomShadowWidth
-      + GetShelfHeight();
+  return balloon_->content_size().height() +
+      kTopMargin + kBottomMargin + kTopShadowWidth + kBottomShadowWidth +
+      GetShelfHeight();
 }
 
 gfx::Rect BalloonViewImpl::GetContentsRectangle() const {
@@ -521,7 +512,7 @@ void BalloonViewImpl::OnPaint(gfx::Canvas* canvas) {
 
   // Draw a 1-pixel gray line between the content and the menu bar.
   int line_width = GetTotalWidth() - kLeftMargin - kRightMargin;
-  canvas->FillRect(gfx::Rect(kLeftMargin, 1 + GetShelfHeight(), line_width, 1),
+  canvas->FillRect(gfx::Rect(kLeftMargin, rect.bottom(), line_width, 1),
                    kControlBarSeparatorLineColor);
   View::OnPaint(canvas);
   OnPaintBorder(canvas);

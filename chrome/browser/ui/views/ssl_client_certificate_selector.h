@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
+#include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/table/table_view_observer.h"
 #include "ui/views/view.h"
@@ -33,7 +34,6 @@ class TextButton;
 
 class CertificateSelectorTableModel;
 class ConstrainedWindow;
-class TabContents;
 
 class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::DialogDelegateView,
@@ -41,10 +41,10 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::TableViewObserver {
  public:
   SSLClientCertificateSelector(
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
-      const base::Callback<void(net::X509Certificate*)>& callback);
+      const chrome::SelectCertificateCallback& callback);
   virtual ~SSLClientCertificateSelector();
 
   void Init();
@@ -64,10 +64,11 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
   virtual views::View* GetExtraView() OVERRIDE;
+  virtual ui::ModalType GetModalType() const OVERRIDE;
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::TableViewObserver:
   virtual void OnSelectionChanged() OVERRIDE;
@@ -79,7 +80,7 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
 
   scoped_ptr<CertificateSelectorTableModel> model_;
 
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
 
   ConstrainedWindow* window_;
   views::TableView* table_;

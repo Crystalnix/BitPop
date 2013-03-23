@@ -20,6 +20,11 @@
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/ui/search/other_device_menu_controller.h"
+#endif
+
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/session_favicon_source.h"
 #include "chrome/browser/ui/webui/web_ui_util.h"
@@ -29,17 +34,13 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
-#include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace browser_sync {
 
-// Maximum number of session we're going to display on the NTP
+// Maximum number of sessions we're going to display on the NTP
 static const size_t kMaxSessionsToShow = 10;
-
-// Invalid value, used to note that we don't have a tab or window number.
-static const int kInvalidId = -1;
 
 namespace {
 
@@ -60,8 +61,104 @@ void ForeignSessionHandler::RegisterUserPrefs(PrefService* prefs) {
                                 PrefService::UNSYNCABLE_PREF);
 }
 
+// static
+void ForeignSessionHandler::OpenForeignSessionTab(
+    content::WebUI* web_ui,
+    const std::string& session_string_value,
+    SessionID::id_type window_num,
+    SessionID::id_type tab_id,
+    const WindowOpenDisposition& disposition) {
+  SessionModelAssociator* associator = GetModelAssociator(web_ui);
+  if (!associator)
+    return;
+
+  // We don't actually care about |window_num|, this is just a sanity check.
+  DCHECK_LT(kInvalidId, window_num);
+  const SessionTab* tab;
+  if (!associator->GetForeignTab(session_string_value, tab_id, &tab)) {
+    LOG(ERROR) << "Failed to load foreign tab.";
+    return;
+  }
+  if (tab->navigations.empty()) {
+    LOG(ERROR) << "Foreign tab no longer has valid navigations.";
+    return;
+  }
+  SessionRestore::RestoreForeignSessionTab(
+      web_ui->GetWebContents(), *tab, disposition);
+}
+
+// static
+void ForeignSessionHandler::OpenForeignSessionWindows(
+    content::WebUI* web_ui,
+    const std::string& session_string_value,
+    SessionID::id_type window_num) {
+  SessionModelAssociator* associator = GetModelAssociator(web_ui);
+  if (!associator)
+    return;
+
+  std::vector<const SessionWindow*> windows;
+  // Note: we don't own the ForeignSessions themselves.
+  if (!associator->GetForeignSession(session_string_value, &windows)) {
+    LOG(ERROR) << "ForeignSessionHandler failed to get session data from"
+        "SessionModelAssociator.";
+    return;
+  }
+  std::vector<const SessionWindow*>::const_iterator iter_begin =
+      windows.begin() + (window_num == kInvalidId ? 0 : window_num);
+  std::vector<const SessionWindow*>::const_iterator iter_end =
+      window_num == kInvalidId ?
+      std::vector<const SessionWindow*>::const_iterator(windows.end()) :
+      iter_begin + 1;
+  SessionRestore::RestoreForeignSessionWindows(
+      Profile::FromWebUI(web_ui), iter_begin, iter_end);
+}
+
+// static
+bool ForeignSessionHandler::SessionTabToValue(
+    const SessionTab& tab,
+    DictionaryValue* dictionary) {
+  if (tab.navigations.empty())
+    return false;
+
+  int selected_index = std::min(tab.current_navigation_index,
+                                static_cast<int>(tab.navigations.size() - 1));
+  const TabNavigation& current_navigation =
+      tab.navigations.at(selected_index);
+  GURL tab_url = current_navigation.virtual_url();
+  if (tab_url == GURL(chrome::kChromeUINewTabURL))
+    return false;
+
+  NewTabUI::SetUrlTitleAndDirection(dictionary, current_navigation.title(),
+                                    tab_url);
+  dictionary->SetString("type", "tab");
+  dictionary->SetDouble("timestamp",
+                        static_cast<double>(tab.timestamp.ToInternalValue()));
+  // TODO(jeremycho): This should probably be renamed to tabId to avoid
+  // confusion with the ID corresponding to a session.  Investigate all the
+  // places (C++ and JS) where this is being used.  (http://crbug.com/154865).
+  dictionary->SetInteger("sessionId", tab.tab_id.id());
+  return true;
+}
+
+// static
+SessionModelAssociator* ForeignSessionHandler::GetModelAssociator(
+    content::WebUI* web_ui) {
+  Profile* profile = Profile::FromWebUI(web_ui);
+  ProfileSyncService* service =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
+
+  // Only return the associator if it exists and it is done syncing sessions.
+  if (service && service->ShouldPushChanges())
+    return service->GetSessionModelAssociator();
+
+  return NULL;
+}
+
 void ForeignSessionHandler::RegisterMessages() {
   Init();
+  web_ui()->RegisterMessageCallback("deleteForeignSession",
+      base::Bind(&ForeignSessionHandler::HandleDeleteForeignSession,
+                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("getForeignSessions",
       base::Bind(&ForeignSessionHandler::HandleGetForeignSessions,
                  base::Unretained(this)));
@@ -71,15 +168,17 @@ void ForeignSessionHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("setForeignSessionCollapsed",
       base::Bind(&ForeignSessionHandler::HandleSetForeignSessionCollapsed,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("showOtherDeviceSessionPopup",
+      base::Bind(&ForeignSessionHandler::HandleShowOtherDeviceSessionPopup,
+                 base::Unretained(this)));
 }
 
 void ForeignSessionHandler::Init() {
-  // TODO(dubroy): Change this to only observe this notification on the current
-  // profile, rather than all sources (crbug.com/124717).
-  registrar_.Add(this, chrome::NOTIFICATION_SYNC_CONFIGURE_DONE,
-                 content::NotificationService::AllSources());
-
   Profile* profile = Profile::FromWebUI(web_ui());
+  ProfileSyncService* service =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
+  registrar_.Add(this, chrome::NOTIFICATION_SYNC_CONFIGURE_DONE,
+                 content::Source<ProfileSyncService>(service));
   registrar_.Add(this, chrome::NOTIFICATION_FOREIGN_SESSION_UPDATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_FOREIGN_SESSION_DISABLED,
@@ -111,17 +210,6 @@ void ForeignSessionHandler::Observe(
   }
 }
 
-SessionModelAssociator* ForeignSessionHandler::GetModelAssociator() {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  ProfileSyncService* service =
-      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
-
-  // Only return the associator if it exists and it is done syncing sessions.
-  if (service && service->ShouldPushChanges())
-    return service->GetSessionModelAssociator();
-
-  return NULL;
-}
 
 bool ForeignSessionHandler::IsTabSyncEnabled() {
   Profile* profile = Profile::FromWebUI(web_ui());
@@ -132,11 +220,13 @@ bool ForeignSessionHandler::IsTabSyncEnabled() {
 
 string16 ForeignSessionHandler::FormatSessionTime(const base::Time& time) {
   // Return a time like "1 hour ago", "2 days ago", etc.
-  return TimeFormat::TimeElapsed(base::Time::Now() - time);
+  base::Time now = base::Time::Now();
+  // TimeElapsed does not support negative TimeDelta values, so then we use 0.
+  return TimeFormat::TimeElapsed(now < time ? base::TimeDelta() : now - time);
 }
 
 void ForeignSessionHandler::HandleGetForeignSessions(const ListValue* args) {
-  SessionModelAssociator* associator = GetModelAssociator();
+  SessionModelAssociator* associator = GetModelAssociator(web_ui());
   std::vector<const SyncedSession*> sessions;
 
   ListValue session_list;
@@ -227,39 +317,32 @@ void ForeignSessionHandler::HandleOpenForeignSession(const ListValue* args) {
     return;
   }
 
-  SessionModelAssociator* associator = GetModelAssociator();
-  if (!associator)
-    return;
-
   if (tab_id != kInvalidId) {
-    // We don't actually care about |window_num|, this is just a sanity check.
-    DCHECK_LT(kInvalidId, window_num);
-    const SessionTab* tab;
-    if (!associator->GetForeignTab(session_string_value, tab_id, &tab)) {
-      LOG(ERROR) << "Failed to load foreign tab.";
-      return;
-    }
     WindowOpenDisposition disposition =
         web_ui_util::GetDispositionFromClick(args, 3);
-    SessionRestore::RestoreForeignSessionTab(
-        web_ui()->GetWebContents(), *tab, disposition);
+    OpenForeignSessionTab(
+        web_ui(), session_string_value, window_num, tab_id, disposition);
   } else {
-    std::vector<const SessionWindow*> windows;
-    // Note: we don't own the ForeignSessions themselves.
-    if (!associator->GetForeignSession(session_string_value, &windows)) {
-      LOG(ERROR) << "ForeignSessionHandler failed to get session data from"
-          "SessionModelAssociator.";
-      return;
-    }
-    std::vector<const SessionWindow*>::const_iterator iter_begin =
-        windows.begin() + ((window_num == kInvalidId) ? 0 : window_num);
-    std::vector<const SessionWindow*>::const_iterator iter_end =
-        ((window_num == kInvalidId) ?
-        std::vector<const SessionWindow*>::const_iterator(windows.end()) :
-        iter_begin + 1);
-    SessionRestore::RestoreForeignSessionWindows(
-        Profile::FromWebUI(web_ui()), iter_begin, iter_end);
+    OpenForeignSessionWindows(web_ui(), session_string_value, window_num);
   }
+}
+
+void ForeignSessionHandler::HandleDeleteForeignSession(const ListValue* args) {
+  if (args->GetSize() != 1U) {
+    LOG(ERROR) << "Wrong number of args to deleteForeignSession";
+    return;
+  }
+
+  // Get the session tag argument (required).
+  std::string session_tag;
+  if (!args->GetString(0, &session_tag)) {
+    LOG(ERROR) << "Unable to extract session tag";
+    return;
+  }
+
+  SessionModelAssociator* associator = GetModelAssociator(web_ui());
+  if (associator)
+    associator->DeleteForeignSession(session_tag);
 }
 
 void ForeignSessionHandler::HandleSetForeignSessionCollapsed(
@@ -292,28 +375,30 @@ void ForeignSessionHandler::HandleSetForeignSessionCollapsed(
     update.Get()->Remove(session_tag, NULL);
 }
 
-bool ForeignSessionHandler::SessionTabToValue(
-    const SessionTab& tab,
-    DictionaryValue* dictionary) {
-  if (tab.navigations.empty())
-    return false;
-  int selected_index = tab.current_navigation_index;
-  selected_index = std::max(
-      0,
-      std::min(selected_index,
-               static_cast<int>(tab.navigations.size() - 1)));
-  const TabNavigation& current_navigation =
-      tab.navigations.at(selected_index);
-  GURL tab_url = current_navigation.virtual_url();
-  if (tab_url == GURL(chrome::kChromeUINewTabURL))
-    return false;
-  NewTabUI::SetURLTitleAndDirection(dictionary, current_navigation.title(),
-                                    tab_url);
-  dictionary->SetString("type", "tab");
-  dictionary->SetDouble("timestamp",
-                        static_cast<double>(tab.timestamp.ToInternalValue()));
-  dictionary->SetInteger("sessionId", tab.tab_id.id());
-  return true;
+void ForeignSessionHandler::HandleShowOtherDeviceSessionPopup(
+    const ListValue* args) {
+  // Exclude Android until an OtherDeviceMenu view is implemented for it.
+  #if !defined(OS_ANDROID)
+  CHECK(args->GetSize() == 3U);
+
+  // Extract the session tag.
+  std::string session_string_value;
+  CHECK(args->GetString(0, &session_string_value));
+
+  // Extract horizontal coordinate of the click relative to the origin of the
+  // screen coordinate system.
+  double screen_x;
+  CHECK(args->GetDouble(1, &screen_x));
+
+  // Extract vertical coordinate of the click relative to the origin of the
+  // screen coordinate system.
+  double screen_y;
+  CHECK(args->GetDouble(2, &screen_y));
+  OtherDeviceMenuController* menu = new OtherDeviceMenuController(
+      web_ui(),
+      session_string_value, gfx::Point(screen_x, screen_y));
+  menu->ShowMenu();
+  #endif
 }
 
 bool ForeignSessionHandler::SessionWindowToValue(

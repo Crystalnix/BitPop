@@ -14,13 +14,15 @@
 
 class GURL;
 
-class ClipboardMessageFilter : public content::BrowserMessageFilter {
+namespace content {
+
+class ClipboardMessageFilter : public BrowserMessageFilter {
  public:
   ClipboardMessageFilter();
 
   virtual void OverrideThreadForMessage(
       const IPC::Message& message,
-      content::BrowserThread::ID* thread) OVERRIDE;
+      BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
  private:
@@ -49,6 +51,9 @@ class ClipboardMessageFilter : public content::BrowserMessageFilter {
   void OnReadCustomData(ui::Clipboard::Buffer buffer,
                         const string16& type,
                         string16* result);
+  void OnReadData(const ui::Clipboard::FormatType& format,
+                  std::string* data);
+
 #if defined(OS_MACOSX)
   void OnFindPboardWriteString(const string16& text);
 #endif
@@ -61,5 +66,7 @@ class ClipboardMessageFilter : public content::BrowserMessageFilter {
 
   DISALLOW_COPY_AND_ASSIGN(ClipboardMessageFilter);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_CLIPBOARD_MESSAGE_FILTER_H_

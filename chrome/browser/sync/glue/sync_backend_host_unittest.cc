@@ -11,6 +11,8 @@
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
+#include "chrome/browser/sync/glue/device_info.h"
+#include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/invalidations/invalidator_storage.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/test/base/testing_profile.h"
@@ -23,8 +25,8 @@
 #include "sync/internal_api/public/sync_manager_factory.h"
 #include "sync/internal_api/public/test/fake_sync_manager.h"
 #include "sync/internal_api/public/util/experiments.h"
-#include "sync/notifier/mock_sync_notifier_observer.h"
-#include "sync/notifier/notifications_disabled_reason.h"
+#include "sync/notifier/invalidator_state.h"
+#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "sync/protocol/encryption.pb.h"
 #include "sync/protocol/sync_protocol_error.h"
 #include "sync/util/test_unrecoverable_error_handler.h"
@@ -46,11 +48,7 @@ ACTION_P(Signal, event) {
   event->Signal();
 }
 
-void SignalEvent(base::WaitableEvent* event) {
-  event->Signal();
-}
-
-static void QuitMessageLoop() {
+void QuitMessageLoop() {
   MessageLoop::current()->Quit();
 }
 
@@ -58,14 +56,16 @@ class MockSyncFrontend : public SyncFrontend {
  public:
   virtual ~MockSyncFrontend() {}
 
-  MOCK_METHOD0(OnNotificationsEnabled, void());
-  MOCK_METHOD1(OnNotificationsDisabled,
-               void(syncer::NotificationsDisabledReason));
-  MOCK_METHOD2(OnIncomingNotification,
-               void(const syncer::ObjectIdPayloadMap&,
-                    syncer::IncomingNotificationSource));
-  MOCK_METHOD2(OnBackendInitialized,
-               void(const syncer::WeakHandle<syncer::JsBackend>&, bool));
+  MOCK_METHOD1(OnInvalidatorStateChange,
+               void(syncer::InvalidatorState));
+  MOCK_METHOD2(OnIncomingInvalidation,
+               void(const syncer::ObjectIdInvalidationMap&,
+                    syncer::IncomingInvalidationSource));
+  MOCK_METHOD3(
+      OnBackendInitialized,
+      void(const syncer::WeakHandle<syncer::JsBackend>&,
+           const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&,
+           bool));
   MOCK_METHOD0(OnSyncCycleCompleted, void());
   MOCK_METHOD1(OnConnectionStatusChange,
                void(syncer::ConnectionStatus status));
@@ -152,14 +152,19 @@ class SyncBackendHostTest : public testing::Test {
     credentials_.email = "user@example.com";
     credentials_.sync_token = "sync_token";
 
+    // These types are always implicitly enabled.
+    enabled_types_.PutAll(syncer::ControlTypes());
+
     // NOTE: We can't include Passwords or Typed URLs due to the Sync Backend
     // Registrar removing them if it can't find their model workers.
     enabled_types_.Put(syncer::BOOKMARKS);
     enabled_types_.Put(syncer::NIGORI);
+    enabled_types_.Put(syncer::DEVICE_INFO);
     enabled_types_.Put(syncer::PREFERENCES);
     enabled_types_.Put(syncer::SESSIONS);
     enabled_types_.Put(syncer::SEARCH_ENGINES);
     enabled_types_.Put(syncer::AUTOFILL);
+    enabled_types_.Put(syncer::EXPERIMENTS);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -173,15 +178,15 @@ class SyncBackendHostTest : public testing::Test {
     profile_.reset();
     // Pump messages posted by the sync thread (which may end up
     // posting on the IO thread).
-    ui_loop_.RunAllPending();
+    ui_loop_.RunUntilIdle();
     io_thread_.Stop();
     // Pump any messages posted by the IO thread.
-    ui_loop_.RunAllPending();
+    ui_loop_.RunUntilIdle();
   }
 
   // Synchronously initializes the backend.
-  void InitializeBackend() {
-    EXPECT_CALL(mock_frontend_, OnBackendInitialized(_, true)).
+  void InitializeBackend(bool expect_success) {
+    EXPECT_CALL(mock_frontend_, OnBackendInitialized(_, _, expect_success)).
         WillOnce(InvokeWithoutArgs(QuitMessageLoop));
     backend_->Initialize(&mock_frontend_,
                          syncer::WeakHandle<syncer::JsEventHandler>(),
@@ -203,13 +208,12 @@ class SyncBackendHostTest : public testing::Test {
 
   // Synchronously configures the backend's datatypes.
   void ConfigureDataTypes(syncer::ModelTypeSet types_to_add,
-                          syncer::ModelTypeSet types_to_remove,
-                          BackendDataTypeConfigurer::NigoriState nigori_state) {
+                          syncer::ModelTypeSet types_to_remove) {
+    types_to_add.PutAll(syncer::ControlTypes());
     backend_->ConfigureDataTypes(
         syncer::CONFIGURE_REASON_RECONFIGURATION,
         types_to_add,
         types_to_remove,
-        nigori_state,
         base::Bind(&SyncBackendHostTest::DownloadReady,
                    base::Unretained(this)),
         base::Bind(&SyncBackendHostTest::OnDownloadRetry,
@@ -246,31 +250,30 @@ class SyncBackendHostTest : public testing::Test {
 // Test basic initialization with no initial types (first time initialization).
 // Only the nigori should be configured.
 TEST_F(SyncBackendHostTest, InitShutdown) {
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
-      syncer::ModelTypeSet(syncer::NIGORI)));
+      syncer::ControlTypes()));
   EXPECT_TRUE(fake_manager_->InitialSyncEndedTypes().Equals(
-      syncer::ModelTypeSet(syncer::NIGORI)));
+      syncer::ControlTypes()));
   EXPECT_TRUE(fake_manager_->GetTypesWithEmptyProgressMarkerToken(
-      syncer::ModelTypeSet(syncer::NIGORI)).Empty());
+      syncer::ControlTypes()).Empty());
 }
 
 // Test first time sync scenario. All types should be properly configured.
 TEST_F(SyncBackendHostTest, FirstTimeSync) {
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
-      syncer::ModelTypeSet(syncer::NIGORI)));
+      syncer::ControlTypes()));
   EXPECT_TRUE(fake_manager_->InitialSyncEndedTypes().Equals(
-      syncer::ModelTypeSet(syncer::NIGORI)));
+      syncer::ControlTypes()));
   EXPECT_TRUE(fake_manager_->GetTypesWithEmptyProgressMarkerToken(
-      syncer::ModelTypeSet(syncer::NIGORI)).Empty());
+      syncer::ControlTypes()).Empty());
 
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().HasAll(
-      enabled_types_));
+      Difference(enabled_types_, syncer::ControlTypes())));
   EXPECT_TRUE(fake_manager_->InitialSyncEndedTypes().Equals(enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetEnabledTypes().Equals(enabled_types_));
   EXPECT_TRUE(fake_manager_->GetTypesWithEmptyProgressMarkerToken(
@@ -284,7 +287,7 @@ TEST_F(SyncBackendHostTest, Restart) {
   syncer::ModelTypeSet all_but_nigori = enabled_types_;
   fake_manager_factory_.set_progress_marker_types(enabled_types_);
   fake_manager_factory_.set_initial_sync_ended_types(enabled_types_);
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Empty());
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
                            enabled_types_).Empty());
@@ -294,8 +297,7 @@ TEST_F(SyncBackendHostTest, Restart) {
 
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Empty());
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
                            enabled_types_).Empty());
@@ -319,7 +321,7 @@ TEST_F(SyncBackendHostTest, PartialTypes) {
 
   // Bringing up the backend should purge all partial types, then proceed to
   // download the Nigori.
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       syncer::ModelTypeSet(syncer::NIGORI)));
   EXPECT_TRUE(fake_manager_->GetAndResetCleanedTypes().HasAll(partial_types));
@@ -332,8 +334,7 @@ TEST_F(SyncBackendHostTest, PartialTypes) {
   // Now do the actual configuration, which should download and apply bookmarks.
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
                            enabled_types_).Empty());
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
@@ -350,14 +351,14 @@ TEST_F(SyncBackendHostTest, LostDB) {
   sync_prefs_->SetSyncSetupCompleted();
   // Initialization should fetch the Nigori node.  Everything else should be
   // left untouched.
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
-      syncer::ModelTypeSet(syncer::NIGORI)));
+      syncer::ModelTypeSet(syncer::ControlTypes())));
   EXPECT_TRUE(fake_manager_->InitialSyncEndedTypes().Equals(
-      syncer::ModelTypeSet(syncer::NIGORI)));
+      syncer::ModelTypeSet(syncer::ControlTypes())));
   EXPECT_TRUE(fake_manager_->GetTypesWithEmptyProgressMarkerToken(
       enabled_types_).Equals(
-          Difference(enabled_types_, syncer::ModelTypeSet(syncer::NIGORI))));
+          Difference(enabled_types_, syncer::ControlTypes())));
 
   // The database was empty, so any cleaning is entirely optional.  We want to
   // reset this value before running the next part of the test, though.
@@ -366,10 +367,9 @@ TEST_F(SyncBackendHostTest, LostDB) {
   // The actual configuration should redownload and apply all the enabled types.
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().HasAll(
-      enabled_types_));
+      Difference(enabled_types_, syncer::ControlTypes())));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
                            enabled_types_).Empty());
   EXPECT_TRUE(fake_manager_->InitialSyncEndedTypes().Equals(enabled_types_));
@@ -380,12 +380,11 @@ TEST_F(SyncBackendHostTest, LostDB) {
 
 TEST_F(SyncBackendHostTest, DisableTypes) {
   // Simulate first time sync.
-  InitializeBackend();
+  InitializeBackend(true);
   fake_manager_->GetAndResetCleanedTypes();
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       enabled_types_));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
@@ -401,8 +400,7 @@ TEST_F(SyncBackendHostTest, DisableTypes) {
   enabled_types_.RemoveAll(disabled_types);
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
 
   // Only those datatypes disabled should be cleaned. Nothing should be
   // downloaded.
@@ -417,12 +415,11 @@ TEST_F(SyncBackendHostTest, DisableTypes) {
 
 TEST_F(SyncBackendHostTest, AddTypes) {
   // Simulate first time sync.
-  InitializeBackend();
+  InitializeBackend(true);
   fake_manager_->GetAndResetCleanedTypes();
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       enabled_types_));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
@@ -437,8 +434,7 @@ TEST_F(SyncBackendHostTest, AddTypes) {
   enabled_types_.PutAll(new_types);
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
 
   // Only those datatypes added should be downloaded (plus nigori). Nothing
   // should be cleaned aside from the disabled types.
@@ -455,12 +451,11 @@ TEST_F(SyncBackendHostTest, AddTypes) {
 // And and disable in the same configuration.
 TEST_F(SyncBackendHostTest, AddDisableTypes) {
   // Simulate first time sync.
-  InitializeBackend();
+  InitializeBackend(true);
   fake_manager_->GetAndResetCleanedTypes();
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       enabled_types_));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
@@ -479,8 +474,7 @@ TEST_F(SyncBackendHostTest, AddDisableTypes) {
   enabled_types_.RemoveAll(disabled_types);
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
 
   // Only those datatypes added should be downloaded (plus nigori). Nothing
   // should be cleaned aside from the disabled types.
@@ -508,7 +502,7 @@ TEST_F(SyncBackendHostTest, NewlySupportedTypes) {
   enabled_types_.PutAll(new_types);
 
   // Does nothing.
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Empty());
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
                            old_types).Empty());
@@ -519,8 +513,7 @@ TEST_F(SyncBackendHostTest, NewlySupportedTypes) {
   // Downloads and applies the new types.
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       Union(new_types, syncer::ModelTypeSet(syncer::NIGORI))));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
@@ -550,7 +543,7 @@ TEST_F(SyncBackendHostTest, NewlySupportedTypesWithPartialTypes) {
 
   // Purge the partial types.  The nigori will be among the purged types, but
   // the syncer will re-download it by the time the initialization is complete.
-  InitializeBackend();
+  InitializeBackend(true);
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       syncer::ModelTypeSet(syncer::NIGORI)));
   EXPECT_TRUE(fake_manager_->GetAndResetCleanedTypes().HasAll(partial_types));
@@ -564,8 +557,7 @@ TEST_F(SyncBackendHostTest, NewlySupportedTypesWithPartialTypes) {
   // nigori anyways).
   ConfigureDataTypes(enabled_types_,
                      Difference(syncer::ModelTypeSet::All(),
-                                enabled_types_),
-                     BackendDataTypeConfigurer::WITH_NIGORI);
+                                enabled_types_));
   EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(
       Union(new_types, partial_types)));
   EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
@@ -579,66 +571,49 @@ TEST_F(SyncBackendHostTest, NewlySupportedTypesWithPartialTypes) {
 // Register for some IDs and trigger an invalidation.  This should
 // propagate all the way to the frontend.
 TEST_F(SyncBackendHostTest, Invalidate) {
-  InitializeBackend();
+  InitializeBackend(true);
 
   syncer::ObjectIdSet ids;
   ids.insert(invalidation::ObjectId(1, "id1"));
   ids.insert(invalidation::ObjectId(2, "id2"));
-  const syncer::ObjectIdPayloadMap& id_payloads =
-      syncer::ObjectIdSetToPayloadMap(ids, "payload");
+  const syncer::ObjectIdInvalidationMap& invalidation_map =
+      syncer::ObjectIdSetToInvalidationMap(ids, "payload");
 
   EXPECT_CALL(
       mock_frontend_,
-      OnIncomingNotification(id_payloads, syncer::REMOTE_NOTIFICATION))
+      OnIncomingInvalidation(invalidation_map, syncer::REMOTE_INVALIDATION))
       .WillOnce(InvokeWithoutArgs(QuitMessageLoop));
 
   backend_->UpdateRegisteredInvalidationIds(ids);
-  fake_manager_->Invalidate(id_payloads, syncer::REMOTE_NOTIFICATION);
+  fake_manager_->Invalidate(invalidation_map, syncer::REMOTE_INVALIDATION);
   ui_loop_.PostDelayedTask(
       FROM_HERE, ui_loop_.QuitClosure(), TestTimeouts::action_timeout());
   ui_loop_.Run();
 }
 
-// Register for some IDs and turn on notifications.  This should
-// propagate all the way to the frontend.
-TEST_F(SyncBackendHostTest, EnableNotifications) {
-  InitializeBackend();
+// Register for some IDs and update the invalidator state.  This
+// should propagate all the way to the frontend.
+TEST_F(SyncBackendHostTest, UpdateInvalidatorState) {
+  InitializeBackend(true);
 
-  EXPECT_CALL(mock_frontend_, OnNotificationsEnabled())
+  EXPECT_CALL(mock_frontend_,
+              OnInvalidatorStateChange(syncer::INVALIDATIONS_ENABLED))
       .WillOnce(InvokeWithoutArgs(QuitMessageLoop));
 
   syncer::ObjectIdSet ids;
   ids.insert(invalidation::ObjectId(3, "id3"));
   backend_->UpdateRegisteredInvalidationIds(ids);
-  fake_manager_->EnableNotifications();
+  fake_manager_->UpdateInvalidatorState(syncer::INVALIDATIONS_ENABLED);
   ui_loop_.PostDelayedTask(
       FROM_HERE, ui_loop_.QuitClosure(), TestTimeouts::action_timeout());
   ui_loop_.Run();
 }
 
-// Register for some IDs and turn off notifications.  This should
-// propagate all the way to the frontend.
-TEST_F(SyncBackendHostTest, DisableNotifications) {
-  InitializeBackend();
-
-  EXPECT_CALL(mock_frontend_,
-              OnNotificationsDisabled(syncer::TRANSIENT_NOTIFICATION_ERROR))
-      .WillOnce(InvokeWithoutArgs(QuitMessageLoop));
-
-  syncer::ObjectIdSet ids;
-  ids.insert(invalidation::ObjectId(4, "id4"));
-  backend_->UpdateRegisteredInvalidationIds(ids);
-  fake_manager_->DisableNotifications(syncer::TRANSIENT_NOTIFICATION_ERROR);
-  ui_loop_.PostDelayedTask(
-      FROM_HERE, ui_loop_.QuitClosure(), TestTimeouts::action_timeout());
-  ui_loop_.Run();
-}
-
-// Call StopSyncingForShutdown() on the backend and fire some notifications
+// Call StopSyncingForShutdown() on the backend and fire some invalidations
 // before calling Shutdown().  Then start up and shut down the backend again.
 // Those notifications shouldn't propagate to the frontend.
-TEST_F(SyncBackendHostTest, NotificationsAfterStopSyncingForShutdown) {
-  InitializeBackend();
+TEST_F(SyncBackendHostTest, InvalidationsAfterStopSyncingForShutdown) {
+  InitializeBackend(true);
 
   syncer::ObjectIdSet ids;
   ids.insert(invalidation::ObjectId(5, "id5"));
@@ -647,11 +622,11 @@ TEST_F(SyncBackendHostTest, NotificationsAfterStopSyncingForShutdown) {
   backend_->StopSyncingForShutdown();
 
   // Should not trigger anything.
-  fake_manager_->DisableNotifications(syncer::TRANSIENT_NOTIFICATION_ERROR);
-  fake_manager_->EnableNotifications();
-  const syncer::ObjectIdPayloadMap& id_payloads =
-      syncer::ObjectIdSetToPayloadMap(ids, "payload");
-  fake_manager_->Invalidate(id_payloads, syncer::REMOTE_NOTIFICATION);
+  fake_manager_->UpdateInvalidatorState(syncer::TRANSIENT_INVALIDATION_ERROR);
+  fake_manager_->UpdateInvalidatorState(syncer::INVALIDATIONS_ENABLED);
+  const syncer::ObjectIdInvalidationMap& invalidation_map =
+      syncer::ObjectIdSetToInvalidationMap(ids, "payload");
+  fake_manager_->Invalidate(invalidation_map, syncer::REMOTE_INVALIDATION);
 
   // Make sure the above calls take effect before we continue.
   fake_manager_->WaitForSyncThread();
@@ -661,6 +636,52 @@ TEST_F(SyncBackendHostTest, NotificationsAfterStopSyncingForShutdown) {
 
   TearDown();
   SetUp();
+}
+
+// Ensure the device info tracker is initialized properly on startup.
+TEST_F(SyncBackendHostTest, InitializeDeviceInfo) {
+  ASSERT_EQ(NULL, backend_->GetSyncedDeviceTracker());
+
+  InitializeBackend(true);
+  const SyncedDeviceTracker* device_tracker =
+      backend_->GetSyncedDeviceTracker();
+  ASSERT_TRUE(device_tracker->ReadLocalDeviceInfo());
+}
+
+// Verify that downloading control types only downloads those types that do
+// not have initial sync ended set.
+TEST_F(SyncBackendHostTest, DownloadControlTypes) {
+  sync_prefs_->SetSyncSetupCompleted();
+  // Set sync manager behavior before passing it down. Experiments and device
+  // info are new types without progress markers or initial sync ended, while
+  // all other types have been fully downloaded and applied.
+  syncer::ModelTypeSet new_types(syncer::EXPERIMENTS, syncer::DEVICE_INFO);
+  syncer::ModelTypeSet old_types =
+      Difference(enabled_types_, new_types);
+  fake_manager_factory_.set_progress_marker_types(old_types);
+  fake_manager_factory_.set_initial_sync_ended_types(old_types);
+
+  // Bringing up the backend should download the new types without downloading
+  // any old types.
+  InitializeBackend(true);
+  EXPECT_TRUE(fake_manager_->GetAndResetDownloadedTypes().Equals(new_types));
+  EXPECT_TRUE(Intersection(fake_manager_->GetAndResetCleanedTypes(),
+                           enabled_types_).Empty());
+  EXPECT_TRUE(fake_manager_->InitialSyncEndedTypes().Equals(enabled_types_));
+  EXPECT_TRUE(fake_manager_->GetTypesWithEmptyProgressMarkerToken(
+      enabled_types_).Empty());
+}
+
+// Fail to download control types.  It's believed that there is a server bug
+// which can allow this to happen (crbug.com/164288).  The sync backend host
+// should detect this condition and fail to initialize the backend.
+//
+// The failure is "silent" in the sense that the GetUpdates request appears to
+// be successful, but it returned no results.  This means that the usual
+// download retry logic will not be invoked.
+TEST_F(SyncBackendHostTest, SilentlyFailToDownloadControlTypes) {
+  fake_manager_factory_.set_configure_fail_types(syncer::ModelTypeSet::All());
+  InitializeBackend(false);
 }
 
 }  // namespace

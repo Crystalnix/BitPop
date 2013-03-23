@@ -18,11 +18,16 @@
 // All methods must be run on the FILE thread.
 class LeveldbValueStore : public ValueStore {
  public:
+  // Creates a database bound to |path|. The underlying database won't be
+  // opened (i.e. may not be created) until one of the get/set/etc methods are
+  // called - this is because opening the database may fail, and extensions
+  // need to be notified of that, but we don't want to permanently give up.
+  //
+  // Must be created on the FILE thread.
+  explicit LeveldbValueStore(const FilePath& path);
+
   // Must be deleted on the FILE thread.
   virtual ~LeveldbValueStore();
-
-  // Create and open the database at the given path.
-  static LeveldbValueStore* Create(const FilePath& path);
 
   // ValueStore implementation.
   virtual size_t GetBytesInUse(const std::string& key) OVERRIDE;
@@ -42,32 +47,32 @@ class LeveldbValueStore : public ValueStore {
   virtual WriteResult Clear() OVERRIDE;
 
  private:
-  // Ownership of db is taken.
-  LeveldbValueStore(const FilePath& db_path, leveldb::DB* db);
+  // Tries to open the database if it hasn't been opened already.  Returns the
+  // error message on failure, or "" on success (guaranteeding that |db_| is
+  // non-NULL),
+  std::string EnsureDbIsOpen();
 
-  // Reads a setting from the database.  Returns whether the read was
-  // successful, in which case |setting| will be reset to the Value read
-  // from the database.  This value may be NULL.
-  bool ReadFromDb(
+  // Reads a setting from the database. Returns the error message on failure,
+  // or "" on success in which case |setting| will be reset to the Value read
+  // from the database. This value may be NULL.
+  std::string ReadFromDb(
       leveldb::ReadOptions options,
       const std::string& key,
       // Will be reset() with the result, if any.
       scoped_ptr<Value>* setting);
 
-  // Adds a setting to a WriteBatch, and logs the change in |changes|. For
-  // use with WriteToDb.
-  bool AddToBatch(
+  // Adds a setting to a WriteBatch, and logs the change in |changes|. For use
+  // with WriteToDb. Returns the error message on failure, or "" on success.
+  std::string AddToBatch(
       ValueStore::WriteOptions options,
       const std::string& key,
       const base::Value& value,
       leveldb::WriteBatch* batch,
       ValueStoreChangeList* changes);
 
-  // Commits the changes in |batch| to the database, and returns a WriteResult
-  // with the changes.
-  WriteResult WriteToDb(
-      leveldb::WriteBatch* batch,
-      scoped_ptr<ValueStoreChangeList> changes);
+  // Commits the changes in |batch| to the database, returning the error message
+  // on failure or "" on success.
+  std::string WriteToDb(leveldb::WriteBatch* batch);
 
   // Returns whether the database is empty.
   bool IsEmpty();

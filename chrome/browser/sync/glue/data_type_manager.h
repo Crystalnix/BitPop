@@ -42,8 +42,6 @@ class DataTypeManager {
     PARTIAL_SUCCESS,     // Some data types had an error while starting up.
     ABORTED,             // Start was aborted by calling Stop() before
                          // all types were started.
-    RETRY,               // Download failed due to a transient error and it
-                         // is being retried.
     CONFIGURE_BLOCKED,   // Configuration was blocked due to missing
                          // passphrase.
     UNRECOVERABLE_ERROR  // We got an unrecoverable error during startup.
@@ -95,8 +93,8 @@ class DataTypeManager {
   virtual void Configure(TypeSet desired_types,
                          syncer::ConfigureReason reason) = 0;
 
-  virtual void ConfigureWithoutNigori(TypeSet desired_types,
-                                      syncer::ConfigureReason reason) = 0;
+  virtual void PurgeForMigration(TypeSet undesired_types,
+                                 syncer::ConfigureReason reason) = 0;
 
   // Synchronously stops all registered data types.  If called after
   // Configure() is called but before it finishes, it will abort the

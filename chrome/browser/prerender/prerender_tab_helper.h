@@ -5,12 +5,11 @@
 #ifndef CHROME_BROWSER_PRERENDER_PRERENDER_TAB_HELPER_H_
 #define CHROME_BROWSER_PRERENDER_PRERENDER_TAB_HELPER_H_
 
-#include "base/time.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 #include "googleurl/src/gurl.h"
-
-class TabContents;
 
 namespace prerender {
 
@@ -18,20 +17,21 @@ class PrerenderManager;
 
 // PrerenderTabHelper is responsible for recording perceived pageload times
 // to compare PLT's with prerendering enabled and disabled.
-class PrerenderTabHelper : public content::WebContentsObserver {
+class PrerenderTabHelper
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<PrerenderTabHelper> {
  public:
-  explicit PrerenderTabHelper(TabContents* tab);
   virtual ~PrerenderTabHelper();
 
   // content::WebContentsObserver implementation.
   virtual void ProvisionalChangeToMainFrameUrl(
       const GURL& url,
-      const GURL& opener_url,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
+      int64 parent_frame_id,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
@@ -42,10 +42,13 @@ class PrerenderTabHelper : public content::WebContentsObserver {
       const GURL& validated_url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
-  // Called when this prerendered TabContents has just been swapped in.
+  // Called when this prerendered WebContents has just been swapped in.
   void PrerenderSwappedIn();
 
  private:
+  explicit PrerenderTabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<PrerenderTabHelper>;
+
   // Helper class to compute pixel-based stats on the paint progress
   // between when a prerendered page is swapped in and when the onload event
   // fires.

@@ -59,11 +59,19 @@ int BrowserX11IOErrorHandler(Display* d) {
   // If there's an IO error it likely means the X server has gone away
   if (!g_in_x11_io_error_handler) {
     g_in_x11_io_error_handler = true;
-    LOG(ERROR) << "X IO Error detected";
+    LOG(ERROR) << "X IO error received (X server probably went away)";
     browser_shutdown::SetShuttingDownWithoutClosingBrowsers(true);
     browser::SessionEnding();
   }
 
+  return 0;
+}
+
+int X11EmptyErrorHandler(Display* d, XErrorEvent* error) {
+  return 0;
+}
+
+int X11EmptyIOErrorHandler(Display* d) {
   return 0;
 }
 
@@ -92,4 +100,8 @@ void SetBrowserX11ErrorHandlers() {
   // Set up error handlers to make sure profile gets written if X server
   // goes away.
   ui::SetX11ErrorHandlers(BrowserX11ErrorHandler, BrowserX11IOErrorHandler);
+}
+
+void UnsetBrowserX11ErrorHandlers() {
+  ui::SetX11ErrorHandlers(X11EmptyErrorHandler, X11EmptyIOErrorHandler);
 }

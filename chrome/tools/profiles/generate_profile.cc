@@ -173,10 +173,10 @@ void InsertURLBatch(Profile* profile,
     }
 
     // Add all of this information to the history service.
-    history_service->AddPage(url,
+    history_service->AddPage(url, base::Time::Now(),
                              id_scope, page_id,
-                             previous_url, transition,
-                             redirects, history::SOURCE_BROWSED, true);
+                             previous_url, redirects,
+                             transition, history::SOURCE_BROWSED, true);
     ThumbnailScore score(0.75, false, false);
     history_service->SetPageTitle(url, ConstructRandomTitle());
     if (types & FULL_TEXT)
@@ -185,7 +185,7 @@ void InsertURLBatch(Profile* profile,
       const SkBitmap& bitmap = (RandomInt(0, 2) == 0) ? *google_bitmap :
                                                         *weewar_bitmap;
       gfx::Image image(bitmap);
-      top_sites->SetPageThumbnail(url, &image, score);
+      top_sites->SetPageThumbnail(url, image, score);
     }
 
     previous_url = url;
@@ -257,7 +257,7 @@ int main(int argc, const char* argv[]) {
     const int batch_size = std::min(kBatchSize, url_count - page_id);
     InsertURLBatch(&profile, page_id, batch_size, types);
     // Run all pending messages to give TopSites a chance to catch up.
-    message_loop.RunAllPending();
+    message_loop.RunUntilIdle();
     page_id += batch_size;
   }
 
@@ -266,12 +266,10 @@ int main(int argc, const char* argv[]) {
   profile.DestroyTopSites();
   profile.DestroyHistoryService();
 
-  message_loop.RunAllPending();
+  message_loop.RunUntilIdle();
 
-  file_util::FileEnumerator file_iterator(
-      profile.GetPath(), false,
-      static_cast<file_util::FileEnumerator::FileType>(
-          file_util::FileEnumerator::FILES));
+  file_util::FileEnumerator file_iterator(profile.GetPath(), false,
+      file_util::FileEnumerator::FILES);
   FilePath path = file_iterator.Next();
   while (!path.empty()) {
     FilePath dst_file = dst_dir.Append(path.BaseName());

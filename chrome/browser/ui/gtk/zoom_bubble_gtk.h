@@ -10,22 +10,34 @@
 #include "chrome/browser/ui/gtk/bubble/bubble_gtk.h"
 #include "ui/base/gtk/gtk_signal.h"
 
-class TabContents;
-
 typedef struct _GtkWidget GtkWidget;
+
+namespace content {
+class WebContents;
+}
 
 class ZoomBubbleGtk {
  public:
   // Shows the zoom bubble, pointing at |anchor_widget|.
-  static void Show(GtkWidget* anchor, TabContents* tab_contents,
-      bool auto_close);
+  static void Show(GtkWidget* anchor,
+                   content::WebContents* web_contents,
+                   bool auto_close);
 
   // Closes the zoom bubble.
   static void Close();
 
  private:
-  ZoomBubbleGtk(GtkWidget* anchor, TabContents* tab_contents, bool auto_close);
+  ZoomBubbleGtk(GtkWidget* anchor,
+                content::WebContents* web_contents,
+                bool auto_close);
+
   virtual ~ZoomBubbleGtk();
+
+  // Convenience method to start |timer_| if |auto_close_| is true.
+  void StartTimerIfNecessary();
+
+  // Stops any close timer if |timer_| is currently running.
+  void StopTimerIfNecessary();
 
   // Refreshes the bubble by changing the zoom percentage appropriately and
   // resetting the timer if necessary.
@@ -40,14 +52,26 @@ class ZoomBubbleGtk {
   // Fired when the reset link is clicked.
   CHROMEGTK_CALLBACK_0(ZoomBubbleGtk, void, OnSetDefaultLinkClick);
 
+  // Fired when the mouse enters or leaves the widget.
+  CHROMEGTK_CALLBACK_1(ZoomBubbleGtk, gboolean, OnMouseEnter,
+                       GdkEventCrossing*);
+  CHROMEGTK_CALLBACK_1(ZoomBubbleGtk, gboolean, OnMouseLeave,
+                       GdkEventCrossing*);
+
   // Whether the currently displayed bubble will automatically close.
   bool auto_close_;
+
+  // Whether the mouse is currently inside the bubble.
+  bool mouse_inside_;
 
   // Timer used to close the bubble when |auto_close_| is true.
   base::OneShotTimer<ZoomBubbleGtk> timer_;
 
-  // The TabContents for the page whose zoom has changed.
-  TabContents* tab_contents_;
+  // The WebContents for the page whose zoom has changed.
+  content::WebContents* web_contents_;
+
+  // An event box that wraps the content of the bubble.
+  GtkWidget* event_box_;
 
   // Label showing zoom percentage.
   GtkWidget* label_;

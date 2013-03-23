@@ -5,19 +5,24 @@
   'action_name': 'repack_resources',
   'variables': {
     'pak_inputs': [
-      '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
-      '<(grit_out_dir)/component_extension_resources.pak',
-      '<(grit_out_dir)/devtools_discovery_page_resources.pak',
       '<(grit_out_dir)/net_internals_resources.pak',
-      '<(grit_out_dir)/options2_resources.pak',
-      '<(grit_out_dir)/quota_internals_resources.pak',
       '<(grit_out_dir)/shared_resources.pak',
+      '<(grit_out_dir)/signin_internals_resources.pak',
       '<(grit_out_dir)/sync_internals_resources.pak',
     ],
     'conditions': [
-      ['OS != "mac"', {
+      ['OS != "ios" and OS != "android"', {
+        # New paks should be added here by default.
         'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+          '<(grit_out_dir)/component_extension_resources.pak',
+          '<(grit_out_dir)/options_resources.pak',
           '<(grit_out_dir)/quota_internals_resources.pak',
+        ],
+      }],
+      ['OS != "ios"', {
+        'pak_inputs': [
+          '<(grit_out_dir)/devtools_discovery_page_resources.pak',
         ],
       }],
     ],

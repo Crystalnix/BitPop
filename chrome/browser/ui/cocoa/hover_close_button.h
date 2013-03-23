@@ -8,12 +8,16 @@
 @class GTMKeyValueAnimation;
 
 // The standard close button for our Mac UI which is the "x" that changes to a
-// dark circle with the "x" when you hover over it. At this time it is used by
-// the download bar, info bar and tabs.
+// dark circle with the "x" when you hover over it. Used to close tabs.
 @interface HoverCloseButton : HoverButton<NSAnimationDelegate> {
  @private
   GTMKeyValueAnimation* fadeOutAnimation_;
   HoverState previousState_;
 }
 
+@end
+
+// A version of HoverCloseButton with the "x" icon changed to match the WebUI
+// look.
+@interface WebUIHoverCloseButton : HoverCloseButton
 @end

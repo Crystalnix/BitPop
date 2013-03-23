@@ -18,6 +18,7 @@
 #include "ui/views/view.h"
 
 namespace views {
+class Checkbox;
 class Label;
 }
 
@@ -44,11 +45,11 @@ class VPNConfigView : public ChildNetworkConfigView,
   virtual void ContentsChanged(views::Textfield* sender,
                                const string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const views::KeyEvent& key_event) OVERRIDE;
+                              const ui::KeyEvent& key_event) OVERRIDE;
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::ComboboxListener:
   virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
@@ -105,6 +106,7 @@ class VPNConfigView : public ChildNetworkConfigView,
   const std::string GetGroupName() const;
   const std::string GetServerCACertNssNickname() const;
   const std::string GetUserCertID() const;
+  bool GetSaveCredentials() const;
 
   // Parses a VPN UI |property| from the given |network|. |key| is the property
   // name within the type-specific VPN subdictionary named |dict_key|.
@@ -135,6 +137,7 @@ class VPNConfigView : public ChildNetworkConfigView,
   NetworkPropertyUIData username_ui_data_;
   NetworkPropertyUIData user_passphrase_ui_data_;
   NetworkPropertyUIData group_name_ui_data_;
+  NetworkPropertyUIData save_credentials_ui_data_;
 
   views::Textfield* server_textfield_;
   views::Label* service_text_;
@@ -157,6 +160,7 @@ class VPNConfigView : public ChildNetworkConfigView,
   views::Textfield* otp_textfield_;
   views::Label* group_name_label_;
   views::Textfield* group_name_textfield_;
+  views::Checkbox* save_credentials_checkbox_;
   views::Label* error_label_;
 
   DISALLOW_COPY_AND_ASSIGN(VPNConfigView);

@@ -14,19 +14,16 @@
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_native_library.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
-#include "base/win/metro.h"
 #include "base/win/registry.h"
-#include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_comptr.h"
+#include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/installer/setup/setup_util.h"
@@ -44,156 +41,11 @@ using content::BrowserThread;
 
 namespace {
 
-// Gets the short (8.3) form of |path|, putting the result in |short_path| and
-// returning true on success.  |short_path| is not modified on failure.
-bool ShortNameFromPath(const FilePath& path, string16* short_path) {
-  DCHECK(short_path);
-  string16 result(MAX_PATH, L'\0');
-  DWORD short_length = GetShortPathName(path.value().c_str(), &result[0],
-                                        result.size());
-  if (short_length == 0 || short_length > result.size()) {
-    PLOG(ERROR) << "Error getting short (8.3) path";
-    return false;
-  }
-
-  result.resize(short_length);
-  short_path->swap(result);
-  return true;
-}
-
-// Probe using IApplicationAssociationRegistration::QueryCurrentDefault
-// (Windows 8); see ProbeProtocolHandlers.  This mechanism is not suitable for
-// use on previous versions of Windows despite the presence of
-// QueryCurrentDefault on them since versions of Windows prior to Windows 8
-// did not perform validation on the ProgID registered as the current default.
-// As a result, stale ProgIDs could be returned, leading to false positives.
-ShellIntegration::DefaultWebClientState ProbeCurrentDefaultHandlers(
-    const wchar_t* const* protocols,
-    size_t num_protocols) {
-  base::win::ScopedComPtr<IApplicationAssociationRegistration> registration;
-  HRESULT hr = registration.CreateInstance(
-      CLSID_ApplicationAssociationRegistration, NULL, CLSCTX_INPROC);
-  if (FAILED(hr))
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-  }
-  string16 prog_id(ShellUtil::kChromeHTMLProgId);
-  prog_id += ShellUtil::GetCurrentInstallationSuffix(dist, chrome_exe.value());
-
-  for (size_t i = 0; i < num_protocols; ++i) {
-    base::win::ScopedCoMem<wchar_t> current_app;
-    hr = registration->QueryCurrentDefault(protocols[i], AT_URLPROTOCOL,
-                                           AL_EFFECTIVE, &current_app);
-    if (FAILED(hr) || prog_id.compare(current_app) != 0)
-      return ShellIntegration::NOT_DEFAULT_WEB_CLIENT;
-  }
-
-  return ShellIntegration::IS_DEFAULT_WEB_CLIENT;
-}
-
-// Probe using IApplicationAssociationRegistration::QueryAppIsDefault (Vista and
-// Windows 7); see ProbeProtocolHandlers.
-ShellIntegration::DefaultWebClientState ProbeAppIsDefaultHandlers(
-    const wchar_t* const* protocols,
-    size_t num_protocols) {
-  base::win::ScopedComPtr<IApplicationAssociationRegistration> registration;
-  HRESULT hr = registration.CreateInstance(
-      CLSID_ApplicationAssociationRegistration, NULL, CLSCTX_INPROC);
-  if (FAILED(hr))
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-  }
-  string16 app_name(ShellUtil::GetApplicationName(dist, chrome_exe.value()));
-
-  BOOL result;
-  for (size_t i = 0; i < num_protocols; ++i) {
-    result = TRUE;
-    hr = registration->QueryAppIsDefault(protocols[i], AT_URLPROTOCOL,
-        AL_EFFECTIVE, app_name.c_str(), &result);
-    if (FAILED(hr) || result == FALSE)
-      return ShellIntegration::NOT_DEFAULT_WEB_CLIENT;
-  }
-
-  return ShellIntegration::IS_DEFAULT_WEB_CLIENT;
-}
-
-// Probe the current commands registered to handle the shell "open" verb for
-// |protocols| (Windows XP); see ProbeProtocolHandlers.
-ShellIntegration::DefaultWebClientState ProbeOpenCommandHandlers(
-    const wchar_t* const* protocols,
-    size_t num_protocols) {
-  // Get the path to the current exe (Chrome).
-  FilePath app_path;
-  if (!PathService::Get(base::FILE_EXE, &app_path)) {
-    LOG(ERROR) << "Error getting app exe path";
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-  }
-
-  // Get its short (8.3) form.
-  string16 short_app_path;
-  if (!ShortNameFromPath(app_path, &short_app_path))
-    return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-
-  const HKEY root_key = HKEY_CLASSES_ROOT;
-  string16 key_path;
-  base::win::RegKey key;
-  string16 value;
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  string16 short_path;
-
-  for (size_t i = 0; i < num_protocols; ++i) {
-    // Get the command line from HKCU\<protocol>\shell\open\command.
-    key_path.assign(protocols[i]).append(ShellUtil::kRegShellOpen);
-    if ((key.Open(root_key, key_path.c_str(),
-                  KEY_QUERY_VALUE) != ERROR_SUCCESS) ||
-        (key.ReadValue(L"", &value) != ERROR_SUCCESS)) {
-      return ShellIntegration::NOT_DEFAULT_WEB_CLIENT;
-    }
-
-    // Need to normalize path in case it's been munged.
-    command_line = CommandLine::FromString(value);
-    if (!ShortNameFromPath(command_line.GetProgram(), &short_path))
-      return ShellIntegration::UNKNOWN_DEFAULT_WEB_CLIENT;
-
-    if (!FilePath::CompareEqualIgnoreCase(short_path, short_app_path))
-      return ShellIntegration::NOT_DEFAULT_WEB_CLIENT;
-  }
-
-  return ShellIntegration::IS_DEFAULT_WEB_CLIENT;
-}
-
-// A helper function that probes default protocol handler registration (in a
-// manner appropriate for the current version of Windows) to determine if
-// Chrome is the default handler for |protocols|.  Returns IS_DEFAULT_WEB_CLIENT
-// only if Chrome is the default for all specified protocols.
-ShellIntegration::DefaultWebClientState ProbeProtocolHandlers(
-    const wchar_t* const* protocols,
-    size_t num_protocols) {
-  DCHECK(!num_protocols || protocols);
-  if (DCHECK_IS_ON()) {
-    for (size_t i = 0; i < num_protocols; ++i)
-      DCHECK(protocols[i] && *protocols[i]);
-  }
-
-  const base::win::Version windows_version = base::win::GetVersion();
-
-  if (windows_version >= base::win::VERSION_WIN8)
-    return ProbeCurrentDefaultHandlers(protocols, num_protocols);
-  else if (windows_version >= base::win::VERSION_VISTA)
-    return ProbeAppIsDefaultHandlers(protocols, num_protocols);
-
-  return ProbeOpenCommandHandlers(protocols, num_protocols);
-}
+#if defined(GOOGLE_CHROME_BUILD)
+const wchar_t kAppListAppName[] = L"ChromeAppList";
+#else
+const wchar_t kAppListAppName[] = L"ChromiumAppList";
+#endif
 
 // Helper function for ShellIntegration::GetAppId to generates profile id
 // from profile path. "profile_id" is composed of sanitized basenames of
@@ -293,9 +145,12 @@ bool GetExpectedAppId(const FilePath& chrome_exe,
   } else if (command_line.HasSwitch(switches::kAppId)) {
     app_name = UTF8ToUTF16(web_app::GenerateApplicationNameFromExtensionId(
         command_line.GetSwitchValueASCII(switches::kAppId)));
+  } else if (command_line.HasSwitch(switches::kShowAppList)) {
+    app_name = kAppListAppName;
   } else {
     BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-    app_name = ShellUtil::GetBrowserModelId(dist, chrome_exe.value());
+    app_name = ShellUtil::GetBrowserModelId(
+        dist, InstallUtil::IsPerUserInstall(chrome_exe.value().c_str()));
   }
 
   expected_app_id->assign(
@@ -338,10 +193,11 @@ void MigrateWin7ShortcutsInPath(
     GetShortcutAppId(shell_link, &existing_app_id);
 
     if (expected_app_id != existing_app_id) {
-      file_util::CreateOrUpdateShortcutLink(NULL, shortcut.value().c_str(),
-                                            NULL, NULL, NULL, NULL, 0,
-                                            expected_app_id.c_str(),
-                                            file_util::SHORTCUT_NO_OPTIONS);
+      base::win::ShortcutProperties properties_app_id_only;
+      properties_app_id_only.set_app_id(expected_app_id);
+      base::win::CreateOrUpdateShortcutLink(
+          shortcut, properties_app_id_only,
+          base::win::SHORTCUT_UPDATE_EXISTING);
     }
   }
 }
@@ -361,10 +217,10 @@ void MigrateChromiumShortcutsCallback() {
     const wchar_t* sub_dir;
   } kLocations[] = {
     {
-      base::DIR_APP_DATA,
-      L"Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar"
+      base::DIR_TASKBAR_PINS,
+      NULL
     }, {
-      chrome::DIR_USER_DESKTOP,
+      base::DIR_USER_DESKTOP,
       NULL
     }, {
       base::DIR_START_MENU,
@@ -389,38 +245,18 @@ void MigrateChromiumShortcutsCallback() {
   }
 }
 
-// Activates the application with the given AppUserModelId.
-bool ActivateApplication(const string16& app_id) {
-  // Not supported when running in metro mode.
-  // TODO(grt) This should perhaps check that this Chrome isn't in metro mode
-  // or, if it is, that |app_id| doesn't identify this Chrome.
-  if (base::win::IsMetroProcess())
-    return false;
-
-  // Delegate to metro_driver, which has the brains to invoke the activation
-  // wizardry.
-  bool success = false;
-  const FilePath metro_driver_path(chrome::kMetroDriverDll);
-  base::ScopedNativeLibrary metro_driver(metro_driver_path);
-  if (!metro_driver.is_valid()) {
-    PLOG(ERROR) << "Failed to load metro_driver.";
-  } else {
-    base::win::ActivateApplicationFn activate_application =
-        reinterpret_cast<base::win::ActivateApplicationFn>(
-            metro_driver.GetFunctionPointer(base::win::kActivateApplication));
-    if (!activate_application) {
-      PLOG(ERROR) << "Failed to find activation method in metro_driver.";
-    } else {
-      HRESULT hr = activate_application(app_id.c_str());
-      if (FAILED(hr)) {
-        LOG(ERROR) << "Failed to activate " << app_id
-                   << "; hr=0x" << std::hex << hr;
-      } else {
-        success = true;
-      }
-    }
+ShellIntegration::DefaultWebClientState
+    GetDefaultWebClientStateFromShellUtilDefaultState(
+        ShellUtil::DefaultState default_state) {
+  switch (default_state) {
+    case ShellUtil::NOT_DEFAULT:
+      return ShellIntegration::NOT_DEFAULT;
+    case ShellUtil::IS_DEFAULT:
+      return ShellIntegration::IS_DEFAULT;
+    default:
+      DCHECK_EQ(ShellUtil::UNKNOWN_DEFAULT, default_state);
+      return ShellIntegration::UNKNOWN_DEFAULT;
   }
-  return success;
 }
 
 }  // namespace
@@ -465,7 +301,7 @@ bool ShellIntegration::SetAsDefaultProtocolClient(const std::string& protocol) {
     return false;
   }
 
-  string16 wprotocol = UTF8ToUTF16(protocol);
+  string16 wprotocol(UTF8ToUTF16(protocol));
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   if (!ShellUtil::MakeChromeDefaultProtocolClient(dist, chrome_exe.value(),
         wprotocol)) {
@@ -491,34 +327,39 @@ bool ShellIntegration::SetAsDefaultBrowserInteractive() {
     return false;
   }
 
-  VLOG(1) << "Set-as-default Windows UI triggered.";
+  VLOG(1) << "Set-default-browser Windows UI completed.";
   return true;
 }
 
-ShellIntegration::DefaultWebClientState ShellIntegration::IsDefaultBrowser() {
-  // When we check for default browser we don't necessarily want to count file
-  // type handlers and icons as having changed the default browser status,
-  // since the user may have changed their shell settings to cause HTML files
-  // to open with a text editor for example. We also don't want to aggressively
-  // claim FTP, since the user may have a separate FTP client. It is an open
-  // question as to how to "heal" these settings. Perhaps the user should just
-  // re-run the installer or run with the --set-default-browser command line
-  // flag. There is doubtless some other key we can hook into to cause "Repair"
-  // to show up in Add/Remove programs for us.
-  static const wchar_t* const kChromeProtocols[] = { L"http", L"https" };
+bool ShellIntegration::SetAsDefaultProtocolClientInteractive(
+    const std::string& protocol) {
+  FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+    NOTREACHED() << "Error getting app exe path";
+    return false;
+  }
 
-  return ProbeProtocolHandlers(kChromeProtocols, arraysize(kChromeProtocols));
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  string16 wprotocol(UTF8ToUTF16(protocol));
+  if (!ShellUtil::ShowMakeChromeDefaultProtocolClientSystemUI(
+          dist, chrome_exe.value(), wprotocol)) {
+    LOG(ERROR) << "Failed to launch the set-default-client Windows UI.";
+    return false;
+  }
+
+  VLOG(1) << "Set-default-client Windows UI completed.";
+  return true;
+}
+
+ShellIntegration::DefaultWebClientState ShellIntegration::GetDefaultBrowser() {
+  return GetDefaultWebClientStateFromShellUtilDefaultState(
+      ShellUtil::GetChromeDefaultState());
 }
 
 ShellIntegration::DefaultWebClientState
     ShellIntegration::IsDefaultProtocolClient(const std::string& protocol) {
-  if (protocol.empty())
-    return UNKNOWN_DEFAULT_WEB_CLIENT;
-
-  string16 wide_protocol(UTF8ToUTF16(protocol));
-  const wchar_t* const protocols[] = { wide_protocol.c_str() };
-
-  return ProbeProtocolHandlers(protocols, arraysize(protocols));
+  return GetDefaultWebClientStateFromShellUtilDefaultState(
+      ShellUtil::GetChromeDefaultProtocolClientState(UTF8ToUTF16(protocol)));
 }
 
 // There is no reliable way to say which browser is default on a machine (each
@@ -573,44 +414,43 @@ string16 ShellIntegration::GetChromiumModelIdForProfile(
     return dist->GetBaseAppId();
   }
   return GetAppModelIdForProfile(
-      ShellUtil::GetBrowserModelId(dist, chrome_exe.value()), profile_path);
+      ShellUtil::GetBrowserModelId(
+           dist, InstallUtil::IsPerUserInstall(chrome_exe.value().c_str())),
+      profile_path);
 }
 
-string16 ShellIntegration::GetChromiumIconPath() {
-  // Determine the app path. If we can't determine what that is, we have
-  // bigger fish to fry...
-  FilePath app_path;
-  if (!PathService::Get(base::FILE_EXE, &app_path)) {
+string16 ShellIntegration::GetAppListAppModelIdForProfile(
+    const FilePath& profile_path) {
+  return ShellIntegration::GetAppModelIdForProfile(kAppListAppName,
+                                                   profile_path);
+}
+
+string16 ShellIntegration::GetChromiumIconLocation() {
+  // Determine the path to chrome.exe. If we can't determine what that is,
+  // we have bigger fish to fry...
+  FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
     NOTREACHED();
     return string16();
   }
 
-  string16 icon_path(app_path.value());
-  icon_path.push_back(',');
-  icon_path += base::IntToString16(
+  return ShellUtil::FormatIconLocation(
+      chrome_exe.value(),
       BrowserDistribution::GetDistribution()->GetIconIndex());
-  return icon_path;
 }
 
 void ShellIntegration::MigrateChromiumShortcuts() {
   if (base::win::GetVersion() < base::win::VERSION_WIN7)
     return;
 
-  BrowserThread::PostTask(
+  // This needs to happen eventually (e.g. so that the appid is fixed and the
+  // run-time Chrome icon is merged with the taskbar shortcut), but this is not
+  // urgent and shouldn't delay Chrome startup.
+  static const int64 kMigrateChromiumShortcutsDelaySeconds = 15;
+  BrowserThread::PostDelayedTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&MigrateChromiumShortcutsCallback));
-}
-
-bool ShellIntegration::ActivateMetroChrome() {
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return false;
-  }
-  const string16 app_id(
-      ShellUtil::GetBrowserModelId(dist, chrome_exe.value()));
-  return ActivateApplication(app_id);
+      base::Bind(&MigrateChromiumShortcutsCallback),
+      base::TimeDelta::FromSeconds(kMigrateChromiumShortcutsDelaySeconds));
 }
 
 FilePath ShellIntegration::GetStartMenuShortcut(const FilePath& chrome_exe) {
@@ -632,7 +472,8 @@ FilePath ShellIntegration::GetStartMenuShortcut(const FilePath& chrome_exe) {
       continue;
     }
 
-    shortcut = shortcut.Append(shortcut_name).Append(shortcut_name + L".lnk");
+    shortcut = shortcut.Append(shortcut_name).Append(shortcut_name +
+                                                     installer::kLnkExt);
     if (file_util::PathExists(shortcut))
       return shortcut;
   }

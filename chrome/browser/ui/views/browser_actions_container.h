@@ -5,9 +5,12 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_BROWSER_ACTIONS_CONTAINER_H_
 #define CHROME_BROWSER_UI_VIEWS_BROWSER_ACTIONS_CONTAINER_H_
 
+#include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
+#include "chrome/browser/ui/views/browser_action_view.h"
 #include "chrome/browser/ui/views/extensions/browser_action_overflow_menu_controller.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
+#include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "content/public/browser/notification_observer.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/tween.h"
@@ -19,7 +22,12 @@
 #include "ui/views/widget/widget_observer.h"
 
 class BrowserActionButton;
+class ExtensionKeybindingRegistryViews;
 class ExtensionPopup;
+
+namespace extensions {
+class ActiveTabPermissionGranter;
+}
 
 namespace ui {
 class SlideAnimation;
@@ -104,12 +112,13 @@ class ResizeArea;
 class BrowserActionsContainer
     : public views::View,
       public views::MenuButtonListener,
-      public views::DragController,
       public views::ResizeAreaDelegate,
       public ui::AnimationDelegate,
       public ExtensionToolbarModel::Observer,
       public BrowserActionOverflowMenuController::Observer,
-      public views::WidgetObserver {
+      public views::WidgetObserver,
+      public BrowserActionView::Delegate,
+      public extensions::ExtensionKeybindingRegistry::Delegate {
  public:
   BrowserActionsContainer(Browser* browser, views::View* owner_view);
   virtual ~BrowserActionsContainer();
@@ -129,12 +138,6 @@ class BrowserActionsContainer
   // Returns the profile this container is associated with.
   Profile* profile() const { return profile_; }
 
-  // Returns the browser this container is associated with.
-  Browser* browser() const { return browser_; }
-
-  // Returns the current tab's ID, or -1 if there is no current tab.
-  int GetCurrentTabId() const;
-
   // Get a particular browser action view.
   BrowserActionView* GetBrowserActionViewAt(int index) {
     return browser_action_views_[index];
@@ -152,14 +155,8 @@ class BrowserActionsContainer
   // Delete all browser action views.
   void DeleteBrowserActionViews();
 
-  // Called when a browser action becomes visible/hidden.
-  void OnBrowserActionVisibilityChanged();
-
   // Returns how many browser actions are visible.
   size_t VisibleBrowserActions() const;
-
-  // Called when the user clicks on the browser action icon.
-  void OnBrowserActionExecuted(BrowserActionButton* button);
 
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -168,10 +165,10 @@ class BrowserActionsContainer
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
   virtual bool AreDropTypesRequired() OVERRIDE;
   virtual bool CanDrop(const ui::OSExchangeData& data) OVERRIDE;
-  virtual void OnDragEntered(const views::DropTargetEvent& event) OVERRIDE;
-  virtual int OnDragUpdated(const views::DropTargetEvent& event) OVERRIDE;
+  virtual void OnDragEntered(const ui::DropTargetEvent& event) OVERRIDE;
+  virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void OnDragExited() OVERRIDE;
-  virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE;
+  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
   // Overridden from views::MenuButtonListener:
@@ -201,6 +198,17 @@ class BrowserActionsContainer
 
   // Overridden from views::WidgetObserver:
   virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+
+  // Overridden from BrowserActionView::Delegate:
+  virtual void InspectPopup(ExtensionAction* action) OVERRIDE;
+  virtual int GetCurrentTabId() const OVERRIDE;
+  virtual void OnBrowserActionExecuted(BrowserActionButton* button) OVERRIDE;
+  virtual void OnBrowserActionVisibilityChanged() OVERRIDE;
+  virtual gfx::Point GetViewContentOffset() const OVERRIDE;
+
+  // Overridden from extension::ExtensionKeybindingRegistry::Delegate:
+  virtual extensions::ActiveTabPermissionGranter*
+      GetActiveTabPermissionGranter() OVERRIDE;
 
   // Moves a browser action with |id| to |new_index|.
   void MoveBrowserAction(const std::string& extension_id, size_t new_index);
@@ -302,7 +310,8 @@ class BrowserActionsContainer
   bool ShouldDisplayBrowserAction(const extensions::Extension* extension);
 
   // Show a popup.
-  void ShowPopup(BrowserActionButton* button, const GURL& popup_url);
+  void ShowPopup(BrowserActionButton* button,
+                 ExtensionPopup::ShowAction show_action);
 
   // The vector of browser actions (icons/image buttons for each action). Note
   // that not every BrowserAction in the ToolbarModel will necessarily be in
@@ -340,9 +349,6 @@ class BrowserActionsContainer
   // own lifetime so that it can stay alive during drag and drop operations.
   BrowserActionOverflowMenuController* overflow_menu_;
 
-  // The class that registers for keyboard shortcuts for extension commands.
-  ExtensionKeybindingRegistryViews extension_keybinding_registry_;
-
   // The animation that happens when the container snaps to place.
   scoped_ptr<ui::SlideAnimation> resize_animation_;
 
@@ -360,6 +366,9 @@ class BrowserActionsContainer
 
   // The x position for where to draw the drop indicator. -1 if no indicator.
   int drop_indicator_position_;
+
+  // The class that registers for keyboard shortcuts for extension commands.
+  scoped_ptr<ExtensionKeybindingRegistryViews> extension_keybinding_registry_;
 
   base::WeakPtrFactory<BrowserActionsContainer> task_factory_;
 

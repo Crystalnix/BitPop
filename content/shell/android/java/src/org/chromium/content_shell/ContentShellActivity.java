@@ -11,37 +11,55 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 
-import org.chromium.content.app.AppResource;
+import org.chromium.base.ChromiumActivity;
 import org.chromium.content.app.LibraryLoader;
+import org.chromium.content.browser.ActivityContentVideoViewDelegate;
+import org.chromium.content.browser.ContentVideoView;
 import org.chromium.content.browser.ContentView;
+import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.common.CommandLine;
+import org.chromium.ui.gfx.ActivityNativeWindow;
 
 /**
  * Activity for managing the Content Shell.
  */
-public class ContentShellActivity extends Activity {
+public class ContentShellActivity extends ChromiumActivity {
 
-    private static final String COMMAND_LINE_FILE = "/data/local/tmp/content-shell-command-line";
+    public static final String COMMAND_LINE_FILE = "/data/local/tmp/content-shell-command-line";
     private static final String TAG = ContentShellActivity.class.getName();
 
     private static final String ACTIVE_SHELL_URL_KEY = "activeUrl";
     public static final String DEFAULT_SHELL_URL = "http://www.google.com";
+    public static final String COMMAND_LINE_ARGS_KEY = "commandLineArgs";
 
     private ShellManager mShellManager;
+    private ActivityNativeWindow mActivityNativeWindow;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         // Initializing the command line must occur before loading the library.
-        if (!CommandLine.isInitialized()) CommandLine.initFromFile(COMMAND_LINE_FILE);
+        if (!CommandLine.isInitialized()) {
+            CommandLine.initFromFile(COMMAND_LINE_FILE);
+            String[] commandLineParams = getCommandLineParamsFromIntent(getIntent());
+            if (commandLineParams != null) {
+                CommandLine.getInstance().appendSwitchesAndArguments(commandLineParams);
+            }
+        }
         waitForDebuggerIfNeeded();
 
-        LibraryLoader.loadAndInitSync();
-        initializeContentViewResources();
+        DeviceUtils.addDeviceSpecificUserAgentSwitch(this);
+
+        LibraryLoader.ensureInitialized();
 
         setContentView(R.layout.content_shell_activity);
         mShellManager = (ShellManager) findViewById(R.id.shell_container);
+        mActivityNativeWindow = new ActivityNativeWindow(this);
+        mActivityNativeWindow.restoreInstanceState(savedInstanceState);
+        mShellManager.setWindow(mActivityNativeWindow);
+        ContentVideoView.registerContentVideoViewContextDelegate(
+            new ActivityContentVideoViewDelegate(this));
 
         String startupUrl = getUrlFromIntent(getIntent());
         if (!TextUtils.isEmpty(startupUrl)) {
@@ -65,6 +83,8 @@ public class ContentShellActivity extends Activity {
         if (activeShell != null) {
             outState.putString(ACTIVE_SHELL_URL_KEY, activeShell.getContentView().getUrl());
         }
+
+        mActivityNativeWindow.saveInstanceState(outState);
     }
 
     private void waitForDebuggerIfNeeded() {
@@ -90,6 +110,10 @@ public class ContentShellActivity extends Activity {
 
     @Override
     protected void onNewIntent(Intent intent) {
+        if (getCommandLineParamsFromIntent(intent) != null) {
+            Log.i(TAG, "Ignoring command line params: can only be set when creating the activity.");
+        }
+
         String url = getUrlFromIntent(intent);
         if (!TextUtils.isEmpty(url)) {
             Shell activeView = getActiveShell();
@@ -115,8 +139,18 @@ public class ContentShellActivity extends Activity {
         if (view != null) view.onActivityResume();
     }
 
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        mActivityNativeWindow.onActivityResult(requestCode, resultCode, data);
+    }
+
     private static String getUrlFromIntent(Intent intent) {
         return intent != null ? intent.getDataString() : null;
+    }
+
+    private static String[] getCommandLineParamsFromIntent(Intent intent) {
+        return intent != null ? intent.getStringArrayExtra(COMMAND_LINE_ARGS_KEY) : null;
     }
 
     /**
@@ -141,10 +175,5 @@ public class ContentShellActivity extends Activity {
     public ContentView getActiveContentView() {
         Shell shell = getActiveShell();
         return shell != null ? shell.getContentView() : null;
-    }
-
-    private void initializeContentViewResources() {
-        AppResource.DIMENSION_LINK_PREVIEW_OVERLAY_RADIUS = R.dimen.link_preview_overlay_radius;
-        AppResource.DRAWABLE_LINK_PREVIEW_POPUP_OVERLAY = R.drawable.popup_zoomer_overlay;
     }
 }

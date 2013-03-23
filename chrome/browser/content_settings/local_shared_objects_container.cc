@@ -11,7 +11,7 @@
 #include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
-#include "chrome/browser/cookies_tree_model.h"
+#include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/common/url_constants.h"
 #include "googleurl/src/gurl.h"
@@ -183,9 +183,7 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
 
 scoped_ptr<CookiesTreeModel>
 LocalSharedObjectsContainer::CreateCookiesTreeModel() const {
-  ContainerMap apps_map;
-  apps_map[std::string()] = new LocalDataContainer(
-      std::string(), std::string(),
+  LocalDataContainer* container = new LocalDataContainer(
       cookies()->Clone(),
       databases()->Clone(),
       local_storages()->Clone(),
@@ -197,5 +195,5 @@ LocalSharedObjectsContainer::CreateCookiesTreeModel() const {
       server_bound_certs()->Clone(),
       NULL);
 
-  return make_scoped_ptr(new CookiesTreeModel(apps_map, NULL, true));
+  return make_scoped_ptr(new CookiesTreeModel(container, NULL, true));
 }

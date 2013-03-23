@@ -5,14 +5,12 @@
 #include "chrome/browser/ui/webui/instant_ui.h"
 
 #include "base/bind.h"
-#include "base/values.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
-#include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 
@@ -42,22 +40,12 @@ class InstantUIMessageHandler
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
-  static int slow_animation_scale_factor() {
-    return slow_animation_scale_factor_;
-  }
-
  private:
   void GetPreferenceValue(const base::ListValue* args);
   void SetPreferenceValue(const base::ListValue* args);
 
-  // Slows down instant animations by a time factor.
-  static int slow_animation_scale_factor_;
-
   DISALLOW_COPY_AND_ASSIGN(InstantUIMessageHandler);
 };
-
-// static
-int InstantUIMessageHandler::slow_animation_scale_factor_ = 1;
 
 InstantUIMessageHandler::InstantUIMessageHandler() {}
 
@@ -78,36 +66,26 @@ void InstantUIMessageHandler::GetPreferenceValue(const base::ListValue* args) {
   std::string pref_name;
   if (!args->GetString(0, &pref_name)) return;
 
-  double value = 0.0;
-#if defined(TOOLKIT_VIEWS)
-  if (pref_name == prefs::kInstantAnimationScaleFactor)
-    value = slow_animation_scale_factor_;
-#endif
-
-  base::StringValue arg1(pref_name);
-  base::FundamentalValue arg2(value);
-  web_ui()->CallJavascriptFunction(
-      "instantConfig.getPreferenceValueResult",
-      arg1,
-      arg2);
+  base::StringValue pref_name_value(pref_name);
+  if (pref_name == prefs::kInstantUIZeroSuggestUrlPrefix) {
+    PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+    base::StringValue arg(prefs->GetString(pref_name.c_str()));
+    web_ui()->CallJavascriptFunction(
+        "instantConfig.getPreferenceValueResult", pref_name_value, arg);
+  }
 }
 
 void InstantUIMessageHandler::SetPreferenceValue(const base::ListValue* args) {
   std::string pref_name;
   if (!args->GetString(0, &pref_name)) return;
 
-  double value;
-  if (!args->GetDouble(1, &value)) return;
-
-#if defined(TOOLKIT_VIEWS)
-  if (pref_name == prefs::kInstantAnimationScaleFactor) {
-    // Clamp to something reasonable.
-    value = std::max(0.1, std::min(value, 10.0));
-    slow_animation_scale_factor_ = static_cast<int>(value);
+  if (pref_name == prefs::kInstantUIZeroSuggestUrlPrefix) {
+    std::string value;
+    if (!args->GetString(1, &value))
+      return;
+    PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+    prefs->SetString(pref_name.c_str(), value);
   }
-#else
-  NOTIMPLEMENTED();
-#endif
 }
 
 }  // namespace
@@ -115,8 +93,7 @@ void InstantUIMessageHandler::SetPreferenceValue(const base::ListValue* args) {
 ////////////////////////////////////////////////////////////////////////////////
 // InstantUI
 
-InstantUI::InstantUI(content::WebUI* web_ui)
-    : WebUIController(web_ui) {
+InstantUI::InstantUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(new InstantUIMessageHandler());
 
   // Set up the chrome://instant/ source.
@@ -125,6 +102,7 @@ InstantUI::InstantUI(content::WebUI* web_ui)
 }
 
 // static
-int InstantUI::GetSlowAnimationScaleFactor() {
-  return InstantUIMessageHandler::slow_animation_scale_factor();
+void InstantUI::RegisterUserPrefs(PrefService* user_prefs) {
+  user_prefs->RegisterStringPref(prefs::kInstantUIZeroSuggestUrlPrefix, "",
+                                 PrefService::UNSYNCABLE_PREF);
 }

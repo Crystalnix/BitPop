@@ -60,7 +60,7 @@ typedef enum {
   // We need to remove the page action immediately when the browser window
   // closes while this bubble is still open, so the bubble's closing animation
   // doesn't overlap browser destruction.
-  BOOL pageActionRemoved_;
+  BOOL pageActionPreviewShowing_;
 
   // Lets us register for EXTENSION_LOADED notifications.  The actual
   // notifications are sent to the observer object, which proxies them
@@ -74,6 +74,8 @@ typedef enum {
   // Only shown for page actions and omnibox keywords.
   IBOutlet NSTextField* extraInfoMsg_;
   IBOutlet NSTextField* extensionInstalledInfoMsg_;
+  // Only shown for extensions with commands.
+  IBOutlet NSButton* manageShortcutLink_;
   // Only shown for bundle installs.
   IBOutlet NSTextField* installedHeadingMsg_;
   IBOutlet NSTextField* installedItemsMsg_;
@@ -83,7 +85,7 @@ typedef enum {
 
 @property(nonatomic, readonly) const extensions::Extension* extension;
 @property(nonatomic, readonly) const extensions::BundleInstaller* bundle;
-@property(nonatomic) BOOL pageActionRemoved;
+@property(nonatomic) BOOL pageActionPreviewShowing;
 
 // Initialize the window, and then create observers to wait for the extension
 // to complete loading, or the browser window to close.
@@ -103,6 +105,9 @@ typedef enum {
 // Clears our weak pointer to the Extension. This callback is triggered by
 // the extensionObserver when the extension is unloaded.
 - (void)extensionUnloaded:(id)sender;
+
+// Opens the shortcut configuration UI.
+- (IBAction)onManageShortcutClicked:(id)sender;
 
 @end
 

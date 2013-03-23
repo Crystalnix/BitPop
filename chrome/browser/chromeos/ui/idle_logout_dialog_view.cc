@@ -10,13 +10,13 @@
 #include "base/time.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_metrics.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/label.h"
@@ -55,7 +55,6 @@ KioskModeSettings* IdleLogoutSettingsProvider::GetKioskModeSettings() {
 }
 
 void IdleLogoutSettingsProvider::LogoutCurrentUser(IdleLogoutDialogView*) {
-  KioskModeMetrics::Get()->SessionEnded();
   DBusThreadManager::Get()->GetSessionManagerClient()->StopSession();
 }
 
@@ -124,7 +123,7 @@ void IdleLogoutDialogView::InitAndShow() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   restart_label_ = new views::Label();
-  restart_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  restart_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   restart_label_->SetMultiLine(true);
   restart_label_->SetFont(rb.GetFont(ui::ResourceBundle::BaseFont));
 
@@ -154,15 +153,9 @@ void IdleLogoutDialogView::Show() {
 
   UpdateCountdown();
 
-  // If the apps list is displayed, we should show as it's child. Not doing
-  // so will cause the apps list to disappear.
-  gfx::NativeWindow app_list = ash::Shell::GetInstance()->GetAppListWindow();
-  if (app_list) {
-    views::Widget::CreateWindowWithParent(this, app_list);
-  } else {
-    views::Widget::CreateWindow(this);
-    GetWidget()->SetAlwaysOnTop(true);
-  }
+  views::Widget::CreateWindowWithContext(this,
+                                         ash::Shell::GetPrimaryRootWindow());
+  GetWidget()->SetAlwaysOnTop(true);
   GetWidget()->Show();
 
   // Update countdown every 1 second.

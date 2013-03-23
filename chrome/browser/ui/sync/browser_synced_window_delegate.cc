@@ -12,7 +12,6 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 
 // static SyncedWindowDelegate implementations
@@ -32,7 +31,7 @@ const std::set<browser_sync::SyncedWindowDelegate*>
 const browser_sync::SyncedWindowDelegate*
     browser_sync::SyncedWindowDelegate::FindSyncedWindowDelegateWithId(
         SessionID::id_type id) {
-  Browser* browser = browser::FindBrowserWithID(id);
+  Browser* browser = chrome::FindBrowserWithID(id);
   // In case we don't find the browser (e.g. for Developer Tools).
   return browser ? browser->synced_window_delegate() : NULL;
 }
@@ -47,8 +46,7 @@ BrowserSyncedWindowDelegate::~BrowserSyncedWindowDelegate() {}
 bool BrowserSyncedWindowDelegate::IsTabPinned(
     const browser_sync::SyncedTabDelegate* tab) const {
   for (int i = 0; i < browser_->tab_count(); i++) {
-    browser_sync::SyncedTabDelegate* current =
-        chrome::GetTabContentsAt(browser_, i)->synced_tab_delegate();
+    browser_sync::SyncedTabDelegate* current = GetTabAt(i);
     if (tab == current)
       return browser_->tab_strip_model()->IsTabPinned(i);
   }
@@ -58,7 +56,8 @@ bool BrowserSyncedWindowDelegate::IsTabPinned(
 
 browser_sync::SyncedTabDelegate* BrowserSyncedWindowDelegate::GetTabAt(
     int index) const {
-  return chrome::GetTabContentsAt(browser_, index)->synced_tab_delegate();
+  return TabContentsSyncedTabDelegate::FromWebContents(
+      chrome::GetWebContentsAt(browser_, index));
 }
 
 SessionID::id_type BrowserSyncedWindowDelegate::GetTabIdAt(int index) const {

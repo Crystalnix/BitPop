@@ -12,17 +12,12 @@
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/menu_controller.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::WebContents;
-
-// These are not documented, so use only after checking -respondsToSelector:.
-@interface NSApplication (UndocumentedSpeechMethods)
-- (void)speakString:(NSString*)string;
-- (void)stopSpeaking:(id)sender;
-- (BOOL)isSpeaking;
-@end
 
 namespace {
 
@@ -62,6 +57,7 @@ RenderViewContextMenuMac::RenderViewContextMenuMac(
     NSView* parent_view)
     : RenderViewContextMenu(web_contents, params),
       ALLOW_THIS_IN_INITIALIZER_LIST(speech_submenu_model_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(bidi_submenu_model_(this)),
       parent_view_(parent_view) {
 }
 
@@ -137,9 +133,42 @@ void RenderViewContextMenuMac::ExecuteCommand(int command_id, int event_flags) {
       StopSpeaking();
       break;
 
+    case IDC_WRITING_DIRECTION_DEFAULT:
+      // WebKit's current behavior is for this menu item to always be disabled.
+      NOTREACHED();
+      break;
+
+    case IDC_WRITING_DIRECTION_RTL:
+    case IDC_WRITING_DIRECTION_LTR: {
+      content::RenderViewHost* view_host = GetRenderViewHost();
+      WebKit::WebTextDirection dir = WebKit::WebTextDirectionLeftToRight;
+      if (command_id == IDC_WRITING_DIRECTION_RTL)
+        dir = WebKit::WebTextDirectionRightToLeft;
+      view_host->UpdateTextDirection(dir);
+      view_host->NotifyTextDirection();
+      break;
+    }
+
     default:
       RenderViewContextMenu::ExecuteCommand(command_id, event_flags);
       break;
+  }
+}
+
+bool RenderViewContextMenuMac::IsCommandIdChecked(int command_id) const {
+  switch (command_id) {
+    case IDC_WRITING_DIRECTION_DEFAULT:
+      return params_.writing_direction_default &
+          WebKit::WebContextMenuData::CheckableMenuItemChecked;
+    case IDC_WRITING_DIRECTION_RTL:
+      return params_.writing_direction_right_to_left &
+          WebKit::WebContextMenuData::CheckableMenuItemChecked;
+    case IDC_WRITING_DIRECTION_LTR:
+      return params_.writing_direction_left_to_right &
+          WebKit::WebContextMenuData::CheckableMenuItemChecked;
+
+    default:
+      return RenderViewContextMenu::IsCommandIdChecked(command_id);
   }
 }
 
@@ -155,9 +184,20 @@ bool RenderViewContextMenuMac::IsCommandIdEnabled(int command_id) const {
       // appropriate.
       return true;
 
-    case IDC_CONTENT_CONTEXT_SPEECH_STOP_SPEAKING:
-      return [NSApp respondsToSelector:@selector(isSpeaking)] &&
-             [NSApp isSpeaking];
+    case IDC_CONTENT_CONTEXT_SPEECH_STOP_SPEAKING: {
+      content::RenderWidgetHostView* view = GetRenderViewHost()->GetView();
+      return view && view->IsSpeaking();
+    }
+
+    case IDC_WRITING_DIRECTION_DEFAULT:  // Provided to match OS defaults.
+      return params_.writing_direction_default &
+          WebKit::WebContextMenuData::CheckableMenuItemEnabled;
+    case IDC_WRITING_DIRECTION_RTL:
+      return params_.writing_direction_right_to_left &
+          WebKit::WebContextMenuData::CheckableMenuItemEnabled;
+    case IDC_WRITING_DIRECTION_LTR:
+      return params_.writing_direction_left_to_right &
+          WebKit::WebContextMenuData::CheckableMenuItemEnabled;
 
     default:
       return RenderViewContextMenu::IsCommandIdEnabled(command_id);
@@ -170,54 +210,68 @@ bool RenderViewContextMenuMac::GetAcceleratorForCommandId(
   return false;
 }
 
+void RenderViewContextMenuMac::AppendPlatformEditableItems() {
+  // OS X provides a contextual menu to set writing direction for BiDi
+  // languages.
+  // This functionality is exposed as a keyboard shortcut on Windows & Linux.
+  AppendBidiSubMenu();
+}
+
 void RenderViewContextMenuMac::InitPlatformMenu() {
   bool has_selection = !params_.selection_text.empty();
 
   if (has_selection) {
-    menu_model_.AddSeparator();
+    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
     menu_model_.AddItemWithStringId(
         IDC_CONTENT_CONTEXT_LOOK_UP_IN_DICTIONARY,
         IDS_CONTENT_CONTEXT_LOOK_UP_IN_DICTIONARY);
 
-    // Add speech items only if NSApp supports the private API we're using.
-    if ([NSApp respondsToSelector:@selector(speakString:)] &&
-        [NSApp respondsToSelector:@selector(stopSpeaking:)]) {
+    content::RenderWidgetHostView* view = GetRenderViewHost()->GetView();
+    if (view && view->SupportsSpeech()) {
       speech_submenu_model_.AddItemWithStringId(
           IDC_CONTENT_CONTEXT_SPEECH_START_SPEAKING,
-          IDS_CONTENT_CONTEXT_SPEECH_START_SPEAKING);
+          IDS_SPEECH_START_SPEAKING_MAC);
       speech_submenu_model_.AddItemWithStringId(
           IDC_CONTENT_CONTEXT_SPEECH_STOP_SPEAKING,
-          IDS_CONTENT_CONTEXT_SPEECH_STOP_SPEAKING);
+          IDS_SPEECH_STOP_SPEAKING_MAC);
       menu_model_.AddSubMenu(
           IDC_CONTENT_CONTEXT_SPEECH_MENU,
-          l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_SPEECH_MENU),
+          l10n_util::GetStringUTF16(IDS_SPEECH_MAC),
           &speech_submenu_model_);
     }
   }
 }
 
+void RenderViewContextMenuMac::AppendBidiSubMenu() {
+  bidi_submenu_model_.AddCheckItem(IDC_WRITING_DIRECTION_DEFAULT,
+      l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_WRITING_DIRECTION_DEFAULT));
+  bidi_submenu_model_.AddCheckItem(IDC_WRITING_DIRECTION_LTR,
+      l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_WRITING_DIRECTION_LTR));
+  bidi_submenu_model_.AddCheckItem(IDC_WRITING_DIRECTION_RTL,
+      l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_WRITING_DIRECTION_RTL));
+
+  menu_model_.AddSubMenu(
+      IDC_WRITING_DIRECTION_MENU,
+      l10n_util::GetStringUTF16(IDS_CONTENT_CONTEXT_WRITING_DIRECTION_MENU),
+      &bidi_submenu_model_);
+}
+
 void RenderViewContextMenuMac::LookUpInDictionary() {
-  // TODO(morrita): On Safari, A dictionary panel could be shown
-  // based on a preference setting of Dictionary.app.  We currently
-  // don't support it: http://crbug.com/17951
-  NSString* text = base::SysUTF16ToNSString(params_.selection_text);
-  NSPasteboard* pboard = [NSPasteboard pasteboardWithUniqueName];
-  // 10.5 and earlier require declareTypes before setData.
-  // See the documentation on [NSPasteboard declareTypes].
-  NSArray* toDeclare = [NSArray arrayWithObject:NSStringPboardType];
-  [pboard declareTypes:toDeclare owner:nil];
-  BOOL ok = [pboard setString:text forType:NSStringPboardType];
-  if (ok)
-    NSPerformService(@"Look Up in Dictionary", pboard);
+  content::RenderWidgetHostView* view = GetRenderViewHost()->GetView();
+  if (view)
+    view->ShowDefinitionForSelection();
 }
 
 void RenderViewContextMenuMac::StartSpeaking() {
-  NSString* text = base::SysUTF16ToNSString(params_.selection_text);
-  [NSApp speakString:text];
+  content::RenderWidgetHostView* view = GetRenderViewHost()->GetView();
+  if (view)
+    view->SpeakSelection();
 }
 
 void RenderViewContextMenuMac::StopSpeaking() {
-  [NSApp stopSpeaking:menu_controller_];
+  content::RenderWidgetHostView* view = GetRenderViewHost()->GetView();
+  if (view)
+    view->StopSpeaking();
 }
 
 void RenderViewContextMenuMac::UpdateMenuItem(int command_id,

@@ -22,8 +22,6 @@
 #ifndef CONTENT_RENDERER_MEDIA_RENDER_AUDIOSOURCEPROVIDER_H_
 #define CONTENT_RENDERER_MEDIA_RENDER_AUDIOSOURCEPROVIDER_H_
 
-#include <vector>
-
 #include "base/synchronization/lock.h"
 #include "media/base/audio_renderer_sink.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
@@ -33,11 +31,13 @@ namespace WebKit {
 class WebAudioSourceProviderClient;
 }
 
+namespace content {
+
 class RenderAudioSourceProvider
     : public WebKit::WebAudioSourceProvider,
       public media::AudioRendererSink {
  public:
-  RenderAudioSourceProvider();
+  explicit RenderAudioSourceProvider(int source_render_view_id);
 
   // WebKit::WebAudioSourceProvider implementation.
 
@@ -79,7 +79,9 @@ class RenderAudioSourceProvider
   // default_sink_ is the default sink.
   scoped_refptr<media::AudioRendererSink> default_sink_;
 
-  DISALLOW_COPY_AND_ASSIGN(RenderAudioSourceProvider);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(RenderAudioSourceProvider);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_RENDER_AUDIOSOURCEPROVIDER_H_

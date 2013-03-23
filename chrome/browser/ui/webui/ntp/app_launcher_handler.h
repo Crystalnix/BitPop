@@ -8,17 +8,17 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/cancelable_request.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/string_ordinal.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "sync/api/string_ordinal.h"
 
 class ExtensionService;
 class PrefChangeRegistrar;
@@ -93,7 +93,7 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
   // Callback for the "recordAppLaunchByURL" message. Takes an escaped URL and a
   // launch source (integer), and if the URL represents an app, records the
   // action for UMA.
-  void HandleRecordAppLaunchByURL(const base::ListValue* args);
+  void HandleRecordAppLaunchByUrl(const base::ListValue* args);
 
   // Callback for "closeNotification" message.
   void HandleNotificationClose(const base::ListValue* args);
@@ -102,7 +102,7 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
   void HandleSetNotificationsDisabled(const base::ListValue* args);
 
   // Register app launcher preferences.
-  static void RegisterUserPrefs(PrefService* pref_service);
+  static void RegisterUserPrefs(PrefServiceBase* pref_service);
 
   // Records the given type of app launch for UMA.
   static void RecordAppLaunchType(extension_misc::AppLaunchBucket bucket);
@@ -115,7 +115,7 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
     bool is_bookmark_app;
     string16 title;
     GURL app_url;
-    StringOrdinal page_ordinal;
+    syncer::StringOrdinal page_ordinal;
   };
 
   // Reset some instance flags we use to track the currently uninstalling app.
@@ -130,7 +130,7 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
 
   // Records an app launch in the corresponding |bucket| of the app launch
   // histogram if the |escaped_url| corresponds to an installed app.
-  static void RecordAppLaunchByURL(Profile* profile,
+  static void RecordAppLaunchByUrl(Profile* profile,
                                    std::string escaped_url,
                                    extension_misc::AppLaunchBucket bucket);
 
@@ -154,11 +154,13 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
   ExtensionInstallPrompt* GetExtensionInstallPrompt();
 
   // Continuation for installing a bookmark app after favicon lookup.
-  void OnFaviconForApp(FaviconService::Handle handle,
-                       history::FaviconData data);
+  void OnFaviconForApp(scoped_ptr<AppInstallInfo> install_info,
+                       const history::FaviconImageResult& image_result);
 
   // Sends |highlight_app_id_| to the js.
   void SetAppToBeHighlighted();
+
+  void OnPreferenceChanged();
 
   // The apps are represented in the extensions model, which
   // outlives us since it's owned by our containing profile.
@@ -199,8 +201,8 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
   // when the app is added to the page (via getAppsCallback or appAdded).
   std::string highlight_app_id_;
 
-  // Hold state for favicon requests.
-  CancelableRequestConsumerTSimple<AppInstallInfo*> favicon_consumer_;
+  // Used for favicon loading tasks.
+  CancelableTaskTracker cancelable_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(AppLauncherHandler);
 };

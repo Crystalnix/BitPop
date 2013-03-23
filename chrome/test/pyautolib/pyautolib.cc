@@ -19,12 +19,6 @@
 #include "chrome/test/pyautolib/pyautolib.h"
 #include "googleurl/src/gurl.h"
 
-static int64 StringToId(const std::wstring& str) {
-  int64 id;
-  base::StringToInt64(WideToUTF8(str), &id);
-  return id;
-}
-
 // PyUITestSuiteBase
 PyUITestSuiteBase::PyUITestSuiteBase(int argc, char** argv)
     : UITestSuite(argc, argv) {
@@ -102,136 +96,6 @@ void PyUITestBase::SetLaunchSwitches() {
   launch_arguments_.AppendSwitchASCII(switches::kHomePage, homepage_);
 }
 
-bool PyUITestBase::GetBookmarkBarState(bool* visible,
-                                       bool* detached,
-                                       int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  // We have no use for animating in this context.
-  bool animating;
-  EXPECT_TRUE(browser_proxy->GetBookmarkBarVisibility(visible,
-                                                      &animating,
-                                                      detached));
-  return true;
-}
-
-bool PyUITestBase::GetBookmarkBarVisibility() {
-  // We have no use for detached in this context.
-  bool visible, detached;
-  if (!GetBookmarkBarState(&visible, &detached))
-    return false;
-  return visible;
-}
-
-bool PyUITestBase::IsBookmarkBarDetached() {
-  // We have no use for visible in this context.
-  bool visible, detached;
-  if (!GetBookmarkBarState(&visible, &detached))
-    return false;
-  return detached;
-}
-
-bool PyUITestBase::WaitForBookmarkBarVisibilityChange(bool wait_for_open,
-                                                      int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  // This has a 20sec timeout.  If that's not enough we have serious problems.
-  bool completed = UITestBase::WaitForBookmarkBarVisibilityChange(
-      browser_proxy.get(),
-      wait_for_open);
-  EXPECT_TRUE(completed);
-  return completed;
-}
-
-std::string PyUITestBase::_GetBookmarksAsJSON(int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return std::string();
-
-  std::string s;
-  EXPECT_TRUE(browser_proxy->GetBookmarksAsJSON(&s));
-  return s;
-}
-
-bool PyUITestBase::AddBookmarkGroup(std::wstring& parent_id,
-                                    int index,
-                                    std::wstring& title,
-                                    int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  return browser_proxy->AddBookmarkGroup(StringToId(parent_id), index, title);
-}
-
-bool PyUITestBase::AddBookmarkURL(std::wstring& parent_id,
-                                  int index,
-                                  std::wstring& title,
-                                  std::wstring& url,
-                                  int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  return browser_proxy->AddBookmarkURL(StringToId(parent_id),
-                                       index, title,
-                                       GURL(WideToUTF8(url)));
-}
-
-bool PyUITestBase::ReparentBookmark(std::wstring& id,
-                                    std::wstring& new_parent_id,
-                                    int index,
-                                    int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  return browser_proxy->ReparentBookmark(StringToId(id),
-                                         StringToId(new_parent_id),
-                                         index);
-}
-
-bool PyUITestBase::SetBookmarkTitle(std::wstring& id,
-                                    std::wstring& title,
-                                    int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  return browser_proxy->SetBookmarkTitle(StringToId(id), title);
-}
-
-bool PyUITestBase::SetBookmarkURL(std::wstring& id,
-                                  std::wstring& url,
-                                  int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  return browser_proxy->SetBookmarkURL(StringToId(id), GURL(WideToUTF8(url)));
-}
-
-bool PyUITestBase::RemoveBookmark(std::wstring& id, int window_index) {
-  scoped_refptr<BrowserProxy> browser_proxy = GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  if (!browser_proxy.get())
-    return false;
-
-  return browser_proxy->RemoveBookmark(StringToId(id));
-}
-
 AutomationProxy* PyUITestBase::automation() const {
   AutomationProxy* automation_proxy = UITestBase::automation();
   if (!automation_proxy) {
@@ -240,21 +104,19 @@ AutomationProxy* PyUITestBase::automation() const {
   return automation_proxy;
 }
 
-
-scoped_refptr<BrowserProxy> PyUITestBase::GetBrowserWindow(int window_index) {
-  return automation()->GetBrowserWindow(window_index);
-}
-
 std::string PyUITestBase::_SendJSONRequest(int window_index,
                                            const std::string& request,
                                            int timeout) {
   std::string response;
   bool success;
-  AutomationMessageSender* automation_sender = automation();
+  AutomationProxy* automation_sender = automation();
   base::TimeTicks time = base::TimeTicks::Now();
 
   if (!automation_sender) {
-    ErrorResponse("The automation proxy does not exist", request, &response);
+    ErrorResponse("Automation proxy does not exist", request, false, &response);
+  } else if (!automation_sender->channel()) {
+    ErrorResponse("Chrome automation IPC channel was found already broken",
+                  request, false, &response);
   } else if (!automation_sender->Send(
       new AutomationMsg_SendJSONRequest(window_index, request, &response,
                                         &success),
@@ -269,12 +131,15 @@ std::string PyUITestBase::_SendJSONRequest(int window_index,
 void PyUITestBase::ErrorResponse(
     const std::string& error_string,
     const std::string& request,
+    bool is_timeout,
     std::string* response) {
   base::DictionaryValue error_dict;
   std::string error_msg = StringPrintf("%s for %s", error_string.c_str(),
                                        request.c_str());
   LOG(ERROR) << "Error during automation: " << error_msg;
   error_dict.SetString("error", error_msg);
+  error_dict.SetBoolean("is_interface_error", true);
+  error_dict.SetBoolean("is_interface_timeout", is_timeout);
   base::JSONWriter::Write(&error_dict, response);
 }
 
@@ -286,11 +151,13 @@ void PyUITestBase::RequestFailureResponse(
   // TODO(craigdh): Determine timeout directly from IPC's Send().
   if (duration >= timeout) {
     ErrorResponse(
-        StringPrintf("Request timed out after %d seconds",
+        StringPrintf("Chrome automation timed out after %d seconds",
                      static_cast<int>(duration.InSeconds())),
-        request, response);
+        request, true, response);
   } else {
     // TODO(craigdh): Determine specific cause.
-    ErrorResponse("Chrome failed to respond", request, response);
+    ErrorResponse(
+        "Chrome automation failed prior to timing out, did chrome crash?",
+        request, false, response);
   }
 }

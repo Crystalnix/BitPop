@@ -12,14 +12,12 @@
     "128": "icon_128.png"
   },
   "name": "__MSG_gmailcheck_name__",
-  "options_page": "options.html",
   "permissions": [
     "alarms",
     "tabs",
     "webNavigation",
     "*://*.google.com/"
    ],
-  "version": "4.1",
-  "minimum_chrome_version": "22",
+  "version": "4.4.0",
   "manifest_version": 2
 }

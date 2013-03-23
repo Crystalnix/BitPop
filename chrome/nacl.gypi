@@ -73,13 +73,17 @@
             '../base/base.gyp:base',
             '../ipc/ipc.gyp:ipc',
             '../ppapi/native_client/src/trusted/plugin/plugin.gyp:ppGoogleNaClPluginChrome',
-            '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel',
-            '../native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib',
+            '../ppapi/ppapi_internal.gyp:ppapi_shared',
+            '../ppapi/ppapi_internal.gyp:ppapi_ipc',
+            '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel_main_chrome',
           ],
           'conditions': [
             ['disable_nacl_untrusted==0', {
               'dependencies': [
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
+                '../ppapi/native_client/native_client.gyp:nacl_irt_srpc',
+                '../ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:pnacl_irt_shim',
+                '../ppapi/native_client/src/untrusted/pnacl_support_extension/pnacl_support_extension.gyp:pnacl_support_extension',
               ],
             }],
           ],
@@ -100,8 +104,12 @@
                 'nacl_target': 1,
               },
               'dependencies': [
-                '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel64',
-                '../native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib64',
+                '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel_main_chrome64',
+                '../ppapi/ppapi_internal.gyp:ppapi_shared_win64',
+                '../ppapi/ppapi_internal.gyp:ppapi_ipc_win64',
+              ],
+              'export_dependent_settings': [
+                '../ppapi/ppapi_internal.gyp:ppapi_ipc_win64',
               ],
               'sources': [
                 'common/nacl_cmd_line.cc',

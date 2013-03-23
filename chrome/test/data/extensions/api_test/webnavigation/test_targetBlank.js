@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function runTests() {
-  var getURL = chrome.extension.getURL;
+onload = function() {
   var URL_LOAD =
       "http://127.0.0.1:PORT/files/extensions/api_test/webnavigation/targetBlank/a.html";
   var URL_TARGET =
@@ -25,6 +24,7 @@ function runTests() {
             { label: "a-onBeforeNavigate",
               event: "onBeforeNavigate",
               details: { frameId: 0,
+                         parentFrameId: -1,
                          processId: 0,
                          tabId: 0,
                          timeStamp: 0,
@@ -63,6 +63,7 @@ function runTests() {
             { label: "b-onBeforeNavigate",
               event: "onBeforeNavigate",
               details: { frameId: 0,
+                         parentFrameId: -1,
                          processId: 0,
                          tabId: 1,
                          timeStamp: 0,
@@ -102,4 +103,4 @@ function runTests() {
       ]);
     });
   });
-}
+};

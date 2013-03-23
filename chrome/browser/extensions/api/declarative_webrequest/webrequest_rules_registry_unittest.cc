@@ -34,7 +34,13 @@ namespace keys2 = url_matcher_constants;
 
 class TestWebRequestRulesRegistry : public WebRequestRulesRegistry {
  public:
-  TestWebRequestRulesRegistry() : WebRequestRulesRegistry(NULL, NULL) {}
+  TestWebRequestRulesRegistry()
+      : WebRequestRulesRegistry(NULL, NULL),
+        num_clear_cache_calls_(0) {}
+
+  // Returns how often the in-memory caches of the renderers were instructed
+  // to be cleared.
+  int num_clear_cache_calls() const { return num_clear_cache_calls_; }
 
  protected:
   virtual ~TestWebRequestRulesRegistry() {}
@@ -48,10 +54,16 @@ class TestWebRequestRulesRegistry : public WebRequestRulesRegistry {
     else
       return base::Time();
   }
+
+  virtual void ClearCacheOnNavigation() {
+    ++num_clear_cache_calls_;
+  }
+
+ private:
+  int num_clear_cache_calls_;
 };
 
 class WebRequestRulesRegistryTest : public testing::Test {
- public:
  public:
   WebRequestRulesRegistryTest()
       : message_loop(MessageLoop::TYPE_IO),
@@ -62,7 +74,7 @@ class WebRequestRulesRegistryTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     // Make sure that deletion traits of all registries are executed.
-    message_loop.RunAllPending();
+    message_loop.RunUntilIdle();
   }
 
   // Returns a rule that roughly matches http://*.example.com and
@@ -200,7 +212,7 @@ class WebRequestRulesRegistryTest : public testing::Test {
 };
 
 TEST_F(WebRequestRulesRegistryTest, AddRulesImpl) {
-  scoped_refptr<WebRequestRulesRegistry> registry(
+  scoped_refptr<TestWebRequestRulesRegistry> registry(
       new TestWebRequestRulesRegistry());
   std::string error;
 
@@ -210,12 +222,13 @@ TEST_F(WebRequestRulesRegistryTest, AddRulesImpl) {
 
   error = registry->AddRules(kExtensionId, rules);
   EXPECT_EQ("", error);
+  EXPECT_EQ(1, registry->num_clear_cache_calls());
 
   std::set<WebRequestRule::GlobalRuleId> matches;
 
   GURL http_url("http://www.example.com");
-  TestURLRequestContext context;
-  TestURLRequest http_request(http_url, NULL, &context);
+  net::TestURLRequestContext context;
+  net::TestURLRequest http_request(http_url, NULL, &context);
   matches = registry->GetMatches(
       WebRequestRule::RequestData(&http_request, ON_BEFORE_REQUEST));
   EXPECT_EQ(2u, matches.size());
@@ -225,7 +238,7 @@ TEST_F(WebRequestRulesRegistryTest, AddRulesImpl) {
       matches.end());
 
   GURL foobar_url("http://www.foobar.com");
-  TestURLRequest foobar_request(foobar_url, NULL, &context);
+  net::TestURLRequest foobar_request(foobar_url, NULL, &context);
   matches = registry->GetMatches(
       WebRequestRule::RequestData(&foobar_request, ON_BEFORE_REQUEST));
   EXPECT_EQ(1u, matches.size());
@@ -234,7 +247,7 @@ TEST_F(WebRequestRulesRegistryTest, AddRulesImpl) {
 }
 
 TEST_F(WebRequestRulesRegistryTest, RemoveRulesImpl) {
-  scoped_refptr<WebRequestRulesRegistry> registry(
+  scoped_refptr<TestWebRequestRulesRegistry> registry(
       new TestWebRequestRulesRegistry());
   std::string error;
 
@@ -244,6 +257,7 @@ TEST_F(WebRequestRulesRegistryTest, RemoveRulesImpl) {
   rules_to_add.push_back(CreateRule2());
   error = registry->AddRules(kExtensionId, rules_to_add);
   EXPECT_EQ("", error);
+  EXPECT_EQ(1, registry->num_clear_cache_calls());
 
   // Verify initial state.
   std::vector<linked_ptr<RulesRegistry::Rule> > registered_rules;
@@ -255,6 +269,7 @@ TEST_F(WebRequestRulesRegistryTest, RemoveRulesImpl) {
   rules_to_remove.push_back(kRuleId1);
   error = registry->RemoveRules(kExtensionId, rules_to_remove);
   EXPECT_EQ("", error);
+  EXPECT_EQ(2, registry->num_clear_cache_calls());
 
   // Verify that only one rule is left.
   registered_rules.clear();
@@ -266,6 +281,7 @@ TEST_F(WebRequestRulesRegistryTest, RemoveRulesImpl) {
   rules_to_remove.push_back(kRuleId2);
   error = registry->RemoveRules(kExtensionId, rules_to_remove);
   EXPECT_EQ("", error);
+  EXPECT_EQ(3, registry->num_clear_cache_calls());
 
   // Verify that everything is gone.
   registered_rules.clear();
@@ -276,7 +292,7 @@ TEST_F(WebRequestRulesRegistryTest, RemoveRulesImpl) {
 }
 
 TEST_F(WebRequestRulesRegistryTest, RemoveAllRulesImpl) {
-  scoped_refptr<WebRequestRulesRegistry> registry(
+  scoped_refptr<TestWebRequestRulesRegistry> registry(
       new TestWebRequestRulesRegistry());
   std::string error;
 
@@ -285,10 +301,12 @@ TEST_F(WebRequestRulesRegistryTest, RemoveAllRulesImpl) {
   rules_to_add[0] = CreateRule1();
   error = registry->AddRules(kExtensionId, rules_to_add);
   EXPECT_EQ("", error);
+  EXPECT_EQ(1, registry->num_clear_cache_calls());
 
   rules_to_add[0] = CreateRule2();
   error = registry->AddRules(kExtensionId2, rules_to_add);
   EXPECT_EQ("", error);
+  EXPECT_EQ(2, registry->num_clear_cache_calls());
 
   // Verify initial state.
   std::vector<linked_ptr<RulesRegistry::Rule> > registered_rules;
@@ -301,6 +319,7 @@ TEST_F(WebRequestRulesRegistryTest, RemoveAllRulesImpl) {
   // Remove rule of first extension.
   error = registry->RemoveAllRules(kExtensionId);
   EXPECT_EQ("", error);
+  EXPECT_EQ(3, registry->num_clear_cache_calls());
 
   // Verify that only the first rule is deleted.
   registered_rules.clear();
@@ -313,10 +332,12 @@ TEST_F(WebRequestRulesRegistryTest, RemoveAllRulesImpl) {
   // Test removing rules if none exist.
   error = registry->RemoveAllRules(kExtensionId);
   EXPECT_EQ("", error);
+  EXPECT_EQ(4, registry->num_clear_cache_calls());
 
   // Remove rule from second extension.
   error = registry->RemoveAllRules(kExtensionId2);
   EXPECT_EQ("", error);
+  EXPECT_EQ(5, registry->num_clear_cache_calls());
 
   EXPECT_TRUE(registry->IsEmpty());
 }
@@ -338,8 +359,8 @@ TEST_F(WebRequestRulesRegistryTest, Precedences) {
   EXPECT_EQ("", error);
 
   GURL url("http://www.google.com");
-  TestURLRequestContext context;
-  TestURLRequest request(url, NULL, &context);
+  net::TestURLRequestContext context;
+  net::TestURLRequest request(url, NULL, &context);
   std::list<LinkedPtrEventResponseDelta> deltas =
       registry->CreateDeltas(
           NULL,
@@ -388,8 +409,8 @@ TEST_F(WebRequestRulesRegistryTest, Priorities) {
   EXPECT_EQ("", error);
 
   GURL url("http://www.google.com/index.html");
-  TestURLRequestContext context;
-  TestURLRequest request(url, NULL, &context);
+  net::TestURLRequestContext context;
+  net::TestURLRequest request(url, NULL, &context);
   std::list<LinkedPtrEventResponseDelta> deltas =
       registry->CreateDeltas(
           NULL,

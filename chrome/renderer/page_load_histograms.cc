@@ -4,22 +4,23 @@
 
 #include "chrome/renderer/page_load_histograms.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/time.h"
-#include "chrome/common/extensions/url_pattern.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
-#include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/common/url_pattern.h"
 #include "googleurl/src/gurl.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPerformance.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebDataSource;
@@ -243,14 +244,19 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     PLT_HISTOGRAM("PLT.RequestToFinish", finish_all_loads - request);
   }
   PLT_HISTOGRAM("PLT.CommitToFinish", finish_all_loads - commit);
+
+  scoped_ptr<TimeDelta> begin_to_first_paint;
+  scoped_ptr<TimeDelta> commit_to_first_paint;
   if (!first_paint.is_null()) {
     // 'first_paint' can be before 'begin' for an unknown reason.
     // See bug http://crbug.com/125273 for details.
     if (begin <= first_paint) {
-      PLT_HISTOGRAM("PLT.BeginToFirstPaint", first_paint - begin);
+      begin_to_first_paint.reset(new TimeDelta(first_paint - begin));
+      PLT_HISTOGRAM("PLT.BeginToFirstPaint", *begin_to_first_paint);
     }
     DCHECK(commit <= first_paint);
-    PLT_HISTOGRAM("PLT.CommitToFirstPaint", first_paint - commit);
+    commit_to_first_paint.reset(new TimeDelta(first_paint - commit));
+    PLT_HISTOGRAM("PLT.CommitToFirstPaint", *commit_to_first_paint);
   }
   if (!first_paint_after_load.is_null()) {
     // 'first_paint_after_load' can be before 'begin' for an unknown reason.
@@ -315,40 +321,13 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
       break;
   }
 
-  // Histograms to determine if DNS prefetching has an impact on PLT.
-  static const bool use_dns_histogram =
-      base::FieldTrialList::TrialExists("DnsImpact");
-  if (use_dns_histogram) {
+  if (document_state->was_fetched_via_proxy() &&
+      document_state->was_fetched_via_spdy() &&
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSpdyProxyOrigin)) {
     UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "DnsImpact"),
-        abandoned_page ? 1 : 0, 2);
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.LoadType", "DnsImpact"),
-        load_type, DocumentState::kLoadTypeMax);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "DnsImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "DnsImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "DnsImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "DnsImpact"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
+        "PLT.Abandoned_SpdyProxy", abandoned_page ? 1 : 0, 2);
+    PLT_HISTOGRAM("PLT.BeginToFinishDoc_SpdyProxy", begin_to_finish_doc);
+    PLT_HISTOGRAM("PLT.BeginToFinish_SpdyProxy", begin_to_finish_all_loads);
   }
 
   // Histograms to determine if prefetch & prerender has an impact on PLT.
@@ -410,144 +389,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     PLT_HISTOGRAM(base::FieldTrial::MakeName(
         "PLT.BeginToFinish", "Prerender"),
         begin_to_finish_all_loads);
-  }
-
-  // Histograms to determine if backup connection jobs have an impact on PLT.
-  static const bool connect_backup_jobs_fieldtrial =
-      base::FieldTrialList::TrialExists("ConnnectBackupJobs");
-  if (connect_backup_jobs_fieldtrial) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "ConnnectBackupJobs"),
-        abandoned_page ? 1 : 0, 2);
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.LoadType", "ConnnectBackupJobs"),
-        load_type, DocumentState::kLoadTypeMax);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "ConnnectBackupJobs"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "ConnnectBackupJobs"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "ConnnectBackupJobs"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "ConnnectBackupJobs"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  // Histograms to determine if the number of connections has an
-  // impact on PLT.
-  // TODO(jar): Consider removing the per-link-type versions.  We
-  //   really only need LINK_LOAD_NORMAL and NORMAL_LOAD.
-  static const bool use_connection_impact_histogram =
-      base::FieldTrialList::TrialExists("ConnCountImpact");
-  if (use_connection_impact_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "ConnCountImpact"),
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "ConnCountImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "ConnCountImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "ConnCountImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "ConnCountImpact"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  // Histograms to determine effect of idle socket timeout.
-  static const bool use_idle_socket_timeout_histogram =
-      base::FieldTrialList::TrialExists("IdleSktToImpact");
-  if (use_idle_socket_timeout_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "IdleSktToImpact"),
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "IdleSktToImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "IdleSktToImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "IdleSktToImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "IdleSktToImpact"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  // Histograms to determine effect of number of connections per proxy.
-  static const bool use_proxy_connection_impact_histogram =
-      base::FieldTrialList::TrialExists("ProxyConnectionImpact");
-  if (use_proxy_connection_impact_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "ProxyConnectionImpact"),
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "ProxyConnectionImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "ProxyConnectionImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "ProxyConnectionImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "ProxyConnectionImpact"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
   }
 
   // Histograms to determine if SDCH has an impact.
@@ -917,6 +758,43 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
+  // Histograms to determine if disabling overlapped TCP reads
+  // has an impact on PLT.
+  static const bool use_overlapped_read_histogram =
+      base::FieldTrialList::TrialExists("OverlappedReadImpact");
+  if (use_overlapped_read_histogram) {
+    UMA_HISTOGRAM_ENUMERATION(
+        base::FieldTrial::MakeName("PLT.Abandoned", "OverlappedReadImpact"),
+        abandoned_page ? 1 : 0, 2);
+    UMA_HISTOGRAM_ENUMERATION(
+        base::FieldTrial::MakeName("PLT.LoadType", "OverlappedReadImpact"),
+        load_type, DocumentState::kLoadTypeMax);
+    switch (load_type) {
+      case DocumentState::NORMAL_LOAD:
+        PLT_HISTOGRAM(base::FieldTrial::MakeName(
+            "PLT.BeginToFinish_NormalLoad", "OverlappedReadImpact"),
+            begin_to_finish_all_loads);
+        break;
+      case DocumentState::LINK_LOAD_NORMAL:
+        PLT_HISTOGRAM(base::FieldTrial::MakeName(
+            "PLT.BeginToFinish_LinkLoadNormal", "OverlappedReadImpact"),
+            begin_to_finish_all_loads);
+        break;
+      case DocumentState::LINK_LOAD_RELOAD:
+        PLT_HISTOGRAM(base::FieldTrial::MakeName(
+            "PLT.BeginToFinish_LinkLoadReload", "OverlappedReadImpact"),
+            begin_to_finish_all_loads);
+        break;
+      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
+        PLT_HISTOGRAM(base::FieldTrial::MakeName(
+            "PLT.BeginToFinish_LinkLoadStaleOk", "OverlappedReadImpact"),
+            begin_to_finish_all_loads);
+        break;
+      default:
+        break;
+    }
+  }
+
   // Site isolation metrics.
   UMA_HISTOGRAM_COUNTS("SiteIsolation.PageLoadsWithCrossSiteFrameAccess",
                        cross_origin_access_count_);
@@ -926,10 +804,27 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   // Log the PLT to the info log.
   LogPageLoadTime(document_state, frame->dataSource());
 
-  // Record prerendering histograms.
-  prerender::PrerenderHelper::RecordHistograms(render_view(),
-                                               finish_all_loads,
-                                               begin_to_finish_all_loads);
+  // Record histograms for cache sensitivity analysis.
+  static const bool cache_sensitivity_histogram =
+      base::FieldTrialList::TrialExists("CacheSensitivityAnalysis");
+  if (cache_sensitivity_histogram) {
+    PLT_HISTOGRAM(base::FieldTrial::MakeName(
+        "PLT.BeginToFinishDoc_CacheSensitivity", "CacheSensitivityAnalysis"),
+                  begin_to_finish_doc);
+    PLT_HISTOGRAM(base::FieldTrial::MakeName(
+        "PLT.BeginToFinish_CacheSensitivity", "CacheSensitivityAnalysis"),
+                  begin_to_finish_all_loads);
+    if (begin_to_first_paint.get()) {
+    PLT_HISTOGRAM(base::FieldTrial::MakeName(
+        "PLT.BeginToFirstPaint_CacheSensitivity", "CacheSensitivityAnalysis"),
+                  *begin_to_first_paint);
+    }
+    if (commit_to_first_paint.get()) {
+      PLT_HISTOGRAM(base::FieldTrial::MakeName(
+        "PLT.CommitToFirstPaint_CacheSensitivity", "CacheSensitivityAnalysis"),
+                    *commit_to_first_paint);
+    }
+  }
 
   // Since there are currently no guarantees that renderer histograms will be
   // sent to the browser, we initiate a PostTask here to be sure that we send

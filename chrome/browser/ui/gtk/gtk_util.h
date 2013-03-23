@@ -207,7 +207,7 @@ void DrawThemedToolbarBackground(GtkWidget* widget,
 // Draw an entire pixbuf without dithering.
 void DrawFullImage(cairo_t* cr,
                    GtkWidget* widget,
-                   const gfx::Image* image,
+                   const gfx::Image& image,
                    gint dest_x,
                    gint dest_y);
 
@@ -307,11 +307,6 @@ void InitLabelSizeRequestAndEllipsizeMode(GtkWidget* label);
 // window manager bugs. You should always call it after creating a dialog with
 // gtk_message_dialog_new.
 void ApplyMessageDialogQuirks(GtkWidget* dialog);
-
-// Performs Cut/Copy/Paste operation on the |window|.
-void DoCut(BrowserWindow* window);
-void DoCopy(BrowserWindow* window);
-void DoPaste(BrowserWindow* window);
 
 }  // namespace gtk_util
 

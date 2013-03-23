@@ -16,8 +16,9 @@
 #include "base/string16.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
+#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/permission_message.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "extensions/common/url_pattern_set.h"
 
 namespace extensions {
 
@@ -58,6 +59,11 @@ class PermissionSet
   static PermissionSet* CreateUnion(
       const PermissionSet* set1, const PermissionSet* set2);
 
+  // Creates a new permission set that only contains permissions that must be
+  // in the manifest.  Passes ownership of the new set to the caller.
+  static PermissionSet* ExcludeNotInManifestPermissions(
+      const PermissionSet* set);
+
   bool operator==(const PermissionSet& rhs) const;
 
   // Returns true if |set| is a subset of this.
@@ -66,15 +72,10 @@ class PermissionSet
   // Gets the API permissions in this set as a set of strings.
   std::set<std::string> GetAPIsAsStrings() const;
 
-  // Gets the API permissions in this set, plus any that have implicit access
-  // (such as APIs that require no permissions, or APIs with functions that
-  // require no permissions).
-  std::set<std::string> GetAPIsWithAnyAccessAsStrings() const;
-
   // Returns whether this namespace has any functions which the extension has
   // permission to use.  For example, even though the extension may not have
   // the "tabs" permission, "tabs.create" requires no permissions so
-  // HasAnyAPIPermission("tabs") will return true.
+  // HasAnyAccessToAPI("tabs") will return true.
   bool HasAnyAccessToAPI(const std::string& api_name) const;
 
   // Gets the localized permission messages that represent this set.
@@ -92,6 +93,14 @@ class PermissionSet
 
   // Returns true if the set has the specified API permission.
   bool HasAPIPermission(APIPermission::ID permission) const;
+
+  // Returns true if the set allows the given permission with the default
+  // permission detal.
+  bool CheckAPIPermission(APIPermission::ID permission) const;
+
+  // Returns true if the set allows the given permission and permission param.
+  bool CheckAPIPermissionWithParam(APIPermission::ID permission,
+      const APIPermission::CheckParam* param) const;
 
   // Returns true if the permissions in this set grant access to the specified
   // |function_name|.
@@ -141,6 +150,8 @@ class PermissionSet
   friend class base::RefCountedThreadSafe<PermissionSet>;
 
   ~PermissionSet();
+
+  void AddAPIPermission(APIPermission::ID id);
 
   static std::set<std::string> GetDistinctHosts(
       const URLPatternSet& host_patterns,

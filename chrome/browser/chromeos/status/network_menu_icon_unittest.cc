@@ -6,7 +6,7 @@
 
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "grit/theme_resources.h"
+#include "grit/ash_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -84,14 +84,8 @@ class NetworkMenuIconTest : public testing::Test {
     cros_ = CrosLibrary::Get()->GetNetworkLibrary();
     // Ethernet connected = WIRED icon, no badges.
     ethernet_connected_image_ = NetworkMenuIcon::GenerateImageFromComponents(
-        *rb_.GetImageSkiaNamed(IDR_STATUSBAR_WIRED),
+        *rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_WIRED),
         NULL, NULL, NULL, NULL);
-    // Ethernet disonnected = WIRED icon + DISCONNECTED badge.
-    ethernet_disconnected_image_ =
-        NetworkMenuIcon::GenerateImageFromComponents(
-            *rb_.GetImageSkiaNamed(IDR_STATUSBAR_WIRED),
-            NULL, NULL, NULL,
-            rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_DISCONNECTED));
     // Wifi connected, strength = 100% = ARCS4 icon, no badges.
     wifi_connected_100_image_ = NetworkMenuIcon::GenerateImageFromComponents(
         NetworkMenuIcon::GetImage(
@@ -104,13 +98,8 @@ class NetworkMenuIconTest : public testing::Test {
         NetworkMenuIcon::GetImage(NetworkMenuIcon::ARCS, 3,
                                   NetworkMenuIcon::COLOR_DARK),
         NULL, NULL, NULL,
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_SECURE_DARK));
-    // Wifi disconnected (strength = 0%) = ARCS0 icon.
-    wifi_disconnected_image_ = NetworkMenuIcon::GenerateImageFromComponents(
-        NetworkMenuIcon::GetImage(NetworkMenuIcon::ARCS, 0,
-                                  NetworkMenuIcon::COLOR_DARK),
-        NULL, NULL, NULL, NULL);
-    // Wifi connecting = IDR_STATUSBAR_NETWORK_ARCS1 (faded).
+        rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_SECURE_DARK));
+    // Wifi connecting = IDR_AURA_UBER_TRAY_NETWORK_ARCS1 (faded).
     wifi_connecting_image_ = NetworkMenuIcon::GenerateConnectingImage(
         NetworkMenuIcon::GetImage(NetworkMenuIcon::ARCS, 1,
                                   NetworkMenuIcon::COLOR_DARK));
@@ -120,7 +109,8 @@ class NetworkMenuIconTest : public testing::Test {
             NetworkMenuIcon::GetImage(
                 NetworkMenuIcon::BARS, 3,
                 NetworkMenuIcon::COLOR_DARK),
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_4G_DARK), NULL, NULL, NULL);
+            rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_4G_DARK),
+            NULL, NULL, NULL);
     // 3G connected, strength = 100% = BARS4 icon + 3G badge.
     cellular_connected_100_image_ =
         NetworkMenuIcon::GenerateImageFromComponents(
@@ -128,24 +118,23 @@ class NetworkMenuIconTest : public testing::Test {
                 NetworkMenuIcon::BARS,
                 NetworkMenuIcon::NumImages(NetworkMenuIcon::BARS) - 1,
                 NetworkMenuIcon::COLOR_DARK),
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_3G_DARK), NULL, NULL, NULL);
+            rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_3G_DARK),
+            NULL, NULL, NULL);
     // 3G connected, strength = 50%, roaming = BARS2 icon + roaming & 3G badges.
     cellular_roaming_50_image_ = NetworkMenuIcon::GenerateImageFromComponents(
         NetworkMenuIcon::GetImage(NetworkMenuIcon::BARS, 3,
                                   NetworkMenuIcon::COLOR_DARK),
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_3G_DARK), NULL, NULL,
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_ROAMING_DARK));
-    // 3G disconnected (strength = 0%) = BARS0 icon + 3G badge.
-    cellular_disconnected_image_ =
-        NetworkMenuIcon::GenerateImageFromComponents(
-            NetworkMenuIcon::GetImage(NetworkMenuIcon::BARS, 0,
-                                      NetworkMenuIcon::COLOR_DARK),
-            rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_3G_DARK), NULL, NULL,
-            NULL);
-    // 3G connecting = IDR_STATUSBAR_NETWORK_BARS1 (faded).
+        rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_3G_DARK), NULL, NULL,
+        rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_ROAMING_DARK));
+    // 3G connecting = IDR_AURA_UBER_TRAY_NETWORK_BARS1 (faded).
     cellular_connecting_image_ = NetworkMenuIcon::GenerateConnectingImage(
         NetworkMenuIcon::GetImage(NetworkMenuIcon::BARS, 1,
                                   NetworkMenuIcon::COLOR_DARK));
+    // Disconnected = ARCS0 icon.
+    disconnected_image_ = NetworkMenuIcon::GenerateImageFromComponents(
+        NetworkMenuIcon::GetImage(NetworkMenuIcon::ARCS, 0,
+                                  NetworkMenuIcon::COLOR_DARK),
+        NULL, NULL, NULL, NULL);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -155,16 +144,19 @@ class NetworkMenuIconTest : public testing::Test {
   void SetConnected(Network* network) {
     Network::TestApi test_network(network);
     test_network.SetConnected();
+    test_network.SetConnectionStarted(false);
   }
 
-  void SetConnecting(Network* network) {
+  void SetConnecting(Network* network, bool user_initiated) {
     Network::TestApi test_network(network);
     test_network.SetConnecting();
+    test_network.SetConnectionStarted(user_initiated);
   }
 
   void SetDisconnected(Network* network) {
     Network::TestApi test_network(network);
     test_network.SetDisconnected();
+    test_network.SetConnectionStarted(false);
   }
 
   void SetActive(Network* network, bool active) {
@@ -194,15 +186,13 @@ class NetworkMenuIconTest : public testing::Test {
     if (CompareTwoImages(icon, base, 1))
       return true;
     EXPECT_FALSE(CompareTwoImages(icon, ethernet_connected_image_, 2));
-    EXPECT_FALSE(CompareTwoImages(icon, ethernet_disconnected_image_, 2));
     EXPECT_FALSE(CompareTwoImages(icon, wifi_connected_100_image_, 2));
     EXPECT_FALSE(CompareTwoImages(icon, wifi_encrypted_50_image_, 2));
-    EXPECT_FALSE(CompareTwoImages(icon, wifi_disconnected_image_, 2));
     EXPECT_FALSE(CompareTwoImages(icon, wifi_connecting_image_, 2));
     EXPECT_FALSE(CompareTwoImages(icon, cellular_connected_100_image_, 2));
     EXPECT_FALSE(CompareTwoImages(icon, cellular_roaming_50_image_, 2));
-    EXPECT_FALSE(CompareTwoImages(icon, cellular_disconnected_image_, 2));
     EXPECT_FALSE(CompareTwoImages(icon, cellular_connecting_image_, 2));
+    EXPECT_FALSE(CompareTwoImages(icon, disconnected_image_, 2));
     return false;
   }
 
@@ -211,16 +201,14 @@ class NetworkMenuIconTest : public testing::Test {
   NetworkLibrary* cros_;
   ResourceBundle& rb_;
   gfx::ImageSkia ethernet_connected_image_;
-  gfx::ImageSkia ethernet_disconnected_image_;
   gfx::ImageSkia wifi_connected_100_image_;
   gfx::ImageSkia wifi_encrypted_50_image_;
-  gfx::ImageSkia wifi_disconnected_image_;
   gfx::ImageSkia wifi_connecting_image_;
   gfx::ImageSkia wimax_connected_50_image_;
   gfx::ImageSkia cellular_connected_100_image_;
   gfx::ImageSkia cellular_roaming_50_image_;
-  gfx::ImageSkia cellular_disconnected_image_;
   gfx::ImageSkia cellular_connecting_image_;
+  gfx::ImageSkia disconnected_image_;
 };
 
 // Compare icon cache results against expected results fron SetUp().
@@ -231,11 +219,6 @@ TEST_F(NetworkMenuIconTest, EthernetIcon) {
   gfx::ImageSkia icon = NetworkMenuIcon::GetImage(network,
                                                   NetworkMenuIcon::COLOR_DARK);
   EXPECT_TRUE(CompareImages(icon, ethernet_connected_image_));
-
-  SetDisconnected(network);
-  icon = NetworkMenuIcon::GetImage(network,
-                                   NetworkMenuIcon::COLOR_DARK);
-  EXPECT_TRUE(CompareImages(icon, ethernet_disconnected_image_));
 }
 
 TEST_F(NetworkMenuIconTest, WifiIcon) {
@@ -250,13 +233,6 @@ TEST_F(NetworkMenuIconTest, WifiIcon) {
   icon = NetworkMenuIcon::GetImage(network,
                                    NetworkMenuIcon::COLOR_DARK);
   EXPECT_TRUE(CompareImages(icon, wifi_encrypted_50_image_));
-
-  SetDisconnected(network);
-  SetStrength(network, 0);
-  SetEncryption(network, SECURITY_NONE);
-  icon = NetworkMenuIcon::GetImage(network,
-                                   NetworkMenuIcon::COLOR_DARK);
-  EXPECT_TRUE(CompareImages(icon, wifi_disconnected_image_));
 }
 
 TEST_F(NetworkMenuIconTest, CellularIcon) {
@@ -274,13 +250,6 @@ TEST_F(NetworkMenuIconTest, CellularIcon) {
   icon = NetworkMenuIcon::GetImage(network,
                                    NetworkMenuIcon::COLOR_DARK);
   EXPECT_TRUE(CompareImages(icon, cellular_roaming_50_image_));
-
-  SetDisconnected(network);
-  SetStrength(network, 0);
-  SetRoamingState(network, ROAMING_STATE_HOME);
-  icon = NetworkMenuIcon::GetImage(network,
-                                   NetworkMenuIcon::COLOR_DARK);
-  EXPECT_TRUE(CompareImages(icon, cellular_disconnected_image_));
 }
 
 namespace {
@@ -321,6 +290,7 @@ class TestNetworkMenuIcon : public NetworkMenuIcon {
 //  eth1: connected (active ethernet)
 //  wifi1: connected (active wifi)
 //  cellular1: connected  (active cellular)
+//  wimax2: connected  (active wimax)
 // See network_library_unit_test.cc for more info.
 
 TEST_F(NetworkMenuIconTest, StatusIconMenuMode) {
@@ -331,9 +301,9 @@ TEST_F(NetworkMenuIconTest, StatusIconMenuMode) {
   CellularNetwork* cellular1 = cros_->FindCellularNetworkByPath("cellular1");
   ASSERT_NE(static_cast<const Network*>(NULL), cellular1);
   SetRoamingState(cellular1, ROAMING_STATE_HOME);  // Clear romaing state
-  SetConnecting(cellular1);
+  SetConnecting(cellular1, true);
 
-  // For MENU_MODE, we always display the connecting icon (cellular1).
+  // For user initiated connect always display the connecting icon (cellular1).
   icon = menu_icon.GetIconAndText(NULL);
   EXPECT_TRUE(CompareImages(icon, cellular_connecting_image_));
 
@@ -349,6 +319,18 @@ TEST_F(NetworkMenuIconTest, StatusIconMenuMode) {
   SetDisconnected(eth1);
   icon = menu_icon.GetIconAndText(NULL);
   EXPECT_TRUE(CompareImages(icon, wifi_connected_100_image_));
+
+  // Set all networks to disconnected; disconnected icon should be shown.
+  SetActive(cellular1, false);
+  SetDisconnected(cellular1);
+  WifiNetwork* wifi1 = cros_->FindWifiNetworkByPath("wifi1");
+  SetActive(wifi1, false);
+  SetDisconnected(wifi1);
+  WimaxNetwork* wimax2 = cros_->FindWimaxNetworkByPath("wimax2");
+  SetActive(wimax2, false);
+  SetDisconnected(wimax2);
+  icon = menu_icon.GetIconAndText(NULL);
+  EXPECT_TRUE(CompareImages(icon, disconnected_image_));
 }
 
 TEST_F(NetworkMenuIconTest, StatusIconDropdownMode) {
@@ -358,9 +340,9 @@ TEST_F(NetworkMenuIconTest, StatusIconDropdownMode) {
   // Set wifi1 to connecting.
   WifiNetwork* wifi1 = cros_->FindWifiNetworkByPath("wifi1");
   ASSERT_NE(static_cast<const Network*>(NULL), wifi1);
-  SetConnecting(wifi1);
+  SetConnecting(wifi1, false);
 
-  // For DROPDOWN_MODE, we prioritize the connected network (ethernet).
+  // For non user-initiated connect, show the connected network (ethernet).
   icon = menu_icon.GetIconAndText(NULL);
   EXPECT_TRUE(CompareImages(icon, ethernet_connected_image_));
 

@@ -63,9 +63,8 @@ extern const FilePath::CharType kCRLSetFilename[];
 extern const FilePath::CharType kCustomDictionaryFileName[];
 extern const FilePath::CharType kExtensionsCookieFilename[];
 extern const FilePath::CharType kFaviconsFilename[];
-extern const FilePath::CharType kHistoryBookmarksFileName[];
+extern const FilePath::CharType kFirstRunSentinel[];
 extern const FilePath::CharType kHistoryFilename[];
-extern const FilePath::CharType kIsolatedAppStateDirname[];
 extern const FilePath::CharType kJumpListIconDirname[];
 extern const FilePath::CharType kLocalStateFilename[];
 extern const FilePath::CharType kLoginDataFileName[];
@@ -73,7 +72,6 @@ extern const FilePath::CharType kManagedModePolicyFilename[];
 extern const FilePath::CharType kMediaCacheDirname[];
 extern const FilePath::CharType kNewTabThumbnailsFilename[];
 extern const FilePath::CharType kOBCertFilename[];
-extern const FilePath::CharType kOffTheRecordMediaCacheDirname[];
 extern const FilePath::CharType kPreferencesFilename[];
 extern const FilePath::CharType kReadmeFilename[];
 extern const FilePath::CharType kSafeBrowsingBaseFilename[];
@@ -96,7 +94,7 @@ extern const FilePath::CharType kPepperFlashPluginFilename[];
 extern const wchar_t kUserDataDirname[];
 
 #if defined(OS_CHROMEOS)
-extern const FilePath::CharType kGDataCacheDirname[];
+extern const FilePath::CharType kDriveCacheDirname[];
 #endif  // defined(OS_CHROMEOS)
 
 extern const bool kRecordModeEnabled;
@@ -137,6 +135,9 @@ extern const wchar_t kMetroChromeUserDataSubDir[];
 extern const wchar_t kMetroNavigationAndSearchMessage[];
 // Used by Metro Chrome to get information about the current tab.
 extern const wchar_t kMetroGetCurrentTabInfoMessage[];
+// Used by Metro Chrome to store activation state.
+extern const wchar_t kMetroRegistryPath[];
+extern const wchar_t kLaunchModeValue[];
 #endif
 
 }  // namespace chrome

@@ -17,7 +17,6 @@
 #include "content/public/browser/web_contents_observer.h"
 
 class DownloadRequestInfoBarDelegate;
-class TabContents;
 
 namespace content {
 class NavigationController;
@@ -125,12 +124,7 @@ class DownloadRequestLimiter
 
    protected:
     // Used for testing.
-    TabDownloadState()
-        : host_(NULL),
-          status_(DownloadRequestLimiter::ALLOW_ONE_DOWNLOAD),
-          download_count_(0),
-          infobar_(NULL) {
-    }
+    TabDownloadState();
 
    private:
     // content::NotificationObserver method.

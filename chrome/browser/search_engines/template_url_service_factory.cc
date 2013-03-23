@@ -78,13 +78,15 @@ void TemplateURLServiceFactory::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kDefaultSearchProviderEncodings,
                             std::string(),
                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterListPref(prefs::kDefaultSearchProviderAlternateURLs,
+                          PrefService::UNSYNCABLE_PREF);
 }
 
-bool TemplateURLServiceFactory::ServiceRedirectedInIncognito() {
+bool TemplateURLServiceFactory::ServiceRedirectedInIncognito() const {
   return true;
 }
 
-bool TemplateURLServiceFactory::ServiceIsNULLWhileTesting() {
+bool TemplateURLServiceFactory::ServiceIsNULLWhileTesting() const {
   return true;
 }
 

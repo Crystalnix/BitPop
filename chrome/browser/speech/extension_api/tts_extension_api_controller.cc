@@ -11,6 +11,7 @@
 #include "base/json/json_writer.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
@@ -108,26 +109,25 @@ void Utterance::OnTtsEvent(TtsEventType event_type,
   if (src_id_ < 0)
     return;
 
-  ListValue args;
-  DictionaryValue* event = new DictionaryValue();
+  DictionaryValue* details = new DictionaryValue();
   if (char_index != kInvalidCharIndex)
-    event->SetInteger(constants::kCharIndexKey, char_index);
-  event->SetString(constants::kEventTypeKey, event_type_string);
+    details->SetInteger(constants::kCharIndexKey, char_index);
+  details->SetString(constants::kEventTypeKey, event_type_string);
   if (event_type == TTS_EVENT_ERROR) {
-    event->SetString(constants::kErrorMessageKey, error_message);
+    details->SetString(constants::kErrorMessageKey, error_message);
   }
-  event->SetInteger(constants::kSrcIdKey, src_id_);
-  event->SetBoolean(constants::kIsFinalEventKey, finished_);
-  args.Set(0, event);
-  std::string json_args;
-  base::JSONWriter::Write(&args, &json_args);
+  details->SetInteger(constants::kSrcIdKey, src_id_);
+  details->SetBoolean(constants::kIsFinalEventKey, finished_);
 
-  profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-      src_extension_id_,
-      events::kOnEvent,
-      json_args,
-      profile_,
-      src_url_);
+  scoped_ptr<ListValue> arguments(new ListValue());
+  arguments->Set(0, details);
+
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      events::kOnEvent, arguments.Pass()));
+  event->restrict_to_profile = profile_;
+  event->event_url = src_url_;
+  extensions::ExtensionSystem::Get(profile_)->event_router()->
+      DispatchEventToExtension(src_extension_id_, event.Pass());
 }
 
 void Utterance::Finish() {
@@ -199,6 +199,13 @@ void ExtensionTtsController::SpeakNow(Utterance* utterance) {
       utterance->text(),
       utterance->lang(),
       utterance->continuous_parameters());
+
+  if (!success &&
+      GetPlatformImpl()->LoadBuiltInTtsExtension(utterance->profile())) {
+    utterance_queue_.push(utterance);
+    return;
+  }
+
   if (!success) {
     utterance->OnTtsEvent(TTS_EVENT_ERROR, kInvalidCharIndex,
                           GetPlatformImpl()->error());
@@ -305,6 +312,11 @@ void ExtensionTtsController::SpeakNextUtterance() {
     utterance_queue_.pop();
     SpeakNow(utterance);
   }
+}
+
+void ExtensionTtsController::RetrySpeakingQueuedUtterances() {
+  if (current_utterance_ == NULL && !utterance_queue_.empty())
+    SpeakNextUtterance();
 }
 
 void ExtensionTtsController::ClearUtteranceQueue(bool send_events) {

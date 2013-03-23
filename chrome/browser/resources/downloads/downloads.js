@@ -6,11 +6,18 @@
 
 /**
  * Sets the display style of a node.
+ * @param {!Element} node The target element to show or hide.
+ * @param {boolean} isShow Should the target element be visible.
  */
 function showInline(node, isShow) {
   node.style.display = isShow ? 'inline' : 'none';
 }
 
+/**
+ * Sets the display style of a node.
+ * @param {!Element} node The target element to show or hide.
+ * @param {boolean} isShow Should the target element be visible.
+ */
 function showInlineBlock(node, isShow) {
   node.style.display = isShow ? 'inline-block' : 'none';
 }
@@ -19,6 +26,7 @@ function showInlineBlock(node, isShow) {
  * Creates an element of a specified type with a specified class name.
  * @param {string} type The node type.
  * @param {string} className The class name to use.
+ * @return {Element} The created element.
  */
 function createElementWithClassName(type, className) {
   var elm = document.createElement(type);
@@ -27,9 +35,10 @@ function createElementWithClassName(type, className) {
 }
 
 /**
- * Creates a link with a specified onclick handler and content
- * @param {function()} onclick The onclick handler
- * @param {string} value The link text
+ * Creates a link with a specified onclick handler and content.
+ * @param {function()} onclick The onclick handler.
+ * @param {string} value The link text.
+ * @return {Element} The created link element.
  */
 function createLink(onclick, value) {
   var link = document.createElement('a');
@@ -41,9 +50,10 @@ function createLink(onclick, value) {
 }
 
 /**
- * Creates a button with a specified onclick handler and content
- * @param {function()} onclick The onclick handler
- * @param {string} value The button text
+ * Creates a button with a specified onclick handler and content.
+ * @param {function()} onclick The onclick handler.
+ * @param {string} value The button text.
+ * @return {Element} The created button.
  */
 function createButton(onclick, value) {
   var button = document.createElement('input');
@@ -94,8 +104,13 @@ Downloads.prototype.updated = function(download) {
     } else {
       this.node_.appendChild(this.downloads_[id].node);
     }
-    this.updateDateDisplay_();
   }
+  // Download.prototype.update may change its nodeSince_ and nodeDate_, so
+  // update all the date displays.
+  // TODO(benjhayden) Only do this if its nodeSince_ or nodeDate_ actually did
+  // change since this may touch 150 elements and Downloads.prototype.updated
+  // may be called 150 times.
+  this.updateDateDisplay_();
 };
 
 /**
@@ -207,8 +222,12 @@ Downloads.prototype.isUpdateNeeded = function(downloads) {
     size++;
   if (size != downloads.length)
     return true;
-  for (var i in this.downloads_) {
-    if (this.downloads_[i].url_ != downloads[i].url)
+  // Since there are the same number of items in the incoming list as
+  // |this.downloads_|, there won't be any removed downloads without some
+  // downloads having been inserted.  So check only for new downloads in
+  // deciding whether to update.
+  for (var i = 0; i < downloads.length; i++) {
+    if (!this.downloads_[downloads[i].id])
       return true;
   }
   return false;
@@ -245,15 +264,16 @@ function Download(download) {
         createElementWithClassName('div', 'progress background');
     this.safe_.appendChild(this.nodeProgressBackground_);
 
-    this.canvasProgress_ =
-        document.getCSSCanvasContext('2d', 'canvas_' + download.id,
-            Download.Progress.width,
-            Download.Progress.height);
-
     this.nodeProgressForeground_ =
-        createElementWithClassName('div', 'progress foreground');
-    this.nodeProgressForeground_.style.webkitMask =
-        '-webkit-canvas(canvas_' + download.id + ')';
+        createElementWithClassName('canvas', 'progress');
+    this.nodeProgressForeground_.width = Download.Progress.width;
+    this.nodeProgressForeground_.height = Download.Progress.height;
+    this.canvasProgress_ = this.nodeProgressForeground_.getContext('2d');
+
+    this.canvasProgressForegroundImage_ = new Image();
+    this.canvasProgressForegroundImage_.src =
+        'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@' +
+        window.devicePixelRatio + 'x';
     this.safe_.appendChild(this.nodeProgressForeground_);
   }
 
@@ -364,15 +384,19 @@ Download.DangerType = {
 /**
  * Constants for the progress meter.
  */
-Download.Progress = {
-  width: 48,
-  height: 48,
-  radius: 24,
-  centerX: 24,
-  centerY: 24,
-  base: -0.5 * Math.PI,
-  dir: false,
-};
+
+Download.Progress = (function() {
+  var scale = window.devicePixelRatio;
+  return {
+    width: 48 * scale,
+    height: 48 * scale,
+    radius: 24 * scale,
+    centerX: 24 * scale,
+    centerY: 24 * scale,
+    base: -0.5 * Math.PI,
+    dir: false,
+  };
+})();
 
 /**
  * Updates the download to reflect new data.
@@ -445,9 +469,9 @@ Download.prototype.update = function(download) {
       this.nodeProgressBackground_.style.display = 'block';
 
       // Draw a pie-slice for the progress.
-      this.canvasProgress_.clearRect(0, 0,
-                                     Download.Progress.width,
-                                     Download.Progress.height);
+      this.canvasProgress_.globalCompositeOperation = 'copy';
+      this.canvasProgress_.drawImage(this.canvasProgressForegroundImage_, 0, 0);
+      this.canvasProgress_.globalCompositeOperation = 'destination-in';
       this.canvasProgress_.beginPath();
       this.canvasProgress_.moveTo(Download.Progress.centerX,
                                   Download.Progress.centerY);
@@ -545,6 +569,7 @@ Download.prototype.getStatusText_ = function() {
  * Tells the backend to initiate a drag, allowing users to drag
  * files from the download page and have them appear as native file
  * drags.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.drag_ = function() {
@@ -554,6 +579,7 @@ Download.prototype.drag_ = function() {
 
 /**
  * Tells the backend to open this file.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.openFile_ = function() {
@@ -563,6 +589,7 @@ Download.prototype.openFile_ = function() {
 
 /**
  * Tells the backend that the user chose to save a dangerous file.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.saveDangerous_ = function() {
@@ -572,6 +599,7 @@ Download.prototype.saveDangerous_ = function() {
 
 /**
  * Tells the backend that the user chose to discard a dangerous file.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.discardDangerous_ = function() {
@@ -582,6 +610,7 @@ Download.prototype.discardDangerous_ = function() {
 
 /**
  * Tells the backend to show the file in explorer.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.show_ = function() {
@@ -591,6 +620,7 @@ Download.prototype.show_ = function() {
 
 /**
  * Tells the backend to pause this download.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.togglePause_ = function() {
@@ -600,6 +630,7 @@ Download.prototype.togglePause_ = function() {
 
 /**
  * Tells the backend to remove this download from history and download shelf.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
  Download.prototype.remove_ = function() {
@@ -609,6 +640,7 @@ Download.prototype.togglePause_ = function() {
 
 /**
  * Tells the backend to cancel this download.
+ * @return {boolean} Returns false to prevent the default action.
  * @private
  */
 Download.prototype.cancel_ = function() {
@@ -679,6 +711,7 @@ function clearAll() {
 /**
  * Our history system calls this function with results from searches or when
  * downloads are added or removed.
+ * @param {Array.<Object>} results List of updates.
  */
 function downloadsList(results) {
   if (downloads && downloads.isUpdateNeeded(results)) {
@@ -693,6 +726,7 @@ function downloadsList(results) {
 
 /**
  * When a download is updated (progress, state change), this is called.
+ * @param {Array.<Object>} results List of updates for the download process.
  */
 function downloadUpdated(results) {
   // Sometimes this can get called too early.

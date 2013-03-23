@@ -15,14 +15,19 @@
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/utility_process_host.h"
 
+namespace base {
+class SequencedTaskRunner;
+}
+
+namespace content {
 class BrowserChildProcessHostImpl;
 
 class CONTENT_EXPORT UtilityProcessHostImpl
-    : public NON_EXPORTED_BASE(content::UtilityProcessHost),
-      public content::BrowserChildProcessHostDelegate {
+    : public NON_EXPORTED_BASE(UtilityProcessHost),
+      public BrowserChildProcessHostDelegate {
  public:
-  UtilityProcessHostImpl(content::UtilityProcessHostClient* client,
-                         content::BrowserThread::ID client_thread_id);
+  UtilityProcessHostImpl(UtilityProcessHostClient* client,
+                         base::SequencedTaskRunner* client_task_runner);
   virtual ~UtilityProcessHostImpl();
 
   // UtilityProcessHost implementation:
@@ -48,8 +53,8 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   virtual void OnProcessCrashed(int exit_code) OVERRIDE;
 
   // A pointer to our client interface, who will be informed of progress.
-  scoped_refptr<content::UtilityProcessHostClient> client_;
-  content::BrowserThread::ID client_thread_id_;
+  scoped_refptr<UtilityProcessHostClient> client_;
+  scoped_refptr<base::SequencedTaskRunner> client_task_runner_;
   // True when running in batch mode, i.e., StartBatchMode() has been called
   // and the utility process will run until EndBatchMode().
   bool is_batch_mode_;
@@ -73,5 +78,7 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 
   DISALLOW_COPY_AND_ASSIGN(UtilityProcessHostImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_UTILITY_PROCESS_HOST_IMPL_H_

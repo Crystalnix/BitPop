@@ -103,7 +103,7 @@ bool TestBrowserWindow::IsDownloadShelfVisible() const {
 }
 
 DownloadShelf* TestBrowserWindow::GetDownloadShelf() {
-  return NULL;
+  return &download_shelf_;
 }
 
 int TestBrowserWindow::GetExtraRenderViewHeight() const {
@@ -125,8 +125,16 @@ WindowOpenDisposition TestBrowserWindow::GetDispositionForPopupBounds(
   return NEW_POPUP;
 }
 
+bool TestBrowserWindow::IsInstantTabShowing() {
+  return false;
+}
+
 FindBar* TestBrowserWindow::CreateFindBar() {
   return NULL;
+}
+
+bool TestBrowserWindow::GetConstrainedWindowTopY(int* top_y) {
+  return false;
 }
 
 namespace chrome {

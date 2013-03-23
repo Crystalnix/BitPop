@@ -5,11 +5,11 @@
 /**
  * This object encapsulates everything related to tasks execution.
  * @param {FileManager} fileManager FileManager instance.
- * @param {Array.<string>} urls List of file urls.
+ * @param {object} opt_params File manager load parameters.
  */
-function FileTasks(fileManager, urls) {
+function FileTasks(fileManager, opt_params) {
   this.fileManager_ = fileManager;
-  this.urls_ = urls;
+  this.params_ = opt_params;
   this.tasks_ = null;
   this.defaultTask_ = null;
 
@@ -17,9 +17,6 @@ function FileTasks(fileManager, urls) {
    * List of invocations to be called once tasks are available.
    */
   this.pendingInvocations_ = [];
-
-  if (urls.length > 0)
-    chrome.fileBrowserPrivate.getFileTasks(urls, this.onTasks_.bind(this));
 }
 
 /**
@@ -32,6 +29,28 @@ FileTasks.CHROME_WEB_STORE_URL = 'https://chrome.google.com/webstore';
 */
 FileTasks.NO_ACTION_FOR_FILE_URL = 'http://support.google.com/chromeos/bin/' +
     'answer.py?answer=1700055&topic=29026&ctx=topic';
+
+/**
+ * Complete the initialization.
+ *
+ * @param {Array.<string>} urls List of file urls.
+ * @param {Array.<string>=} opt_mimeTypes List of MIME types for each
+ *     of the files.
+ */
+FileTasks.prototype.init = function(urls, opt_mimeTypes) {
+  this.urls_ = urls;
+  if (urls.length > 0)
+    chrome.fileBrowserPrivate.getFileTasks(urls, opt_mimeTypes || [],
+      this.onTasks_.bind(this));
+};
+
+/**
+ * Returns amount of tasks.
+ * @return {Number=} amount of tasks.
+ */
+FileTasks.prototype.size = function() {
+  return (this.tasks_ && this.tasks_.length) || 0;
+};
 
 /**
  * Callback when tasks found.
@@ -55,7 +74,7 @@ FileTasks.prototype.onTasks_ = function(tasks) {
  */
 FileTasks.prototype.processTasks_ = function(tasks) {
   this.tasks_ = [];
-  var id = this.fileManager_.getExtensionId();
+  var id = util.platform.getAppId();
   var is_on_drive = false;
   for (var index = 0; index < this.urls_.length; ++index) {
     if (FileType.isOnGDrive(this.urls_[index])) {
@@ -67,52 +86,71 @@ FileTasks.prototype.processTasks_ = function(tasks) {
   for (var i = 0; i < tasks.length; i++) {
     var task = tasks[i];
 
-    // Skip Drive App if the file is on Drive.
+    // Skip Drive App if the file is not on Drive.
     if (!is_on_drive && task.driveApp)
       continue;
 
     // Tweak images, titles of internal tasks.
     var task_parts = task.taskId.split('|');
-    if (task_parts[0] == id) {
-      if (task_parts[1] == 'play') {
+    if (task_parts[0] == id && task_parts[1] == 'file') {
+      if (task_parts[2] == 'play') {
         // TODO(serya): This hack needed until task.iconUrl is working
         //             (see GetFileTasksFileBrowserFunction::RunImpl).
         task.iconType = 'audio';
         task.title = loadTimeData.getString('ACTION_LISTEN');
-      } else if (task_parts[1] == 'mount-archive') {
+      } else if (task_parts[2] == 'mount-archive') {
         task.iconType = 'archive';
         task.title = loadTimeData.getString('MOUNT_ARCHIVE');
-      } else if (task_parts[1] == 'gallery') {
+      } else if (task_parts[2] == 'gallery') {
         task.iconType = 'image';
         task.title = loadTimeData.getString('ACTION_OPEN');
-      } else if (task_parts[1] == 'watch') {
+      } else if (task_parts[2] == 'watch') {
         task.iconType = 'video';
         task.title = loadTimeData.getString('ACTION_WATCH');
-      } else if (task_parts[1] == 'open-hosted') {
+      } else if (task_parts[2] == 'open-hosted-generic') {
         if (this.urls_.length > 1)
           task.iconType = 'generic';
         else // Use specific icon.
           task.iconType = FileType.getIcon(this.urls_[0]);
         task.title = loadTimeData.getString('ACTION_OPEN');
-      } else if (task_parts[1] == 'view-pdf') {
+      } else if (task_parts[2] == 'open-hosted-gdoc') {
+        task.iconType = 'gdoc';
+        task.title = loadTimeData.getString('ACTION_OPEN_GDOC');
+      } else if (task_parts[2] == 'open-hosted-gsheet') {
+        task.iconType = 'gsheet';
+        task.title = loadTimeData.getString('ACTION_OPEN_GSHEET');
+      } else if (task_parts[2] == 'open-hosted-gslides') {
+        task.iconType = 'gslides';
+        task.title = loadTimeData.getString('ACTION_OPEN_GSLIDES');
+      } else if (task_parts[2] == 'view-pdf') {
         // Do not render this task if disabled.
         if (!loadTimeData.getBoolean('PDF_VIEW_ENABLED'))
           continue;
         task.iconType = 'pdf';
         task.title = loadTimeData.getString('ACTION_VIEW');
-      } else if (task_parts[1] == 'view-in-browser') {
+      } else if (task_parts[2] == 'view-in-browser') {
         task.iconType = 'generic';
         task.title = loadTimeData.getString('ACTION_VIEW');
-      } else if (task_parts[1] == 'install-crx') {
+      } else if (task_parts[2] == 'install-crx') {
         task.iconType = 'generic';
         task.title = loadTimeData.getString('INSTALL_CRX');
       }
     }
 
+    if (!task.iconType && task_parts[1] == 'web-intent') {
+      task.iconType = 'generic';
+    }
+
     this.tasks_.push(task);
-    if (this.defaultTask_ == null) {
+    if (this.defaultTask_ == null && task.isDefault) {
       this.defaultTask_ = task;
     }
+  }
+  if (!this.defaultTask_ && this.tasks_.length > 0) {
+    // If we haven't picked a default task yet, then just pick the first one.
+    // This is not the preferred way we want to pick this, but better this than
+    // no default at all if the C++ code didn't set one.
+    this.defaultTask_ = this.tasks_[0];
   }
 };
 
@@ -159,14 +197,14 @@ FileTasks.prototype.executeDefault_ = function() {
 FileTasks.prototype.execute_ = function(taskId, opt_urls) {
   var urls = opt_urls || this.urls_;
   this.checkAvailability_(function() {
-    chrome.fileBrowserPrivate.executeTask(taskId, urls);
-
     var task_parts = taskId.split('|');
-    if (task_parts[0] == this.fileManager_.getExtensionId()) {
+    if (task_parts[0] == util.platform.getAppId() && task_parts[1] == 'file') {
       // For internal tasks we do not listen to the event to avoid
       // handling the same task instance from multiple tabs.
       // So, we manually execute the task.
-      this.executeInternalTask_(task_parts[1], urls);
+      this.executeInternalTask_(task_parts[2], urls);
+    } else {
+      chrome.fileBrowserPrivate.executeTask(taskId, urls);
     }
   }.bind(this));
 };
@@ -257,8 +295,24 @@ FileTasks.prototype.executeInternalTask_ = function(id, urls) {
       urls = fm.getAllUrlsInCurrentDirectory().filter(FileType.isAudio);
       position = urls.indexOf(selectedUrl);
     }
-    chrome.mediaPlayerPrivate.play(urls, position);
+    if (util.platform.v2()) {
+      chrome.runtime.getBackgroundPage(function(background) {
+        background.launchAudioPlayer({ items: urls, position: position });
+      });
+    } else {
+      chrome.mediaPlayerPrivate.play(urls, position);
+    }
     return;
+  }
+
+  if (util.platform.v2()) {
+    if (id == 'watch') {
+      console.assert(urls.length == 1, 'Cannot open multiple videos');
+      chrome.runtime.getBackgroundPage(function(background) {
+        background.launchVideoPlayer(urls[0]);
+      });
+      return;
+    }
   }
 
   if (id == 'mount-archive') {
@@ -274,12 +328,12 @@ FileTasks.prototype.executeInternalTask_ = function(id, urls) {
   }
 
   if (id == 'gallery') {
-    this.openGallery_(urls);
+    this.openGallery(urls);
     return;
   }
 
   if (id == 'view-pdf' || id == 'view-in-browser' ||
-      id == 'install-crx' || id == 'open-hosted' || id == 'watch') {
+      id == 'install-crx' || id.match(/^open-hosted-/) || id == 'watch') {
     chrome.fileBrowserPrivate.viewFiles(urls, id, function(success) {
       if (!success)
         console.error('chrome.fileBrowserPrivate.viewFiles failed', urls);
@@ -301,72 +355,65 @@ FileTasks.prototype.mountArchives_ = function(urls) {
 
   fm.resolveSelectResults_(urls, function(urls) {
     for (var index = 0; index < urls.length; ++index) {
-      // TODO(kaznacheev): Incapsulate URL to path conversion.
-      var path =
-          /^filesystem:[\w-]*:\/\/[\w]*\/(external|persistent)(\/.*)$/.
-              exec(urls[index])[2];
-      if (!path)
-        continue;
-      path = decodeURIComponent(path);
-
-      fm.volumeManager_.mountArchive(path, function(mountPath) {
+      fm.volumeManager_.mountArchive(urls[index], function(mountPath) {
         console.log('Mounted at: ', mountPath);
         tracker.stop();
         if (!tracker.hasChanged)
           fm.directoryModel_.changeDirectory(mountPath);
-      }, function(error) {
+      }, function(url, error) {
+        var path = util.extractFilePath(url);
         tracker.stop();
         var namePos = path.lastIndexOf('/');
         fm.alert.show(strf('ARCHIVE_MOUNT_FAILED',
                            path.substr(namePos + 1), error));
-      });
+      }.bind(null, urls[index]));
     }
   });
 };
 
 /**
- * Opens provided urls in the gallery.
- * @param {Array.<string>} urls List of all the urls that will be shown in
- *     the gallery.
- * @private
+ * Open the Gallery.
+ * @param {Array.<string>} urls List of selected urls.
  */
-FileTasks.prototype.openGallery_ = function(urls) {
+FileTasks.prototype.openGallery = function(urls) {
   var fm = this.fileManager_;
-  var singleSelection = urls.length == 1;
 
-  var selectedUrl;
-  if (singleSelection && FileType.isImage(urls[0])) {
-    // Single image item selected. Pass to the Gallery as a selected.
-    selectedUrl = urls[0];
-    // Pass along every image and video in the directory so that it shows up
-    // in the ribbon.
-    // We do not do that if a single video is selected because the UI is
-    // cleaner without the ribbon.
-    urls = fm.getAllUrlsInCurrentDirectory().filter(FileType.isImageOrVideo);
-  } else {
-    // Pass just the selected items, select the first entry.
-    selectedUrl = urls[0];
-  }
+  var allUrls =
+      fm.getAllUrlsInCurrentDirectory().filter(FileType.isImageOrVideo);
 
   var galleryFrame = fm.document_.createElement('iframe');
   galleryFrame.className = 'overlay-pane';
   galleryFrame.scrolling = 'no';
   galleryFrame.setAttribute('webkitallowfullscreen', true);
 
-  var dirPath = fm.getCurrentDirectory();
-  // Push a temporary state which will be replaced every time an individual
-  // item is selected in the Gallery.
-  fm.updateLocation_(false /*push*/, dirPath);
+  if (this.params_ && this.params_.gallery) {
+    // Remove the Gallery state from the location, we do not need it any more.
+    util.updateAppState(
+        true /* replace */, null /* keep path */, '' /* remove search. */);
+  }
 
-  var getShareActions = function(urls, callback) {
-    this.getExternals(callback);
-  }.bind(this);
+  var savedAppState = window.appState;
+  var savedTitle = document.title;
+
+  // Push a temporary state which will be replaced every time the selection
+  // changes in the Gallery and popped when the Gallery is closed.
+  util.updateAppState(false /*push*/);
+
+  function onClose(selectedUrls) {
+    fm.directoryModel_.selectUrls(selectedUrls);
+    if (util.platform.v2()) {
+      fm.closeFilePopup_();  // Will call Gallery.unload.
+      window.appState = savedAppState;
+      util.saveAppState();
+      document.title = savedTitle;
+    } else {
+      history.back(1);  // This will restore document.title.
+    }
+  }
 
   galleryFrame.onload = function() {
     fm.show_();
     galleryFrame.contentWindow.ImageUtil.metrics = metrics;
-    galleryFrame.contentWindow.FileType = FileType;
-    galleryFrame.contentWindow.util = util;
 
     var readonly = fm.isOnReadonlyDirectory();
     var currentDir = fm.directoryModel_.getCurrentDirEntry();
@@ -378,26 +425,23 @@ FileTasks.prototype.openGallery_ = function(urls) {
           fm.directoryModel_.getCurrentRootName();
     }
 
-    var gallerySelection;
     var context = {
       // We show the root label in readonly warning (e.g. archive name).
       readonlyDirName: readonlyDirName,
-      saveDirEntry: readonly ? downloadsDir : currentDir,
+      curDirEntry: currentDir,
+      saveDirEntry: readonly ? downloadsDir : null,
+      searchResults: fm.directoryModel_.isSearching(),
       metadataCache: fm.metadataCache_,
-      getShareActions: getShareActions,
-      onNameChange: function(name) {
-        fm.document_.title = gallerySelection = name;
-        fm.updateLocation_(true /*replace*/, dirPath + '/' + name);
+      pageState: this.params_,
+      onClose: onClose,
+      allowMosaic: fm.isOnGData(),
+      onThumbnailError: function(imageURL) {
+        fm.metadataCache_.refreshFileMetadata(imageURL);
       },
-      onClose: function() {
-        if (singleSelection)
-          fm.directoryModel_.selectEntry(gallerySelection);
-        history.back(1);
-      },
-      displayStringFunction: loadTimeData.getStringF.bind(loadTimeData)
+      displayStringFunction: strf
     };
-    galleryFrame.contentWindow.Gallery.open(context, urls, selectedUrl);
-  };
+    galleryFrame.contentWindow.Gallery.open(context, allUrls, urls);
+  }.bind(this);
 
   galleryFrame.src = 'gallery.html';
   fm.openFilePopup_(galleryFrame, fm.updateTitle_.bind(fm));
@@ -418,23 +462,11 @@ FileTasks.prototype.display_ = function(combobutton) {
   combobutton.hidden = false;
   combobutton.defaultItem = this.createCombobuttonItem_(this.defaultTask_);
 
-  var items = [];
-  var title = this.defaultTask_.title + ' ' +
-              loadTimeData.getString('DEFAULT_ACTION_LABEL');
-  items.push(this.createCombobuttonItem_(this.defaultTask_, title));
-
-  for (var index = 0; index < this.tasks_.length; index++) {
-    var task = this.tasks_[index];
-    if (task != this.defaultTask_)
-      items.push(this.createCombobuttonItem_(task));
-  }
+  var items = this.createItems_();
 
   if (items.length > 1) {
-    items.sort(function(a, b) {
-      return a.label.localeCompare(b.label);
-    });
-
     var defaultIdx = 0;
+
     for (var j = 0; j < items.length; j++) {
       combobutton.addDropDownItem(items[j]);
       if (items[j].task.taskId == this.defaultTask_.taskId)
@@ -443,11 +475,33 @@ FileTasks.prototype.display_ = function(combobutton) {
 
     combobutton.addSeparator();
     combobutton.addDropDownItem({
-          label: loadTimeData.getString('CHANGE_DEFAULT_MENU_ITEM'),
-          items: items,
-          defaultIdx: defaultIdx
+          label: loadTimeData.getString('CHANGE_DEFAULT_MENU_ITEM')
         });
   }
+};
+
+/**
+ * Creates sorted array of available task descriptions such as title and icon.
+ * @return {Array} created array can be used to feed combobox, menus and so on.
+ * @private
+ */
+FileTasks.prototype.createItems_ = function() {
+  var items = [];
+  var title = this.defaultTask_.title + ' ' +
+              loadTimeData.getString('DEFAULT_ACTION_LABEL');
+  items.push(this.createCombobuttonItem_(this.defaultTask_, title, true));
+
+  for (var index = 0; index < this.tasks_.length; index++) {
+    var task = this.tasks_[index];
+    if (task != this.defaultTask_)
+      items.push(this.createCombobuttonItem_(task));
+  }
+
+  items.sort(function(a, b) {
+    return a.label.localeCompare(b.label);
+  });
+
+  return items;
 };
 
 /**
@@ -455,42 +509,26 @@ FileTasks.prototype.display_ = function(combobutton) {
  * @private
  */
 FileTasks.prototype.updateMenuItem_ = function() {
-  this.fileManager_.setDefaultActionMenuItem(this.defaultTask_);
-};
-
-/**
- * Returns a list of external tasks (i.e. not defined in file manager).
- * @param {function(Array.<Object>)} callback The callback.
- * @private
- */
-FileTasks.prototype.getExternals_ = function(callback) {
-  var externals = [];
-  var id = this.fileManager_.getExtensionId();
-  for (var index = 0; index < this.tasks_.length; index++) {
-    var task = this.tasks_[index];
-    var task_parts = task.taskId.split('|');
-    if (task_parts[0] != id) {
-      // Add callback, so gallery can execute the task.
-      task.execute = this.execute_.bind(this, task.taskId);
-      externals.push(task);
-    }
-  }
-  callback(externals);
+  this.fileManager_.updateContextMenuActionItems(this.defaultTask_,
+      this.tasks_.length > 1);
 };
 
 /**
  * Creates combobutton item based on task.
  * @param {Object} task Task to convert.
  * @param {string=} opt_title Title.
+ * @param {boolean} opt_bold Make a menu item bold.
  * @return {Object} Item appendable to combobutton drop-down list.
  * @private
  */
-FileTasks.prototype.createCombobuttonItem_ = function(task, opt_title) {
+FileTasks.prototype.createCombobuttonItem_ = function(task, opt_title,
+                                                      opt_bold) {
   return {
     label: opt_title || task.title,
     iconUrl: task.iconUrl,
     iconType: task.iconType,
-    task: task
+    task: task,
+    bold: opt_bold || false
   };
 };
 
@@ -513,9 +551,33 @@ FileTasks.decorate = function(method) {
   };
 };
 
+/**
+ * Shows modal action picker dialog with currently available list of tasks.
+ *
+ * @param {DefaultActionDialog} actionDialog Action dialog to show and update.
+ * @param {String} title Title to use.
+ * @param {String} message Message to use.
+ * @param {function(Object)} onSuccess Callback to pass selected task.
+ */
+FileTasks.prototype.showTaskPicker = function(actionDialog, title, message,
+                                              onSuccess) {
+  var items = this.createItems_();
+
+  var defaultIdx = 0;
+  for (var j = 0; j < items.length; j++) {
+    if (items[j].task.taskId == this.defaultTask_.taskId)
+      defaultIdx = j;
+  }
+
+  actionDialog.show(
+      title,
+      message,
+      items, defaultIdx,
+      onSuccess);
+};
+
 FileTasks.decorate('display');
 FileTasks.decorate('updateMenuItem');
 FileTasks.decorate('execute');
 FileTasks.decorate('executeDefault');
-FileTasks.decorate('getExternals');
 

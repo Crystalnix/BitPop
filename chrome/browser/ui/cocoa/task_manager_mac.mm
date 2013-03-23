@@ -54,6 +54,8 @@ const struct ColumnWidth {
       arraysize("2000.0K (2000.0 live)") * kCharWidth, -1 },
   { IDS_TASK_MANAGER_FPS_COLUMN,
       arraysize("100") * kCharWidth, -1 },
+  { IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN,
+      arraysize("2000.0K") * kCharWidth, -1 },
   { IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN,
       arraysize("800 kB") * kCharWidth, -1 },
   { IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN,
@@ -298,13 +300,14 @@ class SortHelper {
   [self addColumnWithId:IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_CPU_COLUMN visible:YES];
   [self addColumnWithId:IDS_TASK_MANAGER_NET_COLUMN visible:YES];
-  [self addColumnWithId:IDS_TASK_MANAGER_PROCESS_ID_COLUMN visible:NO];
+  [self addColumnWithId:IDS_TASK_MANAGER_PROCESS_ID_COLUMN visible:YES];
   [self addColumnWithId:IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN
                 visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN
                 visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_FPS_COLUMN visible:YES];
+  [self addColumnWithId:IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN
                 visible:NO];
@@ -487,6 +490,9 @@ class SortHelper {
 
     case IDS_TASK_MANAGER_FPS_COLUMN:
       return base::SysUTF16ToNSString(model_->GetResourceFPS(row));
+
+    case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN:
+      return base::SysUTF16ToNSString(model_->GetResourceVideoMemory(row));
 
     case IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN:
       if (!model_->IsResourceFirstInGroup(row))

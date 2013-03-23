@@ -34,6 +34,7 @@
 #include "chrome/browser/component_updater/recovery_component_installer.h"
 #include "chrome/browser/component_updater/swiftshader_component_installer.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
+#include "chrome/browser/extensions/startup_helper.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/net/crl_set_fetcher.h"
@@ -68,6 +69,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/profile_startup.h"
 #endif
 
@@ -95,18 +98,12 @@ void RegisterComponentsForUpdate(const CommandLine& command_line) {
   // file IO to know you existing component version.
   RegisterRecoveryComponent(cus, g_browser_process->local_state());
   RegisterPepperFlashComponent(cus);
-  RegisterNPAPIFlashComponent(cus);
   RegisterSwiftShaderComponent(cus);
 
   // CRLSetFetcher attempts to load a CRL set from either the local disk or
   // network.
   if (!command_line.HasSwitch(switches::kDisableCRLSets))
     g_browser_process->crl_set_fetcher()->StartInitialLoad(cus);
-
-  // This developer version of Pnacl should only be installed for developers.
-  if (command_line.HasSwitch(switches::kEnablePnacl)) {
-    RegisterPnaclComponent(cus);
-  }
 
   cus->Start();
 }
@@ -238,12 +235,22 @@ SessionStartupPref StartupBrowserCreator::GetSessionStartupPref(
   PrefService* prefs = profile->GetPrefs();
   SessionStartupPref pref = SessionStartupPref::GetStartupPref(prefs);
 
+  // IsChromeFirstRun() looks for a sentinel file to determine whether the user
+  // is starting Chrome for the first time. On Chrome OS, the sentinel is stored
+  // in a location shared by all users and the check is meaningless. Query the
+  // UserManager instead to determine whether the user is new.
+#if defined(OS_CHROMEOS)
+  const bool is_first_run = chromeos::UserManager::Get()->IsCurrentUserNew();
+#else
+  const bool is_first_run = first_run::IsChromeFirstRun();
+#endif
+
   // The pref has an OS-dependent default value. For the first run only, this
   // default is overridden with SessionStartupPref::DEFAULT so that first run
   // behavior (sync promo, welcome page) is consistently invoked.
   // This applies only if the pref is still at its default and has not been
   // set by the user, managed prefs or policy.
-  if (first_run::IsChromeFirstRun() && SessionStartupPref::TypeIsDefault(prefs))
+  if (is_first_run && SessionStartupPref::TypeIsDefault(prefs))
     pref.type = SessionStartupPref::DEFAULT;
 
   if (command_line.HasSwitch(switches::kRestoreLastSession) ||
@@ -257,6 +264,17 @@ SessionStartupPref StartupBrowserCreator::GetSessionStartupPref(
     // default launch behavior.
     pref.type = SessionStartupPref::DEFAULT;
   }
+
+#if defined(OS_CHROMEOS)
+  // Kiosk/Retail mode has no profile to restore and fails to open the tabs
+  // specified in the startup_urls policy if we try to restore the non-existent
+  // session which is the default for ChromeOS in general.
+  if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled()) {
+    DCHECK(pref.type == SessionStartupPref::LAST);
+    pref.type = SessionStartupPref::DEFAULT;
+  }
+#endif  // OS_CHROMEOS
+
   return pref;
 }
 
@@ -381,6 +399,15 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
       return false;
   }
 
+  if (command_line.HasSwitch(switches::kSilentLaunch)) {
+    std::vector<GURL> urls_to_open = GetURLsFromCommandLine(
+        command_line, cur_dir, last_used_profile);
+    size_t expected_tabs =
+        std::max(static_cast<int>(urls_to_open.size()), 0);
+    if (expected_tabs == 0)
+      silent_launch = true;
+  }
+
   if (command_line.HasSwitch(switches::kAutomationClientChannelID)) {
     std::string automation_channel_id = command_line.GetSwitchValueASCII(
         switches::kAutomationClientChannelID);
@@ -436,6 +463,14 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     std::string allowed_ports =
         command_line.GetSwitchValueASCII(switches::kExplicitlyAllowedPorts);
     net::SetExplicitlyAllowedPorts(allowed_ports);
+  }
+
+  if (command_line.HasSwitch(switches::kInstallFromWebstore)) {
+    extensions::StartupHelper helper;
+    helper.InstallFromWebstore(command_line, last_used_profile);
+    // Nothing more needs to be done, so return false to stop launching and
+    // quit.
+    return false;
   }
 
 #if defined(OS_CHROMEOS)
@@ -562,6 +597,6 @@ void StartupBrowserCreator::ProcessCommandLineAlreadyRunning(
 }
 
 bool HasPendingUncleanExit(Profile* profile) {
-  return !profile->DidLastSessionExitCleanly() &&
-    !profile_launch_observer.Get().HasBeenLaunched(profile);
+  return profile->GetLastSessionExitType() == Profile::EXIT_CRASHED &&
+      !profile_launch_observer.Get().HasBeenLaunched(profile);
 }

@@ -7,7 +7,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/managed_mode.h"
+#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/profile_info_util.h"
@@ -133,10 +133,10 @@ void AvatarMenuButton::OnPaint(gfx::Canvas* canvas) {
       button_icon_.height(), dst_x, dst_y, dst_width, dst_height, false);
 }
 
-bool AvatarMenuButton::HitTest(const gfx::Point& point) const {
+bool AvatarMenuButton::HitTestRect(const gfx::Rect& rect) const {
   if (incognito_)
     return false;
-  return views::MenuButton::HitTest(point);
+  return views::MenuButton::HitTestRect(rect);
 }
 
 void AvatarMenuButton::SetAvatarIcon(const gfx::Image& icon,

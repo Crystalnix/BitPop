@@ -7,25 +7,24 @@
 #include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "base/scoped_temp_dir.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/in_process_webkit/indexed_db_context_impl.h"
 #include "content/browser/in_process_webkit/indexed_db_quota_client.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/database/database_util.h"
-
-using content::BrowserContext;
-using content::BrowserThread;
 
 // Declared to shorten the line lengths.
 static const quota::StorageType kTemp = quota::kStorageTypeTemporary;
 static const quota::StorageType kPerm = quota::kStorageTypePersistent;
 
 using namespace webkit_database;
-using content::BrowserThreadImpl;
+
+namespace content {
 
 // Base class for our test fixtures.
 class IndexedDBQuotaClientTest : public testing::Test {
@@ -47,10 +46,11 @@ class IndexedDBQuotaClientTest : public testing::Test {
         file_user_blocking_thread_(
             BrowserThread::FILE_USER_BLOCKING, &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_) {
-    browser_context_.reset(new content::TestBrowserContext());
+    browser_context_.reset(new TestBrowserContext());
     idb_context_ = static_cast<IndexedDBContextImpl*>(
-        BrowserContext::GetIndexedDBContext(browser_context_.get()));
-    message_loop_.RunAllPending();
+        BrowserContext::GetDefaultStoragePartition(browser_context_.get())->
+            GetIndexedDBContext());
+    message_loop_.RunUntilIdle();
     setup_temp_dir();
   }
   void setup_temp_dir() {
@@ -68,7 +68,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
     // doesn't outlive BrowserThread::WEBKIT_DEPRECATED.
     idb_context_ = NULL;
     browser_context_.reset();
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
   }
 
   int64 GetOriginUsage(
@@ -80,7 +80,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
         origin, type,
         base::Bind(&IndexedDBQuotaClientTest::OnGetOriginUsageComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     EXPECT_GT(usage_, -1);
     return usage_;
   }
@@ -94,7 +94,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
         type,
         base::Bind(&IndexedDBQuotaClientTest::OnGetOriginsComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return origins_;
   }
 
@@ -108,7 +108,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
         type, host,
         base::Bind(&IndexedDBQuotaClientTest::OnGetOriginsComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return origins_;
   }
 
@@ -119,7 +119,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
         origin_url, kTemp,
         base::Bind(&IndexedDBQuotaClientTest::OnDeleteOriginComplete,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return delete_status_;
   }
 
@@ -157,7 +157,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
     delete_status_ = code;
   }
 
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   int64 usage_;
   std::set<GURL> origins_;
   quota::StorageType type_;
@@ -169,10 +169,9 @@ class IndexedDBQuotaClientTest : public testing::Test {
   BrowserThreadImpl file_thread_;
   BrowserThreadImpl file_user_blocking_thread_;
   BrowserThreadImpl io_thread_;
-  scoped_ptr<content::TestBrowserContext> browser_context_;
+  scoped_ptr<TestBrowserContext> browser_context_;
   quota::QuotaStatusCode delete_status_;
 };
-
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginUsage) {
   IndexedDBQuotaClient client(
@@ -250,3 +249,5 @@ TEST_F(IndexedDBQuotaClientTest, DeleteOrigin) {
   EXPECT_EQ(0, GetOriginUsage(&client, kOriginA, kTemp));
   EXPECT_EQ(50, GetOriginUsage(&client, kOriginB, kTemp));
 }
+
+}  // namespace content

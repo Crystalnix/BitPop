@@ -17,6 +17,8 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
 
+#include "base/debug/trace_event.h"
+
 namespace {
 
 struct ScaleFactorMap {
@@ -33,9 +35,11 @@ const ScaleFactorMap kScaleFactorMap[] = {
 
 namespace web_ui_util {
 
-std::string GetImageDataUrl(const gfx::ImageSkia& image) {
+std::string GetBitmapDataUrl(const SkBitmap& bitmap) {
+  TRACE_EVENT2("oobe", "GetImageDataUrl",
+               "width", bitmap.width(), "height", bitmap.height());
   std::vector<unsigned char> output;
-  gfx::PNGCodec::EncodeBGRASkBitmap(*image.bitmap(), false, &output);
+  gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false, &output);
   std::string str_url;
   str_url.insert(str_url.end(), output.begin(), output.end());
 
@@ -44,11 +48,11 @@ std::string GetImageDataUrl(const gfx::ImageSkia& image) {
   return str_url;
 }
 
-std::string GetImageDataUrlFromResource(int res) {
+std::string GetBitmapDataUrlFromResource(int res) {
   // Load resource icon and covert to base64 encoded data url
   base::RefCountedStaticMemory* icon_data =
-      ResourceBundle::GetSharedInstance().LoadDataResourceBytes(res,
-          ui::SCALE_FACTOR_100P);
+      ResourceBundle::GetSharedInstance().LoadDataResourceBytesForScale(
+          res, ui::SCALE_FACTOR_100P);
   if (!icon_data)
     return std::string();
   scoped_refptr<base::RefCountedMemory> raw_icon(icon_data);
@@ -79,12 +83,16 @@ WindowOpenDisposition GetDispositionFromClick(const ListValue* args,
 
 }
 
-ui::ScaleFactor ParseScaleFactor(const base::StringPiece& identifier) {
+bool ParseScaleFactor(const base::StringPiece& identifier,
+                      ui::ScaleFactor* scale_factor) {
+  *scale_factor = ui::SCALE_FACTOR_100P;
   for (size_t i = 0; i < arraysize(kScaleFactorMap); i++) {
-    if (identifier == kScaleFactorMap[i].name)
-      return kScaleFactorMap[i].scale_factor;
+    if (identifier == kScaleFactorMap[i].name) {
+      *scale_factor = kScaleFactorMap[i].scale_factor;
+      return true;
+    }
   }
-  return ui::SCALE_FACTOR_NONE;
+  return false;
 }
 
 void ParsePathAndScale(const GURL& url,
@@ -100,13 +108,16 @@ void ParsePathAndScale(const GURL& url,
   std::size_t pos = path->rfind('@');
   if (pos != std::string::npos) {
     base::StringPiece stripped_path(*path);
-    if (scale_factor) {
-      *scale_factor = ParseScaleFactor(stripped_path.substr(
-          pos + 1, stripped_path.length() - pos - 1));
+    ui::ScaleFactor factor;
+
+    if (ParseScaleFactor(stripped_path.substr(
+            pos + 1, stripped_path.length() - pos - 1), &factor)) {
+      // Strip scale factor specification from path.
+      stripped_path.remove_suffix(stripped_path.length() - pos);
+      stripped_path.CopyToString(path);
     }
-    // Strip scale factor specification from path.
-    stripped_path.remove_suffix(stripped_path.length() - pos);
-    stripped_path.CopyToString(path);
+    if (scale_factor)
+      *scale_factor = factor;
   }
 }
 

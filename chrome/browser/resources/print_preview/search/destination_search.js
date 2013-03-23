@@ -118,8 +118,9 @@ cr.define('print_preview', function() {
         this.getElement().classList.remove('transparent');
         var promoEl = this.getChildElement('.cloudprint-promo');
         if (getIsVisible(promoEl)) {
-          this.metrics_.increment(
-              print_preview.Metrics.Bucket.CLOUDPRINT_PROMO_SHOWN);
+          this.metrics_.incrementDestinationSearchBucket(
+              print_preview.Metrics.DestinationSearchBucket.
+                  CLOUDPRINT_PROMO_SHOWN);
         }
         this.reflowLists_();
       } else {
@@ -147,8 +148,9 @@ cr.define('print_preview', function() {
     showCloudPrintPromo: function() {
       setIsVisible(this.getChildElement('.cloudprint-promo'), true);
       if (this.getIsVisible()) {
-        this.metrics_.increment(
-            print_preview.Metrics.Bucket.CLOUDPRINT_PROMO_SHOWN);
+        this.metrics_.incrementDestinationSearchBucket(
+            print_preview.Metrics.DestinationSearchBucket.
+                CLOUDPRINT_PROMO_SHOWN);
       }
       this.reflowLists_();
     },
@@ -187,6 +189,14 @@ cr.define('print_preview', function() {
           this.destinationStore_,
           print_preview.DestinationStore.EventType.DESTINATION_SELECT,
           this.onDestinationStoreSelect_.bind(this));
+      this.tracker.add(
+          this.destinationStore_,
+          print_preview.DestinationStore.EventType.DESTINATION_SEARCH_STARTED,
+          this.updateThrobbers_.bind(this));
+      this.tracker.add(
+          this.destinationStore_,
+          print_preview.DestinationStore.EventType.DESTINATION_SEARCH_DONE,
+          this.updateThrobbers_.bind(this));
 
       this.tracker.add(
           this.localList_,
@@ -210,6 +220,8 @@ cr.define('print_preview', function() {
           this.onEmailChange_.bind(this));
 
       this.tracker.add(window, 'resize', this.onWindowResize_.bind(this));
+
+      this.updateThrobbers_();
 
       // Render any destinations already in the store.
       this.renderDestinations_();
@@ -329,6 +341,22 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Updates whether the throbbers for the various destination lists should be
+     * shown or hidden.
+     * @private
+     */
+    updateThrobbers_: function() {
+      this.localList_.setIsThrobberVisible(
+          this.destinationStore_.isLocalDestinationSearchInProgress);
+      this.cloudList_.setIsThrobberVisible(
+          this.destinationStore_.isCloudDestinationSearchInProgress);
+      this.recentList_.setIsThrobberVisible(
+          this.destinationStore_.isLocalDestinationSearchInProgress &&
+          this.destinationStore_.isCloudDestinationSearchInProgress);
+      this.reflowLists_();
+    },
+
+    /**
      * Called when a destination search should be executed. Filters the
      * destination lists with the given query.
      * @param {cr.Event} evt Contains the search query.
@@ -345,8 +373,8 @@ cr.define('print_preview', function() {
     onCloseClick_: function() {
       this.setIsVisible(false);
       this.resetSearch_();
-      this.metrics_.increment(
-          print_preview.Metrics.Bucket.DESTINATION_SELECTION_CANCELED);
+      this.metrics_.incrementDestinationSearchBucket(
+          print_preview.Metrics.DestinationSearchBucket.CANCELED);
     },
 
     /**
@@ -359,8 +387,8 @@ cr.define('print_preview', function() {
       this.setIsVisible(false);
       this.resetSearch_();
       this.destinationStore_.selectDestination(evt.destination);
-      this.metrics_.increment(
-          print_preview.Metrics.Bucket.DESTINATION_SELECTED);
+      this.metrics_.incrementDestinationSearchBucket(
+          print_preview.Metrics.DestinationSearchBucket.DESTINATION_SELECTED);
     },
 
     /**
@@ -417,7 +445,8 @@ cr.define('print_preview', function() {
      */
     onSignInActivated_: function() {
       cr.dispatchSimpleEvent(this, DestinationSearch.EventType.SIGN_IN);
-      this.metrics_.increment(print_preview.Metrics.Bucket.SIGNIN_TRIGGERED);
+      this.metrics_.incrementDestinationSearchBucket(
+          print_preview.Metrics.DestinationSearchBucket.SIGNIN_TRIGGERED);
     },
 
     /**

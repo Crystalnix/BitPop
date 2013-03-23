@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -113,6 +114,15 @@ FileSelectHelper::~FileSelectHelper() {
     iter->second->lister_.reset();
     delete iter->second;
   }
+}
+
+void FileSelectHelper::DirectoryListerDispatchDelegate::OnListFile(
+    const net::DirectoryLister::DirectoryListerData& data) {
+  parent_->OnListFile(id_, data);
+}
+
+void FileSelectHelper::DirectoryListerDispatchDelegate::OnListDone(int error) {
+  parent_->OnListDone(id_, error);
 }
 
 void FileSelectHelper::FileSelected(const FilePath& path,
@@ -236,15 +246,18 @@ void FileSelectHelper::OnListDone(int id, int error) {
   EnumerateDirectoryEnd();
 }
 
-ui::SelectFileDialog::FileTypeInfo*
+scoped_ptr<ui::SelectFileDialog::FileTypeInfo>
 FileSelectHelper::GetFileTypesFromAcceptType(
     const std::vector<string16>& accept_types) {
+  scoped_ptr<ui::SelectFileDialog::FileTypeInfo> base_file_type(
+      new ui::SelectFileDialog::FileTypeInfo());
+  base_file_type->support_gdata = true;
   if (accept_types.empty())
-    return NULL;
+    return base_file_type.Pass();
 
   // Create FileTypeInfo and pre-allocate for the first extension list.
   scoped_ptr<ui::SelectFileDialog::FileTypeInfo> file_type(
-      new ui::SelectFileDialog::FileTypeInfo());
+      new ui::SelectFileDialog::FileTypeInfo(*base_file_type));
   file_type->include_all_files = true;
   file_type->extensions.resize(1);
   std::vector<FilePath::StringType>* extensions = &file_type->extensions.back();
@@ -263,16 +276,14 @@ FileSelectHelper::GetFileTypesFromAcceptType(
       // so we just have to add it to the list.
       FilePath::StringType ext(ascii_type.begin(), ascii_type.end());
       extensions->push_back(ext.substr(1));
-    } else if (ascii_type == "image/*") {
-      description_id = IDS_IMAGE_FILES;
-      net::GetImageExtensions(extensions);
-    } else if (ascii_type == "audio/*") {
-      description_id = IDS_AUDIO_FILES;
-      net::GetAudioExtensions(extensions);
-    } else if (ascii_type == "video/*") {
-      description_id = IDS_VIDEO_FILES;
-      net::GetVideoExtensions(extensions);
     } else {
+      if (ascii_type == "image/*")
+        description_id = IDS_IMAGE_FILES;
+      else if (ascii_type == "audio/*")
+        description_id = IDS_AUDIO_FILES;
+      else if (ascii_type == "video/*")
+        description_id = IDS_VIDEO_FILES;
+
       net::GetExtensionsForMimeType(ascii_type, extensions);
     }
 
@@ -282,7 +293,7 @@ FileSelectHelper::GetFileTypesFromAcceptType(
 
   // If no valid extension is added, bail out.
   if (valid_type_count == 0)
-    return NULL;
+    return base_file_type.Pass();
 
   // Use a generic description "Custom Files" if either of the following is
   // true:
@@ -300,7 +311,7 @@ FileSelectHelper::GetFileTypesFromAcceptType(
         l10n_util::GetStringUTF16(description_id));
   }
 
-  return file_type.release();
+  return file_type.Pass();
 }
 
 // static
@@ -354,8 +365,7 @@ void FileSelectHelper::RunFileChooser(RenderViewHost* render_view_host,
 
 void FileSelectHelper::RunFileChooserOnFileThread(
     const FileChooserParams& params) {
-  select_file_types_.reset(
-      GetFileTypesFromAcceptType(params.accept_types));
+  select_file_types_ = GetFileTypesFromAcceptType(params.accept_types);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -392,23 +402,31 @@ void FileSelectHelper::RunFileChooserOnUIThread(
       dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_FILE;
       NOTREACHED();
   }
-  FilePath default_file_name = params.default_file_name;
-  if (default_file_name.empty())
-    default_file_name = profile_->last_selected_directory();
+
+  FilePath default_file_name = params.default_file_name.IsAbsolute() ?
+      params.default_file_name :
+      profile_->last_selected_directory().Append(params.default_file_name);
 
   gfx::NativeWindow owning_window =
       platform_util::GetTopLevel(render_view_host_->GetView()->GetNativeView());
+
+#if defined(OS_ANDROID)
+  // Android needs the original MIME types and an additional capture value.
+  std::vector<string16> accept_types(params.accept_types);
+  accept_types.push_back(params.capture);
+#endif
 
   select_file_dialog_->SelectFile(
       dialog_type_,
       params.title,
       default_file_name,
       select_file_types_.get(),
-      select_file_types_.get() ? 1 : 0,  // 1-based index.
+      select_file_types_.get() && !select_file_types_->extensions.empty() ?
+          1 : 0,  // 1-based index of default extension to show.
       FILE_PATH_LITERAL(""),
       owning_window,
 #if defined(OS_ANDROID)
-      const_cast<content::FileChooserParams*>(&params));
+      &accept_types);
 #else
       NULL);
 #endif

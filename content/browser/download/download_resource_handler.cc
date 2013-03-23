@@ -13,14 +13,13 @@
 #include "base/metrics/stats_counters.h"
 #include "base/stringprintf.h"
 #include "content/browser/download/download_create_info.h"
-#include "content/browser/download/download_file_manager.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_request_handle.h"
 #include "content/browser/download/byte_stream.h"
 #include "content/browser/download/download_stats.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
-#include "content/browser/renderer_host/resource_request_info_impl.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/loader/resource_request_info_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
@@ -31,33 +30,27 @@
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_context.h"
 
-using content::BrowserThread;
-using content::DownloadId;
-using content::DownloadItem;
-using content::DownloadManager;
-using content::ResourceDispatcherHostImpl;
-using content::ResourceRequestInfoImpl;
-
+namespace content {
 namespace {
 
 static const int kDownloadByteStreamSize = 100 * 1024;
 
 void CallStartedCBOnUIThread(
     const DownloadResourceHandler::OnStartedCallback& started_cb,
-    DownloadId id,
+    DownloadItem* item,
     net::Error error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (started_cb.is_null())
     return;
-  started_cb.Run(id, error);
+  started_cb.Run(item, error);
 }
 
 // Static function in order to prevent any accidental accesses to
 // DownloadResourceHandler members from the UI thread.
 static void StartOnUIThread(
     scoped_ptr<DownloadCreateInfo> info,
-    scoped_ptr<content::ByteStreamReader> stream,
+    scoped_ptr<ByteStreamReader> stream,
     const DownloadResourceHandler::OnStartedCallback& started_cb) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -66,15 +59,15 @@ static void StartOnUIThread(
     // NULL in unittests or if the page closed right after starting the
     // download.
     if (!started_cb.is_null())
-      started_cb.Run(DownloadId(), net::ERR_ACCESS_DENIED);
+      started_cb.Run(NULL, net::ERR_ACCESS_DENIED);
     return;
   }
 
-  DownloadId download_id =
-      download_manager->StartDownload(info.Pass(), stream.Pass());
+  DownloadItem* item = download_manager->StartDownload(
+      info.Pass(), stream.Pass());
 
   if (!started_cb.is_null())
-    started_cb.Run(download_id, net::OK);
+    started_cb.Run(item, net::OK);
 }
 
 }  // namespace
@@ -82,12 +75,12 @@ static void StartOnUIThread(
 DownloadResourceHandler::DownloadResourceHandler(
     net::URLRequest* request,
     const DownloadResourceHandler::OnStartedCallback& started_cb,
-    const content::DownloadSaveInfo& save_info)
+    scoped_ptr<DownloadSaveInfo> save_info)
     : render_view_id_(0),               // Actually initialized below.
       content_length_(0),
       request_(request),
       started_cb_(started_cb),
-      save_info_(save_info),
+      save_info_(save_info.Pass()),
       last_buffer_size_(0),
       bytes_read_(0),
       pause_count_(0),
@@ -97,7 +90,7 @@ DownloadResourceHandler::DownloadResourceHandler(
   global_id_ = info->GetGlobalRequestID();
   render_view_id_ = info->GetRouteID();
 
-  download_stats::RecordDownloadCount(download_stats::UNTHROTTLED_COUNT);
+  RecordDownloadCount(UNTHROTTLED_COUNT);
 }
 
 bool DownloadResourceHandler::OnUploadProgress(int request_id,
@@ -110,7 +103,7 @@ bool DownloadResourceHandler::OnUploadProgress(int request_id,
 bool DownloadResourceHandler::OnRequestRedirected(
     int request_id,
     const GURL& url,
-    content::ResourceResponse* response,
+    ResourceResponse* response,
     bool* defer) {
   return true;
 }
@@ -118,7 +111,7 @@ bool DownloadResourceHandler::OnRequestRedirected(
 // Send the download creation information to the download thread.
 bool DownloadResourceHandler::OnResponseStarted(
     int request_id,
-    content::ResourceResponse* response,
+    ResourceResponse* response,
     bool* defer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   // There can be only one (call)
@@ -143,12 +136,12 @@ bool DownloadResourceHandler::OnResponseStarted(
 
   // Deleted in DownloadManager.
   scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo(
-      base::Time::Now(), 0, content_length_, DownloadItem::IN_PROGRESS,
+      base::Time::Now(), content_length_,
       request_->net_log(), request_info->HasUserGesture(),
-      request_info->transition_type()));
+      request_info->GetPageTransition()));
 
   // Create the ByteStream for sending data to the download sink.
-  scoped_ptr<content::ByteStreamReader> stream_reader;
+  scoped_ptr<ByteStreamReader> stream_reader;
   CreateByteStream(
       base::MessageLoopProxy::current(),
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
@@ -159,14 +152,13 @@ bool DownloadResourceHandler::OnResponseStarted(
   info->url_chain = request_->url_chain();
   info->referrer_url = GURL(request_->referrer());
   info->start_time = base::Time::Now();
-  info->received_bytes = save_info_.offset;
   info->total_bytes = content_length_;
-  info->state = DownloadItem::IN_PROGRESS;
   info->has_user_gesture = request_info->HasUserGesture();
   info->content_disposition = content_disposition_;
   info->mime_type = response->head.mime_type;
   info->remote_address = request_->GetSocketAddress().host();
-  download_stats::RecordDownloadMimeType(info->mime_type);
+  RecordDownloadMimeType(info->mime_type);
+  RecordDownloadContentDisposition(info->content_disposition);
 
   info->request_handle =
       DownloadRequestHandle(AsWeakPtr(), global_id_.child_id,
@@ -195,10 +187,7 @@ bool DownloadResourceHandler::OnResponseStarted(
     accept_ranges_ = "";
   }
 
-  info->prompt_user_for_save_location =
-      save_info_.prompt_for_save_location && save_info_.file_path.empty();
-  info->referrer_charset = request_->context()->referrer_charset();
-  info->save_info = save_info_;
+  info->save_info = save_info_.Pass();
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -215,13 +204,14 @@ bool DownloadResourceHandler::OnResponseStarted(
   return true;
 }
 
-void DownloadResourceHandler::CallStartedCB(DownloadId id, net::Error error) {
+void DownloadResourceHandler::CallStartedCB(
+    DownloadItem* item, net::Error error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (started_cb_.is_null())
     return;
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&CallStartedCBOnUIThread, started_cb_, id, error));
+      base::Bind(&CallStartedCBOnUIThread, started_cb_, item, error));
   started_cb_.Reset();
 }
 
@@ -262,7 +252,7 @@ bool DownloadResourceHandler::OnReadCompleted(int request_id, int bytes_read,
 
     double actual_bandwidth = (bytes_read)/seconds_since_last_read;
     double potential_bandwidth = last_buffer_size_/seconds_since_last_read;
-    download_stats::RecordBandwidth(actual_bandwidth, potential_bandwidth);
+    RecordBandwidth(actual_bandwidth, potential_bandwidth);
   }
   last_read_time_ = now;
 
@@ -299,8 +289,15 @@ bool DownloadResourceHandler::OnResponseCompleted(
   int response_code = status.is_success() ? request_->GetResponseCode() : 0;
 
   net::Error error_code = net::OK;
-  if (status.status() == net::URLRequestStatus::FAILED)
+  if (status.status() == net::URLRequestStatus::FAILED ||
+      // Note cancels as failures too.
+      status.status() == net::URLRequestStatus::CANCELED) {
     error_code = static_cast<net::Error>(status.error());  // Normal case.
+    // Make sure that at least the fact of failure comes through.
+    if (error_code == net::OK)
+      error_code = net::ERR_FAILED;
+  }
+
   // ERR_CONTENT_LENGTH_MISMATCH and ERR_INCOMPLETE_CHUNKED_ENCODING are
   // allowed since a number of servers in the wild close the connection too
   // early by mistake. Other browsers - IE9, Firefox 11.0, and Safari 5.1.4 -
@@ -309,46 +306,60 @@ bool DownloadResourceHandler::OnResponseCompleted(
       error_code == net::ERR_INCOMPLETE_CHUNKED_ENCODING) {
     error_code = net::OK;
   }
-  content::DownloadInterruptReason reason =
-      content::ConvertNetErrorToInterruptReason(
-        error_code, content::DOWNLOAD_INTERRUPT_FROM_NETWORK);
+  DownloadInterruptReason reason =
+      ConvertNetErrorToInterruptReason(
+        error_code, DOWNLOAD_INTERRUPT_FROM_NETWORK);
 
-  if ((status.status() == net::URLRequestStatus::CANCELED) &&
-      (status.error() == net::ERR_ABORTED)) {
+  if (status.status() == net::URLRequestStatus::CANCELED &&
+      status.error() == net::ERR_ABORTED) {
+    // CANCELED + ERR_ABORTED == something outside of the network
+    // stack cancelled the request.  There aren't that many things that
+    // could do this to a download request (whose lifetime is separated from
+    // the tab from which it came).  We map this to USER_CANCELLED as the
+    // case we know about (system suspend because of laptop close) corresponds
+    // to a user action.
     // TODO(ahendrickson) -- Find a better set of codes to use here, as
     // CANCELED/ERR_ABORTED can occur for reasons other than user cancel.
-    reason = content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED;
+    reason = DOWNLOAD_INTERRUPT_REASON_USER_CANCELED;
   }
 
   if (status.is_success()) {
     if (response_code >= 400) {
       switch(response_code) {
         case 404:  // File Not Found.
-          reason = content::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
+          reason = DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
           break;
         case 416:  // Range Not Satisfiable.
-          reason = content::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE;
+          reason = DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE;
           break;
         case 412:  // Precondition Failed.
-          reason = content::DOWNLOAD_INTERRUPT_REASON_SERVER_PRECONDITION;
+          reason = DOWNLOAD_INTERRUPT_REASON_SERVER_PRECONDITION;
           break;
         default:
-          reason = content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED;
+          reason = DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED;
           break;
       }
     }
   }
 
-  download_stats::RecordAcceptsRanges(accept_ranges_, bytes_read_);
-  download_stats::RecordNetworkBlockage(
+  RecordAcceptsRanges(accept_ranges_, bytes_read_);
+  RecordNetworkBlockage(
       base::TimeTicks::Now() - download_start_time_, total_pause_time_);
 
-  CallStartedCB(DownloadId(), error_code);
+  CallStartedCB(NULL, error_code);
 
   // Send the info down the stream.  Conditional is in case we get
   // OnResponseCompleted without OnResponseStarted.
   if (stream_writer_.get())
     stream_writer_->Close(reason);
+
+  // If the error mapped to something unknown, record it so that
+  // we can drill down.
+  if (reason == DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED) {
+    UMA_HISTOGRAM_CUSTOM_ENUMERATION("Download.MapErrorNetworkFailed",
+                                     std::abs(status.error()),
+                                     net::GetAllErrorCodesForUma());
+  }
 
   stream_writer_.reset();  // We no longer need the stream.
   read_buffer_ = NULL;
@@ -415,15 +426,13 @@ std::string DownloadResourceHandler::DebugString() const {
                             " request_id = " "%d"
                             " }"
                             " render_view_id_ = " "%d"
-                            " save_info_.file_path = \"%" PRFilePath "\""
                             " }",
                             request_ ?
                                 request_->url().spec().c_str() :
                                 "<NULL request>",
                             global_id_.child_id,
                             global_id_.request_id,
-                            render_view_id_,
-                            save_info_.file_path.value().c_str());
+                            render_view_id_);
 }
 
 DownloadResourceHandler::~DownloadResourceHandler() {
@@ -432,7 +441,7 @@ DownloadResourceHandler::~DownloadResourceHandler() {
   // This won't do anything if the callback was called before.
   // If it goes through, it will likely be because OnWillStart() returned
   // false somewhere in the chain of resource handlers.
-  CallStartedCB(DownloadId(), net::ERR_ACCESS_DENIED);
+  CallStartedCB(NULL, net::ERR_ACCESS_DENIED);
 
   // Remove output stream callback if a stream exists.
   if (stream_writer_.get())
@@ -441,3 +450,5 @@ DownloadResourceHandler::~DownloadResourceHandler() {
   UMA_HISTOGRAM_TIMES("SB2.DownloadDuration",
                       base::TimeTicks::Now() - download_start_time_);
 }
+
+}  // namespace content

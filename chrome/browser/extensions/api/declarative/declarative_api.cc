@@ -20,22 +20,6 @@ namespace AddRules = extensions::api::events::Event::AddRules;
 namespace GetRules = extensions::api::events::Event::GetRules;
 namespace RemoveRules = extensions::api::events::Event::RemoveRules;
 
-namespace {
-
-// Adds all entries from |list| to |out|. Assumes that all entries of |list|
-// are strings. Returns true if successful.
-bool AddAllStringValues(ListValue* list, std::vector<std::string>* out) {
-  for (ListValue::iterator i = list->begin(); i != list->end(); ++i) {
-    std::string value;
-    if (!(*i)->GetAsString(&value))
-      return false;
-    out->push_back(value);
-  }
-  return true;
-}
-
-}  // namespace
-
 namespace extensions {
 
 RulesFunction::RulesFunction() : rules_registry_(NULL) {}
@@ -104,7 +88,7 @@ bool RemoveRulesFunction::RunImplOnCorrectThread() {
 }
 
 bool GetRulesFunction::RunImplOnCorrectThread() {
-  scoped_ptr<RemoveRules::Params> params(RemoveRules::Params::Create(*args_));
+  scoped_ptr<GetRules::Params> params(GetRules::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   std::vector<linked_ptr<Rule> > rules;

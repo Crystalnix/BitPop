@@ -14,6 +14,7 @@
 namespace chrome {
 class BookmarkBarInstructionsDelegate;
 }
+
 namespace views {
 class Label;
 class Link;

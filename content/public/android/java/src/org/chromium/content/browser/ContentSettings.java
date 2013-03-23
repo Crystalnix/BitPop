@@ -5,6 +5,7 @@
 package org.chromium.content.browser;
 
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.webkit.WebSettings.PluginState;
 import android.webkit.WebView;
@@ -12,7 +13,6 @@ import android.webkit.WebView;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
-import org.chromium.content.common.CleanupReference;
 
 /**
  * Manages settings state for a ContentView. A ContentSettings instance is obtained
@@ -22,28 +22,26 @@ import org.chromium.content.common.CleanupReference;
  */
 @JNINamespace("content")
 public class ContentSettings {
+    // This enum corresponds to WebSettings.LayoutAlgorithm. We use our own to be
+    // able to extend it.
+    public enum LayoutAlgorithm {
+        NORMAL,
+        SINGLE_COLUMN,
+        NARROW_COLUMNS,
+        TEXT_AUTOSIZING,
+    }
+
     private static final String TAG = "ContentSettings";
 
     // This class must be created on the UI thread. Afterwards, it can be
     // used from any thread. Internally, the class uses a message queue
     // to call native code on the UI thread only.
 
+    // The native side of this object. Ownership is retained native-side by the WebContents
+    // instance that backs the associated ContentViewCore.
     private int mNativeContentSettings = 0;
 
     private ContentViewCore mContentViewCore;
-
-    private static final class DestroyRunnable implements Runnable {
-        private int mNativeContentSettings;
-        private DestroyRunnable(int nativeContentSettings) {
-            mNativeContentSettings = nativeContentSettings;
-        }
-        @Override
-        public void run() {
-            nativeDestroy(mNativeContentSettings);
-        }
-    }
-
-    private final CleanupReference mCleanupReference;
 
     // When ContentView is used in PERSONALITY_CHROME mode, settings can't
     // be modified through the ContentSettings instance.
@@ -54,14 +52,21 @@ public class ContentSettings {
     // Custom handler that queues messages to call native code on the UI thread.
     private final EventHandler mEventHandler;
 
+    // Protects access to settings fields.
+    private final Object mContentSettingsLock = new Object();
+
     private static final int MINIMUM_FONT_SIZE = 1;
     private static final int MAXIMUM_FONT_SIZE = 72;
 
     // Private settings so we don't have to go into native code to
-    // retrieve the values. After setXXX, sendSyncMessage() needs to be called.
+    // retrieve the values. After setXXX, mEventHandler.syncSettingsLocked() needs to be called.
     //
     // TODO(mnaganov): populate with the complete set of legacy WebView settings.
+    // Note: If adding a new setting to this class, make sure to add it to the initFrom()
+    // method defined below.
 
+    private LayoutAlgorithm mLayoutAlgorithm = LayoutAlgorithm.NARROW_COLUMNS;
+    private int mTextSizePercent = 100;
     private String mStandardFontFamily = "sans-serif";
     private String mFixedFontFamily = "monospace";
     private String mSansSerifFontFamily = "sans-serif";
@@ -76,16 +81,28 @@ public class ContentSettings {
     private int mDefaultFontSize = 16;
     private int mDefaultFixedFontSize = 13;
     private boolean mLoadsImagesAutomatically = true;
+    private boolean mImagesEnabled = true;
     private boolean mJavaScriptEnabled = false;
+    private boolean mAllowUniversalAccessFromFileURLs = false;
+    private boolean mAllowFileAccessFromFileURLs = false;
     private boolean mJavaScriptCanOpenWindowsAutomatically = false;
+    private boolean mSupportMultipleWindows = false;
     private PluginState mPluginState = PluginState.OFF;
+    private boolean mAppCacheEnabled = false;
     private boolean mDomStorageEnabled = false;
 
     // Not accessed by the native side.
-    private String mDefaultUserAgent = "";
+    private final String mDefaultUserAgent;
     private boolean mSupportZoom = true;
     private boolean mBuiltInZoomControls = false;
     private boolean mDisplayZoomControls = true;
+
+    // Protects access to settings global fields.
+    private static final Object sGlobalContentSettingsLock = new Object();
+    // For compatibility with the legacy WebView, we can only enable AppCache when the path is
+    // provided. However, we don't use the path, so we just check if we have received it from the
+    // client.
+    private static boolean sAppCachePathIsSet = false;
 
     // Class to handle messages to be processed on the UI thread.
     private class EventHandler {
@@ -100,36 +117,37 @@ public class ContentSettings {
 
         EventHandler() {
             mHandler = mContentViewCore.isPersonalityView() ?
-                    new Handler() {
+                    new Handler(Looper.getMainLooper()) {
                         @Override
                         public void handleMessage(Message msg) {
                             switch (msg.what) {
                                 case SYNC:
-                                    synchronized (ContentSettings.this) {
-                                        nativeSyncToNative(mNativeContentSettings);
+                                    synchronized (mContentSettingsLock) {
+                                        syncToNativeOnUiThread();
                                         mIsSyncMessagePending = false;
+                                        mContentSettingsLock.notifyAll();
                                     }
                                     break;
                                 case UPDATE_UA:
-                                    synchronized (mContentViewCore) {
+                                    if (mContentViewCore.isAlive()) {
                                         mContentViewCore.setAllUserAgentOverridesInHistory();
                                     }
                                     break;
                                 case UPDATE_MULTI_TOUCH:
-                                    synchronized (mContentViewCore) {
+                                    if (mContentViewCore.isAlive()) {
                                         mContentViewCore.updateMultiTouchZoomSupport();
                                     }
                                     break;
                             }
                         }
                     } :
-                    new Handler() {
+                    new Handler(Looper.getMainLooper()) {
                         @Override
                         public void handleMessage(Message msg) {
                             switch (msg.what) {
                                 case SYNC:
-                                    synchronized (ContentSettings.this) {
-                                        nativeSyncFromNative(mNativeContentSettings);
+                                    synchronized (mContentSettingsLock) {
+                                        syncFromNativeOnUiThread();
                                         mIsSyncMessagePending = false;
                                     }
                                     break;
@@ -138,15 +156,46 @@ public class ContentSettings {
                     };
         }
 
-        private synchronized void sendSyncMessage() {
-            mHandler.sendMessage(Message.obtain(null, SYNC));
+        private void syncSettingsLocked() {
+            assert Thread.holdsLock(mContentSettingsLock);
+            if (mNativeContentSettings == 0) return;
+            if (mContentViewCore.isPersonalityView()) {
+                if (Looper.myLooper() == mHandler.getLooper()) {
+                    syncToNativeOnUiThread();
+                } else {
+                    // We're being called on a background thread, so post a message.
+                    if (mIsSyncMessagePending) {
+                        return;
+                    }
+                    mIsSyncMessagePending = true;
+                    mHandler.sendMessage(Message.obtain(null, SYNC));
+                    // When used in PERSONALITY_VIEW mode, we must block
+                    // until the settings have been sync'd to native to
+                    // ensure that they have taken effect.
+                    try {
+                        while (mIsSyncMessagePending) {
+                            mContentSettingsLock.wait();
+                        }
+                    } catch (InterruptedException e) {}
+                }
+            } else {
+                if (mIsSyncMessagePending) {
+                    return;
+                }
+                mIsSyncMessagePending = true;
+                mHandler.sendMessage(Message.obtain(null, SYNC));
+            }
         }
 
-        private synchronized void sendUpdateUaMessage() {
+        private void sendUpdateUaMessageLocked() {
+            assert Thread.holdsLock(mContentSettingsLock);
+            if (mNativeContentSettings == 0) return;
             mHandler.sendMessage(Message.obtain(null, UPDATE_UA));
         }
 
-        private synchronized void sendUpdateMultiTouchMessage() {
+        private void sendUpdateMultiTouchMessageLocked() {
+            assert Thread.holdsLock(mContentSettingsLock);
+            if (mNativeContentSettings == 0) return;
             mHandler.sendMessage(Message.obtain(null, UPDATE_MULTI_TOUCH));
         }
     }
@@ -155,64 +204,81 @@ public class ContentSettings {
      * Package constructor to prevent clients from creating a new settings
      * instance. Must be called on the UI thread.
      */
-    ContentSettings(ContentViewCore contentViewCore, int nativeContentView) {
+    ContentSettings(ContentViewCore contentViewCore, int nativeContentView,
+            boolean isAccessFromFileURLsGrantedByDefault) {
         ThreadUtils.assertOnUiThread();
         mContentViewCore = contentViewCore;
         mCanModifySettings = mContentViewCore.isPersonalityView();
         mNativeContentSettings = nativeInit(nativeContentView, mCanModifySettings);
         assert mNativeContentSettings != 0;
-        mCleanupReference = new CleanupReference(this,
-                new DestroyRunnable(mNativeContentSettings));
+
+        if (isAccessFromFileURLsGrantedByDefault) {
+            mAllowUniversalAccessFromFileURLs = true;
+            mAllowFileAccessFromFileURLs = true;
+        }
 
         mEventHandler = new EventHandler();
         if (mCanModifySettings) {
             // PERSONALITY_VIEW
             mDefaultUserAgent = nativeGetDefaultUserAgent();
             mUserAgent = mDefaultUserAgent;
-            nativeSyncToNative(mNativeContentSettings);
+            syncToNativeOnUiThread();
         } else {
             // PERSONALITY_CHROME
             // Chrome has zooming enabled by default. These settings are not
             // set by the native code.
+            mDefaultUserAgent = ""; // Unused by PERSONALITY_CHROME but must be initialized.
             mBuiltInZoomControls = true;
             mDisplayZoomControls = false;
-            nativeSyncFromNative(mNativeContentSettings);
+            syncFromNativeOnUiThread();
         }
     }
 
     /**
-     * Destroys the native side of the ContentSettings. This ContentSettings object
-     * cannot be used after this method has been called. Should only be called
-     * when related ContentView is destroyed.
+     * Notification from the native side that it is being destroyed.
+     * @param nativeContentSettings the native instance that is going away.
      */
-    void destroy() {
-        mCleanupReference.cleanupNow();
+    @CalledByNative
+    private void onNativeContentSettingsDestroyed(int nativeContentSettings) {
+        assert mNativeContentSettings == nativeContentSettings;
         mNativeContentSettings = 0;
+    }
+
+    /**
+     * @returns the default User-Agent used by each ContentViewCore instance, i.e. unless
+     * overridden by {@link #setUserAgentString()}
+     */
+    public static String getDefaultUserAgent() {
+        return nativeGetDefaultUserAgent();
     }
 
     /**
      * Set the WebView's user-agent string. If the string "ua" is null or empty,
      * it will use the system default user-agent string.
      */
-    public synchronized void setUserAgentString(String ua) {
+    public void setUserAgentString(String ua) {
         assert mCanModifySettings;
-        final String oldUserAgent = mUserAgent;
-        if (ua == null || ua.length() == 0) {
-            mUserAgent = mDefaultUserAgent;
-        } else {
-            mUserAgent = ua;
-        }
-        if (!oldUserAgent.equals(mUserAgent)) {
-            mEventHandler.sendUpdateUaMessage();
+        synchronized (mContentSettingsLock) {
+            final String oldUserAgent = mUserAgent;
+            if (ua == null || ua.length() == 0) {
+                mUserAgent = mDefaultUserAgent;
+            } else {
+                mUserAgent = ua;
+            }
+            if (!oldUserAgent.equals(mUserAgent)) {
+                mEventHandler.sendUpdateUaMessageLocked();
+            }
         }
     }
 
     /**
      * Gets the WebView's user-agent string.
      */
-    public synchronized String getUserAgentString() {
+    public String getUserAgentString() {
         // TODO(mnaganov): Doesn't reflect changes made by ChromeNativePreferences.
-        return mUserAgent;
+        synchronized (mContentSettingsLock) {
+            return mUserAgent;
+        }
     }
 
     /**
@@ -225,8 +291,10 @@ public class ContentSettings {
      * @param support whether the WebView should support zoom
      */
     public void setSupportZoom(boolean support) {
-        mSupportZoom = support;
-        mEventHandler.sendUpdateMultiTouchMessage();
+        synchronized (mContentSettingsLock) {
+            mSupportZoom = support;
+            mEventHandler.sendUpdateMultiTouchMessageLocked();
+        }
     }
 
     /**
@@ -255,8 +323,10 @@ public class ContentSettings {
      * @param enabled whether the WebView should use its built-in zoom mechanisms
      */
      public void setBuiltInZoomControls(boolean enabled) {
-        mBuiltInZoomControls = enabled;
-        mEventHandler.sendUpdateMultiTouchMessage();
+        synchronized (mContentSettingsLock) {
+            mBuiltInZoomControls = enabled;
+            mEventHandler.sendUpdateMultiTouchMessageLocked();
+        }
     }
 
     /**
@@ -277,8 +347,10 @@ public class ContentSettings {
      * @param enabled whether the WebView should display on-screen zoom controls
      */
     public void setDisplayZoomControls(boolean enabled) {
-        mDisplayZoomControls = enabled;
-        mEventHandler.sendUpdateMultiTouchMessage();
+        synchronized (mContentSettingsLock) {
+            mDisplayZoomControls = enabled;
+            mEventHandler.sendUpdateMultiTouchMessageLocked();
+        }
     }
 
     /**
@@ -302,14 +374,43 @@ public class ContentSettings {
     }
 
     /**
+     * Sets the text zoom of the page in percent. Default is 100.
+     *
+     * @param textZoom the percent value for increasing or decreasing the text
+     */
+    public void setTextZoom(int textZoom) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mTextSizePercent != textZoom) {
+                mTextSizePercent = textZoom;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Gets the text zoom of the page in percent.
+     *
+     * @return a percent value describing the text zoom
+     * @see #setTextSizeZoom
+     */
+    public int getTextZoom() {
+        synchronized (mContentSettingsLock) {
+            return mTextSizePercent;
+        }
+    }
+
+    /**
      * Set the standard font family name.
      * @param font A font family name.
      */
-    public synchronized void setStandardFontFamily(String font) {
+    public void setStandardFontFamily(String font) {
         assert mCanModifySettings;
-        if (!mStandardFontFamily.equals(font)) {
-            mStandardFontFamily = font;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (font != null && !mStandardFontFamily.equals(font)) {
+                mStandardFontFamily = font;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -317,19 +418,23 @@ public class ContentSettings {
      * Get the standard font family name. The default is "sans-serif".
      * @return The standard font family name as a string.
      */
-    public synchronized String getStandardFontFamily() {
-        return mStandardFontFamily;
+    public String getStandardFontFamily() {
+        synchronized (mContentSettingsLock) {
+            return mStandardFontFamily;
+        }
     }
 
     /**
      * Set the fixed font family name.
      * @param font A font family name.
      */
-    public synchronized void setFixedFontFamily(String font) {
+    public void setFixedFontFamily(String font) {
         assert mCanModifySettings;
-        if (!mFixedFontFamily.equals(font)) {
-            mFixedFontFamily = font;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (font != null && !mFixedFontFamily.equals(font)) {
+                mFixedFontFamily = font;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -337,19 +442,23 @@ public class ContentSettings {
      * Get the fixed font family name. The default is "monospace".
      * @return The fixed font family name as a string.
      */
-    public synchronized String getFixedFontFamily() {
-        return mFixedFontFamily;
+    public String getFixedFontFamily() {
+        synchronized (mContentSettingsLock) {
+            return mFixedFontFamily;
+        }
     }
 
     /**
      * Set the sans-serif font family name.
      * @param font A font family name.
      */
-    public synchronized void setSansSerifFontFamily(String font) {
+    public void setSansSerifFontFamily(String font) {
         assert mCanModifySettings;
-        if (!mSansSerifFontFamily.equals(font)) {
-            mSansSerifFontFamily = font;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (font != null && !mSansSerifFontFamily.equals(font)) {
+                mSansSerifFontFamily = font;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -357,19 +466,23 @@ public class ContentSettings {
      * Get the sans-serif font family name.
      * @return The sans-serif font family name as a string.
      */
-    public synchronized String getSansSerifFontFamily() {
-        return mSansSerifFontFamily;
+    public String getSansSerifFontFamily() {
+        synchronized (mContentSettingsLock) {
+            return mSansSerifFontFamily;
+        }
     }
 
     /**
      * Set the serif font family name. The default is "sans-serif".
      * @param font A font family name.
      */
-    public synchronized void setSerifFontFamily(String font) {
+    public void setSerifFontFamily(String font) {
         assert mCanModifySettings;
-        if (!mSerifFontFamily.equals(font)) {
-            mSerifFontFamily = font;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (font != null && !mSerifFontFamily.equals(font)) {
+                mSerifFontFamily = font;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -377,19 +490,23 @@ public class ContentSettings {
      * Get the serif font family name. The default is "serif".
      * @return The serif font family name as a string.
      */
-    public synchronized String getSerifFontFamily() {
-        return mSerifFontFamily;
+    public String getSerifFontFamily() {
+        synchronized (mContentSettingsLock) {
+            return mSerifFontFamily;
+        }
     }
 
     /**
      * Set the cursive font family name.
      * @param font A font family name.
      */
-    public synchronized void setCursiveFontFamily(String font) {
+    public void setCursiveFontFamily(String font) {
         assert mCanModifySettings;
-        if (!mCursiveFontFamily.equals(font)) {
-            mCursiveFontFamily = font;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (font != null && !mCursiveFontFamily.equals(font)) {
+                mCursiveFontFamily = font;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -397,19 +514,23 @@ public class ContentSettings {
      * Get the cursive font family name. The default is "cursive".
      * @return The cursive font family name as a string.
      */
-    public synchronized String getCursiveFontFamily() {
-        return mCursiveFontFamily;
+    public String getCursiveFontFamily() {
+        synchronized (mContentSettingsLock) {
+            return mCursiveFontFamily;
+        }
     }
 
     /**
      * Set the fantasy font family name.
      * @param font A font family name.
      */
-    public synchronized void setFantasyFontFamily(String font) {
+    public void setFantasyFontFamily(String font) {
         assert mCanModifySettings;
-        if (!mFantasyFontFamily.equals(font)) {
-            mFantasyFontFamily = font;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (font != null && !mFantasyFontFamily.equals(font)) {
+                mFantasyFontFamily = font;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -417,8 +538,10 @@ public class ContentSettings {
      * Get the fantasy font family name. The default is "fantasy".
      * @return The fantasy font family name as a string.
      */
-    public synchronized String getFantasyFontFamily() {
-        return mFantasyFontFamily;
+    public String getFantasyFontFamily() {
+        synchronized (mContentSettingsLock) {
+            return mFantasyFontFamily;
+        }
     }
 
     /**
@@ -426,12 +549,14 @@ public class ContentSettings {
      * @param size A non-negative integer between 1 and 72.
      * Any number outside the specified range will be pinned.
      */
-    public synchronized void setMinimumFontSize(int size) {
+    public void setMinimumFontSize(int size) {
         assert mCanModifySettings;
-        size = clipFontSize(size);
-        if (mMinimumFontSize != size) {
-            mMinimumFontSize = size;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            size = clipFontSize(size);
+            if (mMinimumFontSize != size) {
+                mMinimumFontSize = size;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -439,8 +564,10 @@ public class ContentSettings {
      * Get the minimum font size. The default is 8.
      * @return A non-negative integer between 1 and 72.
      */
-    public synchronized int getMinimumFontSize() {
-        return mMinimumFontSize;
+    public int getMinimumFontSize() {
+        synchronized (mContentSettingsLock) {
+            return mMinimumFontSize;
+        }
     }
 
     /**
@@ -448,12 +575,14 @@ public class ContentSettings {
      * @param size A non-negative integer between 1 and 72.
      * Any number outside the specified range will be pinned.
      */
-    public synchronized void setMinimumLogicalFontSize(int size) {
+    public void setMinimumLogicalFontSize(int size) {
         assert mCanModifySettings;
-        size = clipFontSize(size);
-        if (mMinimumLogicalFontSize != size) {
-            mMinimumLogicalFontSize = size;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            size = clipFontSize(size);
+            if (mMinimumLogicalFontSize != size) {
+                mMinimumLogicalFontSize = size;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -461,8 +590,10 @@ public class ContentSettings {
      * Get the minimum logical font size. The default is 8.
      * @return A non-negative integer between 1 and 72.
      */
-    public synchronized int getMinimumLogicalFontSize() {
-        return mMinimumLogicalFontSize;
+    public int getMinimumLogicalFontSize() {
+        synchronized (mContentSettingsLock) {
+            return mMinimumLogicalFontSize;
+        }
     }
 
     /**
@@ -470,12 +601,14 @@ public class ContentSettings {
      * @param size A non-negative integer between 1 and 72.
      * Any number outside the specified range will be pinned.
      */
-    public synchronized void setDefaultFontSize(int size) {
+    public void setDefaultFontSize(int size) {
         assert mCanModifySettings;
-        size = clipFontSize(size);
-        if (mDefaultFontSize != size) {
-            mDefaultFontSize = size;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            size = clipFontSize(size);
+            if (mDefaultFontSize != size) {
+                mDefaultFontSize = size;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -483,8 +616,10 @@ public class ContentSettings {
      * Get the default font size. The default is 16.
      * @return A non-negative integer between 1 and 72.
      */
-    public synchronized int getDefaultFontSize() {
-        return mDefaultFontSize;
+    public int getDefaultFontSize() {
+        synchronized (mContentSettingsLock) {
+            return mDefaultFontSize;
+        }
     }
 
     /**
@@ -492,12 +627,14 @@ public class ContentSettings {
      * @param size A non-negative integer between 1 and 72.
      * Any number outside the specified range will be pinned.
      */
-    public synchronized void setDefaultFixedFontSize(int size) {
+    public void setDefaultFixedFontSize(int size) {
         assert mCanModifySettings;
-        size = clipFontSize(size);
-        if (mDefaultFixedFontSize != size) {
-            mDefaultFixedFontSize = size;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            size = clipFontSize(size);
+            if (mDefaultFixedFontSize != size) {
+                mDefaultFixedFontSize = size;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -505,8 +642,10 @@ public class ContentSettings {
      * Get the default fixed font size. The default is 16.
      * @return A non-negative integer between 1 and 72.
      */
-    public synchronized int getDefaultFixedFontSize() {
-        return mDefaultFixedFontSize;
+    public int getDefaultFixedFontSize() {
+        synchronized (mContentSettingsLock) {
+            return mDefaultFixedFontSize;
+        }
     }
 
     /**
@@ -514,23 +653,80 @@ public class ContentSettings {
      *
      * @param flag True if the WebView should execute JavaScript.
      */
-    public synchronized void setJavaScriptEnabled(boolean flag) {
+    public void setJavaScriptEnabled(boolean flag) {
         assert mCanModifySettings;
-        if (mJavaScriptEnabled != flag) {
-            mJavaScriptEnabled = flag;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (mJavaScriptEnabled != flag) {
+                mJavaScriptEnabled = flag;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Sets whether JavaScript running in the context of a file scheme URL
+     * should be allowed to access content from any origin. This includes
+     * access to content from other file scheme URLs. See
+     * {@link #setAllowFileAccessFromFileURLs}. To enable the most restrictive,
+     * and therefore secure policy, this setting should be disabled.
+     * <p>
+     * The default value is true for API level
+     * {@link android.os.Build.VERSION_CODES#ICE_CREAM_SANDWICH_MR1} and below,
+     * and false for API level {@link android.os.Build.VERSION_CODES#JELLY_BEAN}
+     * and above.
+     *
+     * @param flag whether JavaScript running in the context of a file scheme
+     *             URL should be allowed to access content from any origin
+     */
+    public void setAllowUniversalAccessFromFileURLs(boolean flag) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mAllowUniversalAccessFromFileURLs != flag) {
+                mAllowUniversalAccessFromFileURLs = flag;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Sets whether JavaScript running in the context of a file scheme URL
+     * should be allowed to access content from other file scheme URLs. To
+     * enable the most restrictive, and therefore secure policy, this setting
+     * should be disabled. Note that the value of this setting is ignored if
+     * the value of {@link #getAllowUniversalAccessFromFileURLs} is true.
+     * <p>
+     * The default value is true for API level
+     * {@link android.os.Build.VERSION_CODES#ICE_CREAM_SANDWICH_MR1} and below,
+     * and false for API level {@link android.os.Build.VERSION_CODES#JELLY_BEAN}
+     * and above.
+     *
+     * @param flag whether JavaScript running in the context of a file scheme
+     *             URL should be allowed to access content from other file
+     *             scheme URLs
+     */
+    public void setAllowFileAccessFromFileURLs(boolean flag) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mAllowFileAccessFromFileURLs != flag) {
+                mAllowFileAccessFromFileURLs = flag;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
     /**
      * Tell the WebView to load image resources automatically.
+     * Note that setting this flag to false this does not block image loads
+     * from WebCore cache.
      * @param flag True if the WebView should load images automatically.
      */
-    public synchronized void setLoadsImagesAutomatically(boolean flag) {
+    public void setLoadsImagesAutomatically(boolean flag) {
         assert mCanModifySettings;
-        if (mLoadsImagesAutomatically != flag) {
-            mLoadsImagesAutomatically = flag;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (mLoadsImagesAutomatically != flag) {
+                mLoadsImagesAutomatically = flag;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -539,8 +735,38 @@ public class ContentSettings {
      * The default is true.
      * @return True if the WebView loads images automatically.
      */
-    public synchronized boolean getLoadsImagesAutomatically() {
-        return mLoadsImagesAutomatically;
+    public boolean getLoadsImagesAutomatically() {
+        synchronized (mContentSettingsLock) {
+            return mLoadsImagesAutomatically;
+        }
+    }
+
+    /**
+     * Sets whether images are enabled for this WebView. Setting this from
+     * false to true will reload the blocked images in place.
+     * Note that unlike {@link #setLoadsImagesAutomatically}, setting this
+     * flag to false this will block image loads from WebCore cache as well.
+     * The default is true.
+     * @param flag whether the WebView should enable images.
+     */
+    public void setImagesEnabled(boolean flag) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mImagesEnabled != flag) {
+                mImagesEnabled = flag;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Gets whether images are enabled for this WebView.
+     * @return true if the WebView has images eanbled
+     */
+    public boolean getImagesEnabled() {
+        synchronized (mContentSettingsLock) {
+            return mImagesEnabled;
+        }
     }
 
     /**
@@ -548,8 +774,39 @@ public class ContentSettings {
      *
      * @return True if JavaScript is enabled.
      */
-    public synchronized boolean getJavaScriptEnabled() {
-        return mJavaScriptEnabled;
+    public boolean getJavaScriptEnabled() {
+        synchronized (mContentSettingsLock) {
+            return mJavaScriptEnabled;
+        }
+    }
+
+    /**
+     * Gets whether JavaScript running in the context of a file scheme URL can
+     * access content from any origin. This includes access to content from
+     * other file scheme URLs.
+     *
+     * @return whether JavaScript running in the context of a file scheme URL
+     *         can access content from any origin
+     * @see #setAllowUniversalAccessFromFileURLs
+     */
+    public boolean getAllowUniversalAccessFromFileURLs() {
+        synchronized (mContentSettingsLock) {
+            return mAllowUniversalAccessFromFileURLs;
+        }
+    }
+
+    /**
+     * Gets whether JavaScript running in the context of a file scheme URL can
+     * access content from other file scheme URLs.
+     *
+     * @return whether JavaScript running in the context of a file scheme URL
+     *         can access content from other file scheme URLs
+     * @see #setAllowFileAccessFromFileURLs
+     */
+    public boolean getAllowFileAccessFromFileURLs() {
+        synchronized (mContentSettingsLock) {
+            return mAllowFileAccessFromFileURLs;
+        }
     }
 
     /**
@@ -559,7 +816,7 @@ public class ContentSettings {
      *             {@link #setPluginState}
      */
     @Deprecated
-    public synchronized void setPluginsEnabled(boolean flag) {
+    public void setPluginsEnabled(boolean flag) {
         assert mCanModifySettings;
         setPluginState(flag ? PluginState.ON : PluginState.OFF);
     }
@@ -571,11 +828,13 @@ public class ContentSettings {
      * the placeholder is clicked, the plugin will be enabled.
      * @param state One of the PluginState values.
      */
-    public synchronized void setPluginState(PluginState state) {
+    public void setPluginState(PluginState state) {
         assert mCanModifySettings;
-        if (mPluginState != state) {
-            mPluginState = state;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (mPluginState != state) {
+                mPluginState = state;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -585,8 +844,10 @@ public class ContentSettings {
      * @deprecated This method has been replaced by {@link #getPluginState}
      */
     @Deprecated
-    public synchronized boolean getPluginsEnabled() {
-        return mPluginState == PluginState.ON;
+    public boolean getPluginsEnabled() {
+        synchronized (mContentSettingsLock) {
+            return mPluginState == PluginState.ON;
+        }
     }
 
     /**
@@ -595,7 +856,9 @@ public class ContentSettings {
      * @hide
      */
     @CalledByNative
-    private synchronized boolean getPluginsDisabled() {
+    private boolean getPluginsDisabled() {
+        // This should only be called from SyncToNative, which is called
+        // either from the constructor, or with mContentSettingsLock being held.
         return mPluginState == PluginState.OFF;
     }
 
@@ -605,7 +868,9 @@ public class ContentSettings {
      * @hide
      */
     @CalledByNative
-    private synchronized void setPluginsDisabled(boolean disabled) {
+    private void setPluginsDisabled(boolean disabled) {
+        // This should only be called from SyncFromToNative, which is called
+        // either from the constructor, or with mContentSettingsLock being held.
         mPluginState = disabled ? PluginState.OFF : PluginState.ON;
     }
 
@@ -613,8 +878,10 @@ public class ContentSettings {
      * Return the current plugin state.
      * @return A value corresponding to the enum PluginState.
      */
-    public synchronized PluginState getPluginState() {
-        return mPluginState;
+    public PluginState getPluginState() {
+        synchronized (mContentSettingsLock) {
+            return mPluginState;
+        }
     }
 
 
@@ -623,11 +890,13 @@ public class ContentSettings {
      * javascript function window.open().
      * @param flag True if javascript can open windows automatically.
      */
-    public synchronized void setJavaScriptCanOpenWindowsAutomatically(boolean flag) {
+    public void setJavaScriptCanOpenWindowsAutomatically(boolean flag) {
         assert mCanModifySettings;
-        if (mJavaScriptCanOpenWindowsAutomatically != flag) {
-            mJavaScriptCanOpenWindowsAutomatically = flag;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (mJavaScriptCanOpenWindowsAutomatically != flag) {
+                mJavaScriptCanOpenWindowsAutomatically = flag;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -637,8 +906,156 @@ public class ContentSettings {
      * @return True if javascript can open windows automatically during
      *         window.open().
      */
-    public synchronized boolean getJavaScriptCanOpenWindowsAutomatically() {
-        return mJavaScriptCanOpenWindowsAutomatically;
+    public boolean getJavaScriptCanOpenWindowsAutomatically() {
+        synchronized (mContentSettingsLock) {
+            return mJavaScriptCanOpenWindowsAutomatically;
+        }
+    }
+
+    /**
+     * Sets the underlying layout algorithm. The default is
+     * {@link LayoutAlgorithm#NARROW_COLUMNS}.
+     *
+     * @param l the layout algorithm to use, as a {@link LayoutAlgorithm} value
+     */
+    public void setLayoutAlgorithm(LayoutAlgorithm l) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mLayoutAlgorithm != l) {
+                mLayoutAlgorithm = l;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Gets the current layout algorithm.
+     *
+     * @return the layout algorithm in use, as a {@link LayoutAlgorithm} value
+     * @see #setLayoutAlgorithm
+     */
+    public LayoutAlgorithm getLayoutAlgorithm() {
+        synchronized (mContentSettingsLock) {
+            return mLayoutAlgorithm;
+        }
+    }
+
+    /**
+     * Sets whether Text Auto-sizing layout algorithm is enabled.
+     *
+     * @param enabled whether Text Auto-sizing layout algorithm is enabled
+     * @hide
+     */
+    @CalledByNative
+    private void setTextAutosizingEnabled(boolean enabled) {
+        // This should only be called from SyncFromNative, which is called
+        // either from the constructor, or with mContentSettingsLock being held.
+        mLayoutAlgorithm = enabled ?
+                LayoutAlgorithm.TEXT_AUTOSIZING : LayoutAlgorithm.NARROW_COLUMNS;
+    }
+
+    /**
+     * Gets whether Text Auto-sizing layout algorithm is enabled.
+     *
+     * @return true if Text Auto-sizing layout algorithm is enabled
+     * @hide
+     */
+    @CalledByNative
+    private boolean getTextAutosizingEnabled() {
+        return mLayoutAlgorithm == LayoutAlgorithm.TEXT_AUTOSIZING;
+    }
+
+    /**
+     * Tells the WebView whether it supports multiple windows. True means
+     * that {@link WebChromeClient#onCreateWindow(WebView, boolean,
+     * boolean, Message)} is implemented by the host application.
+     */
+    public void setSupportMultipleWindows(boolean support) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mSupportMultipleWindows != support) {
+                mSupportMultipleWindows = support;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Gets whether the WebView is supporting multiple windows.
+     *
+     * @return true if the WebView is supporting multiple windows. This means
+     *         that {@link WebChromeClient#onCreateWindow(WebView, boolean,
+     *         boolean, Message)} is implemented by the host application.
+     */
+    public boolean supportMultipleWindows() {
+        synchronized (mContentSettingsLock) {
+            return mSupportMultipleWindows;
+        }
+    }
+
+    /**
+     * Sets whether the Application Caches API should be enabled. The default
+     * is false. Note that in order for the Application Caches API to be
+     * enabled, a non-empty database path must also be supplied to
+     * {@link #setAppCachePath} (this is done for compatibility with the
+     * legacy implementation).
+     *
+     * @param flag true if the WebView should enable Application Caches
+     */
+    public void setAppCacheEnabled(boolean flag) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mAppCacheEnabled != flag) {
+                mAppCacheEnabled = flag;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Sets the path to the Application Caches files. In order for the
+     * Application Caches API to be enabled, this method must be called with a
+     * non-empty path. This method should only be called once: repeated calls
+     * are ignored.
+     *
+     * @param path a non empty-string
+     */
+    public void setAppCachePath(String path) {
+        assert mCanModifySettings;
+        boolean needToSync = false;
+        synchronized (sGlobalContentSettingsLock) {
+            // AppCachePath can only be set once.
+            if (!sAppCachePathIsSet && path != null && !path.isEmpty()) {
+                sAppCachePathIsSet = true;
+                needToSync = true;
+            }
+        }
+        // The obvious problem here is that other WebViews will not be updated,
+        // until they execute synchronization from Java to the native side.
+        // But this is the same behaviour as it was in the legacy WebView.
+        if (needToSync) {
+            synchronized (mContentSettingsLock) {
+                mEventHandler.syncSettingsLocked();
+            }
+        }
+    }
+
+    /**
+     * Gets whether Application Cache is enabled.
+     *
+     * @return true if Application Cache is enabled
+     * @hide
+     */
+    @CalledByNative
+    private boolean getAppCacheEnabled() {
+        // This should only be called from SyncToNative, which is called
+        // either from the constructor, or with mContentSettingsLock being held.
+        if (!mAppCacheEnabled) {
+            return false;
+        }
+        synchronized (sGlobalContentSettingsLock) {
+            return sAppCachePathIsSet;
+        }
     }
 
     /**
@@ -646,11 +1063,14 @@ public class ContentSettings {
      *
      * @param flag true if the ContentView should use the DOM storage API
      */
-    public synchronized void setDomStorageEnabled(boolean flag) {
-       if (mDomStorageEnabled != flag) {
-           mDomStorageEnabled = flag;
-           sendSyncMessage();
-       }
+    public void setDomStorageEnabled(boolean flag) {
+        assert mCanModifySettings;
+        synchronized (mContentSettingsLock) {
+            if (mDomStorageEnabled != flag) {
+                mDomStorageEnabled = flag;
+                mEventHandler.syncSettingsLocked();
+            }
+        }
     }
 
     /**
@@ -659,19 +1079,23 @@ public class ContentSettings {
      * @return true if the DOM Storage APIs are enabled
      * @see #setDomStorageEnabled
      */
-    public synchronized boolean getDomStorageEnabled() {
-       return mDomStorageEnabled;
+    public boolean getDomStorageEnabled() {
+       synchronized (mContentSettingsLock) {
+           return mDomStorageEnabled;
+       }
     }
 
     /**
      * Set the default text encoding name to use when decoding html pages.
      * @param encoding The text encoding name.
      */
-    public synchronized void setDefaultTextEncodingName(String encoding) {
+    public void setDefaultTextEncodingName(String encoding) {
         assert mCanModifySettings;
-        if (!mDefaultTextEncoding.equals(encoding)) {
-            mDefaultTextEncoding = encoding;
-            sendSyncMessage();
+        synchronized (mContentSettingsLock) {
+            if (encoding != null && !mDefaultTextEncoding.equals(encoding)) {
+                mDefaultTextEncoding = encoding;
+                mEventHandler.syncSettingsLocked();
+            }
         }
     }
 
@@ -679,8 +1103,10 @@ public class ContentSettings {
      * Get the default text encoding name. The default is "Latin-1".
      * @return The default text encoding name as a string.
      */
-    public synchronized String getDefaultTextEncodingName() {
-        return mDefaultTextEncoding;
+    public String getDefaultTextEncodingName() {
+        synchronized (mContentSettingsLock) {
+            return mDefaultTextEncoding;
+        }
     }
 
     private int clipFontSize(int size) {
@@ -692,22 +1118,67 @@ public class ContentSettings {
         return size;
     }
 
-    // Send a synchronization message to handle syncing the native settings.
-    // When the ContentView is in the PERSONALITY_VIEW role, called from setter
-    // methods.  When the ContentView is in the PERSONALITY_CHROME role, called
-    // from ContentView on Chrome preferences updates.
-    synchronized void sendSyncMessage() {
-        // Only post if a sync is not pending
-        if (!mIsSyncMessagePending) {
-            mIsSyncMessagePending = true;
-            mEventHandler.sendSyncMessage();
+    /**
+     * Sets the settings in this object to those from another
+     * ContentSettings.
+     * Required by WebView when we swap a in a new ContentViewCore
+     * to an existing AwContents (i.e. to support displaying popup
+     * windows in an already created WebView)
+     */
+    public void initFrom(ContentSettings settings) {
+        setLayoutAlgorithm(settings.getLayoutAlgorithm());
+        setTextZoom(settings.getTextZoom());
+        setStandardFontFamily(settings.getStandardFontFamily());
+        setFixedFontFamily(settings.getFixedFontFamily());
+        setSansSerifFontFamily(settings.getSansSerifFontFamily());
+        setSerifFontFamily(settings.getSerifFontFamily());
+        setCursiveFontFamily(settings.getCursiveFontFamily());
+        setFantasyFontFamily(settings.getFantasyFontFamily());
+        setDefaultTextEncodingName(settings.getDefaultTextEncodingName());
+        setUserAgentString(settings.getUserAgentString());
+        setMinimumFontSize(settings.getMinimumFontSize());
+        setMinimumLogicalFontSize(settings.getMinimumLogicalFontSize());
+        setDefaultFontSize(settings.getDefaultFontSize());
+        setDefaultFixedFontSize(settings.getDefaultFixedFontSize());
+        setLoadsImagesAutomatically(settings.getLoadsImagesAutomatically());
+        setImagesEnabled(settings.getImagesEnabled());
+        setJavaScriptEnabled(settings.getJavaScriptEnabled());
+        setAllowUniversalAccessFromFileURLs(settings.getAllowUniversalAccessFromFileURLs());
+        setAllowFileAccessFromFileURLs(settings.getAllowFileAccessFromFileURLs());
+        setJavaScriptCanOpenWindowsAutomatically(
+                settings.getJavaScriptCanOpenWindowsAutomatically());
+        setSupportMultipleWindows(settings.supportMultipleWindows());
+        setPluginState(settings.getPluginState());
+        setAppCacheEnabled(settings.mAppCacheEnabled);
+        setDomStorageEnabled(settings.getDomStorageEnabled());
+        setSupportZoom(settings.supportZoom());
+        setBuiltInZoomControls(settings.getBuiltInZoomControls());
+        setDisplayZoomControls(settings.getDisplayZoomControls());
+    }
+
+    /**
+     * Synchronize java side and native side settings. When ContentView
+     * is running in PERSONALITY_VIEW mode, this needs to be done after
+     * any java side setting is changed to sync them to native. In
+     * PERSONALITY_CHROME mode, this needs to be called whenever native
+     * settings are changed to sync them to java.
+     */
+    void syncSettings() {
+        synchronized (mContentSettingsLock) {
+            mEventHandler.syncSettingsLocked();
         }
+    }
+
+    void syncToNativeOnUiThread() {
+        if (mNativeContentSettings != 0) nativeSyncToNative(mNativeContentSettings);
+    }
+
+    void syncFromNativeOnUiThread() {
+        if (mNativeContentSettings != 0) nativeSyncFromNative(mNativeContentSettings);
     }
 
     // Initialize the ContentSettings native side.
     private native int nativeInit(int contentViewPtr, boolean isMasterMode);
-
-    private static native void nativeDestroy(int nativeContentSettings);
 
     private static native String nativeGetDefaultUserAgent();
 

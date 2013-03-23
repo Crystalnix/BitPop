@@ -88,7 +88,7 @@ class FullscreenExitBubbleViews::FullscreenExitView
 
   // views::ButtonListener
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::LinkListener
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -189,7 +189,7 @@ FullscreenExitBubbleViews::FullscreenExitView::~FullscreenExitView() {
 
 void FullscreenExitBubbleViews::FullscreenExitView::ButtonPressed(
     views::Button* sender,
-    const views::Event& event) {
+    const ui::Event& event) {
   if (sender == button_view_->accept_button())
     bubble_->Accept();
   else
@@ -340,7 +340,9 @@ gfx::Rect FullscreenExitBubbleViews::GetPopupRect(
   gfx::Size size(view_->GetPreferredSize());
   // NOTE: don't use the bounds of the root_view_. On linux changing window
   // size is async. Instead we use the size of the screen.
-  gfx::Rect screen_bounds = gfx::Screen::GetDisplayNearestWindow(
+  gfx::Screen* screen =
+      gfx::Screen::GetScreenFor(root_view_->GetWidget()->GetNativeView());
+  gfx::Rect screen_bounds = screen->GetDisplayNearestWindow(
       root_view_->GetWidget()->GetNativeView()).bounds();
   gfx::Point origin(screen_bounds.x() +
                     (screen_bounds.width() - size.width()) / 2,
@@ -357,13 +359,14 @@ gfx::Rect FullscreenExitBubbleViews::GetPopupRect(
 }
 
 gfx::Point FullscreenExitBubbleViews::GetCursorScreenPoint() {
-  gfx::Point cursor_pos = gfx::Screen::GetCursorScreenPoint();
-  views::View::ConvertPointToView(NULL, root_view_, &cursor_pos);
+  gfx::Point cursor_pos = gfx::Screen::GetScreenFor(
+      root_view_->GetWidget()->GetNativeView())->GetCursorScreenPoint();
+  views::View::ConvertPointToTarget(NULL, root_view_, &cursor_pos);
   return cursor_pos;
 }
 
 bool FullscreenExitBubbleViews::WindowContainsPoint(gfx::Point pos) {
-  return root_view_->HitTest(pos);
+  return root_view_->HitTestPoint(pos);
 }
 
 bool FullscreenExitBubbleViews::IsWindowActive() {

@@ -28,13 +28,13 @@
 
 using base::WaitableEvent;
 using content::BrowserThread;
+using content::PasswordForm;
 using testing::_;
 using testing::DoAll;
 using testing::ElementsAreArray;
 using testing::Pointee;
 using testing::Property;
 using testing::WithArg;
-using webkit::forms::PasswordForm;
 
 namespace {
 
@@ -43,6 +43,8 @@ class MockPasswordStoreConsumer : public PasswordStoreConsumer {
   MOCK_METHOD2(OnPasswordStoreRequestDone,
                void(CancelableRequestProvider::Handle,
                     const std::vector<PasswordForm*>&));
+  MOCK_METHOD1(OnGetPasswordStoreResults,
+               void(const std::vector<PasswordForm*>&));
 };
 
 // This class will add and remove a mock notification observer from

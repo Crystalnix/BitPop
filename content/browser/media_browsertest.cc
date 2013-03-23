@@ -15,13 +15,14 @@
 #include "content/test/content_browser_test_utils.h"
 #include "googleurl/src/gurl.h"
 
+namespace content {
+
 // Tests playback and seeking of an audio or video file over file or http based
 // on a test parameter.  Test starts with playback, then, after X seconds or the
 // ended event fires, seeks near end of file; see player.html for details.  The
 // test completes when either the last 'ended' or an 'error' event fires.
-class MediaTest
-    : public testing::WithParamInterface<bool>,
-      public content::ContentBrowserTest {
+class MediaTest : public testing::WithParamInterface<bool>,
+                  public ContentBrowserTest {
  public:
   // Play specified audio over http:// or file:// depending on |http| setting.
   void PlayAudio(const char* media_file, bool http) {
@@ -33,14 +34,6 @@ class MediaTest
     ASSERT_NO_FATAL_FAILURE(PlayMedia("video", media_file, http));
   }
 
- protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // TODO(dalecurtis): Not all Buildbots have viable audio devices, so disable
-    // audio to prevent tests from hanging; e.g., a device which is hardware
-    // muted.  See http://crbug.com/120749
-    command_line->AppendSwitch(switches::kDisableAudio);
-  }
-
  private:
   GURL GetTestURL(const char* tag, const char* media_file, bool http) {
     if (http) {
@@ -48,9 +41,9 @@ class MediaTest
           base::StringPrintf("files/media/player.html?%s=%s", tag, media_file));
     }
 
-    FilePath test_file_path = content::GetTestFilePath("media", "player.html");
+    FilePath test_file_path = GetTestFilePath("media", "player.html");
     std::string query = base::StringPrintf("%s=%s", tag, media_file);
-    return content::GetFileUrlWithQuery(test_file_path, query);
+    return GetFileUrlWithQuery(test_file_path, query);
   }
 
   void PlayMedia(const char* tag, const char* media_file, bool http) {
@@ -63,11 +56,11 @@ class MediaTest
     const string16 kEnded = ASCIIToUTF16("ENDED");
     const string16 kError = ASCIIToUTF16("ERROR");
     const string16 kFailed = ASCIIToUTF16("FAILED");
-    content::TitleWatcher title_watcher(shell()->web_contents(), kEnded);
+    TitleWatcher title_watcher(shell()->web_contents(), kEnded);
     title_watcher.AlsoWaitForTitle(kFailed);
     title_watcher.AlsoWaitForTitle(kError);
 
-    content::NavigateToURL(shell(), player_gurl);
+    NavigateToURL(shell(), player_gurl);
 
     string16 final_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(kEnded, final_title);
@@ -137,15 +130,22 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavMulaw) {
   PlayAudio("bear_mulaw.wav", GetParam());
 }
 
-// TODO(dalecurtis): Fails seek test.  http://crbug.com/141020
-// IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearFlac) {
-//   PlayAudio("bear.flac", GetParam());
-// }
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearFlac) {
+  PlayAudio("bear.flac", GetParam());
+}
 #endif
 #endif
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavPcm) {
   PlayAudio("bear_pcm.wav", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavPcm3kHz) {
+  PlayAudio("bear_3kHz.wav", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavPcm192kHz) {
+  PlayAudio("bear_192kHz.wav", GetParam());
 }
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoTulipWebm) {
@@ -161,29 +161,6 @@ class MediaLayoutTest : public InProcessBrowserLayoutTest {
       FilePath(), FilePath().AppendASCII("media")) {
   }
   virtual ~MediaLayoutTest() {}
-
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // TODO(dalecurtis): Not all Buildbots have viable audio devices, so disable
-    // audio to prevent tests from hanging; e.g., a device which is hardware
-    // muted.  See http://crbug.com/120749
-    command_line->AppendSwitch(switches::kDisableAudio);
-  }
-
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    InProcessBrowserLayoutTest::SetUpInProcessBrowserTestFixture();
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("content"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("media-file.js"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("media-fullscreen.js"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("video-paint-test.js"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("video-played.js"));
-    AddResourceForLayoutTest(FilePath().AppendASCII("media"),
-                             FilePath().AppendASCII("video-test.js"));
-  }
 };
 
 // Each browser test can only correspond to a single layout test, otherwise the
@@ -201,3 +178,5 @@ IN_PROC_BROWSER_TEST_F(MediaLayoutTest, VideoLoopTest) {
 IN_PROC_BROWSER_TEST_F(MediaLayoutTest, VideoNoAutoplayTest) {
   RunLayoutTest("video-no-autoplay.html");
 }
+
+}  // namespace content

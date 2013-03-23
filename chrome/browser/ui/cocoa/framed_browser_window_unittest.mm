@@ -20,13 +20,9 @@ class FramedBrowserWindowTest : public CocoaTest {
   virtual void SetUp() {
     CocoaTest::SetUp();
     // Create a window.
-    const NSUInteger mask = NSTitledWindowMask | NSClosableWindowMask |
-        NSMiniaturizableWindowMask | NSResizableWindowMask;
     window_ = [[FramedBrowserWindow alloc]
                initWithContentRect:NSMakeRect(0, 0, 800, 600)
-                         styleMask:mask
-                           backing:NSBackingStoreBuffered
-                             defer:NO];
+                       hasTabStrip:YES];
     if (base::debug::BeingDebugged()) {
       [window_ orderFront:nil];
     } else {
@@ -47,7 +43,15 @@ class FramedBrowserWindowTest : public CocoaTest {
     while ([frameView superview]) {
       frameView = [frameView superview];
     }
-    const NSRect bounds = [frameView bounds];
+
+    // Inset to mask off left and right edges which vary in HighDPI.
+    NSRect bounds = NSInsetRect([frameView bounds], 4, 0);
+
+    // On 10.6, the grippy changes appearance slightly when painted the second
+    // time in a textured window. Since this test cares about the window title,
+    // cut off the bottom of the window.
+    bounds.size.height -= 40;
+    bounds.origin.y += 40;
 
     [frameView lockFocus];
     scoped_nsobject<NSBitmapImageRep> bitmap(
@@ -103,6 +107,10 @@ TEST_F(FramedBrowserWindowTest, WindowWidgetLocation) {
   BOOL no = NO;
 
   // First without a tabstrip.
+  [window_ close];
+  window_ = [[FramedBrowserWindow alloc]
+             initWithContentRect:NSMakeRect(0, 0, 800, 600)
+                     hasTabStrip:NO];
   id controller = [OCMockObject mockForClass:[BrowserWindowController class]];
   [[[controller stub] andReturnValue:OCMOCK_VALUE(yes)]
       isKindOfClass:[BrowserWindowController class]];
@@ -132,8 +140,13 @@ TEST_F(FramedBrowserWindowTest, WindowWidgetLocation) {
                 kFramedWindowButtonsWithoutTabStripOffsetFromTop);
   EXPECT_EQ(NSMinX(miniaturizeFrame),
             NSMaxX(closeBoxFrame) + [window_ windowButtonsInterButtonSpacing]);
+  [window_ setWindowController:nil];
 
   // Then with a tabstrip.
+  [window_ close];
+  window_ = [[FramedBrowserWindow alloc]
+             initWithContentRect:NSMakeRect(0, 0, 800, 600)
+                     hasTabStrip:YES];
   controller = [OCMockObject mockForClass:[BrowserWindowController class]];
   [[[controller stub] andReturnValue:OCMOCK_VALUE(yes)]
       isKindOfClass:[BrowserWindowController class]];

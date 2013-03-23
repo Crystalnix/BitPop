@@ -18,8 +18,13 @@
 class BookmarkMenuDelegate;
 class Browser;
 
+namespace ui {
+class NativeTheme;
+}
+
 namespace views {
 class MenuButton;
+struct MenuConfig;
 class MenuItemView;
 class MenuRunner;
 class View;
@@ -30,7 +35,10 @@ class WrenchMenu : public views::MenuDelegate,
                    public BaseBookmarkModelObserver,
                    public content::NotificationObserver {
  public:
-  explicit WrenchMenu(Browser* browser);
+  // TODO: remove |use_new_menu| and |supports_new_separators|.
+  WrenchMenu(Browser* browser,
+             bool use_new_menu,
+             bool supports_new_separators);
   virtual ~WrenchMenu();
 
   void Init(ui::MenuModel* model);
@@ -38,10 +46,17 @@ class WrenchMenu : public views::MenuDelegate,
   // Shows the menu relative to the specified view.
   void RunMenu(views::MenuButton* host);
 
+  // Whether the menu is currently visible to the user.
+  bool IsShowing();
+
+  const views::MenuConfig& GetMenuConfig() const;
+
+  bool use_new_menu() const { return use_new_menu_; }
+
   // MenuDelegate overrides:
   virtual string16 GetTooltipText(int id, const gfx::Point& p) const OVERRIDE;
   virtual bool IsTriggerableEvent(views::MenuItemView* menu,
-                                  const views::Event& e) OVERRIDE;
+                                  const ui::Event& e) OVERRIDE;
   virtual bool GetDropFormats(
       views::MenuItemView* menu,
       int* formats,
@@ -50,11 +65,11 @@ class WrenchMenu : public views::MenuDelegate,
   virtual bool CanDrop(views::MenuItemView* menu,
                        const ui::OSExchangeData& data) OVERRIDE;
   virtual int GetDropOperation(views::MenuItemView* item,
-                               const views::DropTargetEvent& event,
+                               const ui::DropTargetEvent& event,
                                DropPosition* position) OVERRIDE;
   virtual int OnPerformDrop(views::MenuItemView* menu,
                             DropPosition position,
-                            const views::DropTargetEvent& event) OVERRIDE;
+                            const ui::DropTargetEvent& event) OVERRIDE;
   virtual bool ShowContextMenu(views::MenuItemView* source,
                                int id,
                                const gfx::Point& p,
@@ -81,6 +96,7 @@ class WrenchMenu : public views::MenuDelegate,
 
  private:
   class CutCopyPasteView;
+  class RecentTabsMenuModelDelegate;
   class ZoomView;
 
   typedef std::pair<ui::MenuModel*,int> Entry;
@@ -145,10 +161,17 @@ class WrenchMenu : public views::MenuDelegate,
   // Menu corresponding to IDC_FEEDBACK.
   views::MenuItemView* feedback_menu_item_;
 
+  // Used for managing "Recent tabs" menu items.
+  scoped_ptr<RecentTabsMenuModelDelegate> recent_tabs_menu_model_delegate_;
+
   // ID to use for the items representing bookmarks in the bookmark menu.
   int first_bookmark_command_id_;
 
   content::NotificationRegistrar registrar_;
+
+  const bool use_new_menu_;
+
+  const bool supports_new_separators_;
 
   DISALLOW_COPY_AND_ASSIGN(WrenchMenu);
 };

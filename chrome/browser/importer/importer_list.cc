@@ -80,7 +80,7 @@ void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
   }
 
   importer::SourceProfile* firefox = new importer::SourceProfile;
-  firefox->importer_name = l10n_util::GetStringUTF16(IDS_IMPORT_FROM_FIREFOX);
+  firefox->importer_name = GetFirefoxImporterName(app_path);
   firefox->importer_type = firefox_type;
   firefox->source_path = profile_path;
 #if defined(OS_WIN)
@@ -93,6 +93,7 @@ void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
   profiles->push_back(firefox);
 }
 
+#if defined(OS_WIN)
 void DetectGoogleToolbarProfiles(
     std::vector<importer::SourceProfile*>* profiles,
     scoped_refptr<net::URLRequestContextGetter> request_context_getter) {
@@ -109,6 +110,7 @@ void DetectGoogleToolbarProfiles(
   google_toolbar->request_context_getter = request_context_getter;
   profiles->push_back(google_toolbar);
 }
+#endif
 
 }  // namespace
 

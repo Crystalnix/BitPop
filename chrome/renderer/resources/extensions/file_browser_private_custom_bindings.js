@@ -25,11 +25,13 @@ chromeHidden.registerCustomHook('fileBrowserPrivate', function(bindingsAPI) {
     request.callback = null;
   });
 
-  apiFunctions.setCustomCallback('searchGData',
+  apiFunctions.setCustomCallback('searchDrive',
                                  function(name, request, response) {
-    if (response && !response.error && response.entries) {
-      for (var i = 0; i < response.entries.length; i++)
-       response.entries[i] = GetExternalFileEntry(response.entries[i]);
+    if (response && !response.error && response.results) {
+      for (var i = 0; i < response.results.length; i++) {
+        response.results[i].entry =
+            GetExternalFileEntry(response.results[i].entry);
+      }
     }
 
     // So |request.callback| doesn't break if response is not defined.
@@ -37,7 +39,7 @@ chromeHidden.registerCustomHook('fileBrowserPrivate', function(bindingsAPI) {
       response = {};
 
     if (request.callback)
-      request.callback(response.entries, response.nextFeed);
+      request.callback(response.results, response.nextFeed);
     request.callback = null;
   });
 });

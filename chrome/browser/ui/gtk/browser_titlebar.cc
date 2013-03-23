@@ -18,7 +18,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/managed_mode.h"
+#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
@@ -54,7 +54,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/x/active_window_watcher_x.h"
-#include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
 
 using content::WebContents;
@@ -177,13 +176,13 @@ void PopupPageMenuModel::Build() {
   AddItemWithStringId(IDC_BACK, IDS_CONTENT_CONTEXT_BACK);
   AddItemWithStringId(IDC_FORWARD, IDS_CONTENT_CONTEXT_FORWARD);
   AddItemWithStringId(IDC_RELOAD, IDS_APP_MENU_RELOAD);
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_SHOW_AS_TAB, IDS_SHOW_AS_TAB);
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_CUT, IDS_CUT);
   AddItemWithStringId(IDC_COPY, IDS_COPY);
   AddItemWithStringId(IDC_PASTE, IDS_PASTE);
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_FIND, IDS_FIND);
   AddItemWithStringId(IDC_PRINT, IDS_PRINT);
   zoom_menu_model_.reset(new ZoomMenuModel(delegate()));
@@ -193,7 +192,7 @@ void PopupPageMenuModel::Build() {
   AddSubMenuWithStringId(IDC_ENCODING_MENU, IDS_ENCODING_MENU,
                          encoding_menu_model_.get());
 
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_CLOSE_WINDOW, IDS_CLOSE);
 }
 
@@ -551,8 +550,8 @@ void BrowserTitlebar::GetButtonResources(const std::string& button_name,
 void BrowserTitlebar::UpdateButtonBackground(CustomDrawButton* button) {
   SkColor color = theme_service_->GetColor(
       ThemeService::COLOR_BUTTON_BACKGROUND);
-  SkBitmap* background =
-      theme_service_->GetBitmapNamed(IDR_THEME_WINDOW_CONTROL_BACKGROUND);
+  SkBitmap background = theme_service_->GetImageNamed(
+      IDR_THEME_WINDOW_CONTROL_BACKGROUND).AsBitmap();
 
   // TODO(erg): For now, we just use a completely black mask and we can get
   // away with this in the short term because our buttons are rectangles. We
@@ -565,7 +564,7 @@ void BrowserTitlebar::UpdateButtonBackground(CustomDrawButton* button) {
   mask.allocPixels();
   mask.eraseColor(SK_ColorBLACK);
 
-  button->SetBackground(color, background, &mask);
+  button->SetBackground(color, background, mask);
 }
 
 void BrowserTitlebar::UpdateCustomFrame(bool use_custom_frame) {
@@ -601,13 +600,11 @@ void BrowserTitlebar::UpdateTitleAndIcon() {
         // top left of the custom frame, that will get updated when the
         // throbber is updated.
         Profile* profile = browser_window_->browser()->profile();
-        SkBitmap icon = browser_window_->browser()->GetCurrentPageIcon();
-        if (icon.empty()) {
+        gfx::Image icon = browser_window_->browser()->GetCurrentPageIcon();
+        if (icon.IsEmpty()) {
           gtk_util::SetWindowIcon(window_, profile);
         } else {
-          GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(icon);
-          gtk_util::SetWindowIcon(window_, profile, icon_pixbuf);
-          g_object_unref(icon_pixbuf);
+          gtk_util::SetWindowIcon(window_, profile, icon.ToGdkPixbuf());
         }
         break;
       }
@@ -636,15 +633,14 @@ void BrowserTitlebar::UpdateThrobber(WebContents* web_contents) {
     // Note: we want to exclude the application popup/panel window.
     if ((browser_window_->browser()->is_app() &&
         !browser_window_->browser()->is_type_tabbed())) {
-      SkBitmap icon = browser_window_->browser()->GetCurrentPageIcon();
-      if (icon.empty()) {
+      gfx::Image icon = browser_window_->browser()->GetCurrentPageIcon();
+      if (icon.IsEmpty()) {
         // Fallback to the Chromium icon if the page has no icon.
         gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_),
             rb.GetNativeImageNamed(IDR_PRODUCT_LOGO_16).ToGdkPixbuf());
       } else {
-        GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(icon);
-        gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_), icon_pixbuf);
-        g_object_unref(icon_pixbuf);
+        gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_),
+                                  icon.ToGdkPixbuf());
       }
     } else {
       gtk_image_set_from_pixbuf(GTK_IMAGE(app_mode_favicon_),
@@ -973,13 +969,15 @@ void BrowserTitlebar::ExecuteCommand(int command_id) {
 }
 
 bool BrowserTitlebar::GetAcceleratorForCommandId(
-    int command_id, ui::Accelerator* accelerator) {
-  const ui::AcceleratorGtk* accelerator_gtk =
+    int command_id,
+    ui::Accelerator* out_accelerator) {
+  const ui::Accelerator* accelerator =
       AcceleratorsGtk::GetInstance()->GetPrimaryAcceleratorForCommand(
           command_id);
-  if (accelerator_gtk)
-    *accelerator = *accelerator_gtk;
-  return accelerator_gtk;
+  if (!accelerator)
+    return false;
+  *out_accelerator = *accelerator;
+  return true;
 }
 
 void BrowserTitlebar::Observe(int type,
@@ -1035,26 +1033,14 @@ bool BrowserTitlebar::IsOffTheRecord() {
   return browser_window_->browser()->profile()->IsOffTheRecord();
 }
 
-GtkWidget* BrowserTitlebar::widget() const {
-  return container_;
-}
-
-void BrowserTitlebar::set_window(GtkWindow* window) {
-  window_ = window;
-}
-
-AvatarMenuButtonGtk* BrowserTitlebar::avatar_button() const {
-  return avatar_button_.get();
-}
-
 BrowserTitlebar::ContextMenuModel::ContextMenuModel(
     ui::SimpleMenuModel::Delegate* delegate)
     : SimpleMenuModel(delegate) {
   AddItemWithStringId(IDC_NEW_TAB, IDS_TAB_CXMENU_NEWTAB);
   AddItemWithStringId(IDC_RESTORE_TAB, IDS_RESTORE_TAB);
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddCheckItemWithStringId(kShowWindowDecorationsCommand,
                            IDS_SHOW_WINDOW_DECORATIONS_MENU);
 }

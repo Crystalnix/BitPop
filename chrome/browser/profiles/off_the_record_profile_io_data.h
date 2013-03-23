@@ -12,13 +12,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/profile_io_data.h"
+#include "chrome/browser/profiles/storage_partition_descriptor.h"
 
 class ChromeURLRequestContext;
 class ChromeURLRequestContextGetter;
 class Profile;
-namespace net {
-class HttpServerPropertiesImpl;
-}  // namespace net
 
 // OffTheRecordProfile owns a OffTheRecordProfileIOData::Handle, which holds a
 // reference to the OffTheRecordProfileIOData. OffTheRecordProfileIOData is
@@ -51,12 +49,14 @@ class OffTheRecordProfileIOData : public ProfileIOData {
         GetExtensionsRequestContextGetter() const;
     scoped_refptr<ChromeURLRequestContextGetter>
         GetIsolatedAppRequestContextGetter(
-            const std::string& app_id) const;
+            const FilePath& partition_path,
+            bool in_memory) const;
 
    private:
-    typedef base::hash_map<std::string,
-                           scoped_refptr<ChromeURLRequestContextGetter> >
-        ChromeURLRequestContextGetterMap;
+    typedef std::map<StoragePartitionDescriptor,
+                     scoped_refptr<ChromeURLRequestContextGetter>,
+                     StoragePartitionDescriptorLess>
+      ChromeURLRequestContextGetterMap;
 
     // Lazily initialize ProfileParams. We do this on the calls to
     // Get*RequestContextGetter(), so we only initialize ProfileParams right
@@ -97,23 +97,32 @@ class OffTheRecordProfileIOData : public ProfileIOData {
 
   virtual void LazyInitializeInternal(
       ProfileParams* profile_params) const OVERRIDE;
+  virtual void InitializeExtensionsRequestContext(
+      ProfileParams* profile_params) const OVERRIDE;
   virtual ChromeURLRequestContext* InitializeAppRequestContext(
       ChromeURLRequestContext* main_context,
-      const std::string& app_id) const OVERRIDE;
+      const StoragePartitionDescriptor& partition_descriptor,
+      scoped_ptr<net::URLRequestJobFactory::Interceptor>
+          protocol_handler_interceptor) const OVERRIDE;
+  virtual ChromeURLRequestContext* InitializeMediaRequestContext(
+      ChromeURLRequestContext* original_context,
+      const StoragePartitionDescriptor& partition_descriptor) const OVERRIDE;
   virtual ChromeURLRequestContext*
       AcquireMediaRequestContext() const OVERRIDE;
   virtual ChromeURLRequestContext*
       AcquireIsolatedAppRequestContext(
           ChromeURLRequestContext* main_context,
-          const std::string& app_id) const OVERRIDE;
+          const StoragePartitionDescriptor& partition_descriptor,
+          scoped_ptr<net::URLRequestJobFactory::Interceptor>
+              protocol_handler_interceptor) const OVERRIDE;
+  virtual ChromeURLRequestContext*
+      AcquireIsolatedMediaRequestContext(
+          ChromeURLRequestContext* app_context,
+          const StoragePartitionDescriptor& partition_descriptor)
+              const OVERRIDE;
 
-  void CreateFtpProtocolHandler(net::URLRequestJobFactory* job_factory,
-                                net::FtpAuthCache* ftp_auth_cache) const;
-
-  virtual chrome_browser_net::CacheStats* GetCacheStats(
+  virtual chrome_browser_net::LoadTimeStats* GetLoadTimeStats(
       IOThread::Globals* io_thread_globals) const OVERRIDE;
-
-  mutable scoped_ptr<net::HttpServerPropertiesImpl> http_server_properties_;
 
   mutable scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
   mutable scoped_ptr<net::FtpTransactionFactory> ftp_factory_;

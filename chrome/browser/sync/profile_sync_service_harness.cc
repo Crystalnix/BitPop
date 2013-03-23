@@ -26,6 +26,7 @@
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "sync/internal_api/public/base/progress_marker_map.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
 
@@ -106,7 +107,7 @@ ProfileSyncServiceHarness::ProfileSyncServiceHarness(
       wait_state_(INITIAL_WAIT_STATE),
       profile_(profile),
       service_(NULL),
-      timestamp_match_partner_(NULL),
+      progress_marker_partner_(NULL),
       username_(username),
       password_(password),
       profile_debug_name_(profile->GetDebugName()),
@@ -175,12 +176,7 @@ bool ProfileSyncServiceHarness::SetupSync(
   service_->SetSetupInProgress(true);
 
   // Authenticate sync client using GAIA credentials.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableClientOAuthSignin)) {
-    service_->signin()->StartSignInWithOAuth(username_, password_);
-  } else {
-    service_->signin()->StartSignIn(username_, password_, "", "");
-  }
+  service_->signin()->StartSignIn(username_, password_, "", "");
 
   // Wait for the OnBackendInitialized() callback.
   if (!AwaitBackendInitialized()) {
@@ -190,23 +186,32 @@ bool ProfileSyncServiceHarness::SetupSync(
     return false;
   }
 
+  // Make sure that initial sync wasn't blocked by a missing passphrase.
+  if (wait_state_ == SET_PASSPHRASE_FAILED) {
+    LOG(ERROR) << "A passphrase is required for decryption. Sync cannot proceed"
+                  " until SetDecryptionPassphrase is called.";
+    return false;
+  }
+
+  // Make sure that initial sync wasn't blocked by rejected credentials.
+  if (wait_state_ == CREDENTIALS_REJECTED) {
+    LOG(ERROR) << "Credentials were rejected. Sync cannot proceed.";
+    return false;
+  }
+
   // Choose the datatypes to be synced. If all datatypes are to be synced,
   // set sync_everything to true; otherwise, set it to false.
   bool sync_everything =
       synced_datatypes.Equals(syncer::ModelTypeSet::All());
   service()->OnUserChoseDatatypes(sync_everything, synced_datatypes);
 
+  // Notify ProfileSyncService that we are done with configuration.
+  service_->SetSetupInProgress(false);
+
   // Subscribe sync client to notifications from the backend migrator
   // (possible only after choosing data types).
   if (!TryListeningToMigrationEvents()) {
     NOTREACHED();
-    return false;
-  }
-
-  // Make sure that a partner client hasn't already set an explicit passphrase.
-  if (wait_state_ == SET_PASSPHRASE_FAILED) {
-    LOG(ERROR) << "A passphrase is required for decryption. Sync cannot proceed"
-                  " until SetDecryptionPassphrase is called.";
     return false;
   }
 
@@ -238,8 +243,11 @@ bool ProfileSyncServiceHarness::SetupSync(
     return false;
   }
 
-  // Notify ProfileSyncService that we are done with configuration.
-  service_->SetSetupInProgress(false);
+  // Make sure that initial sync wasn't blocked by rejected credentials.
+  if (wait_state_ == CREDENTIALS_REJECTED) {
+    LOG(ERROR) << "Credentials were rejected. Sync cannot proceed.";
+    return false;
+  }
 
   // Indicate to the browser that sync setup is complete.
   service()->SetSyncSetupCompleted();
@@ -265,7 +273,7 @@ void ProfileSyncServiceHarness::SignalStateCompleteWithNextState(
 
 void ProfileSyncServiceHarness::SignalStateComplete() {
   if (waiting_for_status_change_)
-    MessageLoop::current()->Quit();
+    MessageLoop::current()->QuitWhenIdle();
 }
 
 bool ProfileSyncServiceHarness::RunStateChangeMachine() {
@@ -293,6 +301,12 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
         SignalStateCompleteWithNextState(SET_PASSPHRASE_FAILED);
         break;
       }
+      if (service()->GetAuthError().state() ==
+          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
+        // Our credentials were rejected. Do not wait any more.
+        SignalStateCompleteWithNextState(CREDENTIALS_REJECTED);
+        break;
+      }
       break;
     }
     case WAITING_FOR_FULL_SYNC: {
@@ -313,8 +327,8 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
     }
     case WAITING_FOR_UPDATES: {
       DVLOG(1) << GetClientInfoString("WAITING_FOR_UPDATES");
-      DCHECK(timestamp_match_partner_);
-      if (!MatchesOtherClient(timestamp_match_partner_)) {
+      DCHECK(progress_marker_partner_);
+      if (!MatchesOtherClient(progress_marker_partner_)) {
         // The client is not yet fully synced; keep waiting until we converge.
         break;
       }
@@ -646,11 +660,11 @@ bool ProfileSyncServiceHarness::AwaitMigration(
     }
     // We must use AwaitDataSyncCompletion rather than the more common
     // AwaitFullSyncCompletion.  As long as crbug.com/97780 is open, we will
-    // rely on self-notifications to ensure that timestamps are udpated, which
-    // allows AwaitFullSyncCompletion to return.  However, in some migration
-    // tests these notifications are completely disabled, so the timestamps do
-    // not get updated.  This is why we must use the less strict condition,
-    // AwaitDataSyncCompletion.
+    // rely on self-notifications to ensure that progress markers are updated,
+    // which allows AwaitFullSyncCompletion to return.  However, in some
+    // migration tests these notifications are completely disabled, so the
+    // progress markers do not get updated.  This is why we must use the less
+    // strict condition, AwaitDataSyncCompletion.
     if (!AwaitDataSyncCompletion(
             "Config sync cycle after migration cycle")) {
       return false;
@@ -663,7 +677,7 @@ bool ProfileSyncServiceHarness::AwaitMutualSyncCycleCompletion(
   DVLOG(1) << GetClientInfoString("AwaitMutualSyncCycleCompletion");
   if (!AwaitFullSyncCompletion("Sync cycle completion on active client."))
     return false;
-  return partner->WaitUntilTimestampMatches(this,
+  return partner->WaitUntilProgressMarkersMatch(this,
       "Sync cycle completion on passive client.");
 }
 
@@ -677,7 +691,7 @@ bool ProfileSyncServiceHarness::AwaitGroupSyncCycleCompletion(
       partners.begin(); it != partners.end(); ++it) {
     if ((this != *it) && ((*it)->wait_state_ != SYNC_DISABLED)) {
       return_value = return_value &&
-          (*it)->WaitUntilTimestampMatches(this,
+          (*it)->WaitUntilProgressMarkersMatch(this,
           "Sync cycle completion on partner client.");
     }
   }
@@ -698,27 +712,27 @@ bool ProfileSyncServiceHarness::AwaitQuiescence(
   return return_value;
 }
 
-bool ProfileSyncServiceHarness::WaitUntilTimestampMatches(
+bool ProfileSyncServiceHarness::WaitUntilProgressMarkersMatch(
     ProfileSyncServiceHarness* partner, const std::string& reason) {
-  DVLOG(1) << GetClientInfoString("WaitUntilTimestampMatches");
+  DVLOG(1) << GetClientInfoString("WaitUntilProgressMarkersMatch");
   if (wait_state_ == SYNC_DISABLED) {
     LOG(ERROR) << "Sync disabled for " << profile_debug_name_ << ".";
     return false;
   }
 
   if (MatchesOtherClient(partner)) {
-    // Timestamps already match; don't wait.
+    // Progress markers already match; don't wait.
     return true;
   }
 
-  DCHECK(!timestamp_match_partner_);
-  timestamp_match_partner_ = partner;
+  DCHECK(!progress_marker_partner_);
+  progress_marker_partner_ = partner;
   partner->service()->AddObserver(this);
   wait_state_ = WAITING_FOR_UPDATES;
   bool return_value =
       AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs, reason);
   partner->service()->RemoveObserver(this);
-  timestamp_match_partner_ = NULL;
+  progress_marker_partner_ = NULL;
   return return_value;
 }
 
@@ -767,11 +781,9 @@ ProfileSyncService::Status ProfileSyncServiceHarness::GetStatus() {
 // while ensuring that all conditions are evaluated using on the same snapshot.
 bool ProfileSyncServiceHarness::IsDataSyncedImpl(
     const SyncSessionSnapshot& snap) {
-  return snap.num_simple_conflicts() == 0 &&
-         ServiceIsPushingChanges() &&
+  return ServiceIsPushingChanges() &&
          GetStatus().notifications_enabled &&
          !service()->HasUnsyncedItems() &&
-         !snap.has_more_to_sync() &&
          !HasPendingBackendMigration();
 }
 
@@ -844,24 +856,25 @@ bool ProfileSyncServiceHarness::MatchesOtherClient(
 
   for (syncer::ModelTypeSet::Iterator i = common_types.First();
        i.Good(); i.Inc()) {
-    const std::string timestamp = GetUpdatedTimestamp(i.Get());
-    const std::string partner_timestamp = partner->GetUpdatedTimestamp(i.Get());
-    if (timestamp != partner_timestamp) {
+    const std::string marker = GetSerializedProgressMarker(i.Get());
+    const std::string partner_marker =
+        partner->GetSerializedProgressMarker(i.Get());
+    if (marker != partner_marker) {
       if (VLOG_IS_ON(2)) {
-        std::string timestamp_base64, partner_timestamp_base64;
-        if (!base::Base64Encode(timestamp, &timestamp_base64)) {
+        std::string marker_base64, partner_marker_base64;
+        if (!base::Base64Encode(marker, &marker_base64)) {
           NOTREACHED();
         }
         if (!base::Base64Encode(
-                partner_timestamp, &partner_timestamp_base64)) {
+                partner_marker, &partner_marker_base64)) {
           NOTREACHED();
         }
         DVLOG(2) << syncer::ModelTypeToString(i.Get()) << ": "
-                 << profile_debug_name_ << " timestamp = "
-                 << timestamp_base64 << ", "
+                 << profile_debug_name_ << " progress marker = "
+                 << marker_base64 << ", "
                  << partner->profile_debug_name_
-                 << " partner timestamp = "
-                 << partner_timestamp_base64;
+                 << " partner progress marker = "
+                 << partner_marker_base64;
       }
       return false;
     }
@@ -983,10 +996,15 @@ bool ProfileSyncServiceHarness::DisableSyncForAllDatatypes() {
   return true;
 }
 
-std::string ProfileSyncServiceHarness::GetUpdatedTimestamp(
-    syncer::ModelType model_type) {
+std::string ProfileSyncServiceHarness::GetSerializedProgressMarker(
+    syncer::ModelType model_type) const {
   const SyncSessionSnapshot& snap = GetLastSessionSnapshot();
-  return snap.download_progress_markers()[model_type];
+  const syncer::ProgressMarkerMap& markers_map =
+      snap.download_progress_markers();
+
+  syncer::ProgressMarkerMap::const_iterator it =
+      markers_map.find(model_type);
+  return (it != markers_map.end()) ? it->second : "";
 }
 
 std::string ProfileSyncServiceHarness::GetClientInfoString(
@@ -997,9 +1015,7 @@ std::string ProfileSyncServiceHarness::GetClientInfoString(
     const SyncSessionSnapshot& snap = GetLastSessionSnapshot();
     const ProfileSyncService::Status& status = GetStatus();
     // Capture select info from the sync session snapshot and syncer status.
-    os << "has_more_to_sync: "
-       << snap.has_more_to_sync()
-       << ", has_unsynced_items: "
+    os << ", has_unsynced_items: "
        << (service()->sync_initialized() ? service()->HasUnsyncedItems() : 0)
        << ", did_commit: "
        << (snap.model_neutral_state().num_successful_commits == 0 &&
@@ -1008,8 +1024,6 @@ std::string ProfileSyncServiceHarness::GetClientInfoString(
        << snap.num_encryption_conflicts()
        << ", hierarchy conflicts: "
        << snap.num_hierarchy_conflicts()
-       << ", simple conflicts: "
-       << snap.num_simple_conflicts()
        << ", server conflicts: "
        << snap.num_server_conflicts()
        << ", num_updates_downloaded : "

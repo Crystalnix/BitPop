@@ -54,6 +54,9 @@ void Profile::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kSessionExitedCleanly,
                              true,
                              PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kSessionExitType,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kSafeBrowsingEnabled,
                              true,
                              PrefService::SYNCABLE_PREF);
@@ -69,7 +72,7 @@ void Profile::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kExtensionAlertsInitializedPref,
                              false, PrefService::UNSYNCABLE_PREF);
   prefs->RegisterStringPref(prefs::kSelectFileLastDirectory,
-                            "",
+                            std::string(),
                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterDoublePref(prefs::kDefaultZoomLevel,
                             0.0,
@@ -86,15 +89,25 @@ void Profile::RegisterUserPrefs(PrefService* prefs) {
   // In the future we may want to maintain kApplicationLocale
   // in user's profile for other platforms as well.
   prefs->RegisterStringPref(prefs::kApplicationLocale,
-                            "",
+                            std::string(),
                             PrefService::SYNCABLE_PREF);
   prefs->RegisterStringPref(prefs::kApplicationLocaleBackup,
-                            "",
+                            std::string(),
                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterStringPref(prefs::kApplicationLocaleAccepted,
-                            "",
+                            std::string(),
                             PrefService::UNSYNCABLE_PREF);
 #endif
+
+#if defined(OS_ANDROID)
+  prefs->RegisterBooleanPref(prefs::kDevToolsRemoteEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kSpdyProxyEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+#endif
+
 }
 
 
@@ -106,7 +119,6 @@ std::string Profile::GetDebugName() {
   return name;
 }
 
-// static
 bool Profile::IsGuestSession() {
 #if defined(OS_CHROMEOS)
   static bool is_guest_session =

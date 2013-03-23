@@ -32,6 +32,7 @@
 #include "ui/base/x/x11_util.h"
 #include "ui/base/x/x11_util_internal.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/surface/transport_dib.h"
 
 namespace content {
@@ -83,7 +84,10 @@ class XSyncHandler {
     return loaded_extension_;
   }
 
-  void PushPaintCounter(Display* display, Picture picture, Pixmap pixmap,
+  void PushPaintCounter(TransportDIB* dib,
+                        Display* display,
+                        Picture picture,
+                        Pixmap pixmap,
                         const base::Closure& completion_callback);
 
  private:
@@ -92,13 +96,17 @@ class XSyncHandler {
   // A struct that has cleanup and callback tasks that were queued into the
   // future and are run on |g_backing_store_sync_alarm| firing.
   struct BackingStoreEvents {
-    BackingStoreEvents(Display* d, Picture pic, Pixmap pix,
+    BackingStoreEvents(TransportDIB* dib, Display* d, Picture pic, Pixmap pix,
                        const base::Closure& c)
-        : display(d),
+        : dib(dib),
+          display(d),
           picture(pic),
           pixmap(pix),
           closure(c) {
+      dib->IncreaseInFlightCounter();
     }
+
+    TransportDIB* dib;
 
     // The display we're running on.
     Display* display;
@@ -133,12 +141,13 @@ class XSyncHandler {
   std::queue<BackingStoreEvents*> backing_store_events_;
 };
 
-void XSyncHandler::PushPaintCounter(Display* display,
+void XSyncHandler::PushPaintCounter(TransportDIB* dib,
+                                    Display* display,
                                     Picture picture,
                                     Pixmap pixmap,
                                     const base::Closure& completion_callback) {
-  backing_store_events_.push(
-      new BackingStoreEvents(display, picture, pixmap, completion_callback));
+  backing_store_events_.push(new BackingStoreEvents(
+        dib, display, picture, pixmap, completion_callback));
 
   // Push a change counter event into the X11 event queue that will trigger our
   // alarm when it is processed.
@@ -182,6 +191,7 @@ XSyncHandler::~XSyncHandler() {
   if (loaded_extension_)
     gdk_window_remove_filter(NULL, &OnEventThunk, this);
 
+  XSync(ui::GetXDisplay(), False);
   while (!backing_store_events_.empty()) {
     // We delete the X11 resources we're holding onto. We don't run the
     // callbacks because we are shutting down.
@@ -189,6 +199,7 @@ XSyncHandler::~XSyncHandler() {
     backing_store_events_.pop();
     XRenderFreePicture(data->display, data->picture);
     XFreePixmap(data->display, data->pixmap);
+    data->dib->DecreaseInFlightCounter();
     delete data;
   }
 }
@@ -219,6 +230,8 @@ GdkFilterReturn XSyncHandler::OnEvent(GdkXEvent* gdkxevent,
 
       // Dispatch the closure we were given.
       data->closure.Run();
+
+      data->dib->DecreaseInFlightCounter();
       delete data;
 
       return GDK_FILTER_REMOVE;
@@ -344,8 +357,10 @@ void BackingStoreGtk::PaintToBackingStore(
   if (bitmap_rect.IsEmpty())
     return;
 
-  const int width = bitmap_rect.width();
-  const int height = bitmap_rect.height();
+  gfx::Rect pixel_bitmap_rect = gfx::ToEnclosedRect(
+      gfx::ScaleRect(bitmap_rect, scale_factor));
+  const int width = pixel_bitmap_rect.width();
+  const int height = pixel_bitmap_rect.height();
 
   if (width <= 0 || width > kMaxVideoLayerSize ||
       height <= 0 || height > kMaxVideoLayerSize)
@@ -402,12 +417,14 @@ void BackingStoreGtk::PaintToBackingStore(
 #if defined(ARCH_CPU_ARM_FAMILY)
       for (size_t i = 0; i < copy_rects.size(); i++) {
         const gfx::Rect& copy_rect = copy_rects[i];
+        gfx::Rect pixel_copy_rect = gfx::ToEnclosedRect(
+            gfx::ScaleRect(copy_rect, scale_factor));
         XShmPutImage(display_, pixmap, gc, image,
-                     copy_rect.x() - bitmap_rect.x(), /* source x */
-                     copy_rect.y() - bitmap_rect.y(), /* source y */
-                     copy_rect.x() - bitmap_rect.x(), /* dest x */
-                     copy_rect.y() - bitmap_rect.y(), /* dest y */
-                     copy_rect.width(), copy_rect.height(),
+                     pixel_copy_rect.x() - pixel_bitmap_rect.x(), /* source x */
+                     pixel_copy_rect.y() - pixel_bitmap_rect.y(), /* source y */
+                     pixel_copy_rect.x() - pixel_bitmap_rect.x(), /* dest x */
+                     pixel_copy_rect.y() - pixel_bitmap_rect.y(), /* dest y */
+                     pixel_copy_rect.width(), pixel_copy_rect.height(),
                      False /* send_event */);
       }
 #else
@@ -448,6 +465,16 @@ void BackingStoreGtk::PaintToBackingStore(
 
   picture = ui::CreatePictureFromSkiaPixmap(display_, pixmap);
 
+  if (scale_factor != 1.0) {
+    float up_scale = 1.0 / scale_factor;
+    XTransform scaling = { {
+        { XDoubleToFixed(1), XDoubleToFixed(0), XDoubleToFixed(0) },
+        { XDoubleToFixed(0), XDoubleToFixed(1), XDoubleToFixed(0) },
+        { XDoubleToFixed(0), XDoubleToFixed(0), XDoubleToFixed(up_scale) }
+        } };
+    XRenderSetPictureTransform(display_, picture, &scaling);
+    XRenderSetPictureFilter(display_, picture, FilterGood, NULL, 0);
+  }
   for (size_t i = 0; i < copy_rects.size(); i++) {
     const gfx::Rect& copy_rect = copy_rects[i];
     XRenderComposite(display_,
@@ -472,7 +499,8 @@ void BackingStoreGtk::PaintToBackingStore(
     XSyncHandler* handler = XSyncHandler::GetInstance();
     if (handler->Enabled()) {
       *scheduled_completion_callback = true;
-      handler->PushPaintCounter(display_, picture, pixmap, completion_callback);
+      handler->PushPaintCounter(
+          dib, display_, picture, pixmap, completion_callback);
     } else {
       XSync(display_, False);
     }
@@ -486,7 +514,7 @@ void BackingStoreGtk::PaintToBackingStore(
 }
 
 bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
-                                           skia::PlatformCanvas* output) {
+                                           skia::PlatformBitmap* output) {
   base::TimeTicks begin_time = base::TimeTicks::Now();
 
   if (visual_depth_ < 24) {
@@ -519,10 +547,14 @@ bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
       return false;
     }
     shminfo.shmid = shmget(IPC_PRIVATE, image->bytes_per_line * image->height,
-                           IPC_CREAT|0666);
+                           IPC_CREAT|0600);
     if (shminfo.shmid == -1) {
       XDestroyImage(image);
+      LOG(WARNING) << "Failed to get shared memory segment. "
+                      "Performance may be degraded.";
       return false;
+    } else {
+      VLOG(1) << "Got shared memory segment " << shminfo.shmid;
     }
 
     void* mapped_memory = shmat(shminfo.shmid, NULL, SHM_RDONLY);
@@ -537,9 +569,14 @@ bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
         !XShmGetImage(display_, pixmap_, image, rect.x(), rect.y(),
                       AllPlanes)) {
       DestroySharedImage(display_, image, &shminfo);
+      LOG(WARNING) << "X failed to get shared memory segment. "
+                      "Performance may be degraded.";
       return false;
     }
+
+    VLOG(1) << "Using X shared memory segment " << shminfo.shmid;
   } else {
+    LOG(WARNING) << "Not using X shared memory.";
     // Non-shared memory case just copy the image from the server.
     image = XGetImage(display_, pixmap_,
                       rect.x(), rect.y(), width, height,
@@ -549,7 +586,7 @@ bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
   // TODO(jhawkins): Need to convert the image data if the image bits per pixel
   // is not 32.
   // Note that this also initializes the output bitmap as opaque.
-  if (!output->initialize(width, height, true) ||
+  if (!output->Allocate(width, height, true) ||
       image->bits_per_pixel != 32) {
     if (shared_memory_support_ != ui::SHARED_MEMORY_NONE)
       DestroySharedImage(display_, image, &shminfo);
@@ -562,7 +599,7 @@ bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
   // it and copy each row out, only up to the pixels we're actually
   // using.  This code assumes a visual mode where a pixel is
   // represented using a 32-bit unsigned int, with a byte per component.
-  SkBitmap bitmap = skia::GetTopDevice(*output)->accessBitmap(true);
+  const SkBitmap& bitmap = output->GetBitmap();
   SkAutoLockPixels alp(bitmap);
 
   for (int y = 0; y < height; y++) {
@@ -585,35 +622,36 @@ bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
   return true;
 }
 
-void BackingStoreGtk::ScrollBackingStore(int dx, int dy,
+void BackingStoreGtk::ScrollBackingStore(const gfx::Vector2d& delta,
                                          const gfx::Rect& clip_rect,
                                          const gfx::Size& view_size) {
   if (!display_)
     return;
 
   // We only support scrolling in one direction at a time.
-  DCHECK(dx == 0 || dy == 0);
+  DCHECK(delta.x() == 0 || delta.y() == 0);
 
-  if (dy) {
-    // Positive values of |dy| scroll up
-    if (abs(dy) < clip_rect.height()) {
+  if (delta.y()) {
+    // Positive values of |delta|.y() scroll up
+    if (abs(delta.y()) < clip_rect.height()) {
       XCopyArea(display_, pixmap_, pixmap_, static_cast<GC>(pixmap_gc_),
                 clip_rect.x() /* source x */,
-                std::max(clip_rect.y(), clip_rect.y() - dy),
+                std::max(clip_rect.y(), clip_rect.y() - delta.y()),
                 clip_rect.width(),
-                clip_rect.height() - abs(dy),
+                clip_rect.height() - abs(delta.y()),
                 clip_rect.x() /* dest x */,
-                std::max(clip_rect.y(), clip_rect.y() + dy) /* dest y */);
+                std::max(clip_rect.y(), clip_rect.y() + delta.y()) /* dest y */
+                );
     }
-  } else if (dx) {
-    // Positive values of |dx| scroll right
-    if (abs(dx) < clip_rect.width()) {
+  } else if (delta.x()) {
+    // Positive values of |delta|.x() scroll right
+    if (abs(delta.x()) < clip_rect.width()) {
       XCopyArea(display_, pixmap_, pixmap_, static_cast<GC>(pixmap_gc_),
-                std::max(clip_rect.x(), clip_rect.x() - dx),
+                std::max(clip_rect.x(), clip_rect.x() - delta.x()),
                 clip_rect.y() /* source y */,
-                clip_rect.width() - abs(dx),
+                clip_rect.width() - abs(delta.x()),
                 clip_rect.height(),
-                std::max(clip_rect.x(), clip_rect.x() + dx) /* dest x */,
+                std::max(clip_rect.x(), clip_rect.x() + delta.x()) /* dest x */,
                 clip_rect.y() /* dest x */);
     }
   }

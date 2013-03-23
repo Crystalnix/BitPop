@@ -17,7 +17,7 @@
 #include "base/values.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/features/feature_provider.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "extensions/common/url_pattern_set.h"
 
 namespace base {
 class DictionaryValue;
@@ -26,7 +26,6 @@ class Value;
 }
 
 class GURL;
-class ExtensionPermissionSet;
 
 namespace extensions {
 

@@ -9,13 +9,13 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/prefs/pref_value_map.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/configuration_policy_handler_list.h"
 #include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/prefs/pref_value_map.h"
 #include "content/public/browser/browser_thread.h"
 #include "policy/policy_constants.h"
 
@@ -65,16 +65,15 @@ bool ConfigurationPolicyPrefStore::IsInitializationComplete() const {
   return policy_service_->IsInitializationComplete();
 }
 
-PrefStore::ReadResult
-ConfigurationPolicyPrefStore::GetValue(const std::string& key,
-                                       const Value** value) const {
+bool ConfigurationPolicyPrefStore::GetValue(const std::string& key,
+                                            const Value** value) const {
   const Value* stored_value = NULL;
   if (!prefs_.get() || !prefs_->GetValue(key, &stored_value))
-    return PrefStore::READ_NO_VALUE;
+    return false;
 
   if (value)
     *value = stored_value;
-  return PrefStore::READ_OK;
+  return true;
 }
 
 void ConfigurationPolicyPrefStore::OnPolicyUpdated(

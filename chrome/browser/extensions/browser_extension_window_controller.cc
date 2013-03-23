@@ -48,10 +48,12 @@ BrowserExtensionWindowController::CreateWindowValue() const {
 }
 
 base::DictionaryValue*
-BrowserExtensionWindowController::CreateWindowValueWithTabs() const {
+BrowserExtensionWindowController::CreateWindowValueWithTabs(
+    const extensions::Extension* extension) const {
   DictionaryValue* result = CreateWindowValue();
 
-  result->Set(keys::kTabsKey, ExtensionTabUtil::CreateTabList(browser_));
+  result->Set(keys::kTabsKey, ExtensionTabUtil::CreateTabList(browser_,
+                                                              extension));
 
   return result;
 }
@@ -59,7 +61,7 @@ BrowserExtensionWindowController::CreateWindowValueWithTabs() const {
 bool BrowserExtensionWindowController::CanClose(Reason* reason) const {
   // Don't let an extension remove the window if the user is dragging tabs
   // in that window.
-  if (!chrome::IsTabStripEditable(browser_)) {
+  if (!browser_->window()->IsTabStripEditable()) {
     *reason = extensions::WindowController::REASON_NOT_EDITABLE;
     return false;
   }
@@ -80,6 +82,5 @@ Browser* BrowserExtensionWindowController::GetBrowser() const {
 bool BrowserExtensionWindowController::IsVisibleToExtension(
     const extensions::Extension* extension) const {
   // Platform apps can only see their own windows.
-  // TODO(mihaip): what about non-Aura panels?
   return !extension->is_platform_app();
 }

@@ -28,6 +28,7 @@
 #include "chrome/browser/webdata/web_intents_table.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/form_field_data.h"
 #ifdef DEBUG
 #include "content/public/browser/browser_thread.h"
 #endif
@@ -37,7 +38,6 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "webkit/forms/form_field.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -48,7 +48,6 @@
 using base::Bind;
 using base::Time;
 using content::BrowserThread;
-using webkit::forms::FormField;
 using webkit_glue::WebIntentServiceData;
 
 namespace {
@@ -61,7 +60,7 @@ void NotifyOfMultipleAutofillChangesTask(
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_AUTOFILL_MULTIPLE_CHANGED,
-      content::Source<WebDataService>(web_data_service.get()),
+      content::Source<WebDataServiceBase>(web_data_service.get()),
       content::NotificationService::NoDetails());
 }
 
@@ -73,16 +72,13 @@ WDAppImagesResult::~WDAppImagesResult() {}
 
 WDKeywordsResult::WDKeywordsResult()
   : default_search_provider_id(0),
-    builtin_keyword_version(0),
-    backup_valid(false),
-    did_default_search_provider_change(false) {
+    builtin_keyword_version(0) {
 }
 
 WDKeywordsResult::~WDKeywordsResult() {}
 
 WebDataService::WebDataService()
-    : RefcountedProfileKeyedService(BrowserThread::UI),
-      is_running_(false),
+    : is_running_(false),
       db_(NULL),
       autocomplete_syncable_service_(NULL),
       autofill_profile_syncable_service_(NULL),
@@ -138,6 +134,10 @@ void WebDataService::CancelRequest(Handle h) {
     return;
   }
   i->second->Cancel();
+}
+
+content::NotificationSource WebDataService::GetNotificationSource() {
+  return content::Source<WebDataService>(this);
 }
 
 bool WebDataService::IsDatabaseLoaded() {
@@ -276,7 +276,7 @@ void WebDataService::RemoveWebIntentService(
                                this, request));
 }
 
-WebDataService::Handle WebDataService::GetWebIntentServices(
+WebDataService::Handle WebDataService::GetWebIntentServicesForAction(
     const string16& action,
     WebDataServiceConsumer* consumer) {
   DCHECK(consumer);
@@ -332,6 +332,17 @@ void WebDataService::RemoveDefaultWebIntentService(
   ScheduleTask(FROM_HERE,
                Bind(&WebDataService::RemoveDefaultWebIntentServiceImpl, this,
                     request));
+}
+
+void WebDataService::RemoveWebIntentServiceDefaults(
+    const GURL& service_url) {
+  GenericRequest<GURL>* request =
+      new GenericRequest<GURL>(
+          this, GetNextRequestHandle(), NULL, service_url);
+  RegisterRequest(request);
+  ScheduleTask(
+      FROM_HERE,
+      Bind(&WebDataService::RemoveWebIntentServiceDefaultsImpl, this, request));
 }
 
 WebDataService::Handle WebDataService::GetDefaultWebIntentServicesForAction(
@@ -404,9 +415,9 @@ WebDataService::Handle WebDataService::GetAllTokens(
 ////////////////////////////////////////////////////////////////////////////////
 
 void WebDataService::AddFormFields(
-    const std::vector<FormField>& fields) {
-  GenericRequest<std::vector<FormField> >* request =
-      new GenericRequest<std::vector<FormField> >(
+    const std::vector<FormFieldData>& fields) {
+  GenericRequest<std::vector<FormFieldData> >* request =
+      new GenericRequest<std::vector<FormFieldData> >(
           this, GetNextRequestHandle(), NULL, fields);
   RegisterRequest(request);
   ScheduleTask(FROM_HERE,
@@ -787,11 +798,6 @@ void WebDataService::GetKeywordsImpl(WebDataRequest* request) {
         db_->GetKeywordTable()->GetDefaultSearchProviderID();
     result.builtin_keyword_version =
         db_->GetKeywordTable()->GetBuiltinKeywordVersion();
-    result.did_default_search_provider_change =
-        db_->GetKeywordTable()->DidDefaultSearchProviderChange();
-    result.backup_valid = result.did_default_search_provider_change &&
-        db_->GetKeywordTable()->GetDefaultSearchProviderBackup(
-            &result.default_search_provider_backup);
     request->SetResult(
         new WDResult<WDKeywordsResult>(KEYWORDS_RESULT, result));
   }
@@ -908,10 +914,10 @@ void WebDataService::GetWebIntentServicesImpl(
   InitializeDatabaseIfNecessary();
   if (db_ && !request->IsCancelled(NULL)) {
     std::vector<WebIntentServiceData> result;
-    db_->GetWebIntentsTable()->GetWebIntentServices(request->arg(), &result);
-    request->SetResult(
-        new WDResult<std::vector<WebIntentServiceData> >(
-            WEB_INTENTS_RESULT, result));
+    db_->GetWebIntentsTable()->GetWebIntentServicesForAction(request->arg(),
+                                                             &result);
+    request->SetResult(new WDResult<std::vector<WebIntentServiceData> >(
+        WEB_INTENTS_RESULT, result));
   }
   request->RequestComplete();
 }
@@ -960,6 +966,17 @@ void WebDataService::RemoveDefaultWebIntentServiceImpl(
   if (db_ && !request->IsCancelled(NULL)) {
     const DefaultWebIntentService& service = request->arg();
     db_->GetWebIntentsTable()->RemoveDefaultService(service);
+    ScheduleCommit();
+  }
+  request->RequestComplete();
+}
+
+void WebDataService::RemoveWebIntentServiceDefaultsImpl(
+    GenericRequest<GURL>* request) {
+  InitializeDatabaseIfNecessary();
+  if (db_ && !request->IsCancelled(NULL)) {
+    const GURL& service_url = request->arg();
+    db_->GetWebIntentsTable()->RemoveServiceDefaults(service_url);
     ScheduleCommit();
   }
   request->RequestComplete();
@@ -1042,7 +1059,7 @@ void WebDataService::GetAllTokensImpl(
 ////////////////////////////////////////////////////////////////////////////////
 
 void WebDataService::AddFormElementsImpl(
-    GenericRequest<std::vector<FormField> >* request) {
+    GenericRequest<std::vector<FormFieldData> >* request) {
   InitializeDatabaseIfNecessary();
   if (db_ && !request->IsCancelled(NULL)) {
     AutofillChangeList changes;

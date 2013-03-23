@@ -25,6 +25,7 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
+#include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_throttler_manager.h"
 
 namespace {
@@ -108,12 +109,8 @@ std::string MakeUserAgentForServiceProcess() {
 ServiceURLRequestContext::ServiceURLRequestContext(
     const std::string& user_agent,
     net::ProxyConfigService* net_proxy_config_service)
-    : user_agent_(user_agent),
-      ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
-  storage_.set_host_resolver(
-      net::CreateSystemHostResolver(net::HostResolver::kDefaultParallelism,
-                                    net::HostResolver::kDefaultRetryAttempts,
-                                    NULL));
+    : ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
+  storage_.set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       net_proxy_config_service, 0u, NULL));
   storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
@@ -123,6 +120,7 @@ ServiceURLRequestContext::ServiceURLRequestContext(
   storage_.set_http_auth_handler_factory(
       net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
   storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
+  storage_.set_transport_security_state(new net::TransportSecurityState);
   storage_.set_throttler_manager(new net::URLRequestThrottlerManager);
 
   net::HttpNetworkSession::Params session_params;
@@ -140,16 +138,8 @@ ServiceURLRequestContext::ServiceURLRequestContext(
           net::HttpCache::DefaultBackend::InMemory(0)));
   // In-memory cookie store.
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
-  set_accept_language("en-us,fr");
-  set_accept_charset("iso-8859-1,*,utf-8");
-}
-
-const std::string& ServiceURLRequestContext::GetUserAgent(
-    const GURL& url) const {
-  // If the user agent is set explicitly return that, otherwise call the
-  // base class method to return default value.
-  return user_agent_.empty() ?
-      net::URLRequestContext::GetUserAgent(url) : user_agent_;
+  storage_.set_http_user_agent_settings(new net::StaticHttpUserAgentSettings(
+      "en-us,fr", "iso-8859-1,*,utf-8", user_agent));
 }
 
 ServiceURLRequestContext::~ServiceURLRequestContext() {

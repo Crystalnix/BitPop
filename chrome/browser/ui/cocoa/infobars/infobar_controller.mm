@@ -8,19 +8,20 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "chrome/browser/tab_contents/link_infobar_delegate.h"
+#include "grit/ui_resources.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/api/infobars/infobar_service.h"
+#include "chrome/browser/api/infobars/link_infobar_delegate.h"
 #import "chrome/browser/ui/cocoa/animatable_view.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
 #import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
+#import "chrome/browser/ui/cocoa/image_button_cell.h"
 #include "chrome/browser/ui/cocoa/infobars/infobar.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_gradient_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/gfx/image/image.h"
 #include "webkit/glue/window_open_disposition.h"
@@ -51,7 +52,7 @@ const float kAnimateCloseDuration = 0.12;
 @synthesize delegate = delegate_;
 
 - (id)initWithDelegate:(InfoBarDelegate*)delegate
-                 owner:(InfoBarTabHelper*)owner {
+                 owner:(InfoBarService*)owner {
   DCHECK(delegate);
   if ((self = [super initWithNibName:@"InfoBar"
                               bundle:base::mac::FrameworkBundle()])) {
@@ -65,8 +66,18 @@ const float kAnimateCloseDuration = 0.12;
 // awakeFromNib.
 - (void)awakeFromNib {
   DCHECK(delegate_);
+
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+                   forButtonState:image_button_cell::kDefaultState];
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_H
+                   forButtonState:image_button_cell::kHoverState];
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_P
+                   forButtonState:image_button_cell::kPressedState];
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+                   forButtonState:image_button_cell::kDisabledState];
+
   if (delegate_->GetIcon()) {
-    [image_ setImage:*(delegate_->GetIcon())];
+    [image_ setImage:delegate_->GetIcon()->ToNSImage()];
   } else {
     // No icon, remove it from the view and grow the textfield to include the
     // space.
@@ -451,13 +462,13 @@ const float kAnimateCloseDuration = 0.12;
 //////////////////////////////////////////////////////////////////////////
 // CreateInfoBar() implementations
 
-InfoBar* LinkInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
+InfoBar* LinkInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   LinkInfoBarController* controller =
       [[LinkInfoBarController alloc] initWithDelegate:this owner:owner];
   return new InfoBar(controller, this);
 }
 
-InfoBar* ConfirmInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
+InfoBar* ConfirmInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   ConfirmInfoBarController* controller =
       [[ConfirmInfoBarController alloc] initWithDelegate:this owner:owner];
   return new InfoBar(controller, this);

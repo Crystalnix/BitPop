@@ -47,7 +47,8 @@
 using content::UserMetricsAction;
 
 MostVisitedHandler::MostVisitedHandler()
-    : got_first_most_visited_request_(false),
+    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
+      got_first_most_visited_request_(false),
       most_visited_viewed_(false),
       user_action_logged_(false) {
 }
@@ -74,6 +75,12 @@ void MostVisitedHandler::RegisterMessages() {
   ThumbnailSource* thumbnail_src = new ThumbnailSource(profile);
   ChromeURLDataManager::AddDataSource(profile, thumbnail_src);
 
+#if defined(OS_ANDROID)
+  // Register chrome://touch-icon as a data source for touch icons or favicons.
+  ChromeURLDataManager::AddDataSource(profile,
+      new FaviconSource(profile, FaviconSource::ANY));
+#endif
+  // Register chrome://favicon as a data source for favicons.
   ChromeURLDataManager::AddDataSource(profile,
       new FaviconSource(profile, FaviconSource::FAVICON));
 
@@ -100,10 +107,10 @@ void MostVisitedHandler::RegisterMessages() {
 
   // Register ourselves for any most-visited item blacklisting.
   web_ui()->RegisterMessageCallback("blacklistURLFromMostVisited",
-      base::Bind(&MostVisitedHandler::HandleBlacklistURL,
+      base::Bind(&MostVisitedHandler::HandleBlacklistUrl,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("removeURLsFromMostVisitedBlacklist",
-      base::Bind(&MostVisitedHandler::HandleRemoveURLsFromBlacklist,
+      base::Bind(&MostVisitedHandler::HandleRemoveUrlsFromBlacklist,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("clearMostVisitedURLsBlacklist",
       base::Bind(&MostVisitedHandler::HandleClearBlacklist,
@@ -147,18 +154,17 @@ void MostVisitedHandler::StartQueryForMostVisited() {
   history::TopSites* ts = Profile::FromWebUI(web_ui())->GetTopSites();
   if (ts) {
     ts->GetMostVisitedURLs(
-        &topsites_consumer_,
-        base::Bind(&MostVisitedHandler::OnMostVisitedURLsAvailable,
-                   base::Unretained(this)));
+        base::Bind(&MostVisitedHandler::OnMostVisitedUrlsAvailable,
+                   weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
-void MostVisitedHandler::HandleBlacklistURL(const ListValue* args) {
+void MostVisitedHandler::HandleBlacklistUrl(const ListValue* args) {
   std::string url = UTF16ToUTF8(ExtractStringValue(args));
-  BlacklistURL(GURL(url));
+  BlacklistUrl(GURL(url));
 }
 
-void MostVisitedHandler::HandleRemoveURLsFromBlacklist(const ListValue* args) {
+void MostVisitedHandler::HandleRemoveUrlsFromBlacklist(const ListValue* args) {
   DCHECK(args->GetSize() != 0);
 
   for (ListValue::const_iterator iter = args->begin();
@@ -215,14 +221,14 @@ void MostVisitedHandler::SetPagesValueFromTopSites(
       continue;
     }
 
-    NewTabUI::SetURLTitleAndDirection(page_value,
+    NewTabUI::SetUrlTitleAndDirection(page_value,
                                       url.title,
                                       url.url);
     pages_value_->Append(page_value);
   }
 }
 
-void MostVisitedHandler::OnMostVisitedURLsAvailable(
+void MostVisitedHandler::OnMostVisitedUrlsAvailable(
     const history::MostVisitedURLList& data) {
   SetPagesValueFromTopSites(data);
   if (got_first_most_visited_request_) {
@@ -239,14 +245,14 @@ void MostVisitedHandler::Observe(int type,
   StartQueryForMostVisited();
 }
 
-void MostVisitedHandler::BlacklistURL(const GURL& url) {
+void MostVisitedHandler::BlacklistUrl(const GURL& url) {
   history::TopSites* ts = Profile::FromWebUI(web_ui())->GetTopSites();
   if (ts)
     ts->AddBlacklistedURL(url);
   content::RecordAction(UserMetricsAction("MostVisited_UrlBlacklisted"));
 }
 
-std::string MostVisitedHandler::GetDictionaryKeyForURL(const std::string& url) {
+std::string MostVisitedHandler::GetDictionaryKeyForUrl(const std::string& url) {
   return base::MD5String(url);
 }
 

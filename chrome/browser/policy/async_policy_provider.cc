@@ -16,30 +16,39 @@ using content::BrowserThread;
 
 namespace policy {
 
-namespace {
-
-// Helper for a PostTaskAndReply used as a synchronization point between the
-// main thread and FILE thread. See AsyncPolicyProvider::RefreshPolicies.
-void Nop() {}
-
-}  // namespace
-
 AsyncPolicyProvider::AsyncPolicyProvider(scoped_ptr<AsyncPolicyLoader> loader)
     : loader_(loader.release()),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
-  // The FILE thread isn't ready early during startup. Post a task to the
-  // current loop to resume initialization on FILE once the loops are spinning.
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&AsyncPolicyProvider::InitWithLoopsReady,
-                 weak_factory_.GetWeakPtr()));
   // Make an immediate synchronous load on startup.
   OnLoaderReloaded(loader_->InitialLoad());
 }
 
 AsyncPolicyProvider::~AsyncPolicyProvider() {
   DCHECK(CalledOnValidThread());
+  // Shutdown() must have been called before.
+  DCHECK(!loader_);
+}
 
+void AsyncPolicyProvider::Init() {
+  DCHECK(CalledOnValidThread());
+  ConfigurationPolicyProvider::Init();
+
+  if (!loader_)
+    return;
+
+  AsyncPolicyLoader::UpdateCallback callback =
+      base::Bind(&AsyncPolicyProvider::LoaderUpdateCallback,
+                 base::MessageLoopProxy::current(),
+                 weak_factory_.GetWeakPtr());
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&AsyncPolicyLoader::Init,
+                 base::Unretained(loader_),
+                 callback));
+}
+
+void AsyncPolicyProvider::Shutdown() {
+  DCHECK(CalledOnValidThread());
   // Note on the lifetime of |loader_|:
   // The |loader_| lives on the FILE thread, and is deleted from here. This
   // means that posting tasks on the |loader_| to FILE from the
@@ -47,6 +56,8 @@ AsyncPolicyProvider::~AsyncPolicyProvider() {
   // posted from here. The |loader_| posts back to the AsyncPolicyProvider
   // through the |update_callback_|, which has a WeakPtr to |this|.
   BrowserThread::DeleteSoon(BrowserThread::FILE, FROM_HERE, loader_);
+  loader_ = NULL;
+  ConfigurationPolicyProvider::Shutdown();
 }
 
 void AsyncPolicyProvider::RefreshPolicies() {
@@ -67,21 +78,8 @@ void AsyncPolicyProvider::RefreshPolicies() {
                  base::Unretained(this)));
   BrowserThread::PostTaskAndReply(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(Nop),
+      base::Bind(base::DoNothing),
       refresh_callback_.callback());
-}
-
-void AsyncPolicyProvider::InitWithLoopsReady() {
-  DCHECK(CalledOnValidThread());
-  AsyncPolicyLoader::UpdateCallback callback =
-      base::Bind(&AsyncPolicyProvider::LoaderUpdateCallback,
-                 base::MessageLoopProxy::current(),
-                 weak_factory_.GetWeakPtr());
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&AsyncPolicyLoader::Init,
-                 base::Unretained(loader_),
-                 callback));
 }
 
 void AsyncPolicyProvider::ReloadAfterRefreshSync() {
@@ -95,6 +93,9 @@ void AsyncPolicyProvider::ReloadAfterRefreshSync() {
   // sees that there is no refresh pending.
   refresh_callback_.Cancel();
 
+  if (!loader_)
+    return;
+
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&AsyncPolicyLoader::Reload,
@@ -104,7 +105,9 @@ void AsyncPolicyProvider::ReloadAfterRefreshSync() {
 
 void AsyncPolicyProvider::OnLoaderReloaded(scoped_ptr<PolicyBundle> bundle) {
   DCHECK(CalledOnValidThread());
-  if (refresh_callback_.IsCancelled())
+  // Only propagate policy updates if there are no pending refreshes, and if
+  // Shutdown() hasn't been called yet.
+  if (refresh_callback_.IsCancelled() && loader_)
     UpdatePolicy(bundle.Pass());
 }
 

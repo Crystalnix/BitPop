@@ -37,6 +37,7 @@ struct WebPluginAction;
 namespace content {
 
 class ChildProcessSecurityPolicy;
+class RenderProcessHost;
 class RenderViewHostDelegate;
 class SessionStorageNamespace;
 class SiteInstance;
@@ -66,7 +67,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Checks that the given renderer can request |url|, if not it sets it to
   // about:blank.
   // |empty_allowed| must be set to false for navigations for security reasons.
-  static void FilterURL(int renderer_id,
+  static void FilterURL(const RenderProcessHost* process,
                         bool empty_allowed,
                         GURL* url);
 
@@ -217,8 +218,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // RenderView. See BindingsPolicy for details.
   virtual int GetEnabledBindings() const = 0;
 
-  virtual SessionStorageNamespace* GetSessionStorageNamespace() = 0;
-
   virtual SiteInstance* GetSiteInstance() const = 0;
 
   // Requests the renderer to evaluate an xpath to a frame and insert css
@@ -267,6 +266,27 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Passes a list of Webkit preferences to the renderer.
   virtual void UpdateWebkitPreferences(
       const webkit_glue::WebPreferences& prefs) = 0;
+
+  // Informs the renderer process of a change in timezone.
+  virtual void NotifyTimezoneChange() = 0;
+
+#if defined(OS_ANDROID)
+  // Selects and zooms to the find result nearest to the point (x,y)
+  // defined in find-in-page coordinates.
+  virtual void ActivateNearestFindResult(int request_id, float x, float y) = 0;
+
+  // Asks the renderer to send the rects of the current find matches.
+  virtual void RequestFindMatchRects(int current_version) = 0;
+
+  // Synchronous find request. Returns the number of matches found and the
+  // ordinal of the active match. Required by the legacy Android WebView API.
+  virtual void SynchronousFind(int request_id,
+                               const string16& search_text,
+                               const WebKit::WebFindOptions& options,
+                               int* match_count,
+                               int* active_ordinal) = 0;
+#endif
+
 };
 
 }  // namespace content

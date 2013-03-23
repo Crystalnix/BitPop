@@ -18,19 +18,18 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gl_implementation.h"
 
+namespace content {
+
 ImageTransportSurface::ImageTransportSurface() {}
 
 ImageTransportSurface::~ImageTransportSurface() {}
-
-void ImageTransportSurface::OnSetFrontSurfaceIsProtected(
-    bool is_protected, uint32 protection_state_id) {
-}
 
 void ImageTransportSurface::GetRegionsToCopy(
     const gfx::Rect& previous_damage_rect,
     const gfx::Rect& new_damage_rect,
     std::vector<gfx::Rect>* regions) {
-  gfx::Rect intersection = previous_damage_rect.Intersect(new_damage_rect);
+  gfx::Rect intersection =
+      gfx::IntersectRects(previous_damage_rect, new_damage_rect);
 
   if (intersection.IsEmpty()) {
     regions->push_back(previous_damage_rect);
@@ -97,8 +96,6 @@ bool ImageTransportHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(ImageTransportHelper, message)
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_BufferPresented,
                         OnBufferPresented)
-    IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_SetFrontSurfaceIsProtected,
-                        OnSetFrontSurfaceIsProtected)
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_ResizeViewACK, OnResizeViewACK);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -109,9 +106,6 @@ void ImageTransportHelper::SendAcceleratedSurfaceNew(
     GpuHostMsg_AcceleratedSurfaceNew_Params params) {
   params.surface_id = stub_->surface_id();
   params.route_id = route_id_;
-#if defined(OS_MACOSX)
-  params.window = handle_;
-#endif
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceNew(params));
 }
 
@@ -120,7 +114,7 @@ void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
   // TRACE_EVENT for gpu tests:
   TRACE_EVENT_INSTANT2("test_gpu", "SwapBuffers",
                        "GLImpl", static_cast<int>(gfx::GetGLImplementation()),
-                       "width", surface_->GetSize().width());
+                       "width", params.size.width());
   params.surface_id = stub_->surface_id();
   params.route_id = route_id_;
 #if defined(OS_MACOSX)
@@ -152,6 +146,13 @@ void ImageTransportHelper::SendResizeView(const gfx::Size& size) {
                                            size));
 }
 
+void ImageTransportHelper::SendUpdateVSyncParameters(
+      base::TimeTicks timebase, base::TimeDelta interval) {
+  manager_->Send(new GpuHostMsg_UpdateVSyncParameters(stub_->surface_id(),
+                                                      timebase,
+                                                      interval));
+}
+
 void ImageTransportHelper::SetScheduled(bool is_scheduled) {
   gpu::GpuScheduler* scheduler = Scheduler();
   if (!scheduler)
@@ -167,9 +168,9 @@ void ImageTransportHelper::DeferToFence(base::Closure task) {
   scheduler->DeferToFence(task);
 }
 
-void ImageTransportHelper::SetPreemptByCounter(
-    scoped_refptr<gpu::RefCountedCounter> preempt_by_counter) {
-  stub_->channel()->SetPreemptByCounter(preempt_by_counter);
+void ImageTransportHelper::SetPreemptByFlag(
+    scoped_refptr<gpu::PreemptionFlag> preemption_flag) {
+  stub_->channel()->SetPreemptByFlag(preemption_flag);
 }
 
 bool ImageTransportHelper::MakeCurrent() {
@@ -202,13 +203,9 @@ gpu::gles2::GLES2Decoder* ImageTransportHelper::Decoder() {
   return stub_->decoder();
 }
 
-void ImageTransportHelper::OnSetFrontSurfaceIsProtected(
-    bool is_protected, uint32 protection_state_id) {
-  surface_->OnSetFrontSurfaceIsProtected(is_protected, protection_state_id);
-}
-
-void ImageTransportHelper::OnBufferPresented(uint32 sync_point) {
-  surface_->OnBufferPresented(sync_point);
+void ImageTransportHelper::OnBufferPresented(
+    const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
+  surface_->OnBufferPresented(params);
 }
 
 void ImageTransportHelper::OnResizeViewACK() {
@@ -221,7 +218,8 @@ void ImageTransportHelper::Resize(gfx::Size size) {
   // decoder so that future calls to MakeCurrent do not early out on the
   // assumption that neither the context or surface have actually changed.
 #if defined(OS_WIN)
-  Decoder()->ReleaseCurrent();
+  if (handle_ != NULL)
+    Decoder()->ReleaseCurrent();
 #endif
 
   surface_->OnResize(size);
@@ -231,8 +229,10 @@ void ImageTransportHelper::Resize(gfx::Size size) {
 #endif
 
 #if defined(OS_WIN)
-  Decoder()->MakeCurrent();
-  SetSwapInterval(Decoder()->GetGLContext());
+  if (handle_ != NULL) {
+    Decoder()->MakeCurrent();
+    SetSwapInterval(Decoder()->GetGLContext());
+  }
 #endif
 }
 
@@ -262,15 +262,14 @@ void PassThroughImageTransportSurface::Destroy() {
 
 bool PassThroughImageTransportSurface::SwapBuffers() {
   bool result = gfx::GLSurfaceAdapter::SwapBuffers();
+  SendVSyncUpdateIfAvailable();
 
   if (transport_) {
     // Round trip to the browser UI thread, for throttling, by sending a dummy
     // SwapBuffers message.
     GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
     params.surface_handle = 0;
-#if defined(OS_WIN)
-    params.size = GetSize();
-#endif
+    params.size = surface()->GetSize();
     helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
     helper_->SetScheduled(false);
@@ -281,12 +280,14 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
 bool PassThroughImageTransportSurface::PostSubBuffer(
     int x, int y, int width, int height) {
   bool result = gfx::GLSurfaceAdapter::PostSubBuffer(x, y, width, height);
+  SendVSyncUpdateIfAvailable();
 
   if (transport_) {
     // Round trip to the browser UI thread, for throttling, by sending a dummy
     // PostSubBuffer message.
     GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params;
     params.surface_handle = 0;
+    params.surface_size = surface()->GetSize();
     params.x = x;
     params.y = y;
     params.width = width;
@@ -306,7 +307,8 @@ bool PassThroughImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {
   return true;
 }
 
-void PassThroughImageTransportSurface::OnBufferPresented(uint32 sync_point) {
+void PassThroughImageTransportSurface::OnBufferPresented(
+    const AcceleratedSurfaceMsg_BufferPresented_Params& /* params */) {
   DCHECK(transport_);
   helper_->SetScheduled(true);
 }
@@ -334,5 +336,13 @@ gfx::Size PassThroughImageTransportSurface::GetSize() {
 }
 
 PassThroughImageTransportSurface::~PassThroughImageTransportSurface() {}
+
+void PassThroughImageTransportSurface::SendVSyncUpdateIfAvailable() {
+  GetVSyncParameters(
+      base::Bind(&ImageTransportHelper::SendUpdateVSyncParameters,
+                 helper_->AsWeakPtr()));
+}
+
+}  // namespace content
 
 #endif  // defined(ENABLE_GPU)

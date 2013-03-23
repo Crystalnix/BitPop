@@ -13,11 +13,11 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/mock_render_process_host.h"
+#include "net/base/net_util.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 #include "webkit/glue/webdropdata.h"
 
-using content::RenderViewHostImplTestHarness;
-using content::TestWebContents;
+namespace content {
 
 class RenderViewHostTest : public RenderViewHostImplTestHarness {
 };
@@ -58,7 +58,7 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
 
   NavigateAndCommit(url1);
   controller().LoadURL(
-      url2, content::Referrer(), content::PAGE_TRANSITION_LINK, std::string());
+      url2, Referrer(), PAGE_TRANSITION_LINK, std::string());
   // Simulate the ClosePage call which is normally sent by the net::URLRequest.
   rvh()->ClosePage();
   // Needed so that navigations are not suspended on the RVH.
@@ -72,18 +72,19 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
 TEST_F(RenderViewHostTest, DontGrantBindingsToSharedProcess) {
   // Create another view in the same process.
   scoped_ptr<TestWebContents> new_web_contents(
-      new TestWebContents(browser_context(), rvh()->GetSiteInstance()));
+      TestWebContents::Create(browser_context(), rvh()->GetSiteInstance()));
 
-  rvh()->AllowBindings(content::BINDINGS_POLICY_WEB_UI);
-  EXPECT_FALSE(rvh()->GetEnabledBindings() & content::BINDINGS_POLICY_WEB_UI);
+  rvh()->AllowBindings(BINDINGS_POLICY_WEB_UI);
+  EXPECT_FALSE(rvh()->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI);
 }
 
 class MockDraggingRenderViewHostDelegateView
-    : public content::RenderViewHostDelegateView {
+    : public RenderViewHostDelegateView {
  public:
   virtual ~MockDraggingRenderViewHostDelegateView() {}
   virtual void ShowContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE {}
+      const ContextMenuParams& params,
+      ContextMenuSourceType type) OVERRIDE {}
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
@@ -94,7 +95,8 @@ class MockDraggingRenderViewHostDelegateView
   virtual void StartDragging(const WebDropData& drop_data,
                              WebKit::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
-                             const gfx::Point& image_offset) OVERRIDE {
+                             const gfx::Vector2d& image_offset,
+                             const DragEventSourceInfo& event_info) OVERRIDE {
     drag_url_ = drop_data.url;
     html_base_url_ = drop_data.html_base_url;
   }
@@ -223,3 +225,5 @@ TEST_F(RenderViewHostTest, BadMessageHandlerInputEventAck) {
 }
 
 #endif
+
+}  // namespace content

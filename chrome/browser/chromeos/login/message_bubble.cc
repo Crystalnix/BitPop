@@ -75,16 +75,16 @@ void MessageBubble::Init() {
 
   views::Label* label = new views::Label(text_);
   label->SetMultiLine(true);
-  label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label->SizeToFit(kMaxLabelWidth);
   layout->AddView(label);
 
   close_button_ = new views::ImageButton(this);
-  close_button_->SetImage(views::CustomButton::BS_NORMAL,
+  close_button_->SetImage(views::CustomButton::STATE_NORMAL,
       rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
-  close_button_->SetImage(views::CustomButton::BS_HOT,
+  close_button_->SetImage(views::CustomButton::STATE_HOVERED,
       rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
-  close_button_->SetImage(views::CustomButton::BS_PUSHED,
+  close_button_->SetImage(views::CustomButton::STATE_PRESSED,
       rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
   layout->AddView(close_button_);
 
@@ -99,7 +99,7 @@ void MessageBubble::Init() {
 }
 
 void MessageBubble::ButtonPressed(views::Button* sender,
-                                  const views::Event& event) {
+                                  const ui::Event& event) {
   if (sender == close_button_) {
     GetWidget()->Close();
   } else {

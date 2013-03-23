@@ -7,12 +7,15 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/first_run/first_run_dialog.h"
 #include "chrome/browser/first_run/first_run_import_observer.h"
 #include "chrome/browser/first_run/first_run_internal.h"
@@ -34,9 +37,12 @@
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
+#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/master_preferences.h"
 #include "chrome/installer/util/master_preferences_constants.h"
@@ -45,11 +51,71 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 #include "googleurl/src/gurl.h"
 
 using content::UserMetricsAction;
 
 namespace {
+
+// Helper class that performs delayed first-run tasks that need more of the
+// chrome infrastructure to be up and running before they can be attempted.
+class FirstRunDelayedTasks : public content::NotificationObserver {
+ public:
+  enum Tasks {
+    NO_TASK,
+    INSTALL_EXTENSIONS
+  };
+
+  explicit FirstRunDelayedTasks(Tasks task) {
+    if (task == INSTALL_EXTENSIONS) {
+      registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
+                     content::NotificationService::AllSources());
+    }
+    registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSED,
+                   content::NotificationService::AllSources());
+  }
+
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE {
+    // After processing the notification we always delete ourselves.
+    if (type == chrome::NOTIFICATION_EXTENSIONS_READY) {
+      DoExtensionWork(
+          content::Source<Profile>(source).ptr()->GetExtensionService());
+    }
+    delete this;
+  }
+
+ private:
+  // Private ctor forces it to be created only in the heap.
+  ~FirstRunDelayedTasks() {}
+
+  // The extension work is to basically trigger an extension update check.
+  // If the extension specified in the master pref is older than the live
+  // extension it will get updated which is the same as get it installed.
+  void DoExtensionWork(ExtensionService* service) {
+    if (service)
+      service->updater()->CheckNow(extensions::ExtensionUpdater::CheckParams());
+  }
+
+  content::NotificationRegistrar registrar_;
+};
+
+// Installs a task to do an extensions update check once the extensions system
+// is running.
+void DoDelayedInstallExtensions() {
+  new FirstRunDelayedTasks(FirstRunDelayedTasks::INSTALL_EXTENSIONS);
+}
+
+void DoDelayedInstallExtensionsIfNeeded(
+    installer::MasterPreferences* install_prefs) {
+  DictionaryValue* extensions = 0;
+  if (install_prefs->GetExtensionsBlock(&extensions)) {
+    VLOG(1) << "Extensions block found in master preferences";
+    DoDelayedInstallExtensions();
+  }
+}
 
 FilePath GetDefaultPrefFilePath(bool create_profile_dir,
                                 const FilePath& user_data_dir) {
@@ -146,12 +212,16 @@ int ImportFromFile(Profile* profile, const CommandLine& cmdline) {
 namespace first_run {
 namespace internal {
 
-const char* const kSentinelFile = "First Run";
 FirstRunState first_run_ = FIRST_RUN_UNKNOWN;
 
-installer::MasterPreferences* LoadMasterPrefs(FilePath* master_prefs_path)
-{
-  *master_prefs_path = FilePath(MasterPrefsPath());
+static base::LazyInstance<FilePath> master_prefs_path_for_testing
+    = LAZY_INSTANCE_INITIALIZER;
+
+installer::MasterPreferences* LoadMasterPrefs(FilePath* master_prefs_path) {
+  if (!master_prefs_path_for_testing.Get().empty())
+    *master_prefs_path = master_prefs_path_for_testing.Get();
+  else
+    *master_prefs_path = FilePath(MasterPrefsPath());
   if (master_prefs_path->empty())
     return NULL;
   installer::MasterPreferences* install_prefs =
@@ -373,9 +443,7 @@ void AutoImportPlatformCommon(
   // Launch the first run dialog only for certain builds, and only if the user
   // has not already set preferences.
   if (IsOrganicFirstRun() && !local_state_file_exists) {
-    // The home page string may be set in the preferences, but the user should
-    // initially use Chrome with the NTP as home page in organic builds.
-    profile->GetPrefs()->SetBoolean(prefs::kHomePageIsNewTabPage, true);
+    startup_metric_utils::SetNonBrowserUIDisplayed();
     ShowFirstRunDialog(profile);
   }
 
@@ -499,6 +567,21 @@ void LogFirstRunMetric(FirstRunBubbleMetric metric) {
                             NUM_FIRST_RUN_BUBBLE_METRICS);
 }
 
+namespace {
+CommandLine* GetExtraArgumentsInstance() {
+  CR_DEFINE_STATIC_LOCAL(CommandLine, arguments, (CommandLine::NoProgram()));
+  return &arguments;
+}
+}  // namespace
+
+void SetExtraArgumentsForImportProcess(const CommandLine& arguments) {
+  GetExtraArgumentsInstance()->AppendArguments(arguments, false);
+}
+
+const CommandLine& GetExtraArgumentsForImportProcess() {
+  return *GetExtraArgumentsInstance();
+}
+
 // static
 void FirstRunBubbleLauncher::ShowFirstRunBubbleSoon() {
   SetShowFirstRunBubblePref(true);
@@ -518,7 +601,7 @@ void FirstRunBubbleLauncher::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK_EQ(type, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME);
-  Browser* browser = browser::FindBrowserWithWebContents(
+  Browser* browser = chrome::FindBrowserWithWebContents(
       content::Source<content::WebContents>(source).ptr());
   if (!browser || !browser->is_type_tabbed())
     return;
@@ -531,6 +614,13 @@ void FirstRunBubbleLauncher::Observe(
   }
 
   content::WebContents* contents = chrome::GetActiveWebContents(browser);
+
+  // Suppress the first run bubble if a Gaia sign in page is showing.
+  if (SyncPromoUI::UseWebBasedSigninFlow() &&
+      gaia::IsGaiaSignonRealm(contents->GetURL().GetOrigin())) {
+      return;
+  }
+
   if (contents && contents->GetURL().SchemeIs(chrome::kChromeUIScheme)) {
     // Suppress the first run bubble if the sync promo is showing.
     if (contents->GetURL().host() == chrome::kChromeUISyncPromoHost)
@@ -561,6 +651,67 @@ void FirstRunBubbleLauncher::Observe(
   // Show the bubble now and destroy this bubble launcher.
   browser->ShowFirstRunBubble();
   delete this;
+}
+
+void SetMasterPrefsPathForTesting(const FilePath& master_prefs) {
+  internal::master_prefs_path_for_testing.Get() = master_prefs;
+}
+
+ProcessMasterPreferencesResult ProcessMasterPreferences(
+    const FilePath& user_data_dir,
+    MasterPrefs* out_prefs) {
+  DCHECK(!user_data_dir.empty());
+
+#if defined(OS_CHROMEOS)
+  // Chrome OS has its own out-of-box-experience code.  Create the sentinel to
+  // mark the fact that we've run once but skip the full first-run flow.
+  CreateSentinel();
+  return SKIP_FIRST_RUN;
+#endif
+
+  FilePath master_prefs_path;
+  scoped_ptr<installer::MasterPreferences>
+      install_prefs(internal::LoadMasterPrefs(&master_prefs_path));
+  if (!install_prefs.get())
+    return SHOW_FIRST_RUN;
+
+  out_prefs->new_tabs = install_prefs->GetFirstRunTabs();
+
+  internal::SetRLZPref(out_prefs, install_prefs.get());
+
+  if (!internal::ShowPostInstallEULAIfNeeded(install_prefs.get()))
+    return EULA_EXIT_NOW;
+
+  if (!internal::CopyPrefFile(user_data_dir, master_prefs_path))
+    return SHOW_FIRST_RUN;
+
+  DoDelayedInstallExtensionsIfNeeded(install_prefs.get());
+
+  internal::SetupMasterPrefsFromInstallPrefs(out_prefs,
+      install_prefs.get());
+
+  // TODO(mirandac): Refactor skip-first-run-ui process into regular first run
+  // import process.  http://crbug.com/49647
+  // Note we are skipping all other master preferences if skip-first-run-ui
+  // is *not* specified. (That is, we continue only if skipping first run ui.)
+  if (!internal::SkipFirstRunUI(install_prefs.get()))
+    return SHOW_FIRST_RUN;
+
+  // From here on we won't show first run so we need to do the work to show the
+  // bubble anyway, unless it's already been explicitly suppressed.
+  SetShowFirstRunBubblePref(true);
+
+  // We need to be able to create the first run sentinel or else we cannot
+  // proceed because ImportSettings will launch the importer process which
+  // would end up here if the sentinel is not present.
+  if (!CreateSentinel())
+    return SKIP_FIRST_RUN;
+
+  internal::SetShowWelcomePagePrefIfNeeded(install_prefs.get());
+  internal::SetImportPreferencesAndLaunchImport(out_prefs, install_prefs.get());
+  internal::SetDefaultBrowser(install_prefs.get());
+
+  return SKIP_FIRST_RUN;
 }
 
 }  // namespace first_run

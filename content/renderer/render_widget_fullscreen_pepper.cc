@@ -4,6 +4,8 @@
 
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
@@ -13,10 +15,13 @@
 #include "content/renderer/pepper/pepper_platform_context_3d_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
+#include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCanvas.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/gl/gpu_preference.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -24,8 +29,10 @@
 using WebKit::WebCanvas;
 using WebKit::WebCompositionUnderline;
 using WebKit::WebCursorInfo;
+using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
 using WebKit::WebMouseEvent;
+using WebKit::WebMouseWheelEvent;
 using WebKit::WebPoint;
 using WebKit::WebRect;
 using WebKit::WebSize;
@@ -36,7 +43,12 @@ using WebKit::WebVector;
 using WebKit::WebWidget;
 using WebKit::WGC3Dintptr;
 
+namespace content {
+
 namespace {
+
+// See third_party/WebKit/Source/WebCore/dom/WheelEvent.h.
+const float kTickDivisor = 120.0f;
 
 class FullscreenMouseLockDispatcher : public MouseLockDispatcher {
  public:
@@ -97,7 +109,8 @@ class PepperWidget : public WebWidget {
 
     size_ = size;
     WebRect plugin_rect(0, 0, size_.width, size_.height);
-    widget_->plugin()->ViewChanged(plugin_rect, plugin_rect);
+    widget_->plugin()->ViewChanged(plugin_rect, plugin_rect,
+                                   std::vector<gfx::Rect>());
     widget_->Invalidate();
   }
 
@@ -110,9 +123,17 @@ class PepperWidget : public WebWidget {
   virtual void layout() {
   }
 
+#if WEBWIDGET_HAS_PAINT_OPTIONS
+  virtual void paint(WebCanvas* canvas, const WebRect& rect, PaintOptions) {
+#else
   virtual void paint(WebCanvas* canvas, const WebRect& rect) {
+#endif
     if (!widget_->plugin())
       return;
+
+    SkAutoCanvasRestore auto_restore(canvas, true);
+    float canvas_scale = widget_->deviceScaleFactor();
+    canvas->scale(canvas_scale, canvas_scale);
 
     WebRect plugin_rect(0, 0, size_.width, size_.height);
     widget_->plugin()->Paint(canvas, plugin_rect, rect);
@@ -147,6 +168,74 @@ class PepperWidget : public WebWidget {
     // RenderWidgetFullscreenPepper::DidChangeCursor.
     WebCursorInfo cursor;
     bool result = widget_->plugin()->HandleInputEvent(event, &cursor);
+
+    // For normal web pages, WebCore::EventHandler converts selected
+    // gesture events into mouse and wheel events. We don't have a WebView
+    // so do this translation here.
+    if (!result && WebInputEvent::isGestureEventType(event.type)) {
+      switch (event.type) {
+        case WebInputEvent::GestureScrollUpdate: {
+          const WebGestureEvent* gesture_event =
+              static_cast<const WebGestureEvent*>(&event);
+          WebMouseWheelEvent wheel_event;
+          wheel_event.timeStampSeconds = gesture_event->timeStampSeconds;
+          wheel_event.type = WebInputEvent::MouseWheel;
+          wheel_event.modifiers = gesture_event->modifiers;
+
+          wheel_event.x = gesture_event->x;
+          wheel_event.y = gesture_event->y;
+          wheel_event.windowX = gesture_event->globalX;
+          wheel_event.windowY = gesture_event->globalX;
+          wheel_event.globalX = gesture_event->globalX;
+          wheel_event.globalY = gesture_event->globalY;
+          wheel_event.movementX = 0;
+          wheel_event.movementY = 0;
+
+          wheel_event.deltaX = gesture_event->data.scrollUpdate.deltaX;
+          wheel_event.deltaY = gesture_event->data.scrollUpdate.deltaY;
+          wheel_event.wheelTicksX =
+              gesture_event->data.scrollUpdate.deltaX / kTickDivisor;
+          wheel_event.wheelTicksY =
+              gesture_event->data.scrollUpdate.deltaY / kTickDivisor;
+          wheel_event.hasPreciseScrollingDeltas = 1;
+          wheel_event.phase = WebMouseWheelEvent::PhaseNone;
+          wheel_event.momentumPhase = WebMouseWheelEvent::PhaseNone;
+
+          result |= widget_->plugin()->HandleInputEvent(wheel_event, &cursor);
+          break;
+        }
+        case WebInputEvent::GestureTap: {
+          const WebGestureEvent* gesture_event =
+              static_cast<const WebGestureEvent*>(&event);
+          WebMouseEvent mouseEvent;
+
+          mouseEvent.timeStampSeconds = gesture_event->timeStampSeconds;
+          mouseEvent.type = WebInputEvent::MouseMove;
+          mouseEvent.modifiers = gesture_event->modifiers;
+
+          mouseEvent.x = gesture_event->x;
+          mouseEvent.y = gesture_event->y;
+          mouseEvent.windowX = gesture_event->globalX;
+          mouseEvent.windowY = gesture_event->globalX;
+          mouseEvent.globalX = gesture_event->globalX;
+          mouseEvent.globalY = gesture_event->globalY;
+          mouseEvent.movementX = 0;
+          mouseEvent.movementY = 0;
+          result |= widget_->plugin()->HandleInputEvent(mouseEvent, &cursor);
+
+          mouseEvent.type = WebInputEvent::MouseDown;
+          mouseEvent.button = WebMouseEvent::ButtonLeft;
+          mouseEvent.clickCount = gesture_event->data.tap.tapCount;
+          result |= widget_->plugin()->HandleInputEvent(mouseEvent, &cursor);
+
+          mouseEvent.type = WebInputEvent::MouseUp;
+          result |= widget_->plugin()->HandleInputEvent(mouseEvent, &cursor);
+          break;
+        }
+        default:
+          break;
+      }
+    }
 
     // For normal web pages, WebViewImpl does input event translations and
     // generates context menu events. Since we don't have a WebView, we need to
@@ -263,7 +352,8 @@ RenderWidgetFullscreenPepper* RenderWidgetFullscreenPepper::Create(
   scoped_refptr<RenderWidgetFullscreenPepper> widget(
       new RenderWidgetFullscreenPepper(plugin, active_url, screen_info));
   widget->Init(opener_id);
-  return widget.release();
+  widget->AddRef();
+  return widget.get();
 }
 
 RenderWidgetFullscreenPepper::RenderWidgetFullscreenPepper(
@@ -348,14 +438,15 @@ void RenderWidgetFullscreenPepper::DidChangeCursor(
 webkit::ppapi::PluginDelegate::PlatformContext3D*
 RenderWidgetFullscreenPepper::CreateContext3D() {
 #ifdef ENABLE_GPU
-  return new content::PlatformContext3DImpl(this);
+  return new PlatformContext3DImpl(this);
 #else
   return NULL;
 #endif
 }
 
-MouseLockDispatcher* RenderWidgetFullscreenPepper::GetMouseLockDispatcher() {
-  return mouse_lock_dispatcher_.get();
+void RenderWidgetFullscreenPepper::ReparentContext(
+    webkit::ppapi::PluginDelegate::PlatformContext3D* context) {
+  static_cast<PlatformContext3DImpl*>(context)->SetParentContext(this);
 }
 
 bool RenderWidgetFullscreenPepper::OnMessageReceived(const IPC::Message& msg) {
@@ -405,11 +496,12 @@ RenderWidgetFullscreenPepper::GetBitmapForOptimizedPluginPaint(
     const gfx::Rect& paint_bounds,
     TransportDIB** dib,
     gfx::Rect* location,
-    gfx::Rect* clip) {
-  if (plugin_ &&
-      plugin_->GetBitmapForOptimizedPluginPaint(paint_bounds, dib,
-                                                location, clip))
+    gfx::Rect* clip,
+    float* scale_factor) {
+  if (plugin_ && plugin_->GetBitmapForOptimizedPluginPaint(
+          paint_bounds, dib, location, clip, scale_factor)) {
     return plugin_;
+  }
   return NULL;
 }
 
@@ -417,7 +509,8 @@ void RenderWidgetFullscreenPepper::OnResize(const gfx::Size& size,
                                             const gfx::Rect& resizer_rect,
                                             bool is_fullscreen) {
   if (context_) {
-    gfx::Size pixel_size = size.Scale(deviceScaleFactor());
+    gfx::Size pixel_size = gfx::ToFlooredSize(
+        gfx::ScaleSize(size, deviceScaleFactor()));
     context_->reshape(pixel_size.width(), pixel_size.height());
     context_->viewport(0, 0, pixel_size.width(), pixel_size.height());
   }
@@ -442,6 +535,7 @@ void RenderWidgetFullscreenPepper::CreateContext() {
   attributes.stencil = false;
   attributes.antialias = false;
   attributes.shareResources = false;
+  attributes.preferDiscreteGPU = true;
   context_ = WebGraphicsContext3DCommandBufferImpl::CreateViewContext(
       RenderThreadImpl::current(),
       surface_id(),
@@ -449,7 +543,7 @@ void RenderWidgetFullscreenPepper::CreateContext() {
       attributes,
       true /* bind generates resources */,
       active_url_,
-      content::CAUSE_FOR_GPU_LAUNCH_RENDERWIDGETFULLSCREENPEPPER_CREATECONTEXT);
+      CAUSE_FOR_GPU_LAUNCH_RENDERWIDGETFULLSCREENPEPPER_CREATECONTEXT);
   if (!context_)
     return;
 
@@ -509,7 +603,8 @@ const float kTexCoords[] = {
 }  // anonymous namespace
 
 bool RenderWidgetFullscreenPepper::InitContext() {
-  gfx::Size pixel_size = size().Scale(deviceScaleFactor());
+  gfx::Size pixel_size = gfx::ToFlooredSize(
+      gfx::ScaleSize(size(), deviceScaleFactor()));
   context_->reshape(pixel_size.width(), pixel_size.height());
   context_->viewport(0, 0, pixel_size.width(), pixel_size.height());
 
@@ -587,3 +682,5 @@ RenderWidgetFullscreenPepper::GetParentContextForPlatformContext3D() {
     return NULL;
   return context_;
 }
+
+}  // namespace content

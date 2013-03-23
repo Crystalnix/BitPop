@@ -45,6 +45,16 @@ class Widget;
 //   |                  [ OK ]                       |
 //   +-----------------------------------------------+
 //
+// And the 2013 version looks like:
+//   +-----------------------------------------------+
+//   | |icon| There is a new version of          [x] |
+//   | |icon| Google Chrome available                |
+//   |        [o] Try it out (already installed)     |
+//   |        [ ] Don't bug me                       |
+//   | --------------------------------------------- |
+//   | [x] Make it the default browser       [ OK ]  |
+//   +-----------------------------------------------+
+
 class TryChromeDialogView : public views::ButtonListener,
                             public views::LinkListener {
  public:
@@ -83,13 +93,13 @@ class TryChromeDialogView : public views::ButtonListener,
 
   // Create a windows region that looks like a toast of width |w| and height
   // |h|. This is best effort, so we don't care much if the operation fails.
-  void SetToastRegion(gfx::NativeWindow window, int w, int h);
+  void SetToastRegion(HWND window, int w, int h);
 
   // views::ButtonListener:
   // We have two buttons and according to what the user clicked we set |result_|
   // and we should always close and end the modal loop.
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::LinkListener:
   // If the user selects the link we need to fire off the default browser that

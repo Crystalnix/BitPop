@@ -14,12 +14,10 @@
 
 class FilePath;
 class GURL;
-class PluginProcessHost;
 
 namespace webkit {
 struct WebPluginInfo;
 namespace npapi {
-class PluginGroup;
 class PluginList;
 }
 }
@@ -27,6 +25,7 @@ class PluginList;
 namespace content {
 
 class BrowserContext;
+class PluginProcessHost;
 class PluginServiceFilter;
 class ResourceContext;
 struct PepperPluginInfo;
@@ -39,8 +38,6 @@ class PluginService {
  public:
   typedef base::Callback<void(const std::vector<webkit::WebPluginInfo>&)>
       GetPluginsCallback;
-  typedef base::Callback<void(const std::vector<webkit::npapi::PluginGroup>&)>
-      GetPluginGroupsCallback;
 
   // Returns the PluginService singleton.
   CONTENT_EXPORT static PluginService* GetInstance();
@@ -101,10 +98,6 @@ class PluginService {
   // provided function on the calling MessageLoop on completion.
   virtual void GetPlugins(const GetPluginsCallback& callback) = 0;
 
-  // Asynchronously loads the list of plugin groups if necessary and then calls
-  // back to the provided function on the calling MessageLoop on completion.
-  virtual void GetPluginGroups(const GetPluginGroupsCallback& callback) = 0;
-
   // Returns information about a pepper plugin if it exists, otherwise NULL.
   // The caller does not own the pointer, and it's not guaranteed to live past
   // the call stack.
@@ -133,13 +126,20 @@ class PluginService {
   virtual void UnregisterInternalPlugin(const FilePath& path) = 0;
   virtual void RegisterInternalPlugin(const webkit::WebPluginInfo& info,
                                       bool add_at_beginning) = 0;
-  virtual string16 GetPluginGroupName(const std::string& plugin_name) = 0;
+  virtual void GetInternalPlugins(
+      std::vector<webkit::WebPluginInfo>* plugins) = 0;
 
   // TODO(dpranke): This should be private.
   virtual webkit::npapi::PluginList* GetPluginList() = 0;
 
   virtual void SetPluginListForTesting(
       webkit::npapi::PluginList* plugin_list) = 0;
+
+#if defined(OS_MACOSX)
+  // Called when the application is made active so that modal plugin windows can
+  // be made forward too.
+  virtual void AppActivated() = 0;
+#endif
 };
 
 }  // namespace content

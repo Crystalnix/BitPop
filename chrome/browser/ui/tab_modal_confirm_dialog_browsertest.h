@@ -5,44 +5,62 @@
 #ifndef CHROME_BROWSER_UI_TAB_MODAL_CONFIRM_DIALOG_BROWSERTEST_H_
 #define CHROME_BROWSER_UI_TAB_MODAL_CONFIRM_DIALOG_BROWSERTEST_H_
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/ui/tab_modal_confirm_dialog.h"
+#include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "content/public/test/test_browser_thread.h"
 
-#if defined(OS_MACOSX)
-class TabModalConfirmDialogMac;
-typedef TabModalConfirmDialogMac TabModalConfirmDialog;
-#elif defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/tab_modal_confirm_dialog_gtk.h"
-typedef TabModalConfirmDialogGtk TabModalConfirmDialog;
-#else
-#include "chrome/browser/ui/views/tab_modal_confirm_dialog_views.h"
-typedef TabModalConfirmDialogViews TabModalConfirmDialog;
-#endif
+class MockTabModalConfirmDialogDelegate : public TabModalConfirmDialogDelegate {
+ public:
+  class Delegate {
+   public:
+    virtual void OnAccepted() = 0;
+    virtual void OnCanceled() = 0;
+   protected:
+    virtual ~Delegate() {}
+  };
 
-class MockTabModalConfirmDialogDelegate;
-class TabContents;
-class TabModalConfirmDialogDelegate;
+  MockTabModalConfirmDialogDelegate(content::WebContents* web_contents,
+                                    Delegate* delegate);
+  virtual ~MockTabModalConfirmDialogDelegate();
 
-class TabModalConfirmDialogTest : public InProcessBrowserTest {
+  virtual string16 GetTitle() OVERRIDE;
+  virtual string16 GetMessage() OVERRIDE;
+
+  virtual void OnAccepted() OVERRIDE;
+  virtual void OnCanceled() OVERRIDE;
+
+ private:
+  Delegate* delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockTabModalConfirmDialogDelegate);
+};
+
+class TabModalConfirmDialogTest
+    : public InProcessBrowserTest,
+      public MockTabModalConfirmDialogDelegate::Delegate {
  public:
   TabModalConfirmDialogTest();
 
   virtual void SetUpOnMainThread() OVERRIDE;
   virtual void CleanUpOnMainThread() OVERRIDE;
 
- protected:
-  void CloseDialog(bool accept);
+  // MockTabModalConfirmDialogDelegate::Delegate:
+  virtual void OnAccepted() OVERRIDE;
+  virtual void OnCanceled() OVERRIDE;
 
+ protected:
   // Owned by |dialog_|.
   MockTabModalConfirmDialogDelegate* delegate_;
-
- private:
-  TabModalConfirmDialog* CreateTestDialog(
-      TabModalConfirmDialogDelegate* delegate, TabContents* tab_contents);
 
   // Deletes itself.
   TabModalConfirmDialog* dialog_;
 
+  int accepted_count_;
+  int canceled_count_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(TabModalConfirmDialogTest);
 };
 

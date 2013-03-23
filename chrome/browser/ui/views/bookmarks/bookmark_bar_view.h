@@ -16,19 +16,25 @@
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
 #include "chrome/browser/ui/views/detachable_toolbar_view.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/drag_controller.h"
 
+class BookmarkBarInstructionsView;
 class BookmarkContextMenu;
 class Browser;
 class BrowserView;
+
+namespace chrome {
+namespace search {
+struct Mode;
+}
+}
 
 namespace content {
 class PageNavigator;
@@ -56,12 +62,12 @@ class BookmarkBarView : public DetachableToolbarView,
                         public BookmarkModelObserver,
                         public views::MenuButtonListener,
                         public views::ButtonListener,
-                        public content::NotificationObserver,
                         public views::ContextMenuController,
                         public views::DragController,
                         public ui::AnimationDelegate,
                         public BookmarkMenuController::Observer,
-                        public chrome::BookmarkBarInstructionsDelegate {
+                        public chrome::BookmarkBarInstructionsDelegate,
+                        public BookmarkBubbleViewObserver {
  public:
   // The internal view class name.
   static const char kViewClassName[];
@@ -93,7 +99,8 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // Changes the state of the bookmark bar.
   void SetBookmarkBarState(BookmarkBar::State state,
-                           BookmarkBar::AnimateChangeType animate_type);
+                           BookmarkBar::AnimateChangeType animate_type,
+                           const chrome::search::Mode& search_mode);
 
   // How much we want the bookmark bar to overlap the toolbar.  If |return_max|
   // is true, we return the maximum overlap rather than the current overlap.
@@ -142,19 +149,28 @@ class BookmarkBarView : public DetachableToolbarView,
   void StopThrobbing(bool immediate);
 
   // Returns the tooltip text for the specified url and title. The returned
-  // text is clipped to fit within the bounds of the monitor.
+  // text is clipped to fit within the bounds of the monitor. |context| is
+  // used to determine which gfx::Screen is used to retrieve bounds.
   //
   // Note that we adjust the direction of both the URL and the title based on
   // the locale so that pure LTR strings are displayed properly in RTL locales.
   static string16 CreateToolTipForURLAndTitle(const gfx::Point& screen_loc,
                                               const GURL& url,
                                               const string16& title,
-                                              Profile* profile);
+                                              Profile* profile,
+                                              gfx::NativeView context);
+
+  // For instant extended API, if search mode is |MODE_NTP|, stack bookmark bar
+  // on top, so that it floats on top of the content view (in z-order) and below
+  // the "Most Visited" thumbnails (in the y-direction).
+  void MaybeStackAtTop();
 
   // DetachableToolbarView methods:
   virtual bool IsDetached() const OVERRIDE;
   virtual double GetAnimationValue() const OVERRIDE;
   virtual int GetToolbarOverlap() const OVERRIDE;
+  virtual int GetLeftMargin() const OVERRIDE;
+  virtual int GetRightMargin() const OVERRIDE;
 
   // View methods:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -170,10 +186,10 @@ class BookmarkBarView : public DetachableToolbarView,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
   virtual bool AreDropTypesRequired() OVERRIDE;
   virtual bool CanDrop(const ui::OSExchangeData& data) OVERRIDE;
-  virtual void OnDragEntered(const views::DropTargetEvent& event) OVERRIDE;
-  virtual int OnDragUpdated(const views::DropTargetEvent& event) OVERRIDE;
+  virtual void OnDragEntered(const ui::DropTargetEvent& event) OVERRIDE;
+  virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void OnDragExited() OVERRIDE;
-  virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE;
+  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void ShowContextMenu(const gfx::Point& p,
                                bool is_mouse_gesture) OVERRIDE;
   virtual void OnThemeChanged() OVERRIDE;
@@ -192,6 +208,10 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // chrome::BookmarkBarInstructionsDelegate:
   virtual void ShowImportDialog() OVERRIDE;
+
+  // BookmarkBubbleViewObserver:
+  virtual void OnBookmarkBubbleShown(const GURL& url) OVERRIDE;
+  virtual void OnBookmarkBubbleHidden() OVERRIDE;
 
   // BookmarkModelObserver:
   virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
@@ -231,16 +251,11 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
                                       const gfx::Point& point) OVERRIDE;
-
-  // content::NotificationObserver::
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   class ButtonSeparatorView;
@@ -317,7 +332,7 @@ class BookmarkBarView : public DetachableToolbarView,
   void StartShowFolderDropMenuTimer(const BookmarkNode* node);
 
   // Calculates the location for the drop in |location|.
-  void CalculateDropLocation(const views::DropTargetEvent& event,
+  void CalculateDropLocation(const ui::DropTargetEvent& event,
                              const BookmarkNodeData& data,
                              DropLocation* location);
 
@@ -350,8 +365,6 @@ class BookmarkBarView : public DetachableToolbarView,
   // but are not set. This mode is used by GetPreferredSize() to obtain the
   // desired bounds. If |compute_bounds_only| = FALSE, the bounds are set.
   gfx::Size LayoutItems(bool compute_bounds_only);
-
-  content::NotificationRegistrar registrar_;
 
   // Used for opening urls.
   content::PageNavigator* page_navigator_;
@@ -387,7 +400,7 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // BookmarkBarInstructionsView that is visible if there are no bookmarks on
   // the bookmark bar.
-  views::View* instructions_;
+  BookmarkBarInstructionsView* instructions_;
 
   ButtonSeparatorView* bookmarks_separator_view_;
 

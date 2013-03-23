@@ -8,16 +8,14 @@
 #include "base/file_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/extensions/api/webstore_private/webstore_private_api.h"
 #include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/extensions/extension_install_dialog.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/api/webstore_private/webstore_private_api.h"
 #include "chrome/browser/extensions/webstore_installer.h"
-#include "chrome/browser/gpu_blacklist.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -28,6 +26,7 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/common/gpu_info.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/base/mock_host_resolver.h"
 #include "ui/gl/gl_switches.h"
@@ -55,8 +54,10 @@ class WebstoreInstallListener : public WebstoreInstaller::Delegate {
     }
   }
 
-  void OnExtensionInstallFailure(const std::string& id,
-                                 const std::string& error) OVERRIDE {
+  void OnExtensionInstallFailure(
+      const std::string& id,
+      const std::string& error,
+      WebstoreInstaller::FailureReason reason) OVERRIDE {
     received_failure_ = true;
     id_ = id;
     error_ = error;
@@ -74,11 +75,8 @@ class WebstoreInstallListener : public WebstoreInstaller::Delegate {
     waiting_ = true;
     content::RunMessageLoop();
   }
-
-  bool received_failure() const { return received_failure_; }
   bool received_success() const { return received_success_; }
   const std::string& id() const { return id_; }
-  const std::string& error() const { return error_; }
 
  private:
   bool received_failure_;
@@ -152,7 +150,7 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     return browser()->profile()->GetExtensionService();
   }
 
-  ScopedTempDir tmp_;
+  base::ScopedTempDir tmp_;
 };
 
 class ExtensionWebstorePrivateBundleTest
@@ -175,18 +173,10 @@ class ExtensionWebstorePrivateBundleTest
   }
 
  protected:
-  void PackCRX(const std::string& id) {
-    FilePath dir_path = tmp_.path()
-        .AppendASCII("webstore_private/bundle")
-        .AppendASCII(id);
-
-    PackCRX(id, dir_path);
-  }
-
   // Packs the |manifest| file into a CRX using |id|'s PEM key.
   void PackCRX(const std::string& id, const std::string& manifest) {
     // Move the extension to a temporary directory.
-    ScopedTempDir tmp;
+    base::ScopedTempDir tmp;
     ASSERT_TRUE(tmp.CreateUniqueTempDir());
     ASSERT_TRUE(file_util::CreateDirectory(tmp.path()));
 
@@ -299,7 +289,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallAccepted) {
 // Test having the default download directory missing.
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MissingDownloadDir) {
   // Set a non-existent directory as the download path.
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   EXPECT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath missing_directory = temp_dir.Take();
   EXPECT_TRUE(file_util::Delete(missing_directory, true));
@@ -326,21 +316,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallCancelled) {
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, IncorrectManifest1) {
-  WebstoreInstallListener listener;
-  WebstorePrivateApi::SetWebstoreInstallerDelegateForTesting(&listener);
   ASSERT_TRUE(RunInstallTest("incorrect_manifest1.html", "extension.crx"));
-  listener.Wait();
-  ASSERT_TRUE(listener.received_failure());
-  ASSERT_EQ("Manifest file is invalid.", listener.error());
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, IncorrectManifest2) {
-  WebstoreInstallListener listener;
-  WebstorePrivateApi::SetWebstoreInstallerDelegateForTesting(&listener);
   ASSERT_TRUE(RunInstallTest("incorrect_manifest2.html", "extension.crx"));
-  listener.Wait();
-  EXPECT_TRUE(listener.received_failure());
-  ASSERT_EQ("Manifest file is invalid.", listener.error());
 }
 
 // Tests that we can request an app installed bubble (instead of the default
@@ -390,15 +370,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallTheme) {
   ASSERT_EQ("iamefpfkojoapidjnbafmgkgncegbkad", listener.id());
 }
 
-// Tests using silentlyInstall to install extensions.
-IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateBundleTest, SilentlyInstall) {
-  WebstorePrivateApi::SetTrustTestIDsForTesting(true);
-
-  PackCRX("bmfoocgfinpmkmlbjhcbofejhkhlbchk", "extension1.json");
-  PackCRX("mpneghmdnmaolkljkipbhaienajcflfe", "extension2.json");
-  PackCRX("begfmnajjkbjdgmffnjaojchoncnmngg", "app2.json");
-
-  ASSERT_TRUE(RunPageTest(GetTestServerURL("silently_install.html").spec()));
+// Tests that an error is properly reported when an empty crx is returned.
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, EmptyCrx) {
+  ASSERT_TRUE(RunInstallTest("empty.html", "empty.crx"));
 }
 
 // Tests successfully installing a bundle of 2 apps and 2 extensions.
@@ -413,9 +387,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateBundleTest, InstallBundle) {
   ASSERT_TRUE(RunPageTest(GetTestServerURL("install_bundle.html").spec()));
 }
 
+#if defined(OS_WIN)
+// Acting flakey in Windows. http://crbug.com/160219
+#define MAYBE_InstallBundleIncognito DISABLED_InstallBundleIncognito
+#else
+#define MAYBE_InstallBundleIncognito InstallBundleIncognito
+#endif
+
 // Tests that bundles can be installed from incognito windows.
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateBundleTest,
-                       InstallBundleIncognito) {
+                       MAYBE_InstallBundleIncognito) {
   extensions::BundleInstaller::SetAutoApproveForTesting(true);
 
   PackCRX("bmfoocgfinpmkmlbjhcbofejhkhlbchk", "extension1.json");
@@ -480,13 +461,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstoreGetWebGLStatusTest, Blocked) {
       "    }\n"
       "  ]\n"
       "}";
-  GpuBlacklist* blacklist = GpuBlacklist::GetInstance();
-
-  ASSERT_TRUE(blacklist->LoadGpuBlacklist(
-      json_blacklist, GpuBlacklist::kAllOs));
-  blacklist->UpdateGpuDataManager();
+  content::GPUInfo gpu_info;
+  content::GpuDataManager::GetInstance()->InitializeForTesting(
+      json_blacklist, gpu_info);
   GpuFeatureType type =
-      content::GpuDataManager::GetInstance()->GetGpuFeatureType();
+      content::GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   EXPECT_EQ((type & content::GPU_FEATURE_TYPE_WEBGL),
             content::GPU_FEATURE_TYPE_WEBGL);
 

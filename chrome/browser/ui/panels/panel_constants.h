@@ -22,7 +22,10 @@ const int kPanelMinHeight = 20;
 static const int kMinimizedPanelHeight = 4;
 
 // The height in pixels of the titlebar.
-static const int kTitlebarHeight = 32;
+static const int kTitlebarHeight = 40;
+
+// The size (width or height) of the app icon (taskbar icon).
+static const int kPanelAppIconSize = 32;
 
 // Different types of buttons that can be shown on panel's titlebar.
 enum TitlebarButtonType {
@@ -36,7 +39,7 @@ enum TitlebarButtonType {
 // than the actual modifier key to generalize across platforms.
 enum ClickModifier {
   NO_MODIFIER,
-  APPLY_TO_ALL,  // Apply the click behavior to all panels in the strip.
+  APPLY_TO_ALL,  // Apply the click behavior to all panels in the collection.
 };
 
 // Edge at which a panel is being resized using the mouse.

@@ -15,7 +15,6 @@
 #include "base/version.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/tracing.h"
@@ -25,6 +24,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/test/gpu/gpu_test_config.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -66,6 +66,7 @@
 // Current modes:
 // - Software RAF
 // - WebGL RAF
+// - WebGL RAF with Compositor Thread
 
 namespace {
 
@@ -111,8 +112,7 @@ class LatencyTest
       public ::testing::WithParamInterface<int> {
  public:
   explicit LatencyTest(LatencyTestMode mode) :
-      query_instant_(Query::EventPhase() ==
-                     Query::Phase(TRACE_EVENT_PHASE_INSTANT)),
+      query_instant_(Query::EventPhaseIs(TRACE_EVENT_PHASE_INSTANT)),
       // These queries are initialized in RunTest.
       query_begin_swaps_(Query::Bool(false)),
       query_end_swaps_(Query::Bool(false)),
@@ -279,33 +279,33 @@ void LatencyTest::RunTest(const std::vector<int>& behaviors) {
   // Construct queries for searching trace events via TraceAnalyzer.
   if (use_gpu_) {
     query_begin_swaps_ = query_instant_ &&
-        Query::EventName() == Query::String("SwapBuffersLatency") &&
+        Query::EventNameIs("SwapBuffersLatency") &&
         Query::EventArg("width") != Query::Int(kWebGLCanvasWidth);
     query_end_swaps_ = query_instant_ &&
-        Query::EventName() == Query::String("CompositorSwapBuffersComplete");
+        Query::EventNameIs("CompositorSwapBuffersComplete");
   } else if (mode_ == kSoftware) {
     // Software updates need to have x=0 and y=0 to contain the input color.
     query_begin_swaps_ = query_instant_ &&
-        Query::EventName() == Query::String("UpdateRect") &&
+        Query::EventNameIs("UpdateRect") &&
         Query::EventArg("x+y") == Query::Int(0);
     query_end_swaps_ = query_instant_ &&
-        Query::EventName() == Query::String("UpdateRectComplete") &&
+        Query::EventNameIs("UpdateRectComplete") &&
         Query::EventArg("x+y") == Query::Int(0);
   }
   query_inputs_ = query_instant_ &&
-      Query::EventName() == Query::String("MouseEventBegin");
+      Query::EventNameIs("MouseEventBegin");
   query_blits_ = query_instant_ &&
-      Query::EventName() == Query::String("DoBlit") &&
+      Query::EventNameIs("DoBlit") &&
       Query::EventArg("width") == Query::Int(kWebGLCanvasWidth);
   query_clears_ = query_instant_ &&
-      Query::EventName() == Query::String("DoClear") &&
+      Query::EventNameIs("DoClear") &&
       Query::EventArg("green") == Query::Int(kClearColorGreen);
   Query query_width_swaps = Query::Bool(false);
   if (use_gpu_) {
     query_width_swaps = query_begin_swaps_;
   } else if (mode_ == kSoftware) {
     query_width_swaps = query_instant_ &&
-        Query::EventName() == Query::String("UpdateRectWidth") &&
+        Query::EventNameIs("UpdateRectWidth") &&
         Query::EventArg("width") > Query::Int(kWebGLCanvasWidth);
   }
 
@@ -333,7 +333,7 @@ void LatencyTest::RunTest(const std::vector<int>& behaviors) {
 
   // Get width of tab so that we know the limit of x coordinates for the
   // injected mouse inputs.
-  const TraceEvent* swap_event = analyzer_->FindOneEvent(query_width_swaps);
+  const TraceEvent* swap_event = analyzer_->FindFirstOf(query_width_swaps);
   ASSERT_TRUE(swap_event);
   tab_width_ = swap_event->GetKnownArgAsInt("width");
   // Keep printf output clean by limiting input coords to three digits:
@@ -367,6 +367,22 @@ void LatencyTest::RunTest(const std::vector<int>& behaviors) {
     // Do the actual test with input events.
     RunTestInternal(url, true, delay_us);
     latencies_[test_flags_] = CalculateLatency();
+
+    if (mode_ == kWebGLThread) {
+      // Print vsync info when in threaded mode.
+      Query query_vsync =
+          Query::EventNameIs("CCThreadProxy::onVSyncParametersChanged") &&
+          Query::EventHasNumberArg("monotonicTimebase") &&
+          Query::EventHasNumberArg("intervalInSeconds");
+
+      const TraceEvent* vsync_info = analyzer_->FindFirstOf(query_vsync);
+      if (vsync_info) {
+        double timebase = vsync_info->GetKnownArgAsDouble("monotonicTimebase");
+        double interval = vsync_info->GetKnownArgAsDouble("intervalInSeconds");
+        printf("VSync scheduling: timebase = %f; interval = %f\n",
+               timebase, interval);
+      }
+    }
   }
 
   // Print summary if more than 1 behavior was tested in this run. This is only
@@ -399,7 +415,7 @@ void LatencyTest::RunTestInternal(const std::string& test_url,
                                   int input_delay_us) {
   mouse_x_ = 0;
 
-  ASSERT_TRUE(tracing::BeginTracing("test_gpu,test_latency"));
+  ASSERT_TRUE(tracing::BeginTracing("cc,test_gpu,test_latency"));
 
   ui_test_utils::NavigateToURLWithDisposition(
       browser(), GURL(test_url), CURRENT_TAB,
@@ -416,7 +432,7 @@ void LatencyTest::RunTestInternal(const std::string& test_url,
   }
 
   // Wait for message indicating the test has finished running.
-  ui_test_utils::DOMMessageQueue message_queue;
+  content::DOMMessageQueue message_queue;
   ASSERT_TRUE(message_queue.WaitForMessage(NULL));
 
   timer_.Stop();
@@ -452,7 +468,7 @@ double LatencyTest::CalculateLatency() {
   int swap_count = 0;
   size_t previous_blit_pos = 0;
   swap_count = 0;
-  std::vector<int> latencies;
+  std::vector<double> latencies;
   printf("Measured latency (in number of frames) for each frame:\n");
   for (size_t i = 0; i < events.size(); ++i) {
     if (query_end_swaps_.Evaluate(*events[i])) {
@@ -507,20 +523,40 @@ double LatencyTest::CalculateLatency() {
                                &input_pos));
 
         // Step 4: Find the nearest onscreen SwapBuffers to this input event.
-        size_t closest_swap_to_input = 0;
-        size_t second_closest_swap = 0;
-        EXPECT_TRUE(FindClosest(events, query_end_swaps_, input_pos,
-                                &closest_swap_to_input, &second_closest_swap));
+        size_t end_swap_left = 0;
+        size_t end_swap_right = 0;
+        EXPECT_TRUE(FindLastOf(events, query_end_swaps_, input_pos,
+                               &end_swap_left));
+        EXPECT_TRUE(FindFirstOf(events, query_end_swaps_, input_pos,
+                                &end_swap_right));
+
+        EXPECT_LT(end_swap_left, input_pos);
+        EXPECT_LT(end_swap_left, end_swap_right);
+        EXPECT_LT(input_pos, end_swap_right);
+
+        // Calculate the fraction of the first frame from the input event to the
+        // next end_swap event: (right_swap - left_swap) / (right_swap - input).
+        double frame_time = (events[end_swap_right]->timestamp -
+                             events[end_swap_left]->timestamp);
+        double input_time = (events[end_swap_right]->timestamp -
+                             events[input_pos]->timestamp);
+        double latency_frame_fraction = input_time / frame_time;
+
+        EXPECT_LE(latency_frame_fraction, 1.0);
 
         // Calculate latency by counting the number of swaps between the input
         // event and the corresponding on-screen end-of-swap.
-        int latency = CountMatches(events, query_end_swaps_,
-                                   closest_swap_to_input, end_swap_pos);
-        latencies.push_back(latency);
+        int latency_int = CountMatches(events, query_end_swaps_,
+                                       input_pos, end_swap_pos);
+
+        double latency_frames = static_cast<double>(latency_int) +
+                                latency_frame_fraction;
+        latencies.push_back(latency_frames);
         if (verbose_)
-          printf(" %03d: %d\n", swap_count, latency);
+          printf(" %03d: %0.1f (int %d, frac %f)\n", swap_count, latency_frames,
+                 latency_int, latency_frame_fraction);
         else
-          printf(" %d", latency);
+          printf(" %0.1f", latency_frames);
       }
     }
   }
@@ -537,13 +573,13 @@ double LatencyTest::CalculateLatency() {
   // Skip last few frames, because they may be unreliable.
   size_t num_consider = latencies.size() - ignoreEndFrames;
   for (size_t i = 0; i < num_consider; ++i)
-    mean_latency += static_cast<double>(latencies[i]);
+    mean_latency += latencies[i];
   mean_latency /= static_cast<double>(num_consider);
   printf("Mean latency = %f\n", mean_latency);
 
   double mean_error = 0.0;
   for (size_t i = 0; i < num_consider; ++i) {
-    double offset = fabs(mean_latency - static_cast<double>(latencies[i]));
+    double offset = fabs(mean_latency - latencies[i]);
     mean_error = (offset > mean_error) ? offset : mean_error;
   }
 
@@ -599,7 +635,10 @@ void LatencyTest::GetMeanFrameTimeMicros(int* frame_time) const {
   // Search for compositor swaps (or UpdateRects in the software path).
   analyzer_->FindEvents(query_end_swaps_, &events);
   RateStats stats;
-  ASSERT_TRUE(GetRateStats(events, &stats, NULL));
+  trace_analyzer::RateStatsOptions options;
+  options.trim_max = 3;
+  options.trim_min = 3;
+  ASSERT_TRUE(GetRateStats(events, &stats, &options));
 
   // Check that the number of swaps is close to kNumFrames.
   EXPECT_LT(num_frames_ - num_frames_ / 4, static_cast<int>(events.size()));

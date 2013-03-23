@@ -15,6 +15,7 @@
 #include <list>
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
 
@@ -22,7 +23,7 @@ namespace base {
 class MessageLoopProxy;
 }
 
-namespace media_stream {
+namespace content {
 
 enum MediaStreamProviderError {
   kMediaStreamOk = 0,
@@ -61,7 +62,8 @@ class CONTENT_EXPORT MediaStreamProviderListener {
 };
 
 // Implemented by a manager class providing captured media.
-class CONTENT_EXPORT MediaStreamProvider {
+class CONTENT_EXPORT MediaStreamProvider
+    : public base::RefCountedThreadSafe<MediaStreamProvider> {
  public:
   // Registers a listener and a device message loop.
   virtual void Register(MediaStreamProviderListener* listener,
@@ -83,9 +85,10 @@ class CONTENT_EXPORT MediaStreamProvider {
   virtual void Close(int capture_session_id) = 0;
 
  protected:
+  friend class base::RefCountedThreadSafe<MediaStreamProvider>;
   virtual ~MediaStreamProvider() {}
 };
 
-}  // namespace media_stream
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_PROVIDER_H_

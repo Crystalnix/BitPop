@@ -13,6 +13,7 @@
 #include "content/browser/speech/audio_buffer.h"
 #include "content/public/common/speech_recognition_error.h"
 #include "content/public/common/speech_recognition_result.h"
+#include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
@@ -20,10 +21,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
-using content::SpeechRecognitionError;
-using content::SpeechRecognitionHypothesis;
-using content::SpeechRecognitionResult;
-
+namespace content {
 namespace {
 
 const char* const kDefaultSpeechRecognitionUrl =
@@ -35,8 +33,7 @@ const char* const kConfidenceString = "confidence";
 const int kWebServiceStatusNoError = 0;
 const int kWebServiceStatusNoSpeech = 4;
 const int kWebServiceStatusNoMatch = 5;
-const speech::AudioEncoder::Codec kDefaultAudioCodec =
-    speech::AudioEncoder::CODEC_FLAC;
+const AudioEncoder::Codec kDefaultAudioCodec = AudioEncoder::CODEC_FLAC;
 
 bool ParseServerResponse(const std::string& response_body,
                          SpeechRecognitionResult* result,
@@ -77,13 +74,13 @@ bool ParseServerResponse(const std::string& response_body,
     case kWebServiceStatusNoError:
       break;
     case kWebServiceStatusNoSpeech:
-      error->code = content::SPEECH_RECOGNITION_ERROR_NO_SPEECH;
+      error->code = SPEECH_RECOGNITION_ERROR_NO_SPEECH;
       return false;
     case kWebServiceStatusNoMatch:
-      error->code = content::SPEECH_RECOGNITION_ERROR_NO_MATCH;
+      error->code = SPEECH_RECOGNITION_ERROR_NO_MATCH;
       return false;
     default:
-      error->code = content::SPEECH_RECOGNITION_ERROR_NETWORK;
+      error->code = SPEECH_RECOGNITION_ERROR_NETWORK;
       // Other status codes should not be returned by the server.
       VLOG(1) << "ParseServerResponse: unexpected status code " << status;
       return false;
@@ -147,8 +144,6 @@ bool ParseServerResponse(const std::string& response_body,
 
 }  // namespace
 
-namespace speech {
-
 const int GoogleOneShotRemoteEngine::kAudioPacketIntervalMs = 100;
 int GoogleOneShotRemoteEngine::url_fetcher_id_for_tests = 0;
 
@@ -176,7 +171,10 @@ void GoogleOneShotRemoteEngine::StartRecognition() {
     net::URLRequestContext* request_context =
         url_context_->GetURLRequestContext();
     DCHECK(request_context);
-    std::string accepted_language_list = request_context->accept_language();
+    // TODO(pauljensen): GoogleOneShotRemoteEngine should be constructed with
+    // a reference to the HttpUserAgentSettings rather than accessing the
+    // accept language through the URLRequestContext.
+    std::string accepted_language_list = request_context->GetAcceptLanguage();
     size_t separator = accepted_language_list.find_first_of(",;");
     lang_param = accepted_language_list.substr(0, separator);
   }
@@ -198,6 +196,9 @@ void GoogleOneShotRemoteEngine::StartRecognition() {
                                                         true));
   parts.push_back("maxresults=" + base::UintToString(config_.max_hypotheses));
   parts.push_back(config_.filter_profanities ? "pfilter=2" : "pfilter=0");
+
+  std::string api_key = google_apis::GetAPIKey();
+  parts.push_back("key=" + net::EscapeQueryParamValue(api_key, true));
 
   GURL url(std::string(kDefaultSpeechRecognitionUrl) + JoinString(parts, '&'));
 
@@ -261,8 +262,10 @@ void GoogleOneShotRemoteEngine::AudioChunksEnded() {
 void GoogleOneShotRemoteEngine::OnURLFetchComplete(
     const net::URLFetcher* source) {
   DCHECK_EQ(url_fetcher_.get(), source);
-  SpeechRecognitionResult result;
-  SpeechRecognitionError error(content::SPEECH_RECOGNITION_ERROR_NETWORK);
+  SpeechRecognitionResults results;
+  results.push_back(SpeechRecognitionResult());
+  SpeechRecognitionResult& result = results.back();
+  SpeechRecognitionError error(SPEECH_RECOGNITION_ERROR_NETWORK);
   std::string data;
 
   // The default error code in case of parse errors is NETWORK_FAILURE, however
@@ -277,7 +280,7 @@ void GoogleOneShotRemoteEngine::OnURLFetchComplete(
     delegate()->OnSpeechRecognitionEngineError(error);
   } else {
     DVLOG(1) << "GoogleOneShotRemoteEngine: Invoking delegate with result.";
-    delegate()->OnSpeechRecognitionEngineResult(result);
+    delegate()->OnSpeechRecognitionEngineResults(results);
   }
 }
 
@@ -289,4 +292,4 @@ int GoogleOneShotRemoteEngine::GetDesiredAudioChunkDurationMs() const {
   return kAudioPacketIntervalMs;
 }
 
-}  // namespace speech
+}  // namespace content

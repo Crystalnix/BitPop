@@ -93,12 +93,17 @@ string16 BookmarkMenuController::GetTooltipText(int id,
 }
 
 bool BookmarkMenuController::IsTriggerableEvent(views::MenuItemView* menu,
-                                                const views::Event& e) {
+                                                const ui::Event& e) {
   return menu_delegate_->IsTriggerableEvent(menu, e);
 }
 
 void BookmarkMenuController::ExecuteCommand(int id, int mouse_event_flags) {
   menu_delegate_->ExecuteCommand(id, mouse_event_flags);
+}
+
+bool BookmarkMenuController::ShouldExecuteCommandWithoutClosingMenu(
+      int id, const ui::Event& e) {
+  return menu_delegate_->ShouldExecuteCommandWithoutClosingMenu(id, e);
 }
 
 bool BookmarkMenuController::GetDropFormats(
@@ -119,14 +124,14 @@ bool BookmarkMenuController::CanDrop(MenuItemView* menu,
 
 int BookmarkMenuController::GetDropOperation(
     MenuItemView* item,
-    const views::DropTargetEvent& event,
+    const ui::DropTargetEvent& event,
     DropPosition* position) {
   return menu_delegate_->GetDropOperation(item, event, position);
 }
 
 int BookmarkMenuController::OnPerformDrop(MenuItemView* menu,
                                           DropPosition position,
-                                          const views::DropTargetEvent& event) {
+                                          const ui::DropTargetEvent& event) {
   int result = menu_delegate_->OnPerformDrop(menu, position, event);
   if (for_drop_)
     delete this;
@@ -166,7 +171,7 @@ views::MenuItemView* BookmarkMenuController::GetSiblingMenu(
   if (!bookmark_bar_ || for_drop_)
     return NULL;
   gfx::Point bookmark_bar_loc(screen_point);
-  views::View::ConvertPointToView(NULL, bookmark_bar_, &bookmark_bar_loc);
+  views::View::ConvertPointToTarget(NULL, bookmark_bar_, &bookmark_bar_loc);
   int start_index;
   const BookmarkNode* node = bookmark_bar_->GetNodeForButtonAtModelIndex(
       bookmark_bar_loc, &start_index);

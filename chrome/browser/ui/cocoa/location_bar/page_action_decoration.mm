@@ -7,6 +7,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/page_action_decoration.h"
 
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
@@ -14,18 +15,19 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "ui/gfx/canvas_skia_paint.h"
 
 using content::WebContents;
 using extensions::Extension;
@@ -48,32 +50,24 @@ PageActionDecoration::PageActionDecoration(
     : owner_(NULL),
       browser_(browser),
       page_action_(page_action),
-      tracker_(this),
       current_tab_id_(-1),
       preview_enabled_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
           page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetTabContents())),
+              SessionID::IdForTab(owner->GetWebContents())),
           this)) {
   const Extension* extension = browser->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
 
-  // Load all the icons declared in the manifest. This is the contents of the
-  // icons array, plus the default_icon property, if any.
-  std::vector<std::string> icon_paths(*page_action->icon_paths());
-  if (!page_action_->default_icon_path().empty())
-    icon_paths.push_back(page_action_->default_icon_path());
-
-  for (std::vector<std::string>::iterator iter = icon_paths.begin();
-       iter != icon_paths.end(); ++iter) {
-    tracker_.LoadImage(extension, extension->GetResource(*iter),
-                       gfx::Size(Extension::kPageActionIconMaxSize,
-                                 Extension::kPageActionIconMaxSize),
-                       ImageLoadingTracker::DONT_CACHE);
-  }
+  icon_factory_.reset(
+      new ExtensionActionIconFactory(extension, page_action, this));
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
+      content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC,
+      content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC,
       content::Source<Profile>(browser_->profile()));
 
   // We set the owner last of all so that we can determine whether we are in
@@ -89,6 +83,26 @@ CGFloat PageActionDecoration::GetWidthForSpace(CGFloat width) {
   return Extension::kPageActionIconMaxSize;
 }
 
+void PageActionDecoration::DrawWithBackgroundInFrame(NSRect background_frame,
+                                                     NSRect frame,
+                                                     NSView* control_view) {
+  {
+    gfx::Rect bounds(NSRectToCGRect(background_frame));
+    gfx::CanvasSkiaPaint canvas(background_frame, /*opaque=*/false);
+    // set_composite_alpha(true) makes the extension action paint on top of the
+    // location bar instead of whatever's behind the Chrome window.
+    canvas.set_composite_alpha(true);
+    location_bar_util::PaintExtensionActionBackground(
+        *page_action_, current_tab_id_,
+        &canvas, bounds,
+        SK_ColorBLACK, SK_ColorWHITE);
+    // Destroying |canvas| draws the background.
+  }
+
+  ImageDecoration::DrawWithBackgroundInFrame(
+      background_frame, frame, control_view);
+}
+
 bool PageActionDecoration::AcceptsMousePress() {
   return true;
 }
@@ -96,15 +110,20 @@ bool PageActionDecoration::AcceptsMousePress() {
 // Either notify listeners or show a popup depending on the Page
 // Action.
 bool PageActionDecoration::OnMousePressed(NSRect frame) {
-  TabContents* tab_contents = owner_->GetTabContents();
-  if (!tab_contents) {
+  return ActivatePageAction(frame);
+}
+
+bool PageActionDecoration::ActivatePageAction(NSRect frame) {
+  WebContents* web_contents = owner_->GetWebContents();
+  if (!web_contents) {
     // We don't want other code to try and handle this click. Returning true
     // prevents this by indicating that we handled it.
     return true;
   }
 
   LocationBarController* controller =
-      tab_contents->extension_tab_helper()->location_bar_controller();
+      extensions::TabHelper::FromWebContents(web_contents)->
+          location_bar_controller();
 
   // 1 is left click.
   switch (controller->OnClicked(page_action_->extension_id(), 1)) {
@@ -131,27 +150,11 @@ bool PageActionDecoration::OnMousePressed(NSRect frame) {
   return true;
 }
 
-void PageActionDecoration::OnImageLoaded(const gfx::Image& image,
-                                         const std::string& extension_id,
-                                         int index) {
-  // We loaded icons()->size() icons, plus one extra if the Page Action had
-  // a default icon.
-  int total_icons = static_cast<int>(page_action_->icon_paths()->size());
-  if (!page_action_->default_icon_path().empty())
-    total_icons++;
-  DCHECK(index < total_icons);
-
-  // Map the index of the loaded image back to its name. If we ever get an
-  // index greater than the number of icons, it must be the default icon.
-  if (index < static_cast<int>(page_action_->icon_paths()->size()))
-    page_action_->CacheIcon(page_action_->icon_paths()->at(index), image);
-  else
-    page_action_->CacheIcon(page_action_->default_icon_path(), image);
-
+void PageActionDecoration::OnIconUpdated() {
   // If we have no owner, that means this class is still being constructed.
-  TabContents* tab_contents = owner_ ? owner_->GetTabContents() : NULL;
-  if (tab_contents) {
-    UpdateVisibility(tab_contents->web_contents(), current_url_);
+  WebContents* web_contents = owner_ ? owner_->GetWebContents() : NULL;
+  if (web_contents) {
+    UpdateVisibility(web_contents, current_url_);
     owner_->RedrawDecoration(this);
   }
 }
@@ -169,7 +172,7 @@ void PageActionDecoration::UpdateVisibility(WebContents* contents,
     SetToolTip(page_action_->GetTitle(current_tab_id_));
 
     // Set the image.
-    gfx::Image icon = page_action_->GetIcon(current_tab_id_);
+    gfx::Image icon = icon_factory_->GetIcon(current_tab_id_);
     if (!icon.IsEmpty()) {
       SetImage(icon.ToNSImage());
     } else if (!GetImage()) {
@@ -241,14 +244,13 @@ void PageActionDecoration::ShowPopup(const NSRect& frame,
   anchor = [field convertPoint:anchor toView:nil];
 
   [ExtensionPopupController showURL:popup_url
-                          inBrowser:browser::GetLastActiveBrowser()
+                          inBrowser:chrome::GetLastActiveBrowser()
                          anchoredAt:anchor
                       arrowLocation:info_bubble::kTopRight
                             devMode:NO];
 }
 
-void PageActionDecoration::OnIconChanged(
-    const ExtensionAction::IconAnimation& animation) {
+void PageActionDecoration::OnIconChanged() {
   UpdateVisibility(owner_->GetWebContents(), current_url_);
   owner_->RedrawDecoration(this);
 }
@@ -265,6 +267,22 @@ void PageActionDecoration::Observe(
 
       break;
     }
+    case chrome::NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC:
+    case chrome::NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC: {
+      std::pair<const std::string, gfx::NativeWindow>* payload =
+      content::Details<std::pair<const std::string, gfx::NativeWindow> >(
+          details).ptr();
+      std::string extension_id = payload->first;
+      gfx::NativeWindow window = payload->second;
+      if (window != browser_->window()->GetNativeWindow())
+        break;
+      if (extension_id != page_action_->extension_id())
+        break;
+      if (IsVisible())
+        ActivatePageAction(owner_->GetPageActionFrame(page_action_));
+      break;
+    }
+
     default:
       NOTREACHED() << "Unexpected notification";
       break;

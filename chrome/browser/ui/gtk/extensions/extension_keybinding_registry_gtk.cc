@@ -4,13 +4,14 @@
 
 #include "chrome/browser/ui/gtk/extensions/extension_keybinding_registry_gtk.h"
 
+#include <gtk/gtk.h>
+
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
-#include "chrome/browser/extensions/browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
-#include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
+#include "ui/base/accelerators/platform_accelerator_gtk.h"
 
 // static
 void extensions::ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(
@@ -21,8 +22,11 @@ void extensions::ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(
 bool ExtensionKeybindingRegistryGtk::shortcut_handling_suspended_ = false;
 
 ExtensionKeybindingRegistryGtk::ExtensionKeybindingRegistryGtk(
-    Profile* profile, gfx::NativeWindow window)
-    : ExtensionKeybindingRegistry(profile),
+    Profile* profile,
+    gfx::NativeWindow window,
+    ExtensionFilter extension_filter,
+    Delegate* delegate)
+    : ExtensionKeybindingRegistry(profile, extension_filter, delegate),
       profile_(profile),
       window_(window),
       accel_group_(NULL) {
@@ -46,10 +50,9 @@ gboolean ExtensionKeybindingRegistryGtk::HasPriorityHandler(
   if (shortcut_handling_suspended_)
     return FALSE;
 
-  ui::AcceleratorGtk accelerator(ui::WindowsKeyCodeForGdkKeyCode(event->keyval),
-                                 event->state & GDK_SHIFT_MASK,
-                                 event->state & GDK_CONTROL_MASK,
-                                 event->state & GDK_MOD1_MASK);
+  ui::Accelerator accelerator = ui::AcceleratorForGdkKeyCodeAndModifier(
+      event->keyval, static_cast<GdkModifierType>(event->state));
+
   return event_targets_.find(accelerator) != event_targets_.end();
 }
 
@@ -59,22 +62,17 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
   extensions::CommandService* command_service =
       extensions::CommandServiceFactory::GetForProfile(profile_);
   extensions::CommandMap commands;
-  if (!command_service->GetNamedCommands(
+  command_service->GetNamedCommands(
           extension->id(),
           extensions::CommandService::ACTIVE_ONLY,
-          &commands)) {
-    return;
-  }
+          &commands);
 
   for (extensions::CommandMap::const_iterator iter = commands.begin();
        iter != commands.end(); ++iter) {
     if (!command_name.empty() && (iter->second.command_name() != command_name))
       continue;
 
-    ui::AcceleratorGtk accelerator(iter->second.accelerator().key_code(),
-                                   iter->second.accelerator().IsShiftDown(),
-                                   iter->second.accelerator().IsCtrlDown(),
-                                   iter->second.accelerator().IsAltDown());
+    ui::Accelerator accelerator(iter->second.accelerator());
     event_targets_[accelerator] =
         std::make_pair(extension->id(), iter->second.command_name());
 
@@ -85,8 +83,8 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
 
     gtk_accel_group_connect(
         accel_group_,
-        accelerator.GetGdkKeyCode(),
-        accelerator.gdk_modifier_type(),
+        ui::GetGdkKeyCodeForAccelerator(accelerator),
+        ui::GetGdkModifierForAccelerator(accelerator),
         GtkAccelFlags(0),
         g_cclosure_new(G_CALLBACK(OnGtkAcceleratorThunk), this, NULL));
   }
@@ -100,26 +98,33 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
           extensions::CommandService::ACTIVE_ONLY,
           &browser_action,
           NULL)) {
-    ui::AcceleratorGtk accelerator(browser_action.accelerator().key_code(),
-                                   browser_action.accelerator().IsShiftDown(),
-                                   browser_action.accelerator().IsCtrlDown(),
-                                   browser_action.accelerator().IsAltDown());
+    ui::Accelerator accelerator(browser_action.accelerator());
     event_targets_[accelerator] =
       std::make_pair(extension->id(), browser_action.command_name());
   }
 
+  // Add the Page Action (if any).
   extensions::Command page_action;
   if (command_service->GetPageActionCommand(
           extension->id(),
           extensions::CommandService::ACTIVE_ONLY,
           &page_action,
           NULL)) {
-    ui::AcceleratorGtk accelerator(page_action.accelerator().key_code(),
-                                   page_action.accelerator().IsShiftDown(),
-                                   page_action.accelerator().IsCtrlDown(),
-                                   page_action.accelerator().IsAltDown());
+    ui::Accelerator accelerator(page_action.accelerator());
     event_targets_[accelerator] =
         std::make_pair(extension->id(), page_action.command_name());
+  }
+
+  // Add the Script Badge (if any).
+  extensions::Command script_badge;
+  if (command_service->GetScriptBadgeCommand(
+          extension->id(),
+          extensions::CommandService::ACTIVE_ONLY,
+          &script_badge,
+          NULL)) {
+    ui::Accelerator accelerator(script_badge.accelerator());
+    event_targets_[accelerator] =
+        std::make_pair(extension->id(), script_badge.command_name());
   }
 }
 
@@ -135,15 +140,14 @@ void ExtensionKeybindingRegistryGtk::RemoveExtensionKeybinding(
     }
 
     // On GTK, unlike Windows, the Event Targets contain all events but we must
-    // only unregister the ones we own.
-    if (ShouldIgnoreCommand(iter->second.second)) {
-      ++iter;
-      continue;
+    // only unregister the ones we registered targets for.
+    if (!ShouldIgnoreCommand(iter->second.second)) {
+      gtk_accel_group_disconnect_key(
+          accel_group_,
+          ui::GetGdkKeyCodeForAccelerator(iter->first),
+          ui::GetGdkModifierForAccelerator(iter->first));
     }
 
-    gtk_accel_group_disconnect_key(accel_group_,
-                                   iter->first.GetGdkKeyCode(),
-                                   iter->first.gdk_modifier_type());
     EventTargets::iterator old = iter++;
     event_targets_.erase(old);
   }
@@ -154,9 +158,8 @@ gboolean ExtensionKeybindingRegistryGtk::OnGtkAccelerator(
     GObject* acceleratable,
     guint keyval,
     GdkModifierType modifier) {
-  ui::AcceleratorGtk accelerator(keyval, modifier);
-
-  ExtensionService* service = profile_->GetExtensionService();
+  ui::Accelerator accelerator = ui::AcceleratorForGdkKeyCodeAndModifier(
+      keyval, modifier);
 
   EventTargets::iterator it = event_targets_.find(accelerator);
   if (it == event_targets_.end()) {
@@ -164,8 +167,6 @@ gboolean ExtensionKeybindingRegistryGtk::OnGtkAccelerator(
     return FALSE;
   }
 
-  service->browser_event_router()->CommandExecuted(
-      profile_, it->second.first, it->second.second);
-
+  CommandExecuted(it->second.first, it->second.second);
   return TRUE;
 }

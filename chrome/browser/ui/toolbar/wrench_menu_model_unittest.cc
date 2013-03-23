@@ -95,7 +95,7 @@ class TestWrenchMenuModel : public WrenchMenuModel {
  public:
   TestWrenchMenuModel(ui::AcceleratorProvider* provider,
                       Browser* browser)
-      : WrenchMenuModel(provider, browser),
+      : WrenchMenuModel(provider, browser, false, false),
         execute_count_(0),
         checked_count_(0),
         enable_count_(0) {
@@ -132,8 +132,9 @@ TEST_F(WrenchMenuModelTest, Basics) {
   // Execute a couple of the items and make sure it gets back to our delegate.
   // We can't use CountEnabledExecutable() here because the encoding menu's
   // delegate is internal, it doesn't use the one we pass in.
-  model.ActivatedAt(0);
-  EXPECT_TRUE(model.IsEnabledAt(0));
+  // Note: The new menu has a spacing separator at the first slot.
+  model.ActivatedAt(1);
+  EXPECT_TRUE(model.IsEnabledAt(1));
   // Make sure to use the index that is not separator in all configurations.
   model.ActivatedAt(2);
   EXPECT_TRUE(model.IsEnabledAt(2));
@@ -177,7 +178,7 @@ TEST_F(WrenchMenuModelTest, GlobalError) {
   MenuError* error2 = new MenuError(command2);
   service->AddGlobalError(error2);
 
-  WrenchMenuModel model(this, browser());
+  WrenchMenuModel model(this, browser(), false, false);
   int index1 = model.GetIndexOfCommandId(command1);
   EXPECT_GT(index1, -1);
   int index2 = model.GetIndexOfCommandId(command2);

@@ -80,7 +80,8 @@ bool WebAccessibilityNotificationToAccessibilityNotification(
       *type = AccessibilityNotificationValueChanged;
       break;
     default:
-      NOTREACHED();
+      DLOG(WARNING)
+          << "WebKit accessibility notification not handled in switch!";
       return false;
   }
   return true;
@@ -222,6 +223,10 @@ void RendererAccessibilityComplete::HandleAccessibilityNotification(
   }
 }
 
+RendererAccessibilityComplete::BrowserTreeNode::BrowserTreeNode() : id(0) {}
+
+RendererAccessibilityComplete::BrowserTreeNode::~BrowserTreeNode() {}
+
 void RendererAccessibilityComplete::SendPendingAccessibilityNotifications() {
   const WebDocument& document = GetMainDocument();
   if (document.isNull())
@@ -253,6 +258,8 @@ void RendererAccessibilityComplete::SendPendingAccessibilityNotifications() {
         root_id == notification.id;
     WebAccessibilityObject obj = document.accessibilityObjectFromID(
         notification.id);
+    if (!obj.updateBackingStoreAndCheckValidity())
+      continue;
 
     // The browser may not have this object yet, for example if we get a
     // notification on an object that was recently added, or if we get a
@@ -260,7 +267,7 @@ void RendererAccessibilityComplete::SendPendingAccessibilityNotifications() {
     // up the parent chain until we find a node the browser has, or until
     // we reach the root.
     while (browser_id_map_.find(obj.axID()) == browser_id_map_.end() &&
-           obj.isValid() &&
+           !obj.isDetached() &&
            obj.axID() != root_id) {
       obj = obj.parentObject();
       includes_children = true;
@@ -270,7 +277,7 @@ void RendererAccessibilityComplete::SendPendingAccessibilityNotifications() {
       }
     }
 
-    if (!obj.isValid()) {
+    if (obj.isDetached()) {
 #ifndef NDEBUG
       if (logging_)
         LOG(WARNING) << "Got notification on object that is invalid or has"
@@ -286,13 +293,12 @@ void RendererAccessibilityComplete::SendPendingAccessibilityNotifications() {
     // https://bugs.webkit.org/show_bug.cgi?id=68466 is fixed.
     if (obj.axID() != root_id) {
       WebAccessibilityObject parent = obj.parentObject();
-      while (!parent.isNull() &&
-             parent.isValid() &&
+      while (!parent.isDetached() &&
              parent.accessibilityIsIgnored()) {
         parent = parent.parentObject();
       }
 
-      if (parent.isNull() || !parent.isValid()) {
+      if (parent.isDetached()) {
         NOTREACHED();
         continue;
       }
@@ -389,7 +395,7 @@ void RendererAccessibilityComplete::OnDoDefaultAction(int acc_obj_id) {
     return;
 
   WebAccessibilityObject obj = document.accessibilityObjectFromID(acc_obj_id);
-  if (!obj.isValid()) {
+  if (obj.isDetached()) {
 #ifndef NDEBUG
     if (logging_)
       LOG(WARNING) << "DoDefaultAction on invalid object id " << acc_obj_id;
@@ -407,7 +413,7 @@ void RendererAccessibilityComplete::OnScrollToMakeVisible(
     return;
 
   WebAccessibilityObject obj = document.accessibilityObjectFromID(acc_obj_id);
-  if (!obj.isValid()) {
+  if (obj.isDetached()) {
 #ifndef NDEBUG
     if (logging_)
       LOG(WARNING) << "ScrollToMakeVisible on invalid object id " << acc_obj_id;
@@ -435,7 +441,7 @@ void RendererAccessibilityComplete::OnScrollToPoint(
     return;
 
   WebAccessibilityObject obj = document.accessibilityObjectFromID(acc_obj_id);
-  if (!obj.isValid()) {
+  if (obj.isDetached()) {
 #ifndef NDEBUG
     if (logging_)
       LOG(WARNING) << "ScrollToPoint on invalid object id " << acc_obj_id;
@@ -461,7 +467,7 @@ void RendererAccessibilityComplete::OnSetTextSelection(
     return;
 
   WebAccessibilityObject obj = document.accessibilityObjectFromID(acc_obj_id);
-  if (!obj.isValid()) {
+  if (obj.isDetached()) {
 #ifndef NDEBUG
     if (logging_)
       LOG(WARNING) << "SetTextSelection on invalid object id " << acc_obj_id;
@@ -492,7 +498,7 @@ void RendererAccessibilityComplete::OnSetFocus(int acc_obj_id) {
     return;
 
   WebAccessibilityObject obj = document.accessibilityObjectFromID(acc_obj_id);
-  if (!obj.isValid()) {
+  if (obj.isDetached()) {
 #ifndef NDEBUG
     if (logging_) {
       LOG(WARNING) << "OnSetAccessibilityFocus on invalid object id "
@@ -503,7 +509,7 @@ void RendererAccessibilityComplete::OnSetFocus(int acc_obj_id) {
   }
 
   WebAccessibilityObject root = document.accessibilityObject();
-  if (!root.isValid()) {
+  if (root.isDetached()) {
 #ifndef NDEBUG
     if (logging_) {
       LOG(WARNING) << "OnSetAccessibilityFocus but root is invalid";

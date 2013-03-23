@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "content/browser/renderer_host/web_input_event_aura.h"
-#include "ui/aura/event.h"
+#include "ui/base/events/event.h"
 
 namespace {
 
@@ -14,8 +14,8 @@ namespace {
 // queued in RenderWidgetHost and may be passed and used
 // RenderViewHostDelegate::HandledKeybardEvent after the original aura
 // event is destroyed.
-aura::Event* CopyEvent(aura::Event* event) {
-  return event ? static_cast<aura::KeyEvent*>(event)->Copy() : NULL;
+ui::Event* CopyEvent(ui::Event* event) {
+  return event ? static_cast<ui::KeyEvent*>(event)->Copy() : NULL;
 }
 
 int EventFlagsToWebInputEventModifiers(int flags) {
@@ -38,8 +38,8 @@ NativeWebKeyboardEvent::NativeWebKeyboardEvent()
 }
 
 NativeWebKeyboardEvent::NativeWebKeyboardEvent(gfx::NativeEvent native_event)
-    : WebKeyboardEvent(content::MakeWebKeyboardEvent(
-          static_cast<aura::KeyEvent*>(native_event))),
+    : WebKeyboardEvent(MakeWebKeyboardEvent(
+          static_cast<ui::KeyEvent*>(native_event))),
       os_event(CopyEvent(native_event)),
       skip_in_browser(false) {
 }
@@ -78,6 +78,7 @@ NativeWebKeyboardEvent::NativeWebKeyboardEvent(
   text[0] = character;
   unmodifiedText[0] = character;
   isSystemKey = (state & ui::EF_ALT_DOWN) != 0;
+  setKeyIdentifierFromWindowsKeyCode();
 }
 
 NativeWebKeyboardEvent& NativeWebKeyboardEvent::operator=(

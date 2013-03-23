@@ -28,8 +28,8 @@ namespace tracked_objects {
 struct ProcessDataSnapshot;
 }
 
-namespace experiments_helper {
-struct SelectedGroupId;
+namespace chrome_variations {
+struct ActiveGroupId;
 }
 
 namespace webkit {
@@ -126,16 +126,21 @@ class MetricsLog : public MetricsLogBase {
   // Returns the screen size for the primary monitor.
   virtual gfx::Size GetScreenSize() const;
 
+  // Returns the device scale factor for the primary monitor.
+  virtual float GetScreenDeviceScaleFactor() const;
+
   // Returns the number of monitors the user is using.
   virtual int GetScreenCount() const;
 
   // Fills |field_trial_ids| with the list of initialized field trials name and
   // group ids.
   virtual void GetFieldTrialIds(
-    std::vector<experiments_helper::SelectedGroupId>* field_trial_ids) const;
+    std::vector<chrome_variations::ActiveGroupId>* field_trial_ids) const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(MetricsLogTest, ChromeOSStabilityData);
+
+  class NetworkObserver;
 
   // Writes application stability metrics (as part of the profile log).
   // NOTE: Has the side-effect of clearing those counts.
@@ -179,6 +184,10 @@ class MetricsLog : public MetricsLogBase {
   // Writes info about the Google Update install that is managing this client.
   // This is a no-op if called on a non-Windows platform.
   void WriteGoogleUpdateProto(const GoogleUpdateMetrics& google_update_metrics);
+
+  // Registers as observer with net::NetworkChangeNotifier and keeps track of
+  // the network environment.
+  scoped_ptr<NetworkObserver> network_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(MetricsLog);
 };

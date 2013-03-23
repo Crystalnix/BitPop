@@ -11,6 +11,7 @@
 #include "base/string_util.h"
 #include "base/test/mock_time_provider.h"
 #include "base/threading/thread.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -21,11 +22,12 @@
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
-#include "chrome/browser/webdata/web_database.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
+#include "chrome/browser/webdata/web_database.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -500,7 +502,7 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
       "http://test2", std::string(), std::string(), false, "UTF-8", Time(),
       Time());
   TemplateURL* original3 = AddKeywordWithDate("extension", "keyword3",
-      std::string(chrome::kExtensionScheme) + "://test3", std::string(),
+      std::string(extensions::kExtensionScheme) + "://test3", std::string(),
       std::string(), false, "UTF-8", Time(), Time());
 
   // Add an extension keyword that conflicts with each of the above three
@@ -508,7 +510,7 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
   TemplateURLData data;
   data.short_name = ASCIIToUTF16("test");
   data.SetKeyword(ASCIIToUTF16("keyword1"));
-  data.SetURL(std::string(chrome::kExtensionScheme) + "://test4");
+  data.SetURL(std::string(extensions::kExtensionScheme) + "://test4");
   data.safe_for_autoreplace = false;
 
   // Extension keywords should override replaceable keywords.
@@ -550,7 +552,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   AddKeywordWithDate("replaceable", "keyword", "http://test1", std::string(),
                      std::string(), true, "UTF-8", Time(), Time());
   TemplateURL* extension = AddKeywordWithDate("extension", "keyword",
-      std::string(chrome::kExtensionScheme) + "://test2", std::string(),
+      std::string(extensions::kExtensionScheme) + "://test2", std::string(),
       std::string(), false, "UTF-8", Time(), Time());
 
   // Adding another replaceable keyword should remove the existing one, but
@@ -1064,8 +1066,8 @@ TEST_F(TemplateURLServiceTest, GenerateVisitOnKeyword) {
   history->AddPage(
       GURL(t_url->url_ref().ReplaceSearchTerms(
           TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("blah")))),
-      NULL, 0, GURL(), content::PAGE_TRANSITION_KEYWORD,
-      history::RedirectList(), history::SOURCE_BROWSED, false);
+      base::Time::Now(), NULL, 0, GURL(), history::RedirectList(),
+      content::PAGE_TRANSITION_KEYWORD, history::SOURCE_BROWSED, false);
 
   // Wait for history to finish processing the request.
   test_util_.profile()->BlockUntilHistoryProcessesPendingRequests();

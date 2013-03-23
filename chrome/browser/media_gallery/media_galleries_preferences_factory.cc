@@ -8,9 +8,9 @@
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 
 // static
-MediaGalleriesPreferences* MediaGalleriesPreferencesFactory::GetForProfile(
-    Profile* profile) {
-  return static_cast<MediaGalleriesPreferences*>(
+chrome::MediaGalleriesPreferences*
+MediaGalleriesPreferencesFactory::GetForProfile(Profile* profile) {
+  return static_cast<chrome::MediaGalleriesPreferences*>(
       GetInstance()->GetServiceForProfile(profile, true));
 }
 
@@ -28,13 +28,13 @@ MediaGalleriesPreferencesFactory::~MediaGalleriesPreferencesFactory() {}
 
 ProfileKeyedService* MediaGalleriesPreferencesFactory::BuildServiceInstanceFor(
     Profile* profile) const {
-  return new MediaGalleriesPreferences(profile);
+  return new chrome::MediaGalleriesPreferences(profile);
 }
 
 void MediaGalleriesPreferencesFactory::RegisterUserPrefs(PrefService* prefs) {
-  MediaGalleriesPreferences::RegisterUserPrefs(prefs);
+    chrome::MediaGalleriesPreferences::RegisterUserPrefs(prefs);
 }
 
-bool MediaGalleriesPreferencesFactory::ServiceRedirectedInIncognito() {
+bool MediaGalleriesPreferencesFactory::ServiceRedirectedInIncognito() const {
   return true;
 }

@@ -20,6 +20,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 #include "net/cookies/canonical_cookie.h"
 
 class CookiesTreeModel;
@@ -33,8 +34,14 @@ namespace net {
 class CookieOptions;
 }
 
-class TabSpecificContentSettings : public content::WebContentsObserver,
-                                   public content::NotificationObserver {
+// This class manages state about permissions, content settings, cookies and
+// site data for a specific WebContents. It tracks which content was accessed
+// and which content was blocked. Based on this it provides information about
+// which types of content were accessed and blocked.
+class TabSpecificContentSettings
+    : public content::WebContentsObserver,
+      public content::NotificationObserver,
+      public content::WebContentsUserData<TabSpecificContentSettings> {
  public:
   // Classes that want to be notified about site data events must implement
   // this abstract class and add themselves as observer to the
@@ -52,13 +59,15 @@ class TabSpecificContentSettings : public content::WebContentsObserver,
       return tab_specific_content_settings_;
     }
 
+    // Called when the TabSpecificContentSettings is destroyed; nulls out
+    // the local reference.
+    void ContentSettingsDestroyed();
+
    private:
     TabSpecificContentSettings* tab_specific_content_settings_;
 
     DISALLOW_COPY_AND_ASSIGN(SiteDataObserver);
   };
-
-  explicit TabSpecificContentSettings(content::WebContents* tab);
 
   virtual ~TabSpecificContentSettings();
 
@@ -230,6 +239,7 @@ class TabSpecificContentSettings : public content::WebContentsObserver,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
+      int64 parent_frame_id,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
@@ -275,6 +285,9 @@ class TabSpecificContentSettings : public content::WebContentsObserver,
   void RemoveSiteDataObserver(SiteDataObserver* observer);
 
  private:
+  explicit TabSpecificContentSettings(content::WebContents* tab);
+  friend class content::WebContentsUserData<TabSpecificContentSettings>;
+
   void AddBlockedResource(ContentSettingsType content_type,
                           const std::string& resource_identifier);
 
@@ -288,8 +301,8 @@ class TabSpecificContentSettings : public content::WebContentsObserver,
   // Notifies all registered |SiteDataObserver|s.
   void NotifySiteDataObservers();
 
-  // All currently registered |SiteDataObserver|.
-  ObserverList<SiteDataObserver, true> observer_list_;
+  // All currently registered |SiteDataObserver|s.
+  ObserverList<SiteDataObserver> observer_list_;
 
   // Stores which content setting types actually have blocked content.
   bool content_blocked_[CONTENT_SETTINGS_NUM_TYPES];

@@ -1,12 +1,9 @@
 {
-  "name": "Font Settings",
-  "version": "0.2",
+  "name": "Advanced Font Settings",
+  "version": "0.3",
   "manifest_version": 2,
-  "description": "Sample extension for Font Settings API",
-  "browser_action" : {
-    "default_icon": "fonts16.png",
-    "default_popup": "popup.html"
-  },
+  "description": "Customize per-script font settings.",
+  "options_page": "options.html",
   "icons": {
     "16": "fonts16.png",
     "128": "fonts128.png"

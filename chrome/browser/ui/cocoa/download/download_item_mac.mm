@@ -8,7 +8,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_item_model.h"
 #import "chrome/browser/ui/cocoa/download/download_item_controller.h"
-#include "chrome/browser/ui/cocoa/download/download_util_mac.h"
 #include "content/public/browser/download_item.h"
 #include "ui/gfx/image/image.h"
 
@@ -16,7 +15,7 @@ using content::DownloadItem;
 
 // DownloadItemMac -------------------------------------------------------------
 
-DownloadItemMac::DownloadItemMac(BaseDownloadItemModel* download_model,
+DownloadItemMac::DownloadItemMac(DownloadItemModel* download_model,
                                  DownloadItemController* controller)
     : download_model_(download_model), item_controller_(controller) {
   download_model_->download()->AddObserver(this);
@@ -24,7 +23,6 @@ DownloadItemMac::DownloadItemMac(BaseDownloadItemModel* download_model,
 
 DownloadItemMac::~DownloadItemMac() {
   download_model_->download()->RemoveObserver(this);
-  icon_consumer_.CancelAllRequests();
 }
 
 void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
@@ -46,15 +44,11 @@ void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
   }
 
   switch (download->GetState()) {
-    case DownloadItem::REMOVING:
-      [item_controller_ remove];  // We're deleted now!
-      break;
     case DownloadItem::COMPLETE:
       if (download->GetAutoOpened()) {
         [item_controller_ remove];  // We're deleted now!
         return;
       }
-      download_util::NotifySystemOfDownloadComplete(download->GetFullPath());
       // fall through
     case DownloadItem::IN_PROGRESS:
     case DownloadItem::CANCELLED:
@@ -67,6 +61,10 @@ void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
     default:
       NOTREACHED();
   }
+}
+
+void DownloadItemMac::OnDownloadDestroyed(content::DownloadItem* download) {
+  [item_controller_ remove];  // We're deleted now!
 }
 
 void DownloadItemMac::OnDownloadOpened(content::DownloadItem* download) {
@@ -85,19 +83,20 @@ void DownloadItemMac::LoadIcon() {
   FilePath file = download_model_->download()->GetUserVerifiedFilePath();
   gfx::Image* icon = icon_manager->LookupIcon(file, IconLoader::ALL);
   if (icon) {
-    [item_controller_ setIcon:*icon];
+    [item_controller_ setIcon:icon->ToNSImage()];
     return;
   }
 
   // The icon isn't cached, load it asynchronously.
-  icon_manager->LoadIcon(file, IconLoader::ALL, &icon_consumer_,
+  icon_manager->LoadIcon(file,
+                         IconLoader::ALL,
                          base::Bind(&DownloadItemMac::OnExtractIconComplete,
-                                    base::Unretained(this)));
+                                    base::Unretained(this)),
+                         &cancelable_task_tracker_);
 }
 
-void DownloadItemMac::OnExtractIconComplete(IconManager::Handle handle,
-                                            gfx::Image* icon) {
+void DownloadItemMac::OnExtractIconComplete(gfx::Image* icon) {
   if (!icon)
     return;
-  [item_controller_ setIcon:*icon];
+  [item_controller_ setIcon:icon->ToNSImage()];
 }

@@ -38,7 +38,7 @@
 #include "ui/views/window/dialog_delegate.h"
 
 #if defined(OS_WIN)
-#include "base/win/metro.h"
+#include "win8/util/win8_util.h"
 #endif
 
 // The task manager window default size.
@@ -150,6 +150,9 @@ string16 TaskManagerTableModel::GetText(int row, int col_id) {
 
     case IDS_TASK_MANAGER_FPS_COLUMN:
       return model_->GetResourceFPS(row);
+
+    case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN:
+      return model_->GetResourceVideoMemory(row);
 
     case IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN:
       if (!model_->IsResourceFirstInGroup(row))
@@ -289,7 +292,7 @@ class TaskManagerView : public views::ButtonListener,
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // views::DialogDelegateView:
   virtual bool CanResize() const OVERRIDE;
@@ -426,6 +429,8 @@ void TaskManagerView::Init() {
   columns_.back().sortable = true;
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_FPS_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
+  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN,
+                                     ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
@@ -440,7 +445,6 @@ void TaskManagerView::Init() {
 
   // Hide some columns by default
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_PROFILE_NAME_COLUMN, false);
-  tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_PROCESS_ID_COLUMN, false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_SHARED_MEM_COLUMN, false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN, false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN,
@@ -448,6 +452,8 @@ void TaskManagerView::Init() {
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN,
                                   false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN,
+                                  false);
+  tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN,
                                   false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN,
                                   false);
@@ -466,11 +472,8 @@ void TaskManagerView::Init() {
     purge_memory_button_ = new views::NativeTextButton(this,
         l10n_util::GetStringUTF16(IDS_TASK_MANAGER_PURGE_MEMORY));
   }
-  kill_button_ = new views::NativeTextButton(
-      this, l10n_util::GetStringUTF16(IDS_TASK_MANAGER_KILL));
-  kill_button_->AddAccelerator(ui::Accelerator(ui::VKEY_E, ui::EF_NONE));
-  kill_button_->SetAccessibleKeyboardShortcut(L"E");
-  kill_button_->set_prefix_type(views::TextButtonBase::PREFIX_SHOW);
+  kill_button_ = new views::NativeTextButton(this,
+      l10n_util::GetStringUTF16(IDS_TASK_MANAGER_KILL));
   about_memory_link_ = new views::Link(
       l10n_util::GetStringUTF16(IDS_TASK_MANAGER_ABOUT_MEMORY_LINK));
   about_memory_link_->set_listener(this);
@@ -490,10 +493,13 @@ void TaskManagerView::UpdateStatsCounters() {
         // TODO(erikkay): Use l10n to get display names for stats.  Right
         // now we're just displaying the internal counter name.  Perhaps
         // stat names not in the string table would be filtered out.
+        ui::TableColumn col;
+        col.id = i;
+        col.title = ASCIIToUTF16(row);
+        col.alignment = ui::TableColumn::RIGHT;
         // TODO(erikkay): Width is hard-coded right now, so many column
         // names are clipped.
-        ui::TableColumn col(i, ASCIIToUTF16(row), ui::TableColumn::RIGHT, 90,
-                            0);
+        col.width = 90;
         col.sortable = true;
         columns_.push_back(col);
         tab_table_->AddColumn(col);
@@ -579,7 +585,7 @@ gfx::Size TaskManagerView::GetPreferredSize() {
 // static
 void TaskManagerView::Show(bool highlight_background_resources) {
   // In Windows Metro it's not good to open this native window.
-  DCHECK(!base::win::IsMetroProcess());
+  DCHECK(!win8::IsSingleWindowMetroMode());
 
   if (instance_) {
     if (instance_->highlight_background_resources_ !=
@@ -605,7 +611,7 @@ void TaskManagerView::Show(bool highlight_background_resources) {
 
 // ButtonListener implementation.
 void TaskManagerView::ButtonPressed(
-    views::Button* sender, const views::Event& event) {
+    views::Button* sender, const ui::Event& event) {
   if (purge_memory_button_ && (sender == purge_memory_button_)) {
     MemoryPurger::PurgeAll();
   } else {
@@ -708,7 +714,7 @@ void TaskManagerView::OnKeyDown(ui::KeyboardCode keycode) {
 }
 
 void TaskManagerView::LinkClicked(views::Link* source, int event_flags) {
-  DCHECK(source == about_memory_link_);
+  DCHECK_EQ(about_memory_link_, source);
   task_manager_->OpenAboutMemory();
 }
 

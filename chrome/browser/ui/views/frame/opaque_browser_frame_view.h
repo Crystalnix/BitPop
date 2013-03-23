@@ -20,6 +20,7 @@ class TabIconView;
 namespace views {
 class ImageButton;
 class FrameBackground;
+class Label;
 }
 
 class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
@@ -34,6 +35,7 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   // Overridden from BrowserNonClientFrameView:
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const OVERRIDE;
   virtual TabStripInsets GetTabStripInsets(bool restored) const OVERRIDE;
+  virtual int GetThemeBackgroundXInset() const OVERRIDE;
   virtual void UpdateThrobber(bool running) OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
 
@@ -62,15 +64,16 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
       OVERRIDE;
   virtual void ResetWindowControls() OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
+  virtual void UpdateWindowTitle() OVERRIDE;
 
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual bool HitTest(const gfx::Point& l) const OVERRIDE;
+  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
   // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event)
+  virtual void ButtonPressed(views::Button* sender, const ui::Event& event)
       OVERRIDE;
 
   // Overridden from chrome::TabIconViewModel:
@@ -129,7 +132,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   // and titlebar background are a contiguous component.
   void PaintRestoredFrameBorder(gfx::Canvas* canvas);
   void PaintMaximizedFrameBorder(gfx::Canvas* canvas);
-  void PaintTitleBar(gfx::Canvas* canvas);
   void PaintToolbarBackground(gfx::Canvas* canvas);
   void PaintRestoredClientEdge(gfx::Canvas* canvas);
 
@@ -147,9 +149,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   // Returns the bounds of the client area for the specified view size.
   gfx::Rect CalculateClientAreaBounds(int width, int height) const;
 
-  // The layout rect of the title, if visible.
-  gfx::Rect title_bounds_;
-
   // The layout rect of the avatar icon, if visible.
   gfx::Rect avatar_bounds_;
 
@@ -159,8 +158,9 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   views::ImageButton* restore_button_;
   views::ImageButton* close_button_;
 
-  // The Window icon.
+  // The window icon and title.
   TabIconView* window_icon_;
+  views::Label* window_title_;
 
   // The bounds of the ClientView.
   gfx::Rect client_view_bounds_;

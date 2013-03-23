@@ -14,6 +14,24 @@ namespace em = enterprise_management;
 
 namespace policy {
 
+namespace {
+
+// Translates the DeviceRegisterResponse::DeviceMode |mode| to the enum used
+// internally to represent different device modes.
+DeviceMode TranslateProtobufDeviceMode(
+    em::DeviceRegisterResponse::DeviceMode mode) {
+  switch (mode) {
+    case em::DeviceRegisterResponse::ENTERPRISE:
+      return DEVICE_MODE_ENTERPRISE;
+    case em::DeviceRegisterResponse::RETAIL:
+      return DEVICE_MODE_KIOSK;
+  }
+  LOG(ERROR) << "Unknown enrollment mode in registration response: " << mode;
+  return DEVICE_MODE_NOT_SET;
+}
+
+}  // namespace
+
 CloudPolicyClient::Observer::~Observer() {}
 
 CloudPolicyClient::StatusProvider::~StatusProvider() {}
@@ -21,19 +39,21 @@ CloudPolicyClient::StatusProvider::~StatusProvider() {}
 CloudPolicyClient::CloudPolicyClient(const std::string& machine_id,
                                      const std::string& machine_model,
                                      UserAffiliation user_affiliation,
-                                     PolicyScope scope,
+                                     PolicyType type,
                                      StatusProvider* status_provider,
                                      DeviceManagementService* service)
     : machine_id_(machine_id),
       machine_model_(machine_model),
       user_affiliation_(user_affiliation),
-      scope_(scope),
+      type_(type),
+      device_mode_(DEVICE_MODE_NOT_SET),
       submit_machine_id_(false),
       public_key_version_(-1),
       public_key_version_valid_(false),
-      service_(service),
-      status_provider_(status_provider),
-      status_(DM_STATUS_SUCCESS) {}
+      service_(service),                  // Can be NULL for unit tests.
+      status_provider_(status_provider),  // Can be NULL for unit tests.
+      status_(DM_STATUS_SUCCESS) {
+}
 
 CloudPolicyClient::~CloudPolicyClient() {}
 
@@ -51,14 +71,21 @@ void CloudPolicyClient::SetupRegistration(const std::string& dm_token,
   NotifyRegistrationStateChanged();
 }
 
-void CloudPolicyClient::Register(const std::string& auth_token) {
+void CloudPolicyClient::Register(const std::string& auth_token,
+                                 const std::string& client_id,
+                                 bool is_auto_enrollement) {
+  DCHECK(service_);
   DCHECK(!auth_token.empty());
   DCHECK(!is_registered());
 
-  // Generate a new client ID. This is intentionally done on each new
-  // registration request in order to preserve privacy. Reusing IDs would mean
-  // the server could track clients by their registration attempts.
-  client_id_ = base::GenerateGUID();
+  if (client_id.empty()) {
+    // Generate a new client ID. This is intentionally done on each new
+    // registration request in order to preserve privacy. Reusing IDs would mean
+    // the server could track clients by their registration attempts.
+    client_id_ = base::GenerateGUID();
+  } else {
+    client_id_ = client_id;
+  }
 
   request_job_.reset(
       service_->CreateJob(DeviceManagementRequestJob::TYPE_REGISTRATION));
@@ -67,11 +94,15 @@ void CloudPolicyClient::Register(const std::string& auth_token) {
 
   em::DeviceRegisterRequest* request =
       request_job_->GetRequest()->mutable_register_request();
+  if (!client_id.empty())
+    request->set_reregister(true);
   SetRegistrationType(request);
   if (!machine_id_.empty())
     request->set_machine_id(machine_id_);
   if (!machine_model_.empty())
     request->set_machine_model(machine_model_);
+  if (is_auto_enrollement)
+    request->set_auto_enrolled(true);
 
   request_job_->Start(base::Bind(&CloudPolicyClient::OnRegisterCompleted,
                                  base::Unretained(this)));
@@ -101,6 +132,8 @@ void CloudPolicyClient::FetchPolicy() {
     policy_request->set_machine_id(machine_id_);
   if (public_key_version_valid_)
     policy_request->set_public_key_version(public_key_version_);
+  if (!entity_id_.empty())
+    policy_request->set_settings_entity_id(entity_id_);
 
   // Add status data.
   if (status_provider_) {
@@ -120,6 +153,7 @@ void CloudPolicyClient::FetchPolicy() {
 }
 
 void CloudPolicyClient::Unregister() {
+  DCHECK(service_);
   request_job_.reset(
       service_->CreateJob(DeviceManagementRequestJob::TYPE_UNREGISTRATION));
   request_job_->SetDMToken(dm_token_);
@@ -139,27 +173,33 @@ void CloudPolicyClient::RemoveObserver(Observer* observer) {
 
 void CloudPolicyClient::SetRegistrationType(
     em::DeviceRegisterRequest* request) const {
-  switch (scope_) {
-    case POLICY_SCOPE_USER:
+  switch (type_) {
+    case POLICY_TYPE_USER:
       request->set_type(em::DeviceRegisterRequest::USER);
       return;
-    case POLICY_SCOPE_MACHINE:
+    case POLICY_TYPE_DEVICE:
       request->set_type(em::DeviceRegisterRequest::DEVICE);
       return;
+    case POLICY_TYPE_PUBLIC_ACCOUNT:
+      LOG(FATAL) << "Cannot register for public account policy.";
+      return;
   }
-  NOTREACHED() << "Invalid policy scope " << scope_;
+  NOTREACHED() << "Invalid policy type " << type_;
 }
 
 void CloudPolicyClient::SetPolicyType(em::PolicyFetchRequest* request) const {
-  switch (scope_) {
-    case POLICY_SCOPE_USER:
+  switch (type_) {
+    case POLICY_TYPE_USER:
       request->set_policy_type(dm_protocol::kChromeUserPolicyType);
       return;
-    case POLICY_SCOPE_MACHINE:
+    case POLICY_TYPE_DEVICE:
       request->set_policy_type(dm_protocol::kChromeDevicePolicyType);
       return;
+    case POLICY_TYPE_PUBLIC_ACCOUNT:
+      request->set_policy_type(dm_protocol::kChromePublicAccountPolicyType);
+      return;
   }
-  NOTREACHED() << "Invalid policy scope " << scope_;
+  NOTREACHED() << "Invalid policy type " << type_;
 }
 
 void CloudPolicyClient::OnRegisterCompleted(
@@ -168,13 +208,22 @@ void CloudPolicyClient::OnRegisterCompleted(
   if (status == DM_STATUS_SUCCESS &&
       (!response.has_register_response() ||
        !response.register_response().has_device_management_token())) {
-    LOG(WARNING) << "Empty registration response.";
+    LOG(WARNING) << "Invalid registration response.";
     status = DM_STATUS_RESPONSE_DECODING_ERROR;
   }
 
   status_ = status;
   if (status == DM_STATUS_SUCCESS) {
     dm_token_ = response.register_response().device_management_token();
+
+    // Device mode is only relevant for device policy really, it's the
+    // responsibility of the consumer of the field to check validity.
+    device_mode_ = DEVICE_MODE_NOT_SET;
+    if (response.register_response().has_enrollment_type()) {
+      device_mode_ = TranslateProtobufDeviceMode(
+          response.register_response().enrollment_type());
+    }
+
     NotifyRegistrationStateChanged();
   } else {
     NotifyClientError();

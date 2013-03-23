@@ -75,7 +75,7 @@ struct CONTENT_EXPORT RendererPreferences {
   SkColor thumb_inactive_color;
   SkColor track_color;
 
-  // The colors used in selection text. Currently only used on Linux.
+  // The colors used in selection text. Currently only used on Linux and Ash.
   SkColor active_selection_bg_color;
   SkColor active_selection_fg_color;
   SkColor inactive_selection_bg_color;
@@ -95,12 +95,18 @@ struct CONTENT_EXPORT RendererPreferences {
   // Set to false to not send referrers.
   bool enable_referrers;
 
+  // Set to true to indicate that the preference to set DNT to 1 is enabled.
+  bool enable_do_not_track;
+
   // Default page zoom level.
   double default_zoom_level;
 
   // The user agent given to WebKit when it requests one and the user agent is
   // being overridden for the current navigation.
   std::string user_agent_override;
+
+  // Specifies whether renderer input event throttle is enabled.
+  bool throttle_input_events;
 };
 
 }  // namespace content

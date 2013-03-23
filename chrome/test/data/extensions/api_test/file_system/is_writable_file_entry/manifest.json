@@ -1,7 +1,6 @@
 {
   "name": "chrome.fileSystem is writable file entry",
   "version": "0.1",
-  "manifest_version": 2,
   "description": "Test for chrome.fileSystem.isWritableFileEntry",
   "app": {
     "background": {
@@ -9,8 +8,8 @@
     }
   },
   "permissions": [
-    "experimental",
-    "fileSystem",
-    "fileSystemWrite"
+    {
+      "fileSystem": ["write"]
+    }
   ]
 }

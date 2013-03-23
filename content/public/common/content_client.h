@@ -108,6 +108,10 @@ class CONTENT_EXPORT ContentClient {
   // behalf of a swapped out renderer.
   virtual bool CanHandleWhileSwappedOut(const IPC::Message& message);
 
+  // Returns a string describing the embedder version.  Used as part of the
+  // user agent string.
+  virtual std::string GetProduct() const;
+
   // Returns the user agent.
   virtual std::string GetUserAgent() const;
 
@@ -122,13 +126,7 @@ class CONTENT_EXPORT ContentClient {
   // Returns a native image given its id.
   virtual gfx::Image& GetNativeImageNamed(int resource_id) const;
 
-#if defined(OS_WIN)
-  // Allows the embedder to sandbox a plugin, and apply a custom policy.
-  virtual bool SandboxPlugin(CommandLine* command_line,
-                             sandbox::TargetPolicy* policy);
-#endif
-
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   // Allows the embedder to define a new |sandbox_type| by mapping it to the
   // resource ID corresponding to the sandbox profile to use. The legal values
   // for |sandbox_type| are defined by the embedder and should start with

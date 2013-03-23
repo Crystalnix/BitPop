@@ -5,6 +5,7 @@
 #ifndef CHROME_TEST_BASE_BROWSER_WITH_TEST_WINDOW_TEST_H_
 #define CHROME_TEST_BASE_BROWSER_WITH_TEST_WINDOW_TEST_H_
 
+#include "base/at_exit.h"
 #include "base/message_loop.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/test_browser_window.h"
@@ -35,12 +36,12 @@ class WebContents;
 // Base class for browser based unit tests. BrowserWithTestWindowTest creates a
 // Browser with a TestingProfile and TestBrowserWindow. To add a tab use
 // AddTab. For example, the following adds a tab and navigates to
-// two URLs that target the TestTabContents:
+// two URLs that target the TestWebContents:
 //
 //   // Add a new tab and navigate it. This will be at index 0.
 //   AddTab(browser(), GURL("http://foo/1"));
 //   NavigationController* controller =
-//       &chrome::GetTabContentsAt(browser(), 0)->GetController();
+//       &browser()->tab_strip_model()->GetWebContentsAt(0)->GetController();
 //
 //   // Navigate somewhere else.
 //   GURL url2("http://foo/2");
@@ -107,6 +108,7 @@ class BrowserWithTestWindowTest : public testing::Test {
  private:
   // We need to create a MessageLoop, otherwise a bunch of things fails.
   MessageLoopForUI ui_loop_;
+  base::ShadowingAtExitManager at_exit_manager_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;

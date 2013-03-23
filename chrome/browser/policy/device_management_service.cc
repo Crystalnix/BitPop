@@ -13,6 +13,7 @@
 #include "base/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/net/basic_http_user_agent_settings.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
@@ -59,14 +60,14 @@ const int kInvalidArgument = 400;
 const int kInvalidAuthCookieOrDMToken = 401;
 const int kMissingLicenses = 402;
 const int kDeviceManagementNotAllowed = 403;
-const int kInvalidURL = 404; // This error is not coming from the GFE.
+const int kInvalidURL = 404;  // This error is not coming from the GFE.
 const int kInvalidSerialNumber = 405;
 const int kDeviceIdConflict = 409;
 const int kDeviceNotFound = 410;
 const int kPendingApproval = 412;
 const int kInternalServerError = 500;
 const int kServiceUnavailable = 503;
-const int kPolicyNotFound = 902; // This error is not sent as HTTP status code.
+const int kPolicyNotFound = 902;  // This error is not sent as HTTP status code.
 
 #if defined(OS_CHROMEOS)
 // Machine info keys.
@@ -139,7 +140,7 @@ const std::string& GetPlatformString() {
     return platform;
 
   std::string os_name(base::SysInfo::OperatingSystemName());
-  std::string os_hardware(base::SysInfo::CPUArchitecture());
+  std::string os_hardware(base::SysInfo::OperatingSystemArchitecture());
 
 #if defined(OS_CHROMEOS)
   chromeos::system::StatisticsProvider* provider =
@@ -185,12 +186,13 @@ class DeviceManagementRequestContext : public net::URLRequestContext {
   virtual ~DeviceManagementRequestContext();
 
  private:
-  // Overridden from net::URLRequestContext:
-  virtual const std::string& GetUserAgent(const GURL& url) const OVERRIDE;
+  BasicHttpUserAgentSettings basic_http_user_agent_settings_;
 };
 
 DeviceManagementRequestContext::DeviceManagementRequestContext(
-    net::URLRequestContext* base_context) {
+    net::URLRequestContext* base_context)
+    // Use sane Accept-Language and Accept-Charset values for our purposes.
+    : basic_http_user_agent_settings_("*", "*") {
   // Share resolver, proxy service and ssl bits with the baseline context. This
   // is important so we don't make redundant requests (e.g. when resolving proxy
   // auto configuration).
@@ -207,18 +209,11 @@ DeviceManagementRequestContext::DeviceManagementRequestContext(
   // No cookies, please.
   set_cookie_store(new net::CookieMonster(NULL, NULL));
 
-  // Initialize these to sane values for our purposes.
-  set_accept_language("*");
-  set_accept_charset("*");
+  set_http_user_agent_settings(&basic_http_user_agent_settings_);
 }
 
 DeviceManagementRequestContext::~DeviceManagementRequestContext() {
   delete http_transaction_factory();
-}
-
-const std::string& DeviceManagementRequestContext::GetUserAgent(
-    const GURL& url) const {
-  return content::GetUserAgent(url);
 }
 
 // Request context holder.
@@ -320,6 +315,9 @@ void DeviceManagementRequestJobImpl::HandleResponse(
     return;
   }
 
+  if (response_code != kSuccess)
+    LOG(WARNING) << "DMServer sent an error response: " << response_code;
+
   switch (response_code) {
     case kSuccess: {
       em::DeviceManagementResponse response;
@@ -337,7 +335,7 @@ void DeviceManagementRequestJobImpl::HandleResponse(
       ReportError(DM_STATUS_SERVICE_MANAGEMENT_TOKEN_INVALID);
       return;
     case kMissingLicenses:
-      ReportError(DM_STATUS_MISSING_LICENSES);
+      ReportError(DM_STATUS_SERVICE_MISSING_LICENSES);
       return;
     case kDeviceManagementNotAllowed:
       ReportError(DM_STATUS_SERVICE_MANAGEMENT_NOT_SUPPORTED);
@@ -363,8 +361,6 @@ void DeviceManagementRequestJobImpl::HandleResponse(
       ReportError(DM_STATUS_SERVICE_DEVICE_ID_CONFLICT);
       return;
     default:
-      VLOG(1) << "Unexpected HTTP status in response from DMServer : "
-              << response_code << ".";
       // Handle all unknown 5xx HTTP error codes as temporary and any other
       // unknown error as one that needs more time to recover.
       if (response_code >= 500 && response_code <= 599)
@@ -516,6 +512,12 @@ void DeviceManagementService::StartJob(DeviceManagementRequestJobImpl* job,
                         net::LOAD_DISABLE_CACHE |
                         (bypass_proxy ? net::LOAD_BYPASS_PROXY : 0));
   fetcher->SetRequestContext(request_context_getter_.get());
+  // Early device policy fetches on ChromeOS and Auto-Enrollment checks are
+  // often interrupted during ChromeOS startup when network change notifications
+  // are sent. Allowing the fetcher to retry once after that is enough to
+  // recover; allow it to retry up to 3 times just in case.
+  // http://crosbug.com/16114
+  fetcher->SetAutomaticallyRetryOnNetworkChanges(3);
   job->ConfigureRequest(fetcher);
   pending_jobs_[fetcher] = job;
   fetcher->Start();

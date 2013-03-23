@@ -14,17 +14,15 @@
 #include "base/threading/thread.h"
 #include "content/browser/download/save_file.h"
 #include "content/browser/download/save_package.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_util.h"
 
-using content::BrowserThread;
-using content::RenderViewHostImpl;
-using content::ResourceDispatcherHostImpl;
+namespace content {
 
 SaveFileManager::SaveFileManager()
     : next_id_(0) {
@@ -116,12 +114,12 @@ SavePackage* SaveFileManager::LookupPackage(int save_id) {
 // Call from SavePackage for starting a saving job
 void SaveFileManager::SaveURL(
     const GURL& url,
-    const content::Referrer& referrer,
+    const Referrer& referrer,
     int render_process_host_id,
     int render_view_id,
     SaveFileCreateInfo::SaveFileSource save_source,
     const FilePath& file_full_path,
-    content::ResourceContext* context,
+    ResourceContext* context,
     SavePackage* save_package) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -241,7 +239,9 @@ void SaveFileManager::UpdateSaveProgress(int save_id,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   SaveFile* save_file = LookupSaveFile(save_id);
   if (save_file) {
-    net::Error write_success =
+    DCHECK(save_file->InProgress());
+
+    DownloadInterruptReason reason =
         save_file->AppendDataToFile(data->data(), data_len);
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -249,7 +249,7 @@ void SaveFileManager::UpdateSaveProgress(int save_id,
                    this,
                    save_file->save_id(),
                    save_file->BytesSoFar(),
-                   write_success == net::OK));
+                   reason == DOWNLOAD_INTERRUPT_REASON_NONE));
   }
 }
 
@@ -271,8 +271,15 @@ void SaveFileManager::SaveFinished(int save_id,
   SaveFileMap::iterator it = save_file_map_.find(save_id);
   if (it != save_file_map_.end()) {
     SaveFile* save_file = it->second;
-  VLOG(20) << " " << __FUNCTION__ << "()"
-           << " save_file = " << save_file->DebugString();
+    // This routine may be called twice for the same from from
+    // SaveePackage::OnReceivedSerializedHtmlData, once for the file
+    // itself, and once when all frames have been serialized.
+    // So we can't assert that the file is InProgress() here.
+    // TODO(rdsmith): Fix this logic and put the DCHECK below back in.
+    // DCHECK(save_file->InProgress());
+
+    VLOG(20) << " " << __FUNCTION__ << "()"
+             << " save_file = " << save_file->DebugString();
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&SaveFileManager::OnSaveFinished, this, save_id,
@@ -355,10 +362,10 @@ void SaveFileManager::OnErrorFinished(const GURL& save_url, int contents_id) {
 
 void SaveFileManager::OnSaveURL(
     const GURL& url,
-    const content::Referrer& referrer,
+    const Referrer& referrer,
     int render_process_host_id,
     int render_view_id,
-    content::ResourceContext* context) {
+    ResourceContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   ResourceDispatcherHostImpl::Get()->BeginSaveFile(url,
                                                    referrer,
@@ -400,26 +407,25 @@ void SaveFileManager::CancelSave(int save_id) {
   if (it != save_file_map_.end()) {
     SaveFile* save_file = it->second;
 
-    // If the data comes from the net IO thread, then forward the cancel
-    // message to IO thread. If the data comes from other sources, just
-    // ignore the cancel message.
-    if (save_file->save_source() == SaveFileCreateInfo::SAVE_FILE_FROM_NET) {
+    if (!save_file->InProgress()) {
+      // We've won a race with the UI thread--we finished the file before
+      // the UI thread cancelled it on us.  Unfortunately, in this situation
+      // the cancel wins, so we need to delete the now detached file.
+      file_util::Delete(save_file->FullPath(), false);
+    } else if (save_file->save_source() ==
+               SaveFileCreateInfo::SAVE_FILE_FROM_NET) {
+      // If the data comes from the net IO thread and hasn't completed
+      // yet, then forward the cancel message to IO thread & cancel the
+      // save locally.  If the data doesn't come from the IO thread,
+      // we can ignore the message.
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
           base::Bind(&SaveFileManager::ExecuteCancelSaveRequest, this,
               save_file->render_process_id(), save_file->request_id()));
-
-      // UI thread will notify the render process to stop sending data,
-      // so in here, we need not to do anything, just close the save file.
-      save_file->Cancel();
-    } else {
-      // If we did not find SaveFile in map, the saving job should either get
-      // data from other sources or have finished.
-      DCHECK(save_file->save_source() !=
-             SaveFileCreateInfo::SAVE_FILE_FROM_NET ||
-             !save_file->InProgress());
     }
-    // Whatever the save file is renamed or not, just delete it.
+
+    // Whatever the save file is complete or not, just delete it.  This
+    // will delete the underlying file if InProgress() is true.
     save_file_map_.erase(it);
     delete save_file;
   }
@@ -524,3 +530,5 @@ void SaveFileManager::RemoveSavedFileFromFileMap(
     }
   }
 }
+
+}  // namespace content

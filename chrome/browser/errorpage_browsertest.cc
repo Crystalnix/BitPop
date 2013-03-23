@@ -8,7 +8,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
@@ -20,6 +19,7 @@
 
 using content::BrowserThread;
 using content::NavigationController;
+using content::URLRequestFailedJob;
 
 class ErrorPageTest : public InProcessBrowserTest {
  public:
@@ -32,7 +32,7 @@ class ErrorPageTest : public InProcessBrowserTest {
   void NavigateToFileURL(const FilePath::StringType& file_path) {
     ui_test_utils::NavigateToURL(
         browser(),
-        URLRequestMockHTTPJob::GetMockUrl(FilePath(file_path)));
+        content::URLRequestMockHTTPJob::GetMockUrl(FilePath(file_path)));
   }
 
   // Navigates to the given URL and waits for |num_navigations| to occur, and
@@ -124,9 +124,16 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_Basic) {
   NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
 }
 
+// See crbug.com/109669
+#if defined(USE_AURA)
+#define MAYBE_DNSError_GoBack1 DISABLED_DNSError_GoBack1
+#else
+#define MAYBE_DNSError_GoBack1 DNSError_GoBack1
+#endif
+
 // Test that a DNS error occuring in the main frame does not result in an
 // additional session history entry.
-IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack1) {
+IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_DNSError_GoBack1) {
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
   NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
   GoBackAndWaitForTitle("Title Of Awesomeness", 1);
@@ -140,8 +147,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack1) {
 #endif
 // Test that a DNS error occuring in the main frame does not result in an
 // additional session history entry.
-// Disabled:  http://crbug.com/136310
-IN_PROC_BROWSER_TEST_F(ErrorPageTest, DISABLED_DNSError_GoBack2) {
+IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2) {
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
 
   NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
@@ -159,8 +165,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, DISABLED_DNSError_GoBack2) {
 #endif
 // Test that a DNS error occuring in the main frame does not result in an
 // additional session history entry.
-// Disabled:  http://crbug.com/136310
-IN_PROC_BROWSER_TEST_F(ErrorPageTest, DISABLED_DNSError_GoBack2AndForward) {
+IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2AndForward) {
   NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
 
   NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
@@ -180,8 +185,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, DISABLED_DNSError_GoBack2AndForward) {
 #endif
 // Test that a DNS error occuring in the main frame does not result in an
 // additional session history entry.
-// Disabled:  http://crbug.com/136310
-IN_PROC_BROWSER_TEST_F(ErrorPageTest, DISABLED_DNSError_GoBack2Forward2) {
+IN_PROC_BROWSER_TEST_F(ErrorPageTest, DNSError_GoBack2Forward2) {
   NavigateToFileURL(FILE_PATH_LITERAL("title3.html"));
 
   NavigateToURLAndWaitForTitle(GetDnsErrorURL(), "Mock Link Doctor", 2);
@@ -197,7 +201,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, DISABLED_DNSError_GoBack2Forward2) {
 // Test that a DNS error occuring in an iframe.
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_Basic) {
   NavigateToURLAndWaitForTitle(
-      URLRequestMockHTTPJob::GetMockUrl(
+      content::URLRequestMockHTTPJob::GetMockUrl(
           FilePath(FILE_PATH_LITERAL("iframe_dns_error.html"))),
       "Blah",
       1);
@@ -235,7 +239,7 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_IFrameDNSError_GoBackAndForward) {
 // Checks that the Link Doctor is not loaded when we receive an actual 404 page.
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, Page404) {
   NavigateToURLAndWaitForTitle(
-      URLRequestMockHTTPJob::GetMockUrl(
+      content::URLRequestMockHTTPJob::GetMockUrl(
           FilePath(FILE_PATH_LITERAL("page404.html"))),
       "SUCCESS",
       1);

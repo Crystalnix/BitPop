@@ -10,10 +10,9 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
@@ -23,7 +22,7 @@
 using content::BrowserThread;
 using content::WebContentsTester;
 
-class ContentSettingBubbleModelTest : public TabContentsTestHarness {
+class ContentSettingBubbleModelTest : public ChromeRenderViewHostTestHarness {
  protected:
   ContentSettingBubbleModelTest()
       : ui_thread_(BrowserThread::UI, MessageLoop::current()) {
@@ -34,9 +33,14 @@ class ContentSettingBubbleModelTest : public TabContentsTestHarness {
     io_thread_->StartIOThread();
   }
 
-  virtual void TearDown() {
+  virtual void SetUp() OVERRIDE {
+    ChromeRenderViewHostTestHarness::SetUp();
+    TabSpecificContentSettings::CreateForWebContents(web_contents());
+  }
+
+  virtual void TearDown() OVERRIDE {
     // This will delete the TestingProfile on the UI thread.
-    TabContentsTestHarness::TearDown();
+    ChromeRenderViewHostTestHarness::TearDown();
 
     // Finish off deleting the ProtocolHandlerRegistry, which must be done on
     // the IO thread.
@@ -51,7 +55,7 @@ class ContentSettingBubbleModelTest : public TabContentsTestHarness {
                               bool expect_reload_hint) {
     scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
         ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-            NULL, tab_contents(), profile(),
+            NULL, web_contents(), profile(),
             CONTENT_SETTINGS_TYPE_GEOLOCATION));
     const ContentSettingBubbleModel::BubbleContent& bubble_content =
         content_setting_bubble_model->bubble_content();
@@ -71,13 +75,14 @@ class ContentSettingBubbleModelTest : public TabContentsTestHarness {
 
 TEST_F(ContentSettingBubbleModelTest, ImageRadios) {
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES,
                                      std::string());
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-         NULL, tab_contents(), profile(), CONTENT_SETTINGS_TYPE_IMAGES));
+         NULL, web_contents(), profile(),
+         CONTENT_SETTINGS_TYPE_IMAGES));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_FALSE(bubble_content.title.empty());
@@ -89,13 +94,14 @@ TEST_F(ContentSettingBubbleModelTest, ImageRadios) {
 
 TEST_F(ContentSettingBubbleModelTest, Cookies) {
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES,
                                      std::string());
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-         NULL, tab_contents(), profile(), CONTENT_SETTINGS_TYPE_COOKIES));
+         NULL, web_contents(), profile(),
+         CONTENT_SETTINGS_TYPE_COOKIES));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_FALSE(bubble_content.title.empty());
@@ -107,13 +113,13 @@ TEST_F(ContentSettingBubbleModelTest, Cookies) {
 
 TEST_F(ContentSettingBubbleModelTest, Plugins) {
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS,
                                      std::string());
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-         NULL, tab_contents(), profile(),
+         NULL, web_contents(), profile(),
          CONTENT_SETTINGS_TYPE_PLUGINS));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
@@ -126,7 +132,7 @@ TEST_F(ContentSettingBubbleModelTest, Plugins) {
 
 TEST_F(ContentSettingBubbleModelTest, MultiplePlugins) {
   CommandLine* cmd = CommandLine::ForCurrentProcess();
-  AutoReset<CommandLine> auto_reset(cmd, *cmd);
+  base::AutoReset<CommandLine> auto_reset(cmd, *cmd);
   cmd->AppendSwitch(switches::kEnableResourceContentSettings);
 
   HostContentSettingsMap* map = profile()->GetHostContentSettingsMap();
@@ -135,9 +141,9 @@ TEST_F(ContentSettingBubbleModelTest, MultiplePlugins) {
 
   // Navigating to some sample url prevents the GetURL method from returning an
   // invalid empty URL.
-  WebContentsTester::For(
-      contents())->NavigateAndCommit(GURL("http://www.example.com"));
-  GURL url = contents()->GetURL();
+  WebContentsTester::For(web_contents())->
+      NavigateAndCommit(GURL("http://www.example.com"));
+  GURL url = web_contents()->GetURL();
   map->AddExceptionForURL(url,
                           url,
                           CONTENT_SETTINGS_TYPE_PLUGINS,
@@ -150,7 +156,7 @@ TEST_F(ContentSettingBubbleModelTest, MultiplePlugins) {
                           CONTENT_SETTING_ASK);
 
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS,
                                      fooPlugin);
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS,
@@ -158,7 +164,8 @@ TEST_F(ContentSettingBubbleModelTest, MultiplePlugins) {
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          NULL, tab_contents(), profile(), CONTENT_SETTINGS_TYPE_PLUGINS));
+          NULL, web_contents(), profile(),
+          CONTENT_SETTINGS_TYPE_PLUGINS));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_EQ(2U, bubble_content.radio_group.radio_items.size());
@@ -198,7 +205,7 @@ TEST_F(ContentSettingBubbleModelTest, Geolocation) {
 
   NavigateAndCommit(page_url);
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
 
   // One permitted frame, but not in the content map: requires reload.
   content_settings->OnGeolocationPermissionSet(frame1_url, true);
@@ -235,7 +242,7 @@ TEST_F(ContentSettingBubbleModelTest, FileURL) {
   NavigateAndCommit(GURL(file_url));
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          NULL, tab_contents(), profile(),
+          NULL, web_contents(), profile(),
           CONTENT_SETTINGS_TYPE_IMAGES));
   std::string title =
       content_setting_bubble_model->bubble_content().radio_group.radio_items[0];
@@ -246,13 +253,13 @@ TEST_F(ContentSettingBubbleModelTest, RegisterProtocolHandler) {
   const GURL page_url("http://toplevel.example/");
   NavigateAndCommit(page_url);
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
   content_settings->set_pending_protocol_handler(
       ProtocolHandler::CreateProtocolHandler("mailto",
           GURL("http://www.toplevel.example/"), ASCIIToUTF16("Handler")));
 
   ContentSettingRPHBubbleModel content_setting_bubble_model(
-          NULL, tab_contents(), profile(), NULL,
+          NULL, web_contents(), profile(), NULL,
           CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS);
 
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
@@ -302,14 +309,14 @@ TEST_F(ContentSettingBubbleModelTest, RPHAllow) {
   const GURL page_url("http://toplevel.example/");
   NavigateAndCommit(page_url);
   TabSpecificContentSettings* content_settings =
-      tab_contents()->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents());
   ProtocolHandler test_handler = ProtocolHandler::CreateProtocolHandler(
       "mailto", GURL("http://www.toplevel.example/"),
       ASCIIToUTF16("Handler"));
   content_settings->set_pending_protocol_handler(test_handler);
 
   ContentSettingRPHBubbleModel content_setting_bubble_model(
-          NULL, tab_contents(), profile(), &registry,
+          NULL, web_contents(), profile(), &registry,
           CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS);
 
   {

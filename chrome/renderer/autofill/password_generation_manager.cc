@@ -6,18 +6,19 @@
 
 #include "base/logging.h"
 #include "chrome/common/autofill_messages.h"
-#include "chrome/common/net/gaia/gaia_urls.h"
 #include "chrome/common/password_generation_util.h"
+#include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/rect.h"
 
 namespace autofill {
@@ -33,22 +34,32 @@ bool GetAccountCreationPasswordFields(
   WebKit::WebVector<WebKit::WebFormControlElement> control_elements;
   form.getFormControlElements(control_elements);
 
+  size_t num_input_elements = 0;
   for (size_t i = 0; i < control_elements.size(); i++) {
     WebKit::WebInputElement* input_element =
         toWebInputElement(&control_elements[i]);
     // Only pay attention to visible password fields.
     if (input_element &&
-        input_element->isPasswordField() &&
+        input_element->isTextField() &&
         input_element->hasNonEmptyBoundingBox()) {
-      passwords->push_back(*input_element);
+      num_input_elements++;
+      if (input_element->isPasswordField())
+        passwords->push_back(*input_element);
     }
   }
 
-  // For now, just assume that if there are two password fields in the
-  // form that this is meant for account creation.
-  // TODO(gcasto): Determine better heauristics for this.
-  if (passwords->size() == 2)
+  // This may be too lenient, but we assume that any form with at least three
+  // input elements where at least one of them is a password is an account
+  // creation form.
+  if (!passwords->empty() && num_input_elements >= 3) {
+    // We trim |passwords| because occasionally there are forms where the
+    // security question answers are put in password fields and we don't want
+    // to fill those.
+    if (passwords->size() > 2)
+      passwords->resize(2);
+
     return true;
+  }
 
   return false;
 }
@@ -92,18 +103,15 @@ void PasswordGenerationManager::DidFinishLoad(WebKit::WebFrame* frame) {
   WebKit::WebVector<WebKit::WebFormElement> forms;
   frame->document().forms(forms);
   for (size_t i = 0; i < forms.size(); ++i) {
-    // Ignore forms with autocomplete turned off for now. We may remove this in
-    // the future, as we only want to avoid creating passwords if the signin
-    // form has autocomplete turned off.
-    if (forms[i].isNull() || !forms[i].autoComplete())
+    if (forms[i].isNull())
       continue;
 
     // If we can't get a valid PasswordForm, we skip this form because the
     // the password won't get saved even if we generate it.
-    scoped_ptr<webkit::forms::PasswordForm> password_form(
-        webkit::forms::PasswordFormDomManager::CreatePasswordForm(forms[i]));
+    scoped_ptr<content::PasswordForm> password_form(
+        content::CreatePasswordForm(forms[i]));
     if (!password_form.get()) {
-      DVLOG(2) << "Invalid action on form";
+      DVLOG(2) << "Skipping form as it would not be saved";
       continue;
     }
 
@@ -163,19 +171,23 @@ WebKit::WebCString PasswordGenerationManager::imageNameForReadOnlyState() {
   return imageNameForNormalState();
 }
 
+WebKit::WebCString PasswordGenerationManager::imageNameForHoverState() {
+  return WebKit::WebCString("generatePasswordHover");
+}
+
 void PasswordGenerationManager::handleClick(WebKit::WebInputElement& element) {
   gfx::Rect rect(element.decorationElementFor(this).boundsInViewportSpace());
-  webkit::forms::PasswordForm* password_form(
-      webkit::forms::PasswordFormDomManager::CreatePasswordForm(
-          element.form()));
-  if (password_form) {
-    Send(new AutofillHostMsg_ShowPasswordGenerationPopup(routing_id(),
-                                                         rect,
-                                                         element.maxLength(),
-                                                         *password_form));
-    password_generation::LogPasswordGenerationEvent(
-        password_generation::BUBBLE_SHOWN);
-  }
+  scoped_ptr<content::PasswordForm> password_form(
+      content::CreatePasswordForm(element.form()));
+  // We should not have shown the icon we can't create a valid PasswordForm.
+  DCHECK(password_form.get());
+
+  Send(new AutofillHostMsg_ShowPasswordGenerationPopup(routing_id(),
+                                                       rect,
+                                                       element.maxLength(),
+                                                       *password_form));
+  password_generation::LogPasswordGenerationEvent(
+      password_generation::BUBBLE_SHOWN);
 }
 
 void PasswordGenerationManager::willDetach(
@@ -198,7 +210,7 @@ bool PasswordGenerationManager::OnMessageReceived(const IPC::Message& message) {
 }
 
 void PasswordGenerationManager::OnFormNotBlacklisted(
-    const webkit::forms::PasswordForm& form) {
+    const content::PasswordForm& form) {
   not_blacklisted_password_form_origins_.push_back(form.origin);
   MaybeShowIcon();
 }

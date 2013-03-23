@@ -9,12 +9,12 @@
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
+#include "base/file_util.h"
 #include "base/platform_file.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/update_manifest.h"
 #include "content/public/common/common_param_traits.h"
-#include "content/public/common/serialized_script_value.h"
 #include "ipc/ipc_message_macros.h"
 #include "printing/backend/print_backend.h"
 #include "printing/page_range.h"
@@ -85,6 +85,11 @@ IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_RenderPDFPagesToMetafile,
                      printing::PdfRenderSettings,  // PDF render settitngs
                      std::vector<printing::PageRange>)
 
+// Tell the utility process to decode the given JPEG image data with a robust
+// libjpeg codec.
+IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_RobustJPEGDecodeImage,
+                     std::vector<unsigned char>)  // encoded image contents
+
 // Tell the utility process to parse a JSON string into a Value object.
 IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseJSON,
                      std::string /* JSON to parse */)
@@ -95,6 +100,14 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseJSON,
 // sandbox.
 IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetPrinterCapsAndDefaults,
                      std::string /* printer name */)
+
+#if defined(OS_CHROMEOS)
+// Tell the utility process to create a zip file on the given list of files.
+IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_CreateZipFile,
+                     FilePath /* src_dir */,
+                     std::vector<FilePath> /* src_relative_paths */,
+                     base::FileDescriptor /* dest_fd */)
+#endif  // defined(OS_CHROMEOS)
 
 //------------------------------------------------------------------------------
 // Utility process host messages:
@@ -173,3 +186,11 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Succeeded,
 // capabilities and defaults.
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Failed,
                      std::string /* printer name */)
+
+#if defined(OS_CHROMEOS)
+// Reply when the utility process has succeeded in creating the zip file.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_CreateZipFile_Succeeded)
+
+// Reply when an error occured in creating the zip file.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_CreateZipFile_Failed)
+#endif  // defined(OS_CHROMEOS)

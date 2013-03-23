@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "grit/theme_resources.h"
@@ -31,7 +32,7 @@ static SkBitmap ApplyPadding(const SkBitmap& source,
                       ui::SCALE_FACTOR_100P,
                       false));
   result->DrawImageInt(
-      source,
+      gfx::ImageSkia(source),
       0, 0, source.width(), source.height(),
       padding.left(), padding.top(), source.width(), source.height(),
       false);
@@ -50,7 +51,7 @@ ExtensionIconManager::~ExtensionIconManager() {
 
 void ExtensionIconManager::LoadIcon(const extensions::Extension* extension) {
   ExtensionResource icon_resource = extension->GetIconResource(
-      ExtensionIconSet::EXTENSION_ICON_BITTY, ExtensionIconSet::MATCH_BIGGER);
+      extension_misc::EXTENSION_ICON_BITTY, ExtensionIconSet::MATCH_BIGGER);
   if (!icon_resource.extension_root().empty()) {
     // Insert into pending_icons_ first because LoadImage can call us back
     // synchronously if the image is already cached.
@@ -99,8 +100,8 @@ void ExtensionIconManager::OnImageLoaded(const gfx::Image& image,
 void ExtensionIconManager::EnsureDefaultIcon() {
   if (default_icon_.empty()) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    SkBitmap* src = rb.GetBitmapNamed(IDR_EXTENSIONS_SECTION);
-    default_icon_ = ApplyTransforms(*src);
+    SkBitmap src = rb.GetImageNamed(IDR_EXTENSIONS_SECTION).AsBitmap();
+    default_icon_ = ApplyTransforms(src);
   }
 }
 

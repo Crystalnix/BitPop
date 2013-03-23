@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function runTests() {
+onload = function() {
   var getURL = chrome.extension.getURL;
   chrome.tabs.create({"url": "about:blank"}, function(tab) {
     var tabId = tab.id;
@@ -14,6 +14,7 @@ function runTests() {
           { label: "a-onBeforeNavigate",
             event: "onBeforeNavigate",
             details: { frameId: 0,
+                       parentFrameId: -1,
                        processId: 0,
                        tabId: 0,
                        timeStamp: 0,
@@ -46,4 +47,4 @@ function runTests() {
       },
     ]);
   });
-}
+};

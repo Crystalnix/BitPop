@@ -5,15 +5,17 @@
 #include "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace mac {
 
-NSImage* FaviconForTabContents(TabContents* contents) {
-  if (contents && contents->favicon_tab_helper()->FaviconIsValid()) {
-    NSImage* image = contents->favicon_tab_helper()->GetFavicon().AsNSImage();
+NSImage* FaviconForWebContents(content::WebContents* contents) {
+  FaviconTabHelper* favicon_tab_helper =
+      contents ? FaviconTabHelper::FromWebContents(contents)
+               : NULL;
+  if (favicon_tab_helper && favicon_tab_helper->FaviconIsValid()) {
+    NSImage* image = favicon_tab_helper->GetFavicon().AsNSImage();
     // The |image| could be nil if the bitmap is null. In that case, fallback
     // to the default image.
     if (image) {
@@ -22,7 +24,7 @@ NSImage* FaviconForTabContents(TabContents* contents) {
   }
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON);
+  return rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToNSImage();
 }
 
 }  // namespace mac

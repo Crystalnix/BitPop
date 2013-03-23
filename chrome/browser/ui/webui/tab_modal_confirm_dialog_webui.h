@@ -10,14 +10,15 @@
 #endif
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 
-class TabContents;
-class TabModalConfirmDialogDelegate;
-
-namespace ui {
 class ConstrainedWebDialogDelegate;
+
+namespace content {
+class WebContents;
 }
 
 // Displays a tab-modal dialog, i.e. a dialog that will block the current page
@@ -25,11 +26,12 @@ class ConstrainedWebDialogDelegate;
 // To display the dialog, allocate this object on the heap. It will open the
 // dialog from its constructor and then delete itself when the user dismisses
 // the dialog.
-class TabModalConfirmDialogWebUI : public ui::WebDialogDelegate {
+class TabModalConfirmDialogWebUI : public TabModalConfirmDialog,
+                                   public ui::WebDialogDelegate {
  public:
   TabModalConfirmDialogWebUI(
       TabModalConfirmDialogDelegate* dialog_delegate,
-      TabContents* tab_contents);
+      content::WebContents* web_contents);
 
   // ui::WebDialogDelegate implementation.
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
@@ -44,17 +46,21 @@ class TabModalConfirmDialogWebUI : public ui::WebDialogDelegate {
                                bool* out_close_dialog) OVERRIDE;
   virtual bool ShouldShowDialogTitle() const OVERRIDE;
 
-  ui::ConstrainedWebDialogDelegate* constrained_web_dialog_delegate() {
+  ConstrainedWebDialogDelegate* constrained_web_dialog_delegate() {
     return constrained_web_dialog_delegate_;
   }
 
  private:
   virtual ~TabModalConfirmDialogWebUI();
 
+  // TabModalConfirmDialog:
+  virtual void AcceptTabModalDialog() OVERRIDE;
+  virtual void CancelTabModalDialog() OVERRIDE;
+
   scoped_ptr<TabModalConfirmDialogDelegate> delegate_;
 
   // Deletes itself.
-  ui::ConstrainedWebDialogDelegate* constrained_web_dialog_delegate_;
+  ConstrainedWebDialogDelegate* constrained_web_dialog_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(TabModalConfirmDialogWebUI);
 };

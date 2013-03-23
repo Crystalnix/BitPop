@@ -5,14 +5,7 @@
 Once you've finished this page
 and the
 <a href="getstarted.html">Getting Started</a> tutorial,
-you'll be all set to start writing extensions and packaged apps.
-</p>
-
-<p class="caution">
-<strong>Note:</strong>
-<em>Packaged apps</em> are implemented as extensions,
-so unless otherwise stated,
-everything in this page applies to packaged apps.
+you'll be all set to start writing extensions.
 </p>
 
 <h2 id="what">The basics</h2>
@@ -51,7 +44,7 @@ should appear or disappear,
 depending on the page.
 </p>
 
-<table class="columns">
+<table class="simple">
 <tr>
   <td width="33%">
     <img src="{{static}}/images/overview/browser-action.png"
@@ -101,25 +94,6 @@ See the <a href="devguide.html">Developer's Guide</a>
 for a complete list of extension features,
 with links to implementation details
 for each one.
-</p>
-
-
-<h3 id="packagedapp-ui">Packaged app UIs</h3>
-
-<p>
-A packaged app usually presents its main functionality using
-an HTML page that's bundled into the app.
-For example, the following packaged app
-displays a Flash file within an HTML page.
-</p>
-
-<img src="{{static}}/images/overview/flash-app.png"
-  width="372" height="300"
-  alt="screenshot" />
-
-<p>
-For more information,
-see <a href="apps.html">Packaged Apps</a>.
 </p>
 
 <h2 id="files">Files</h2>
@@ -289,8 +263,7 @@ an event page.
 </p>
 
 <!-- PENDING: Perhaps show a picture of many background page processes.
-  This could build on a figure that shows the process architecture,
-  and perhaps the differences between packaged apps and extensions. -->
+  This could build on a figure that shows the process architecture. -->
 
 <p>
 See <a href="event_pages.html">Event Pages</a>
@@ -308,7 +281,7 @@ Any extension can have an options page,
 which lets users customize how the extension works.
 Another type of special page is the override page.
 And finally, you can
-use <a href="tabs.html#method-create">chrome.tabs.create()</a>
+use $ref:tabs.create
 or <code>window.open()</code>
 to display any other HTML files that are in the extension.
 </p>
@@ -418,7 +391,7 @@ For example, any extension or web app can use the
 standard <code>window.open()</code> method to open a URL.
 But if you want to specify which window that URL should be displayed in,
 your extension can use the Chrome-only 
-<a href="tabs.html#method-create">chrome.tabs.create()</a>
+$ref:tabs.create
 method instead.
 </p>
 
@@ -445,7 +418,7 @@ Synchronous methods never have a callback
 because they don't return until they've completed all their work.
 Often, synchronous methods have a return type.
 Consider the
-<a href="runtime.html#method-getURL">chrome.runtime.getURL()</a> method:
+$ref:runtime.getURL method:
 </p>
 
 <p>
@@ -467,35 +440,35 @@ and performs no other, asynchronous work.
 Say you want to navigate
 the user's currently selected tab to a new URL.
 To do this, you need to get the current tab's ID
-(using <a href="tabs.html#method-getSelected">chrome.tabs.getSelected()</a>)
+(using $ref:tabs.query)
 and then make that tab go to the new URL
-(using <a href="tabs.html#method-update">chrome.tabs.update()</a>).
+(using $ref:tabs.update).
 </p>
 
 <p>
-If <code>getSelected()</code> were synchronous,
+If <code>query()</code> were synchronous,
 you might write code like this:
 </p>
 
 <pre>
    <b>//THIS CODE DOESN'T WORK</b>
-<span class="linenumber">1: </span>var tab = chrome.tabs.getSelected(null); <b>//WRONG!!!</b>
+<span class="linenumber">1: </span>var tab = chrome.tabs.query({'active': true}); <b>//WRONG!!!</b>
 <span class="linenumber">2: </span>chrome.tabs.update(tab.id, {url:newUrl});
 <span class="linenumber">3: </span>someOtherFunction();
 </pre>
 
 <p>
 That approach fails
-because <code>getSelected()</code> is asynchronous.
+because <code>query()</code> is asynchronous.
 It returns without waiting for its work to complete,
 and it doesn't even return a value
 (although some asynchronous methods do).
-You can tell that <code>getSelected()</code> is asynchronous
+You can tell that <code>query()</code> is asynchronous
 by the <em>callback</em> parameter in its signature:
 
 <p>
 <code>
-chrome.tabs.getSelected(integer <em>windowId</em>, function <em>callback</em>)
+chrome.tabs.query(object <em>queryInfo</em>, function <em>callback</em>)
 </code>
 </p>
 
@@ -504,25 +477,25 @@ To fix the preceding code,
 you must use that callback parameter.
 The following code shows
 how to define a callback function
-that gets the results from <code>getSelected()</code>
+that gets the results from <code>query()</code>
 (as a parameter named <code>tab</code>)
 and calls <code>update()</code>.
 </p>
 
 <pre>
    <b>//THIS CODE WORKS</b>
-<span class="linenumber">1: </span>chrome.tabs.getSelected(null, <b>function(tab) {</b>
-<span class="linenumber">2: </span>  chrome.tabs.update(tab.id, {url:newUrl});
+<span class="linenumber">1: </span>chrome.tabs.query({'active': true}, <b>function(tabs) {</b>
+<span class="linenumber">2: </span>  chrome.tabs.update(tabs[0].id, {url: newUrl});
 <span class="linenumber">3: </span><b>}</b>);
 <span class="linenumber">4: </span>someOtherFunction();
 </pre>
 
 <p>
 In this example, the lines are executed in the following order: 1, 4, 2.
-The callback function specified to <code>getSelected</code> is called
+The callback function specified to <code>query()</code> is called
 (and line 2 executed)
 only after information about the currently selected tab is available,
-which is sometime after <code>getSelected()</code> returns.
+which is sometime after <code>query()</code> returns.
 Although <code>update()</code> is asynchronous,
 this example doesn't use its callback parameter,
 since we don't do anything about the results of the update.
@@ -562,9 +535,6 @@ the first page can invoke functions on the other pages,
 and it can manipulate their DOMs.
 </p>
 
-
-
-
 <h2 id="incognito"> Saving data and incognito mode </h2>
 
 <p>
@@ -575,10 +545,9 @@ or by making server requests that result in saving data.
 Whenever you want to save something,
 first consider whether it's
 from a window that's in incognito mode.
-By default, extensions don't run in incognito windows,
-and packaged apps <em>do</em>.
+By default, extensions don't run in incognito windows.
 You need to consider what a user expects
-from your extension or packaged app
+from your extension
 when the browser is incognito.
 </p>
 
@@ -604,8 +573,8 @@ don't store it if it's from an incognito window.
 <p>
 To detect whether a window is in incognito mode,
 check the <code>incognito</code> property of the relevant
-<a href="tabs.html#type-Tab">Tab</a> or
-<a href="windows.html#type-Window">Window</a> object.
+$ref:tabs.Tab or
+$ref:windows.Window object.
 For example:
 </p>
 

@@ -8,9 +8,11 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/api/api_function.h"
 #include "chrome/browser/extensions/api/api_resource_manager.h"
+#include "chrome/browser/extensions/extension_function.h"
 #include "chrome/common/extensions/api/socket.h"
 #include "net/base/address_list.h"
 #include "net/base/host_resolver.h"
+#include "net/socket/tcp_client_socket.h"
 
 #include <string>
 
@@ -22,7 +24,6 @@ class IOBuffer;
 
 namespace extensions {
 
-class ApiResourceEventNotifier;
 class Socket;
 
 class SocketAsyncApiFunction : public AsyncApiFunction {
@@ -35,6 +36,9 @@ class SocketAsyncApiFunction : public AsyncApiFunction {
   // AsyncApiFunction:
   virtual bool PrePrepare() OVERRIDE;
   virtual bool Respond() OVERRIDE;
+
+  Socket* GetSocket(int api_resource_id);
+  void RemoveSocket(int api_resource_id);
 
   ApiResourceManager<Socket>* manager_;
 };
@@ -83,8 +87,6 @@ class SocketCreateFunction : public SocketAsyncApiFunction {
 
   scoped_ptr<api::socket::Create::Params> params_;
   SocketType socket_type_;
-  int src_id_;
-  ApiResourceEventNotifier* event_notifier_;
 };
 
 class SocketDestroyFunction : public SocketAsyncApiFunction {
@@ -125,6 +127,7 @@ class SocketConnectFunction : public SocketExtensionWithDnsLookupFunction {
   int socket_id_;
   std::string hostname_;
   int port_;
+  Socket* socket_;
 };
 
 class SocketDisconnectFunction : public SocketAsyncApiFunction {
@@ -157,6 +160,41 @@ class SocketBindFunction : public SocketAsyncApiFunction {
   int socket_id_;
   std::string address_;
   int port_;
+};
+
+class SocketListenFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.listen");
+
+  SocketListenFunction();
+
+ protected:
+  virtual ~SocketListenFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+
+ private:
+  scoped_ptr<api::socket::Listen::Params> params_;
+};
+
+class SocketAcceptFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.accept");
+
+  SocketAcceptFunction();
+
+ protected:
+  virtual ~SocketAcceptFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+ private:
+  void OnAccept(int result_code, net::TCPClientSocket *socket);
+  scoped_ptr<api::socket::Accept::Params> params_;
 };
 
 class SocketReadFunction : public SocketAsyncApiFunction {
@@ -243,6 +281,7 @@ class SocketSendToFunction : public SocketExtensionWithDnsLookupFunction {
   size_t io_buffer_size_;
   std::string hostname_;
   int port_;
+  Socket* socket_;
 };
 
 class SocketSetKeepAliveFunction : public SocketAsyncApiFunction {
@@ -294,6 +333,20 @@ class SocketGetInfoFunction : public SocketAsyncApiFunction {
 
  private:
   scoped_ptr<api::socket::GetInfo::Params> params_;
+};
+
+class SocketGetNetworkListFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.getNetworkList");
+
+ protected:
+  virtual ~SocketGetNetworkListFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  void GetNetworkListOnFileThread();
+  void HandleGetNetworkListError();
+  void SendResponseOnUIThread(const net::NetworkInterfaceList& interface_list);
 };
 
 }  // namespace extensions

@@ -142,8 +142,7 @@ class ChromeRenderProcessHostTest : public InProcessBrowserTest {
     tab_count++;
     EXPECT_EQ(tab_count, browser()->tab_count());
     tab2 = chrome::GetWebContentsAt(browser(), tab_count - 1);
-    // Use chrome://chrome/history/ since the URL gets rewritten.
-    EXPECT_EQ(tab2->GetURL(), GURL("chrome://chrome/history/"));
+    EXPECT_EQ(tab2->GetURL(), GURL(history));
     EXPECT_EQ(host_count, RenderProcessHostCount());
     EXPECT_EQ(tab2->GetRenderProcessHost(), rph1);
 
@@ -305,7 +304,7 @@ IN_PROC_BROWSER_TEST_F(ChromeRenderProcessHostTest,
 
   // DevTools start in a separate process.
   DevToolsWindow::ToggleDevToolsWindow(
-      devtools, DEVTOOLS_TOGGLE_ACTION_INSPECT);
+      devtools, true, DEVTOOLS_TOGGLE_ACTION_INSPECT);
   host_count++;
   EXPECT_EQ(tab_count, browser()->tab_count());
   EXPECT_EQ(host_count, RenderProcessHostCount());
@@ -338,7 +337,7 @@ IN_PROC_BROWSER_TEST_F(ChromeRenderProcessHostTest,
 
   // DevTools start in a separate process.
   DevToolsWindow::ToggleDevToolsWindow(
-      devtools, DEVTOOLS_TOGGLE_ACTION_INSPECT);
+      devtools, true, DEVTOOLS_TOGGLE_ACTION_INSPECT);
   host_count++;
   EXPECT_EQ(tab_count, browser()->tab_count());
   EXPECT_EQ(host_count, RenderProcessHostCount());

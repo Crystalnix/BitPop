@@ -26,11 +26,13 @@
 // We need this to declare base::MessagePumpWin::Dispatcher, which we should
 // really just eliminate.
 #include "base/message_pump_win.h"
+#elif defined(OS_IOS)
+#include "base/message_pump_io_ios.h"
 #elif defined(OS_POSIX)
 #include "base/message_pump_libevent.h"
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_NACL)
 #include "base/message_pump_aurax11.h"
 #else
 #include "base/message_pump_gtk.h"
@@ -159,6 +161,9 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   //
   // The MessageLoop takes ownership of the Task, and deletes it after it has
   // been Run().
+  //
+  // PostTask(from_here, task) is equivalent to
+  // PostDelayedTask(from_here, task, 0).
   //
   // NOTE: These methods may be called on any thread.  The Task will be invoked
   // on the thread that executes MessageLoop::Run().
@@ -388,7 +393,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   base::MessagePumpWin* pump_win() {
     return static_cast<base::MessagePumpWin*>(pump_.get());
   }
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) && !defined(OS_IOS)
   base::MessagePumpLibevent* pump_libevent() {
     return static_cast<base::MessagePumpLibevent*>(pump_.get());
   }
@@ -505,7 +510,8 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   bool os_modal_loop_;
 #endif
 
-  // The next sequence number to use for delayed tasks.
+  // The next sequence number to use for delayed tasks. Updating this counter is
+  // protected by incoming_queue_lock_.
   int next_sequence_num_;
 
   ObserverList<TaskObserver> task_observers_;
@@ -537,6 +543,10 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 //
 class BASE_EXPORT MessageLoopForUI : public MessageLoop {
  public:
+#if defined(OS_WIN)
+  typedef base::MessagePumpForUI::MessageFilter MessageFilter;
+#endif
+
   MessageLoopForUI() : MessageLoop(TYPE_UI) {
   }
 
@@ -570,7 +580,18 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
+#if defined(OS_WIN)
+  // Plese see MessagePumpForUI for definitions of this method.
+  void SetMessageFilter(scoped_ptr<MessageFilter> message_filter) {
+    pump_ui()->SetMessageFilter(message_filter.Pass());
+  }
+#endif
+
  protected:
+#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_NACL)
+  friend class base::MessagePumpAuraX11;
+#endif
+
   // TODO(rvargas): Make this platform independent.
   base::MessagePumpForUI* pump_ui() {
     return static_cast<base::MessagePumpForUI*>(pump_.get());
@@ -597,6 +618,17 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
   typedef base::MessagePumpForIO::IOHandler IOHandler;
   typedef base::MessagePumpForIO::IOContext IOContext;
   typedef base::MessagePumpForIO::IOObserver IOObserver;
+#elif defined(OS_IOS)
+  typedef base::MessagePumpIOSForIO::Watcher Watcher;
+  typedef base::MessagePumpIOSForIO::FileDescriptorWatcher
+      FileDescriptorWatcher;
+  typedef base::MessagePumpIOSForIO::IOObserver IOObserver;
+
+  enum Mode {
+    WATCH_READ = base::MessagePumpIOSForIO::WATCH_READ,
+    WATCH_WRITE = base::MessagePumpIOSForIO::WATCH_WRITE,
+    WATCH_READ_WRITE = base::MessagePumpIOSForIO::WATCH_READ_WRITE
+  };
 #elif defined(OS_POSIX)
   typedef base::MessagePumpLibevent::Watcher Watcher;
   typedef base::MessagePumpLibevent::FileDescriptorWatcher
@@ -631,13 +663,27 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
 
 #if defined(OS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
-  void RegisterIOHandler(HANDLE file_handle, IOHandler* handler);
+  void RegisterIOHandler(HANDLE file, IOHandler* handler);
+  bool RegisterJobObject(HANDLE job, IOHandler* handler);
   bool WaitForIOCompletion(DWORD timeout, IOHandler* filter);
 
  protected:
   // TODO(rvargas): Make this platform independent.
   base::MessagePumpForIO* pump_io() {
     return static_cast<base::MessagePumpForIO*>(pump_.get());
+  }
+
+#elif defined(OS_IOS)
+  // Please see MessagePumpIOSForIO for definition.
+  bool WatchFileDescriptor(int fd,
+                           bool persistent,
+                           Mode mode,
+                           FileDescriptorWatcher *controller,
+                           Watcher *delegate);
+
+ private:
+  base::MessagePumpIOSForIO* pump_io() {
+    return static_cast<base::MessagePumpIOSForIO*>(pump_.get());
   }
 
 #elif defined(OS_POSIX)

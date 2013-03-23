@@ -150,7 +150,7 @@ TEST_F(SyncBackendRegistrarTest, ConfigureDataTypes) {
 }
 
 void TriggerChanges(SyncBackendRegistrar* registrar, ModelType type) {
-  registrar->OnChangesApplied(type, NULL,
+  registrar->OnChangesApplied(type, 0, NULL,
                               syncer::ImmutableChangeRecordList());
   registrar->OnChangesComplete(type);
 }
@@ -168,11 +168,10 @@ TEST_F(SyncBackendRegistrarTest, ActivateDeactivateUIDataType) {
   EXPECT_CALL(change_processor_mock, StartImpl(&profile));
   EXPECT_CALL(change_processor_mock, IsRunning())
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(change_processor_mock, ApplyChangesFromSyncModel(NULL, _));
+  EXPECT_CALL(change_processor_mock, ApplyChangesFromSyncModel(NULL, _, _));
   EXPECT_CALL(change_processor_mock, IsRunning())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(change_processor_mock, CommitChangesFromSyncModel());
-  EXPECT_CALL(change_processor_mock, StopImpl());
   EXPECT_CALL(change_processor_mock, IsRunning())
       .WillRepeatedly(Return(false));
 
@@ -216,11 +215,10 @@ TEST_F(SyncBackendRegistrarTest, ActivateDeactivateNonUIDataType) {
   EXPECT_CALL(change_processor_mock, StartImpl(&profile));
   EXPECT_CALL(change_processor_mock, IsRunning())
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(change_processor_mock, ApplyChangesFromSyncModel(NULL, _));
+  EXPECT_CALL(change_processor_mock, ApplyChangesFromSyncModel(NULL, _, _));
   EXPECT_CALL(change_processor_mock, IsRunning())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(change_processor_mock, CommitChangesFromSyncModel());
-  EXPECT_CALL(change_processor_mock, StopImpl());
   EXPECT_CALL(change_processor_mock, IsRunning())
       .WillRepeatedly(Return(false));
 

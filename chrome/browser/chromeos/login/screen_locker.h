@@ -9,12 +9,17 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/time.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/screen_locker_delegate.h"
 #include "ui/base/accelerators/accelerator.h"
+
+namespace content {
+class WebUI;
+}
 
 namespace chromeos {
 
@@ -52,6 +57,10 @@ class ScreenLocker : public LoginStatusConsumer {
                               bool pending_requests,
                               bool using_oauth) OVERRIDE;
 
+  // Does actual unlocking once authentication is successful and all blocking
+  // animations are done.
+  void UnlockOnLoginSuccess();
+
   // Authenticates the user with given |password| and authenticator.
   void Authenticate(const string16& password);
 
@@ -81,6 +90,10 @@ class ScreenLocker : public LoginStatusConsumer {
   // the same login events that ScreenLocker does.
   void SetLoginStatusConsumer(chromeos::LoginStatusConsumer* consumer);
 
+  // Returns WebUI associated with screen locker implementation or NULL if
+  // there isn't one.
+  content::WebUI* GetAssociatedWebUI();
+
   // Initialize ScreenLocker class. It will listen to
   // LOGIN_USER_CHANGED notification so that the screen locker accepts
   // lock event only after a user is logged in.
@@ -102,6 +115,12 @@ class ScreenLocker : public LoginStatusConsumer {
   friend class test::WebUIScreenLockerTester;
   friend class ScreenLockerDelegate;
 
+  struct AuthenticationParametersCapture {
+    std::string username;
+    bool pending_requests;
+    bool using_oauth;
+  };
+
   virtual ~ScreenLocker();
 
   // Sets the authenticator.
@@ -109,6 +128,9 @@ class ScreenLocker : public LoginStatusConsumer {
 
   // Called when the screen lock is ready.
   void ScreenLockReady();
+
+  // Called when screen locker is safe to delete.
+  static void ScheduleDeletion();
 
   // ScreenLockerDelegate instance in use.
   scoped_ptr<ScreenLockerDelegate> delegate_;
@@ -143,6 +165,12 @@ class ScreenLocker : public LoginStatusConsumer {
 
   // Number of bad login attempts in a row.
   int incorrect_passwords_count_;
+
+  // Copy of parameters passed to last call of OnLoginSuccess for usage in
+  // UnlockOnLoginSuccess().
+  scoped_ptr<AuthenticationParametersCapture> authentication_capture_;
+
+  base::WeakPtrFactory<ScreenLocker> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenLocker);
 };

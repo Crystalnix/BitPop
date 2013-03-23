@@ -64,7 +64,7 @@ cr.define('bmm', function() {
   BookmarkList.prototype = {
     __proto__: List.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       List.prototype.decorate.call(this);
       this.addEventListener('mousedown', this.handleMouseDown_);
@@ -288,7 +288,7 @@ cr.define('bmm', function() {
               dataModel.splice(index, 1);
           }
 
-          if (moveInfo.parentId == list.parentId) {
+          if (moveInfo.parentId == this.parentId) {
             // Move to this folder
             var self = this;
             chrome.bookmarks.get(id, function(bookmarkNodes) {
@@ -371,7 +371,7 @@ cr.define('bmm', function() {
   BookmarkListItem.prototype = {
     __proto__: ListItem.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       ListItem.prototype.decorate.call(this);
 
@@ -389,8 +389,8 @@ cr.define('bmm', function() {
       if (bmm.isFolder(bookmarkNode)) {
         this.className = 'folder';
       } else {
-        labelEl.style.backgroundImage = url('chrome://favicon/' +
-                                            bookmarkNode.url);
+        labelEl.style.backgroundImage = url(getFaviconURL(bookmarkNode.url));
+        labelEl.style.backgroundSize = '16px';
         urlEl.textContent = bookmarkNode.url;
       }
 
@@ -497,7 +497,7 @@ cr.define('bmm', function() {
         });
         labelInput.addEventListener('keydown', handleKeydown);
         labelInput.addEventListener('blur', handleBlur);
-        cr.ui.limitInputWidth(labelInput, this, 100);
+        cr.ui.limitInputWidth(labelInput, this, 100, 0.5);
         labelInput.focus();
         labelInput.select();
 
@@ -507,7 +507,7 @@ cr.define('bmm', function() {
           });
           urlInput.addEventListener('keydown', handleKeydown);
           urlInput.addEventListener('blur', handleBlur);
-          cr.ui.limitInputWidth(urlInput, this, 200);
+          cr.ui.limitInputWidth(urlInput, this, 200, 0.5);
         }
 
       } else {

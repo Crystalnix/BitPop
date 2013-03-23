@@ -13,6 +13,7 @@
 #include "base/process_util.h"
 #include "base/string16.h"
 #include "content/common/content_export.h"
+#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
 #include "net/base/load_states.h"
@@ -21,7 +22,6 @@
 
 class GURL;
 class SkBitmap;
-class WebContentsImpl;
 class WebKeyboardEvent;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_DidFailProvisionalLoadWithError_Params;
@@ -54,6 +54,7 @@ class RenderViewHost;
 class RenderViewHostDelegateView;
 class SessionStorageNamespace;
 class WebContents;
+class WebContentsImpl;
 struct ContextMenuParams;
 struct FileChooserParams;
 struct GlobalRequestID;
@@ -147,8 +148,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void DidStartProvisionalLoadForFrame(
       RenderViewHost* render_view_host,
       int64 frame_id,
+      int64 parent_frame_id,
       bool main_frame,
-      const GURL& opener_url,
       const GURL& url) {}
 
   // The RenderView processed a redirect during a provisional load.
@@ -159,7 +160,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void DidRedirectProvisionalLoad(
       RenderViewHost* render_view_host,
       int32 page_id,
-      const GURL& opener_url,
       const GURL& source_url,
       const GURL& target_url) {}
 
@@ -215,6 +215,14 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // entirely loaded).
   virtual void DidChangeLoadProgress(double progress) {}
 
+  // The RenderView set its opener to null, disowning it for the lifetime of
+  // the window.
+  virtual void DidDisownOpener(RenderViewHost* rvh) {}
+
+  // The RenderView has changed its frame hierarchy, so we need to update all
+  // other renderers interested in this event.
+  virtual void DidUpdateFrameTree(RenderViewHost* rvh) {}
+
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
   virtual void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) {}
@@ -229,7 +237,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                               const GURL& url,
                               const Referrer& referrer,
                               WindowOpenDisposition disposition,
-                              int64 source_frame_id) {}
+                              int64 source_frame_id,
+                              bool is_redirect) {}
 
   // The page wants to transfer the request to a new renderer.
   virtual void RequestTransferURL(
@@ -237,7 +246,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
       const Referrer& referrer,
       WindowOpenDisposition disposition,
       int64 source_frame_id,
-      const GlobalRequestID& old_request_id) {}
+      const GlobalRequestID& old_request_id,
+      bool is_redirect) {}
 
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}
@@ -396,7 +406,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // A context menu should be shown, to be built using the context information
   // provided in the supplied params.
-  virtual void ShowContextMenu(const ContextMenuParams& params) {}
+  virtual void ShowContextMenu(const ContextMenuParams& params,
+                               ContextMenuSourceType type) {}
 
   // The render view has requested access to media devices listed in
   // |request|, and the client should grant or deny that permission by

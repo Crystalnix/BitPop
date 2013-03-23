@@ -6,8 +6,8 @@
 
 #include <windows.h>
 
+#include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/win/registry.h"
 #include "chrome/installer/setup/install_worker.h"
@@ -81,7 +81,7 @@ InstallStatus ChromeFrameQuickEnable(const InstallationState& machine_state,
       LOG(ERROR) << "AddProduct failed";
       status = INSTALL_FAILED;
     } else {
-      ScopedTempDir temp_path;
+      base::ScopedTempDir temp_path;
       if (!temp_path.CreateUniqueTempDir()) {
         PLOG(ERROR) << "Failed to create Temp directory";
         return INSTALL_FAILED;
@@ -103,7 +103,7 @@ InstallStatus ChromeFrameQuickEnable(const InstallationState& machine_state,
 
       // This creates the uninstallation entry for GCF.
       AddUninstallShortcutWorkItems(*installer_state, setup_path, new_version,
-                                    item_list.get(), *cf);
+                                    *cf, item_list.get());
       // Always set the "lang" value since quick-enable always happens in the
       // context of an interactive session with a user.
       AddVersionKeyWorkItems(installer_state->root_key(), cf->distribution(),
@@ -125,8 +125,8 @@ InstallStatus ChromeFrameQuickEnable(const InstallationState& machine_state,
       // Add the items to remove the quick-enable-cf command from the registry.
       AddQuickEnableChromeFrameWorkItems(
           *installer_state, machine_state,
-          &chrome_state->uninstall_command().GetProgram(),
-          &chrome_state->version(),
+          chrome_state->uninstall_command().GetProgram(),
+          new_version,
           item_list.get());
 
       if (!item_list->Do()) {

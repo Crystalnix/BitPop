@@ -9,6 +9,7 @@
 #include "chrome/browser/chromeos/login/textfield_with_margin.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "ui/base/events/event.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -18,6 +19,7 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_client_view.h"
 
 using views::Button;
 using views::GridLayout;
@@ -104,13 +106,13 @@ void PasswordChangedView::Init() {
   title_label_->SetFont(title_font);
   title_label_->SetText(
       l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_TITLE));
-  title_label_->SetHorizontalAlignment(Label::ALIGN_LEFT);
+  title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   description_label_ = new Label();
   description_label_->SetText(
       l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_DESC));
   description_label_->SetMultiLine(true);
-  description_label_->SetHorizontalAlignment(Label::ALIGN_LEFT);
+  description_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   full_sync_radio_ = new RadioButton(
       l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_RESET), 0);
@@ -134,7 +136,7 @@ void PasswordChangedView::Init() {
     password_error_label_->SetText(
         l10n_util::GetStringUTF16(IDS_NETWORK_CONFIG_ERROR_INCORRECT_PASSWORD));
     password_error_label_->SetMultiLine(true);
-    password_error_label_->SetHorizontalAlignment(Label::ALIGN_LEFT);
+    password_error_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     password_error_label_->SetEnabledColor(SK_ColorRED);
   }
 
@@ -199,7 +201,7 @@ bool PasswordChangedView::ExitDialog() {
 }
 
 void PasswordChangedView::ButtonPressed(Button* sender,
-                                        const views::Event& event) {
+                                        const ui::Event& event) {
   if (sender == full_sync_radio_) {
     old_password_field_->SetEnabled(false);
     old_password_field_->SetText(string16());
@@ -216,7 +218,7 @@ void PasswordChangedView::ContentsChanged(views::Textfield* sender,
 }
 
 bool PasswordChangedView::HandleKeyEvent(views::Textfield* sender,
-                                         const views::KeyEvent& keystroke) {
+                                         const ui::KeyEvent& keystroke) {
   return false;
 }
 

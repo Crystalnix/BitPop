@@ -37,7 +37,7 @@ class NaClSDKTest(pyauto.PyUITest):
   _settings = {
       'post_sdk_download_url': 'http://code.google.com/chrome/nativeclient/'
           'docs/download.html',
-      'post_sdk_zip': 'http://commondatastorage.googleapis.com/'
+      'post_sdk_zip': 'http://storage.googleapis.com/'
           'nativeclient-mirror/nacl/nacl_sdk/nacl_sdk.zip',
       'min_required_chrome_build': 14,
   }
@@ -263,7 +263,7 @@ class NaClSDKTest(pyauto.PyUITest):
     # Close each tab and check for crashes.
     tab_count = self.GetTabCount()
     for index in xrange(tab_count - 1, 0, -1):
-      self.GetBrowserWindow(0).GetTab(index).Close(True)
+      self.CloseTab(tab_index=index)
       self._CheckForCrashes()
 
   def _VerifyAnExample(self, name, url, verify_func):

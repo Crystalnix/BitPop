@@ -7,15 +7,14 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
 #include "chrome/browser/ui/cocoa/infobars/mock_confirm_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/infobars/mock_link_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #import "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -100,14 +99,15 @@ class LinkInfoBarControllerTest : public CocoaProfileTest,
  public:
   virtual void SetUp() {
     CocoaProfileTest::SetUp();
-    tab_contents_.reset(new TabContents(WebContents::Create(
-        profile(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
-    tab_contents_->infobar_tab_helper()->set_infobars_enabled(false);
+    web_contents_.reset(
+        WebContents::Create(WebContents::CreateParams(profile())));
+    InfoBarTabHelper::CreateForWebContents(web_contents_.get());
 
+    InfoBarTabHelper* infobar_tab_helper =
+        InfoBarTabHelper::FromWebContents(web_contents_.get());
     delegate_ = new MockLinkInfoBarDelegate(this);
     controller_.reset([[TestLinkInfoBarController alloc]
-        initWithDelegate:delegate_
-                   owner:tab_contents_.get()->infobar_tab_helper()]);
+        initWithDelegate:delegate_ owner:infobar_tab_helper]);
     container_.reset(
         [[InfoBarContainerTest alloc] initWithController:controller_]);
     [controller_ setContainerController:container_];
@@ -136,7 +136,7 @@ class LinkInfoBarControllerTest : public CocoaProfileTest,
     delegate_ = NULL;
   }
 
-  scoped_ptr<TabContents> tab_contents_;
+  scoped_ptr<WebContents> web_contents_;
 };
 
 class ConfirmInfoBarControllerTest : public CocoaProfileTest,
@@ -144,14 +144,15 @@ class ConfirmInfoBarControllerTest : public CocoaProfileTest,
  public:
   virtual void SetUp() {
     CocoaProfileTest::SetUp();
-    tab_contents_.reset(new TabContents(WebContents::Create(
-        profile(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
-    tab_contents_->infobar_tab_helper()->set_infobars_enabled(false);
+    web_contents_.reset(
+        WebContents::Create(WebContents::CreateParams(profile())));
+    InfoBarTabHelper::CreateForWebContents(web_contents_.get());
 
+    InfoBarTabHelper* infobar_tab_helper =
+        InfoBarTabHelper::FromWebContents(web_contents_.get());
     delegate_ = new MockConfirmInfoBarDelegate(this);
     controller_.reset([[TestConfirmInfoBarController alloc]
-        initWithDelegate:delegate_
-                   owner:tab_contents_.get()->infobar_tab_helper()]);
+        initWithDelegate:delegate_ owner:infobar_tab_helper]);
     container_.reset(
         [[InfoBarContainerTest alloc] initWithController:controller_]);
     [controller_ setContainerController:container_];
@@ -186,7 +187,7 @@ class ConfirmInfoBarControllerTest : public CocoaProfileTest,
     delegate_ = NULL;
   }
 
-  scoped_ptr<TabContents> tab_contents_;
+  scoped_ptr<WebContents> web_contents_;
 };
 
 

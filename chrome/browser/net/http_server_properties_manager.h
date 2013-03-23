@@ -11,10 +11,9 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/timer.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
-#include "content/public/browser/notification_observer.h"
 #include "net/base/host_port_pair.h"
 #include "net/http/http_pipelined_host_capability.h"
 #include "net/http/http_server_properties.h"
@@ -47,8 +46,7 @@ namespace chrome_browser_net {
 // posted to IO from that method on UI. This is used to go through IO before
 // the actual update starts, and grab a WeakPtr.
 class HttpServerPropertiesManager
-    : public net::HttpServerProperties,
-      public content::NotificationObserver {
+    : public net::HttpServerProperties {
  public:
   // Create an instance of the HttpServerPropertiesManager. The lifetime of the
   // PrefService objects must be longer than that of the
@@ -67,11 +65,15 @@ class HttpServerPropertiesManager
   // Register |prefs| for properties managed here.
   static void RegisterPrefs(PrefService* prefs);
 
+  // Deletes all data. Works asynchronously, but if a |completion| callback is
+  // provided, it will be fired on the UI thread when everything is done.
+  void Clear(const base::Closure& completion);
+
   // ----------------------------------
   // net::HttpServerProperties methods:
   // ----------------------------------
 
-  // Deletes all data.
+  // Deletes all data. Works asynchronously.
   virtual void Clear() OVERRIDE;
 
   // Returns true if |server| supports SPDY. Should only be called from IO
@@ -174,22 +176,23 @@ class HttpServerPropertiesManager
   // Update prefs::kHttpServerProperties in preferences with the cached data
   // from |http_server_properties_impl_|. This gets the data on IO thread and
   // posts a task (UpdatePrefsOnUI) to update the preferences UI thread.
-  // Virtual for testing.
-  virtual void UpdatePrefsFromCacheOnIO();
+  void UpdatePrefsFromCacheOnIO();
 
-  // Update prefs::kHttpServerProperties preferences on UI thread. Protected for
-  // testing.
+  // Same as above, but fires an optional |completion| callback on the UI thread
+  // when finished. Virtual for testing.
+  virtual void UpdatePrefsFromCacheOnIO(const base::Closure& completion);
+
+  // Update prefs::kHttpServerProperties preferences on UI thread. Executes an
+  // optional |completion| callback when finished. Protected for testing.
   void UpdatePrefsOnUI(
       base::ListValue* spdy_server_list,
       net::SpdySettingsMap* spdy_settings_map,
       net::AlternateProtocolMap* alternate_protocol_map,
-      net::PipelineCapabilityMap* pipeline_capability_map);
+      net::PipelineCapabilityMap* pipeline_capability_map,
+      const base::Closure& completion);
 
  private:
-  // Callback for preference changes.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void OnHttpServerPropertiesChanged();
 
   // ---------
   // UI thread

@@ -18,11 +18,12 @@
 #include "chrome/browser/ui/gtk/gtk_custom_menu_item.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/accelerators/accelerator_gtk.h"
+#include "ui/base/accelerators/platform_accelerator_gtk.h"
 #include "ui/base/gtk/menu_label_accelerator_util.h"
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image/image.h"
 #include "webkit/glue/window_open_disposition.h"
 
 bool MenuGtk::block_activation_ = false;
@@ -119,6 +120,12 @@ int CalculateMenuYPosition(const GdkRectangle* screen_rect,
 }
 
 }  // namespace
+
+bool MenuGtk::Delegate::AlwaysShowIconForCmd(int command_id) const {
+  return false;
+}
+
+GtkIconSet* MenuGtk::Delegate::GetIconSetForId(int idr) { return NULL; }
 
 GtkWidget* MenuGtk::Delegate::GetDefaultImageForCommandId(int command_id) {
   const char* stock;
@@ -320,7 +327,7 @@ GtkWidget* MenuGtk::AppendMenuItemWithLabel(int command_id,
 
 GtkWidget* MenuGtk::AppendMenuItemWithIcon(int command_id,
                                            const std::string& label,
-                                           const SkBitmap& icon) {
+                                           const gfx::Image& icon) {
   std::string converted_label = ui::ConvertAcceleratorsFromWindowsStyle(label);
   GtkWidget* menu_item = BuildMenuItemWithImage(converted_label, icon);
   return AppendMenuItem(command_id, menu_item);
@@ -420,11 +427,9 @@ GtkWidget* MenuGtk::BuildMenuItemWithImage(const std::string& label,
 }
 
 GtkWidget* MenuGtk::BuildMenuItemWithImage(const std::string& label,
-                                           const SkBitmap& icon) {
-  GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(icon);
+                                           const gfx::Image& icon) {
   GtkWidget* menu_item = BuildMenuItemWithImage(label,
-      gtk_image_new_from_pixbuf(pixbuf));
-  g_object_unref(pixbuf);
+      gtk_image_new_from_pixbuf(icon.ToGdkPixbuf()));
   return menu_item;
 }
 
@@ -445,7 +450,7 @@ void MenuGtk::BuildSubmenuFromModel(ui::MenuModel* model, GtkWidget* menu) {
   std::map<int, GtkWidget*> radio_groups;
   GtkWidget* menu_item = NULL;
   for (int i = 0; i < model->GetItemCount(); ++i) {
-    gfx::ImageSkia icon;
+    gfx::Image icon;
     std::string label = ui::ConvertAcceleratorsFromWindowsStyle(
         UTF16ToUTF8(model->GetLabelAt(i)));
     bool connect_to_activate = true;
@@ -510,13 +515,13 @@ void MenuGtk::BuildSubmenuFromModel(ui::MenuModel* model, GtkWidget* menu) {
       connect_to_activate = false;
     }
 
-    ui::AcceleratorGtk accelerator;
+    ui::Accelerator accelerator;
     if (model->GetAcceleratorAt(i, &accelerator)) {
       gtk_widget_add_accelerator(menu_item,
                                  "activate",
                                  dummy_accel_group_,
-                                 accelerator.GetGdkKeyCode(),
-                                 accelerator.gdk_modifier_type(),
+                                 ui::GetGdkKeyCodeForAccelerator(accelerator),
+                                 ui::GetGdkModifierForAccelerator(accelerator),
                                  GTK_ACCEL_VISIBLE);
     }
 
@@ -924,12 +929,11 @@ void MenuGtk::SetMenuItemInfo(GtkWidget* widget, gpointer userdata) {
 
         gtk_menu_item_set_label(GTK_MENU_ITEM(widget), label.c_str());
         if (GTK_IS_IMAGE_MENU_ITEM(widget)) {
-          gfx::ImageSkia icon;
+          gfx::Image icon;
           if (model->GetIconAt(id, &icon)) {
-            GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(icon);
             gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(widget),
-                                          gtk_image_new_from_pixbuf(pixbuf));
-            g_object_unref(pixbuf);
+                                          gtk_image_new_from_pixbuf(
+                                              icon.ToGdkPixbuf()));
           } else {
             gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(widget), NULL);
           }

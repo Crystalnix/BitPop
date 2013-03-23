@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stringprintf.h"
@@ -12,6 +13,7 @@
 #include "base/values.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/test/base/testing_profile.h"
@@ -71,7 +73,7 @@ class TestSpellingURLFetcher : public net::TestURLFetcher {
     EXPECT_EQ(language_, language);
     ASSERT_TRUE(GetExpectedCountry(language, &country_));
     std::string country;
-    EXPECT_TRUE(value->GetString("params.origin_country", &country));
+    EXPECT_TRUE(value->GetString("params.originCountry", &country));
     EXPECT_EQ(country_, country);
 
     net::TestURLFetcher::SetUploadData(upload_content_type, upload_content);
@@ -187,6 +189,11 @@ class SpellingServiceClientTest : public testing::Test {
   SpellingServiceClientTest() {}
   virtual ~SpellingServiceClientTest() {}
 
+  void SetUp() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kUseSpellingService);
+  }
+
   void OnTextCheckComplete(int tag,
                            bool success,
                            const string16& text,
@@ -263,7 +270,7 @@ TEST_F(SpellingServiceClientTest, RequestTextCheck) {
       "",
       false,
       "",
-      "",
+      "en",
     }, {
       "I have been to USA.",
       SpellingServiceClient::SPELLCHECK,
@@ -271,7 +278,7 @@ TEST_F(SpellingServiceClientTest, RequestTextCheck) {
       "{}",
       true,
       "I have been to USA.",
-      "",
+      "en",
     }, {
       "I have bean to USA.",
       SpellingServiceClient::SPELLCHECK,
@@ -290,12 +297,12 @@ TEST_F(SpellingServiceClientTest, RequestTextCheck) {
       "}",
       true,
       "I have been to USA.",
-      "",
+      "en",
     },
   };
 
   PrefService* pref = profile_.GetPrefs();
-  pref->SetBoolean(prefs::kEnableSpellCheck, true);
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck, true);
   pref->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTests); ++i) {
@@ -327,41 +334,46 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
   // When a user disables spellchecking or prevent using the Spelling service,
   // this function should return false both for suggestions and for spellcheck.
   PrefService* pref = profile_.GetPrefs();
-  pref->SetBoolean(prefs::kEnableSpellCheck, false);
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck, false);
   pref->SetBoolean(prefs::kSpellCheckUseSpellingService, false);
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSpellcheck));
 
-  pref->SetBoolean(prefs::kEnableSpellCheck, true);
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck, true);
   pref->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
 
   // For locales supported by the SpellCheck service, this function returns
   // false for suggestions and true for spellcheck. (The comment in
   // SpellingServiceClient::IsAvailable() describes why this function returns
-  // false for suggestions.)
+  // false for suggestions.) If there is no language set, then we
+  // do not allow any remote.
+  pref->SetString(prefs::kSpellCheckDictionary, "");
+  EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
+  EXPECT_FALSE(client_.IsAvailable(&profile_, kSpellcheck));
+
   static const char* kSupported[] = {
-    "",
 #if !defined(OS_MACOSX)
     "en-AU", "en-CA", "en-GB", "en-US",
 #endif
   };
+  // TODO(rlp): We are currently allowing suggest for languages even if
+  // spellcheck is also available.
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kSupported); ++i) {
     pref->SetString(prefs::kSpellCheckDictionary, kSupported[i]);
-    EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
+    EXPECT_TRUE(client_.IsAvailable(&profile_, kSuggest));
     EXPECT_TRUE(client_.IsAvailable(&profile_, kSpellcheck));
   }
 
-  // On the other hand, this function returns true for suggestions and false for
+  // This function returns true for suggestions for all and false for
   // spellcheck for unsupported locales.
   static const char* kUnsupported[] = {
-#if defined(OS_MACOSX)
-    "en-AU", "en-CA", "en-GB", "en-US",
-#endif
+#if !defined(OS_MACOSX)
     "af-ZA", "bg-BG", "ca-ES", "cs-CZ", "da-DK", "de-DE", "el-GR", "es-ES",
     "et-EE", "fo-FO", "fr-FR", "he-IL", "hi-IN", "hr-HR", "hu-HU", "id-ID",
     "it-IT", "lt-LT", "lv-LV", "nb-NO", "nl-NL", "pl-PL", "pt-BR", "pt-PT",
     "ro-RO", "ru-RU", "sk-SK", "sl-SI", "sh", "sr", "sv-SE", "tr-TR",
     "uk-UA", "vi-VN",
+#endif
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kUnsupported); ++i) {
     pref->SetString(prefs::kSpellCheckDictionary, kUnsupported[i]);

@@ -12,14 +12,15 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/permissions.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "extensions/common/error_utils.h"
+#include "extensions/common/url_pattern_set.h"
 #include "googleurl/src/gurl.h"
 
 using extensions::api::permissions::Permissions;
 using extensions::APIPermission;
 using extensions::APIPermissionSet;
+using extensions::ErrorUtils;
 using extensions::PermissionSet;
 using extensions::PermissionsInfo;
 using extensions::PermissionsUpdater;
@@ -81,16 +82,14 @@ bool RemovePermissionsFunction::RunImpl() {
     return false;
 
   const extensions::Extension* extension = GetExtension();
-  PermissionsInfo* info = PermissionsInfo::GetInstance();
 
   // Make sure they're only trying to remove permissions supported by this API.
   APIPermissionSet apis = permissions->apis();
   for (APIPermissionSet::const_iterator i = apis.begin();
        i != apis.end(); ++i) {
-    const APIPermission* api = info->GetByID(*i);
-    if (!api->supports_optional()) {
-      error_ = ExtensionErrorUtils::FormatErrorMessage(
-          kNotWhitelistedError, api->name());
+    if (!i->info()->supports_optional()) {
+      error_ = ErrorUtils::FormatErrorMessage(
+          kNotWhitelistedError, i->name());
       return false;
     }
   }
@@ -156,7 +155,6 @@ bool RequestPermissionsFunction::RunImpl() {
   if (!requested_permissions_.get())
     return false;
 
-  PermissionsInfo* info = PermissionsInfo::GetInstance();
   extensions::ExtensionPrefs* prefs =
       profile()->GetExtensionService()->extension_prefs();
 
@@ -164,17 +162,23 @@ bool RequestPermissionsFunction::RunImpl() {
   APIPermissionSet apis = requested_permissions_->apis();
   for (APIPermissionSet::const_iterator i = apis.begin();
        i != apis.end(); ++i) {
-    const APIPermission* api = info->GetByID(*i);
-    if (!api->supports_optional()) {
-      error_ = ExtensionErrorUtils::FormatErrorMessage(
-          kNotWhitelistedError, api->name());
+    if (!i->info()->supports_optional()) {
+      error_ = ErrorUtils::FormatErrorMessage(
+          kNotWhitelistedError, i->name());
       return false;
     }
   }
 
+  // Filter out permissions that do not need to be listed in the optional
+  // section of the manifest.
+  scoped_refptr<extensions::PermissionSet>
+      manifest_required_requested_permissions =
+          PermissionSet::ExcludeNotInManifestPermissions(
+              requested_permissions_.get());
+
   // The requested permissions must be defined as optional in the manifest.
   if (!GetExtension()->optional_permission_set()->Contains(
-          *requested_permissions_)) {
+          *manifest_required_requested_permissions)) {
     error_ = kNotInOptionalPermissionsError;
     results_ = Request::Results::Create(false);
     return false;
@@ -202,7 +206,7 @@ bool RequestPermissionsFunction::RunImpl() {
   // we're skipping the confirmation UI. All extension types but INTERNAL
   // are allowed to silently increase their permission level.
   bool has_no_warnings = requested_permissions_->GetWarningMessages(
-      GetExtension()->GetType()).size() == 0;
+      GetExtension()->GetType()).empty();
   if (auto_confirm_for_tests == PROCEED || has_no_warnings) {
     InstallUIProceed();
   } else if (auto_confirm_for_tests == ABORT) {
@@ -210,8 +214,7 @@ bool RequestPermissionsFunction::RunImpl() {
     InstallUIAbort(true);
   } else {
     CHECK_EQ(DO_NOT_SKIP, auto_confirm_for_tests);
-    install_ui_.reset(
-        chrome::CreateExtensionInstallPromptWithBrowser(GetCurrentBrowser()));
+    install_ui_.reset(new ExtensionInstallPrompt(GetAssociatedWebContents()));
     install_ui_->ConfirmPermissions(
         this, GetExtension(), requested_permissions_.get());
   }

@@ -23,8 +23,6 @@
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/plugin_service.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_channel_handle.h"
@@ -34,30 +32,27 @@
 #include "base/win/registry.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
 #include "base/files/file_path_watcher.h"
 #endif
-
-class PluginDirWatcherDelegate;
-class PluginLoaderPosix;
 
 namespace base {
 class MessageLoopProxy;
 }
 
-namespace content {
-class BrowserContext;
-class PluginServiceFilter;
-class ResourceContext;
-struct PepperPluginInfo;
-}
-
 namespace webkit {
 namespace npapi {
-class PluginGroup;
 class PluginList;
 }
 }
+
+namespace content {
+class BrowserContext;
+class PluginDirWatcherDelegate;
+class PluginLoaderPosix;
+class PluginServiceFilter;
+class ResourceContext;
+struct PepperPluginInfo;
 
 // base::Bind() has limited arity, and the filter-related methods tend to
 // surpass that limit.
@@ -65,18 +60,17 @@ struct PluginServiceFilterParams {
   int render_process_id;
   int render_view_id;
   GURL page_url;
-  content::ResourceContext* resource_context;
+  ResourceContext* resource_context;
 };
 
 class CONTENT_EXPORT PluginServiceImpl
-    : NON_EXPORTED_BASE(public content::PluginService),
-      public base::WaitableEventWatcher::Delegate,
-      public content::NotificationObserver {
+    : NON_EXPORTED_BASE(public PluginService),
+      public base::WaitableEventWatcher::Delegate {
  public:
   // Returns the PluginServiceImpl singleton.
   static PluginServiceImpl* GetInstance();
 
-  // content::PluginService implementation:
+  // PluginService implementation:
   virtual void Init() OVERRIDE;
   virtual void StartWatchingPlugins() OVERRIDE;
   virtual bool GetPluginInfoArray(
@@ -87,7 +81,7 @@ class CONTENT_EXPORT PluginServiceImpl
       std::vector<std::string>* actual_mime_types) OVERRIDE;
   virtual bool GetPluginInfo(int render_process_id,
                              int render_view_id,
-                             content::ResourceContext* context,
+                             ResourceContext* context,
                              const GURL& url,
                              const GURL& page_url,
                              const std::string& mime_type,
@@ -99,12 +93,10 @@ class CONTENT_EXPORT PluginServiceImpl
                                    webkit::WebPluginInfo* info) OVERRIDE;
   virtual string16 GetPluginDisplayNameByPath(const FilePath& path) OVERRIDE;
   virtual void GetPlugins(const GetPluginsCallback& callback) OVERRIDE;
-  virtual void GetPluginGroups(
-      const GetPluginGroupsCallback& callback) OVERRIDE;
-  virtual content::PepperPluginInfo* GetRegisteredPpapiPluginInfo(
+  virtual PepperPluginInfo* GetRegisteredPpapiPluginInfo(
       const FilePath& plugin_path) OVERRIDE;
-  virtual void SetFilter(content::PluginServiceFilter* filter) OVERRIDE;
-  virtual content::PluginServiceFilter* GetFilter() OVERRIDE;
+  virtual void SetFilter(PluginServiceFilter* filter) OVERRIDE;
+  virtual PluginServiceFilter* GetFilter() OVERRIDE;
   virtual void ForcePluginShutdown(const FilePath& plugin_path) OVERRIDE;
   virtual bool IsPluginUnstable(const FilePath& plugin_path) OVERRIDE;
   virtual void RefreshPlugins() OVERRIDE;
@@ -114,10 +106,14 @@ class CONTENT_EXPORT PluginServiceImpl
   virtual void UnregisterInternalPlugin(const FilePath& path) OVERRIDE;
   virtual void RegisterInternalPlugin(
       const webkit::WebPluginInfo& info, bool add_at_beginning) OVERRIDE;
-  virtual string16 GetPluginGroupName(const std::string& plugin_name) OVERRIDE;
+  virtual void GetInternalPlugins(
+      std::vector<webkit::WebPluginInfo>* plugins) OVERRIDE;
   virtual webkit::npapi::PluginList* GetPluginList() OVERRIDE;
   virtual void SetPluginListForTesting(
       webkit::npapi::PluginList* plugin_list) OVERRIDE;
+#if defined(OS_MACOSX)
+  virtual void AppActivated() OVERRIDE;
+#endif
 
   // Returns the plugin process host corresponding to the plugin process that
   // has been started by this service. This will start a process to host the
@@ -165,11 +161,6 @@ class CONTENT_EXPORT PluginServiceImpl
   virtual void OnWaitableEventSignaled(
       base::WaitableEvent* waitable_event) OVERRIDE;
 
-  // content::NotificationObserver implementation
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // Returns the plugin process host corresponding to the plugin process that
   // has been started by this service. Returns NULL if no process has been
   // started.
@@ -203,7 +194,7 @@ class CONTENT_EXPORT PluginServiceImpl
       const GURL& page_url,
       const std::string& mime_type,
       PluginProcessHost::Client* client,
-      content::ResourceContext* resource_context);
+      ResourceContext* resource_context);
 
   // Helper so we can finish opening the channel after looking up the
   // plugin.
@@ -211,7 +202,7 @@ class CONTENT_EXPORT PluginServiceImpl
       const FilePath& plugin_path,
       PluginProcessHost::Client* client);
 
-#if defined(OS_POSIX) && !defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
   // Registers a new FilePathWatcher for a given path.
   static void RegisterFilePathWatcher(
       base::files::FilePathWatcher* watcher,
@@ -221,8 +212,6 @@ class CONTENT_EXPORT PluginServiceImpl
 
   // The plugin list instance.
   webkit::npapi::PluginList* plugin_list_;
-
-  content::NotificationRegistrar registrar_;
 
 #if defined(OS_WIN)
   // Registry keys for getting notifications when new plugins are installed.
@@ -234,15 +223,15 @@ class CONTENT_EXPORT PluginServiceImpl
   base::WaitableEventWatcher hklm_watcher_;
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
   ScopedVector<base::files::FilePathWatcher> file_watchers_;
   scoped_refptr<PluginDirWatcherDelegate> file_watcher_delegate_;
 #endif
 
-  std::vector<content::PepperPluginInfo> ppapi_plugins_;
+  std::vector<PepperPluginInfo> ppapi_plugins_;
 
   // Weak pointer; outlives us.
-  content::PluginServiceFilter* filter_;
+  PluginServiceFilter* filter_;
 
   std::set<PluginProcessHost::Client*> pending_plugin_clients_;
 
@@ -259,5 +248,7 @@ class CONTENT_EXPORT PluginServiceImpl
 
   DISALLOW_COPY_AND_ASSIGN(PluginServiceImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_PLUGIN_SERVICE_IMPL_H_

@@ -5,67 +5,49 @@
 #ifndef CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_INSTALL_DIALOG_CONTROLER_H_
 #define CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_INSTALL_DIALOG_CONTROLER_H_
 
-#include <vector>
-
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/memory/scoped_nsobject.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-#include "ui/gfx/image/image_skia.h"
+#import "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 
 namespace content {
 class PageNavigator;
+class WebContents;
 }
 
-// Displays the extension or bundle install prompt, and notifies the
-// ExtensionInstallPrompt::Delegate of success or failure.
-@interface ExtensionInstallDialogController : NSWindowController {
- @private
-  IBOutlet NSImageView* iconView_;
-  IBOutlet NSTextField* titleField_;
-  IBOutlet NSTextField* itemsField_;
-  IBOutlet NSButton* cancelButton_;
-  IBOutlet NSButton* okButton_;
+@class ExtensionInstallViewController;
 
-  // Present only when the dialog has permission warnings to display.
-  IBOutlet NSTextField* subtitleField_;
-  IBOutlet NSTextField* warningsField_;
+// Displays an extension install prompt as a tab modal dialog.
+class ExtensionInstallDialogController :
+    public ExtensionInstallPrompt::Delegate,
+    public ConstrainedWindowMacDelegate {
+ public:
+  ExtensionInstallDialogController(
+      content::WebContents* web_contents,
+      ExtensionInstallPrompt::Delegate* delegate,
+      const ExtensionInstallPrompt::Prompt& prompt);
+  virtual ~ExtensionInstallDialogController();
 
-  // Present only in the inline install dialog.
-  IBOutlet NSBox* warningsSeparator_; // Only when there are permissions.
-  IBOutlet NSView* ratingStars_;
-  IBOutlet NSTextField* ratingCountField_;
-  IBOutlet NSTextField* userCountField_;
+  // ExtensionInstallPrompt::Delegate implementation.
+  virtual void InstallUIProceed() OVERRIDE;
+  virtual void InstallUIAbort(bool user_initiated) OVERRIDE;
 
-  NSWindow* parentWindow_;  // weak
-  content::PageNavigator* navigator_;  // weak
-  ExtensionInstallPrompt::Delegate* delegate_;  // weak
-  scoped_ptr<ExtensionInstallPrompt::Prompt> prompt_;
-}
+  // ConstrainedWindowMacDelegate implementation.
+  virtual void OnConstrainedWindowClosed(
+      ConstrainedWindowMac* window) OVERRIDE;
 
-// For unit test use only
-@property(nonatomic, readonly) NSImageView* iconView;
-@property(nonatomic, readonly) NSTextField* titleField;
-@property(nonatomic, readonly) NSTextField* itemsField;
-@property(nonatomic, readonly) NSTextField* subtitleField;
-@property(nonatomic, readonly) NSTextField* warningsField;
-@property(nonatomic, readonly) NSButton* cancelButton;
-@property(nonatomic, readonly) NSButton* okButton;
-@property(nonatomic, readonly) NSBox* warningsSeparator;
-@property(nonatomic, readonly) NSView* ratingStars;
-@property(nonatomic, readonly) NSTextField* ratingCountField;
-@property(nonatomic, readonly) NSTextField* userCountField;
+  ConstrainedWindowMac* constrained_window() const {
+    return constrained_window_.get();
+  }
+  ExtensionInstallViewController* view_controller() const {
+    return view_controller_;
+  }
 
-- (id)initWithParentWindow:(NSWindow*)window
-                 navigator:(content::PageNavigator*)navigator
-                  delegate:(ExtensionInstallPrompt::Delegate*)delegate
-                    prompt:(const ExtensionInstallPrompt::Prompt&)prompt;
-- (void)runAsModalSheet;
-- (IBAction)storeLinkClicked:(id)sender; // Callback for "View details" link.
-- (IBAction)cancel:(id)sender;
-- (IBAction)ok:(id)sender;
-
-@end
+ private:
+  ExtensionInstallPrompt::Delegate* delegate_;
+  scoped_nsobject<ExtensionInstallViewController> view_controller_;
+  scoped_ptr<ConstrainedWindowMac> constrained_window_;
+};
 
 #endif  // CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_INSTALL_DIALOG_CONTROLLER_H_

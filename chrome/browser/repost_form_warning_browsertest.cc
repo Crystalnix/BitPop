@@ -7,7 +7,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/constrained_window_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -38,9 +37,10 @@ IN_PROC_BROWSER_TEST_F(RepostFormWarningTest, TestDoubleReload) {
   web_contents->GetController().Reload(true);
 
   // There should only be one dialog open.
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
+  ConstrainedWindowTabHelper* constrained_window_tab_helper =
+      ConstrainedWindowTabHelper::FromWebContents(web_contents);
   size_t num_constrained_windows =
-      tab_contents->constrained_window_tab_helper()->constrained_window_count();
+      constrained_window_tab_helper->constrained_window_count();
   EXPECT_EQ(1u, num_constrained_windows);
 
   // Navigate away from the page (this is when the test usually crashes).
@@ -48,7 +48,7 @@ IN_PROC_BROWSER_TEST_F(RepostFormWarningTest, TestDoubleReload) {
 
   // The dialog should've been closed.
   num_constrained_windows =
-      tab_contents->constrained_window_tab_helper()->constrained_window_count();
+      constrained_window_tab_helper->constrained_window_count();
   EXPECT_EQ(0u, num_constrained_windows);
 }
 

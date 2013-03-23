@@ -29,6 +29,8 @@
 #include "media/video/picture.h"
 #include "media/video/video_decode_accelerator.h"
 
+namespace content {
+
 // Class to provide video decode acceleration for Intel systems with hardware
 // support for it, and on which libva is available.
 // Decoding tasks are performed in a separate decoding thread.
@@ -60,9 +62,8 @@ class CONTENT_EXPORT VaapiVideoDecodeAccelerator :
   static void PreSandboxInitialization();
 
 private:
-  // Ensure data has been synced with the output texture and notify
-  // the client it is ready for displaying.
-  void SyncAndNotifyPictureReady(int32 input_id, int32 output_id);
+  // Notify the client that |output_id| is ready for displaying.
+  void NotifyPictureReady(int32 input_id, int32 output_id);
 
   // Notify the client that an error has occurred and decoding cannot continue.
   void NotifyError(Error error);
@@ -76,18 +77,17 @@ private:
   // sleep if no input buffers are available. Return true if a new buffer has
   // been set up, false if an early exit has been requested (due to initiated
   // reset/flush/destroy).
-  bool GetInputBuffer();
+  bool GetInputBuffer_Locked();
 
   // Signal the client that the current buffer has been read and can be
   // returned. Will also release the mapping.
-  void ReturnCurrInputBufferLocked();
-  void ReturnCurrInputBuffer();
+  void ReturnCurrInputBuffer_Locked();
 
   // Get and set up one or more output buffers in the decoder. This will sleep
   // if no buffers are available. Return true if buffers have been set up or
   // false if an early exit has been requested (due to initiated
   // reset/flush/destroy).
-  bool GetOutputBuffers();
+  bool GetOutputBuffers_Locked();
 
   // Initial decode task: get the decoder to the point in the stream from which
   // it can start/continue decoding. Does not require output buffers and does
@@ -201,13 +201,21 @@ private:
   base::WeakPtr<Client> client_;
 
   base::Thread decoder_thread_;
-  content::VaapiH264Decoder decoder_;
+  VaapiH264Decoder decoder_;
 
-  // Callback passed to the decoder, which it will use to signal readiness
-  // of an output picture to be displayed.
-  void OutputPicCallback(int32 input_id, int32 output_id);
+  int num_frames_at_client_;
+  int num_stream_bufs_at_decoder_;
+
+  // Posted onto ChildThread by the decoder to submit a GPU job to decode
+  // and put the decoded picture into output buffer. Takes ownership of
+  // the queues' memory.
+  void SubmitDecode(int32 output_id,
+                    scoped_ptr<std::queue<VABufferID> > va_bufs,
+                    scoped_ptr<std::queue<VABufferID> > slice_bufs);
 
   DISALLOW_COPY_AND_ASSIGN(VaapiVideoDecodeAccelerator);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_VAAPI_VIDEO_DECODE_ACCELERATOR_H_

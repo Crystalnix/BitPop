@@ -29,10 +29,10 @@ namespace {
 
 // Returns true if the current thread is the native thread for the
 // given group (or if it is undeterminable).
-bool IsOnThreadForGroup(syncer::ModelSafeGroup group) {
+bool IsOnThreadForGroup(syncer::ModelType type, syncer::ModelSafeGroup group) {
   switch (group) {
     case syncer::GROUP_PASSIVE:
-      return false;
+      return IsControlType(type);
     case syncer::GROUP_UI:
       return BrowserThread::CurrentlyOn(BrowserThread::UI);
     case syncer::GROUP_DB:
@@ -40,11 +40,11 @@ bool IsOnThreadForGroup(syncer::ModelSafeGroup group) {
     case syncer::GROUP_FILE:
       return BrowserThread::CurrentlyOn(BrowserThread::FILE);
     case syncer::GROUP_HISTORY:
-      // TODO(ncarter): How to determine this?
-      return true;
+      // TODO(sync): How to check we're on the right thread?
+      return type == syncer::TYPED_URLS;
     case syncer::GROUP_PASSWORD:
-      // TODO(ncarter): How to determine this?
-      return true;
+      // TODO(sync): How to check we're on the right thread?
+      return type == syncer::PASSWORDS;
     case syncer::MODEL_SAFE_GROUP_COUNT:
     default:
       return false;
@@ -72,7 +72,8 @@ SyncBackendRegistrar::SyncBackendRegistrar(
   HistoryService* history_service =
       HistoryServiceFactory::GetForProfile(profile, Profile::IMPLICIT_ACCESS);
   if (history_service) {
-    workers_[syncer::GROUP_HISTORY] = new HistoryModelWorker(history_service);
+    workers_[syncer::GROUP_HISTORY] =
+        new HistoryModelWorker(history_service->AsWeakPtr());
   }
 
   scoped_refptr<PasswordStore> password_store =
@@ -125,7 +126,6 @@ bool SyncBackendRegistrar::IsNigoriEnabled() const {
 syncer::ModelTypeSet SyncBackendRegistrar::ConfigureDataTypes(
     syncer::ModelTypeSet types_to_add,
     syncer::ModelTypeSet types_to_remove) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(Intersection(types_to_add, types_to_remove).Empty());
   syncer::ModelTypeSet filtered_types_to_add = types_to_add;
   if (workers_.count(syncer::GROUP_HISTORY) == 0) {
@@ -184,7 +184,7 @@ void SyncBackendRegistrar::ActivateDataType(
     syncer::ModelSafeGroup group,
     ChangeProcessor* change_processor,
     syncer::UserShare* user_share) {
-  CHECK(IsOnThreadForGroup(group));
+  CHECK(IsOnThreadForGroup(type, group));
   base::AutoLock lock(lock_);
   // Ensure that the given data type is in the PASSIVE group.
   syncer::ModelSafeRoutingInfo::iterator i = routing_info_.find(type);
@@ -204,11 +204,8 @@ void SyncBackendRegistrar::ActivateDataType(
 }
 
 void SyncBackendRegistrar::DeactivateDataType(syncer::ModelType type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) || IsControlType(type));
   base::AutoLock lock(lock_);
-  ChangeProcessor* change_processor = GetProcessorUnsafe(type);
-  if (change_processor)
-    change_processor->Stop();
 
   routing_info_.erase(type);
   ignore_result(processors_.erase(type));
@@ -222,13 +219,14 @@ bool SyncBackendRegistrar::IsTypeActivatedForTest(
 
 void SyncBackendRegistrar::OnChangesApplied(
     syncer::ModelType model_type,
+    int64 model_version,
     const syncer::BaseTransaction* trans,
     const syncer::ImmutableChangeRecordList& changes) {
   ChangeProcessor* processor = GetProcessor(model_type);
   if (!processor)
     return;
 
-  processor->ApplyChangesFromSyncModel(trans, changes);
+  processor->ApplyChangesFromSyncModel(trans, model_version, changes);
 }
 
 void SyncBackendRegistrar::OnChangesComplete(syncer::ModelType model_type) {
@@ -269,7 +267,6 @@ ChangeProcessor* SyncBackendRegistrar::GetProcessor(
   // We can only check if |processor| exists, as otherwise the type is
   // mapped to syncer::GROUP_PASSIVE.
   CHECK(IsCurrentThreadSafeForModel(type));
-  CHECK(processor->IsRunning());
   return processor;
 }
 
@@ -294,7 +291,8 @@ ChangeProcessor* SyncBackendRegistrar::GetProcessorUnsafe(
 bool SyncBackendRegistrar::IsCurrentThreadSafeForModel(
     syncer::ModelType model_type) const {
   lock_.AssertAcquired();
-  return IsOnThreadForGroup(GetGroupForModelType(model_type, routing_info_));
+  return IsOnThreadForGroup(model_type,
+                            GetGroupForModelType(model_type, routing_info_));
 }
 
 }  // namespace browser_sync

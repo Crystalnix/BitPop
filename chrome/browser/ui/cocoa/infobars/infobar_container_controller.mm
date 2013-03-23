@@ -5,15 +5,14 @@
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #import "chrome/browser/ui/cocoa/animatable_view.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -136,21 +135,21 @@ class InfoBarNotificationObserver : public content::NotificationObserver {
   return controller;
 }
 
-- (void)changeTabContents:(TabContents*)contents {
+- (void)changeWebContents:(content::WebContents*)contents {
   registrar_.RemoveAll();
   [self removeAllInfoBars];
 
-  currentTabContents_ = contents;
-  if (currentTabContents_) {
-    InfoBarTabHelper* infobar_helper =
-        currentTabContents_->infobar_tab_helper();
-    for (size_t i = 0; i < infobar_helper->infobar_count(); ++i) {
-      InfoBar* infobar = infobar_helper->
-          GetInfoBarDelegateAt(i)->CreateInfoBar(infobar_helper);
+  currentWebContents_ = contents;
+  if (currentWebContents_) {
+    InfoBarTabHelper* infobarTabHelper =
+        InfoBarTabHelper::FromWebContents(currentWebContents_);
+    for (size_t i = 0; i < infobarTabHelper->GetInfoBarCount(); ++i) {
+      InfoBar* infobar = infobarTabHelper->
+          GetInfoBarDelegateAt(i)->CreateInfoBar(infobarTabHelper);
       [self addInfoBar:infobar animate:NO];
     }
 
-    content::Source<InfoBarTabHelper> source(infobar_helper);
+    content::Source<InfoBarTabHelper> source(infobarTabHelper);
     registrar_.Add(infoBarObserver_.get(),
                    chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED, source);
     registrar_.Add(infoBarObserver_.get(),
@@ -162,9 +161,9 @@ class InfoBarNotificationObserver : public content::NotificationObserver {
   [self positionInfoBarsAndRedraw];
 }
 
-- (void)tabDetachedWithContents:(TabContents*)contents {
-  if (currentTabContents_ == contents)
-    [self changeTabContents:NULL];
+- (void)tabDetachedWithContents:(content::WebContents*)contents {
+  if (currentWebContents_ == contents)
+    [self changeWebContents:NULL];
 }
 
 - (NSUInteger)infobarCount {

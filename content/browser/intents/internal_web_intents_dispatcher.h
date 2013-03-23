@@ -13,6 +13,7 @@
 #include "content/public/browser/web_intents_dispatcher.h"
 #include "webkit/glue/web_intent_data.h"
 
+namespace content {
 class IntentInjector;
 
 // This class implements a web intents dispatcher which originates
@@ -21,12 +22,12 @@ class IntentInjector;
 // notifying a registered callback rather than returning
 // those messages to any renderer.
 class CONTENT_EXPORT InternalWebIntentsDispatcher
-    : public content::WebIntentsDispatcher {
+    : public WebIntentsDispatcher {
  public:
   // This callback will be called during, and receives the same args as,
   // |SendReplyMessage|.
-  typedef base::Callback<void(webkit_glue::WebIntentReplyType,
-                              const string16&)> ReplyCallback;
+  typedef base::Callback<void(const webkit_glue::WebIntentReply&)>
+      ReplyCallback;
 
   // |intent| is the intent payload to be dispatched.
   explicit InternalWebIntentsDispatcher(
@@ -42,13 +43,11 @@ class CONTENT_EXPORT InternalWebIntentsDispatcher
 
   // WebIntentsDispatcher implementation.
   virtual const webkit_glue::WebIntentData& GetIntent() OVERRIDE;
-  virtual void DispatchIntent(
-      content::WebContents* destination_contents) OVERRIDE;
+  virtual void DispatchIntent(WebContents* destination_contents) OVERRIDE;
   virtual void ResetDispatch() OVERRIDE;
-  virtual void SendReplyMessage(webkit_glue::WebIntentReplyType reply_type,
-                                const string16& data) OVERRIDE;
+  virtual void SendReply(const webkit_glue::WebIntentReply& reply) OVERRIDE;
   virtual void RegisterReplyNotification(
-      const content::WebIntentsDispatcher::ReplyNotification& closure) OVERRIDE;
+      const WebIntentsDispatcher::ReplyNotification& closure) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(InternalWebIntentsDispatcherTest,
@@ -62,13 +61,14 @@ class CONTENT_EXPORT InternalWebIntentsDispatcher
   IntentInjector* intent_injector_;
 
   // Callbacks to be notified when SendReplyMessage is called.
-  std::vector<content::WebIntentsDispatcher::ReplyNotification>
-      reply_notifiers_;
+  std::vector<WebIntentsDispatcher::ReplyNotification> reply_notifiers_;
 
   // Callback to be invoked when the intent is replied to.
   ReplyCallback reply_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(InternalWebIntentsDispatcher);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_INTENTS_INTERNAL_WEB_INTENTS_DISPATCHER_H_

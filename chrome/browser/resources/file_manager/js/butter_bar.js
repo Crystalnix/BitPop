@@ -15,19 +15,30 @@ var MINIMUM_BUTTER_DISPLAY_TIME_MS = 1300;
  * @constructor
  * @param {HTMLElement} dialogDom FileManager top-level div.
  * @param {FileCopyManagerWrapper} copyManager The copy manager.
+ * @param {MetadataCache} metadataCache The metadata cache.
  */
-function ButterBar(dialogDom, copyManager) {
+function ButterBar(dialogDom, copyManager, metadataCache) {
   this.dialogDom_ = dialogDom;
   this.butter_ = this.dialogDom_.querySelector('#butter-bar');
   this.document_ = this.butter_.ownerDocument;
   this.copyManager_ = copyManager;
+  this.metadataCache_ = metadataCache;
   this.hideTimeout_ = null;
   this.showTimeout_ = null;
   this.lastShowTime_ = 0;
+  this.deleteTaskId_ = null;
 
   this.copyManager_.addEventListener('copy-progress',
                                      this.onCopyProgress_.bind(this));
+  this.copyManager_.addEventListener('delete',
+                                     this.onDelete_.bind(this));
 }
+
+/**
+ * Name of action which should be displayed as an 'x' button instead of
+ * link with text.
+ */
+ButterBar.ACTION_X = '--action--x--';
 
 /**
  * @return {boolean} True if visible.
@@ -63,6 +74,11 @@ ButterBar.prototype.show = function(message, opt_options) {
         callback();
         return false;
       }.bind(null, opt_options.actions[label]));
+      if (label == ButterBar.ACTION_X) {
+        link.className = 'x';
+      } else {
+        link.textContent = label;
+      }
       actions.appendChild(link);
     }
     actions.hidden = false;
@@ -188,17 +204,22 @@ ButterBar.prototype.clearHideTimeout_ = function() {
  */
 ButterBar.prototype.transferType_ = function() {
   var progress = this.progress_;
-  if (!progress ||
-      progress.pendingMoves === 0 && progress.pendingCopies === 0)
+  if (!progress)
     return 'TRANSFER';
 
-  if (progress.pendingMoves > 0) {
-    if (progress.pendingCopies > 0)
-      return 'TRANSFER';
-    return 'MOVE';
-  }
+  var pendingTransferTypesCount =
+      (progress.pendingMoves === 0 ? 0 : 1) +
+      (progress.pendingCopies === 0 ? 0 : 1) +
+      (progress.pendingZips === 0 ? 0 : 1);
 
-  return 'COPY';
+  if (pendingTransferTypesCount != 1)
+    return 'TRANSFER';
+  else if (progress.pendingMoves > 0)
+    return 'MOVE';
+  else if (progress.pendingCopies > 0)
+    return 'COPY';
+  else
+    return 'ZIP';
 };
 
 /**
@@ -217,7 +238,7 @@ ButterBar.prototype.showProgress_ = function() {
   if (this.isVisible_()) {
     this.update_(progressString, options);
   } else {
-    options.actions[str('CANCEL_LABEL')] =
+    options.actions[ButterBar.ACTION_X] =
         this.copyManager_.requestCancel.bind(this.copyManager_);
     this.show(progressString, options);
   }
@@ -229,6 +250,9 @@ ButterBar.prototype.showProgress_ = function() {
  * @param {cr.Event} event A 'copy-progress' event from FileCopyManager.
  */
 ButterBar.prototype.onCopyProgress_ = function(event) {
+  // Delete operation has higher priority.
+  if (this.deleteTaskId_) return;
+
   if (event.reason != 'PROGRESS')
     this.clearShowTimeout_();
 
@@ -253,6 +277,7 @@ ButterBar.prototype.onCopyProgress_ = function(event) {
       break;
 
     case 'ERROR':
+      this.progress_ = this.copyManager_.getStatus();
       if (event.error.reason === 'TARGET_EXISTS') {
         var name = event.error.data.name;
         if (event.error.data.isDirectory)
@@ -266,7 +291,7 @@ ButterBar.prototype.onCopyProgress_ = function(event) {
           this.hide_();
         } else {
           this.showError_(strf(this.transferType_() + '_FILESYSTEM_ERROR',
-                               getFileErrorString(event.error.data.code)));
+                               util.getFileErrorString(event.error.data.code)));
           }
       } else {
         this.showError_(strf(this.transferType_() + '_UNEXPECTED_ERROR',
@@ -277,4 +302,99 @@ ButterBar.prototype.onCopyProgress_ = function(event) {
     default:
       console.log('Unknown "copy-progress" event reason: ' + event.reason);
   }
+};
+
+/**
+ * Forces the delete task, if any.
+ * @return {boolean} Whether the delete task was scheduled.
+ * @private
+ */
+ButterBar.prototype.forceDelete_ = function() {
+  if (this.deleteTaskId_) {
+    this.copyManager_.forceDeleteTask(this.deleteTaskId_);
+    this.deleteTaskId_ = null;
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Informs user that files were deleted with an undo option.
+ * In fact, files will be really deleted after timeout.
+ * @param {Array.<Entry>} entries The entries to delete.
+ */
+ButterBar.prototype.initiateDelete = function(entries) {
+  this.forceDelete_();
+
+  var callback = function(id) {
+    if (this.deleteTaskId_)
+      console.error('Already got a deleteTaskId');
+    this.deleteTaskId_ = id;
+  }.bind(this);
+
+  this.copyManager_.deleteEntries(entries, callback);
+};
+
+/**
+ * Hides the delete butter bar, and so forces the delete operation.
+ * We can safely force delete, since user has no access to undo button anymore.
+ * @return {boolean} Whether there was a delete task.
+ */
+ButterBar.prototype.forceDeleteAndHide = function() {
+  var result = this.forceDelete_();
+  if (result) this.hide_();
+  return result;
+};
+
+/**
+ * 'delete' event handler. Shows information about deleting files.
+ * @private
+ * @param {cr.Event} event A 'delete' event from FileCopyManager.
+ */
+ButterBar.prototype.onDelete_ = function(event) {
+  if (event.id != this.deleteTaskId_) return;
+
+  switch (event.reason) {
+    case 'SCHEDULED':
+      var props = [];
+      for (var i = 0; i < event.urls.length; i++) {
+        props[i] = {deleted: true};
+      }
+      this.metadataCache_.set(event.urls, 'internal', props);
+
+      var title = strf('DELETED_MESSAGE_PLURAL', event.urls.length);
+      if (event.urls.length == 1) {
+        var fullPath = util.extractFilePath(event.urls[0]);
+        var fileName = PathUtil.split(fullPath).pop();
+        title = strf('DELETED_MESSAGE', fileName);
+      }
+
+      var actions = {};
+      actions[str('UNDO_DELETE')] = this.undoDelete_.bind(this);
+      this.show(title, { actions: actions, timeout: 0 });
+      break;
+
+    case 'CANCELLED':
+    case 'SUCCESS':
+      var props = [];
+      for (var i = 0; i < event.urls.length; i++) {
+        props[i] = {deleted: false};
+      }
+      this.metadataCache_.set(event.urls, 'internal', props);
+
+      this.deleteTaskId_ = null;
+      this.hide_();
+      break;
+
+    default:
+      console.log('Unknown "delete" event reason: ' + event.reason);
+  }
+};
+
+/**
+ * Undo the delete operation.
+ * @private
+ */
+ButterBar.prototype.undoDelete_ = function() {
+  this.copyManager_.cancelDeleteTask(this.deleteTaskId_);
 };

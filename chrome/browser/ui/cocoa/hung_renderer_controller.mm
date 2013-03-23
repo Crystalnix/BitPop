@@ -15,7 +15,6 @@
 #import "chrome/browser/ui/cocoa/multi_key_equivalent_button.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/common/logging_chrome.h"
 #include "content/public/browser/render_process_host.h"
@@ -84,8 +83,8 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
 - (void)awakeFromNib {
   // Load in the image
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  NSImage* backgroundImage = rb.GetNativeImageNamed(IDR_FROZEN_TAB_ICON);
-  DCHECK(backgroundImage);
+  NSImage* backgroundImage =
+      rb.GetNativeImageNamed(IDR_FROZEN_TAB_ICON).ToNSImage();
   [imageView_ setImage:backgroundImage];
 
   // Make the message fit.
@@ -173,13 +172,12 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
   scoped_nsobject<NSMutableArray> titles([[NSMutableArray alloc] init]);
   scoped_nsobject<NSMutableArray> favicons([[NSMutableArray alloc] init]);
   for (TabContentsIterator it; !it.done(); ++it) {
-    if (it->web_contents()->GetRenderProcessHost() ==
-        hungContents_->GetRenderProcessHost()) {
-      string16 title = (*it)->web_contents()->GetTitle();
+    if (it->GetRenderProcessHost() == hungContents_->GetRenderProcessHost()) {
+      string16 title = it->GetTitle();
       if (title.empty())
         title = CoreTabHelper::GetDefaultTitle();
       [titles addObject:base::SysUTF16ToNSString(title)];
-      [favicons addObject:mac::FaviconForTabContents(*it)];
+      [favicons addObject:mac::FaviconForWebContents(*it)];
     }
   }
   hungTitles_.reset([titles copy]);

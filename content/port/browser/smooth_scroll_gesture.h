@@ -5,6 +5,7 @@
 #ifndef CONTENT_PORT_BROWSER_SMOOTH_SCROLL_GESTURE_H_
 #define CONTENT_PORT_BROWSER_SMOOTH_SCROLL_GESTURE_H_
 
+#include "base/memory/ref_counted.h"
 #include "base/time.h"
 
 namespace content {
@@ -13,11 +14,9 @@ class RenderWidgetHost;
 
 // This is a base class representing a single scroll gesture. These gestures are
 // paired with the rendering benchmarking system to (automatically) measure how
-// smoothnly chrome is responding to user input.
-class SmoothScrollGesture {
+// smoothly chrome is responding to user input.
+class SmoothScrollGesture : public base::RefCounted<SmoothScrollGesture> {
  public:
-  virtual ~SmoothScrollGesture() {}
-
   // When called, the gesture should compute its state at the provided timestamp
   // and send the right input events to the provided RenderWidgetHost to
   // simulate the gesture having run up to that point in time.
@@ -26,6 +25,14 @@ class SmoothScrollGesture {
   // value will stop ticking the gesture and clean it up.
   virtual bool ForwardInputEvents(base::TimeTicks now,
                                   RenderWidgetHost* host) = 0;
+ protected:
+  friend class base::RefCounted<SmoothScrollGesture>;
+  virtual ~SmoothScrollGesture() {}
+
+  double Tick(base::TimeTicks now, double desired_interval_ms);
+
+ private:
+  base::TimeTicks last_tick_time_;
 };
 
 } // namespace content

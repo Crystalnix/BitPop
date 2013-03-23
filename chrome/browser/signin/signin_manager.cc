@@ -10,26 +10,29 @@
 #include "base/command_line.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/gaia/gaia_auth_fetcher.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
-#include "chrome/common/net/gaia/gaia_urls.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
+#include "google_apis/gaia/gaia_auth_fetcher.h"
+#include "google_apis/gaia/gaia_constants.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "net/cookies/cookie_monster.h"
 #include "unicode/regex.h"
 
 namespace {
 
+const char kGetInfoDisplayEmailKey[] = "displayEmail";
 const char kGetInfoEmailKey[] = "email";
 const char kGetInfoServicesKey[] = "allServices";
 const char kGooglePlusServiceKey[] = "googleme";
@@ -43,9 +46,47 @@ const char kGoogleAccountsUrl[] = "https://accounts.google.com";
 bool SigninManager::AreSigninCookiesAllowed(Profile* profile) {
   CookieSettings* cookie_settings =
       CookieSettings::Factory::GetForProfile(profile);
+  return AreSigninCookiesAllowed(cookie_settings);
+}
+
+// static
+bool SigninManager::AreSigninCookiesAllowed(CookieSettings* cookie_settings) {
   return cookie_settings &&
       cookie_settings->IsSettingCookieAllowed(GURL(kGoogleAccountsUrl),
                                               GURL(kGoogleAccountsUrl));
+}
+
+// static
+bool SigninManager::IsAllowedUsername(const std::string& username,
+                                      const std::string& policy) {
+  if (policy.empty())
+    return true;
+
+  // Patterns like "*@foo.com" are not accepted by our regex engine (since they
+  // are not valid regular expressions - they should instead be ".*@foo.com").
+  // For convenience, detect these patterns and insert a "." character at the
+  // front.
+  string16 pattern = UTF8ToUTF16(policy);
+  if (pattern[0] == L'*')
+    pattern.insert(pattern.begin(), L'.');
+
+  // See if the username matches the policy-provided pattern.
+  UErrorCode status = U_ZERO_ERROR;
+  const icu::UnicodeString icu_pattern(pattern.data(), pattern.length());
+  icu::RegexMatcher matcher(icu_pattern, UREGEX_CASE_INSENSITIVE, status);
+  if (!U_SUCCESS(status)) {
+    LOG(ERROR) << "Invalid login regex: " << pattern << ", status: " << status;
+    // If an invalid pattern is provided, then prohibit *all* logins (better to
+    // break signin than to quietly allow users to sign in).
+    return false;
+  }
+  string16 username16 = UTF8ToUTF16(username);
+  icu::UnicodeString icu_input(username16.data(), username16.length());
+  matcher.reset(icu_input);
+  status = U_ZERO_ERROR;
+  UBool match = matcher.matches(status);
+  DCHECK(U_SUCCESS(status));
+  return !!match;  // !! == convert from UBool to bool.
 }
 
 SigninManager::SigninManager()
@@ -60,12 +101,15 @@ void SigninManager::Initialize(Profile* profile) {
   // Should never call Initialize() twice.
   DCHECK(!IsInitialized());
   profile_ = profile;
+  about_signin_internals_.Initialize(profile);
   PrefService* local_state = g_browser_process->local_state();
   // local_state can be null during unit tests.
   if (local_state) {
     local_state_pref_registrar_.Init(local_state);
-    local_state_pref_registrar_.Add(prefs::kGoogleServicesUsernamePattern,
-                                    this);
+    local_state_pref_registrar_.Add(
+        prefs::kGoogleServicesUsernamePattern,
+        base::Bind(&SigninManager::OnGoogleServicesUsernamePatternChanged,
+                   base::Unretained(this)));
   }
 
   // If the user is clearing the token service from the command line, then
@@ -83,9 +127,15 @@ void SigninManager::Initialize(Profile* profile) {
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
   if (token_service) {
     token_service->Initialize(GaiaConstants::kChromeSource, profile_);
+    // ChromeOS will kick off TokenService::LoadTokensFromDB from
+    // OAuthLoginManager once the rest of the Profile is fully initialized.
+    // Starting it from here would cause OAuthLoginManager mismatch the origin
+    // of OAuth2 tokens.
+#if !defined(OS_CHROMEOS)
     if (!authenticated_username_.empty()) {
       token_service->LoadTokensFromDB();
     }
+#endif
   }
   if (!user.empty() && !IsAllowedUsername(user)) {
     // User is signed in, but the username is invalid - the administrator must
@@ -105,34 +155,7 @@ bool SigninManager::IsAllowedUsername(const std::string& username) const {
 
   std::string pattern = local_state->GetString(
       prefs::kGoogleServicesUsernamePattern);
-  if (pattern.empty())
-    return true;
-
-  // Patterns like "*@foo.com" are not accepted by our regex engine (since they
-  // are not valid regular expressions - they should instead be ".*@foo.com").
-  // For convenience, detect these patterns and insert a "." character at the
-  // front.
-  if (pattern[0] == '*')
-    pattern.insert(0, ".");
-
-  // See if the username matches the policy-provided pattern.
-  UErrorCode status = U_ZERO_ERROR;
-  string16 pattern16 = UTF8ToUTF16(pattern);
-  const icu::UnicodeString icu_pattern(pattern16.data(), pattern16.length());
-  icu::RegexMatcher matcher(icu_pattern, UREGEX_CASE_INSENSITIVE, status);
-  if (!U_SUCCESS(status)) {
-    LOG(ERROR) << "Invalid login regex: " << pattern << ", status: " << status;
-    // If an invalid pattern is provided, then prohibit *all* logins (better to
-    // break signin than to quietly allow users to sign in).
-    return false;
-  }
-  string16 username16 = UTF8ToUTF16(username);
-  icu::UnicodeString icu_input(username16.data(), username16.length());
-  matcher.reset(icu_input);
-  status = U_ZERO_ERROR;
-  UBool match = matcher.matches(status);
-  DCHECK(U_SUCCESS(status));
-  return !!match;  // !! == convert from UBool to bool.
+  return IsAllowedUsername(username, pattern);
 }
 
 void SigninManager::CleanupNotificationRegistration() {
@@ -164,6 +187,11 @@ void SigninManager::SetAuthenticatedUsername(const std::string& username) {
   // TODO(tim): We could go further in ensuring kGoogleServicesUsername and
   // authenticated_username_ are consistent once established (e.g. remove
   // authenticated_username_ altogether). Bug 107160.
+
+  // Go ahead and update the last signed in username here as well. Once a
+  // user is signed in the two preferences should match. Doing it here as
+  // opposed to on signin allows us to catch the upgrade scenario.
+  profile_->GetPrefs()->SetString(prefs::kGoogleServicesLastUsername, username);
 }
 
 bool SigninManager::PrepareForSignin(SigninType type,
@@ -317,6 +345,7 @@ void SigninManager::ClearTransientSigninData() {
   password_.clear();
   had_two_factor_error_ = false;
   type_ = SIGNIN_TYPE_NONE;
+  temp_oauth_login_tokens_ = ClientOAuthResult();
 }
 
 void SigninManager::HandleAuthError(const GoogleServiceAuthError& error,
@@ -342,17 +371,19 @@ void SigninManager::SignOut() {
     return;
   }
 
+  GoogleServiceSignoutDetails details(authenticated_username_);
+
   ClearTransientSigninData();
   authenticated_username_.clear();
   profile_->GetPrefs()->ClearPref(prefs::kGoogleServicesUsername);
   profile_->GetPrefs()->ClearPref(prefs::kIsGooglePlusUser);
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  token_service->ResetCredentialsInMemory();
-  token_service->EraseTokensFromDB();
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
       content::Source<Profile>(profile_),
-      content::NotificationService::NoDetails());
+      content::Details<const GoogleServiceSignoutDetails>(&details));
+  token_service->ResetCredentialsInMemory();
+  token_service->EraseTokensFromDB();
 }
 
 bool SigninManager::AuthInProgress() const {
@@ -360,11 +391,16 @@ bool SigninManager::AuthInProgress() const {
 }
 
 void SigninManager::OnGetUserInfoKeyNotFound(const std::string& key) {
-  DCHECK(key == kGetInfoEmailKey);
+  DCHECK(key == kGetInfoDisplayEmailKey || key == kGetInfoEmailKey);
   LOG(ERROR) << "Account is not associated with a valid email address. "
              << "Login failed.";
   OnClientLoginFailure(GoogleServiceAuthError(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+}
+
+void SigninManager::DisableOneClickSignIn(Profile* profile) {
+  PrefService* pref_service = profile->GetPrefs();
+  pref_service->SetBoolean(prefs::kReverseAutologinEnabled, false);
 }
 
 void SigninManager::OnClientLoginSuccess(const ClientLoginResult& result) {
@@ -398,6 +434,7 @@ void SigninManager::OnClientOAuthSuccess(const ClientOAuthResult& result) {
   switch (type_) {
     case SIGNIN_TYPE_CLIENT_OAUTH:
     case SIGNIN_TYPE_WITH_CREDENTIALS:
+      temp_oauth_login_tokens_ = result;
       client_login_->StartOAuthLogin(result.access_token,
                                      GaiaConstants::kGaiaService);
       break;
@@ -407,8 +444,7 @@ void SigninManager::OnClientOAuthSuccess(const ClientOAuthResult& result) {
   }
 }
 
-void SigninManager::OnClientOAuthFailure(
-    const GoogleServiceAuthError& error) {
+void SigninManager::OnClientOAuthFailure(const GoogleServiceAuthError& error) {
   bool clear_transient_data = true;
   if (type_ == SIGNIN_TYPE_CLIENT_OAUTH) {
     // If the error is a challenge (captcha or 2-factor), then don't sign out.
@@ -423,16 +459,32 @@ void SigninManager::OnClientOAuthFailure(
 
 void SigninManager::OnGetUserInfoSuccess(const UserInfoMap& data) {
   UserInfoMap::const_iterator email_iter = data.find(kGetInfoEmailKey);
+  UserInfoMap::const_iterator display_email_iter =
+      data.find(kGetInfoDisplayEmailKey);
   if (email_iter == data.end()) {
     OnGetUserInfoKeyNotFound(kGetInfoEmailKey);
     return;
+  } else if (display_email_iter == data.end()) {
+    OnGetUserInfoKeyNotFound(kGetInfoDisplayEmailKey);
+    return;
   } else {
     DCHECK(email_iter->first == kGetInfoEmailKey);
+    DCHECK(display_email_iter->first == kGetInfoDisplayEmailKey);
+
+    // When signing in with credentials, the possibly invalid name is the Gaia
+    // display name. If the name returned by GetUserInfo does not match what is
+    // expected, return an error.
+    if (type_ == SIGNIN_TYPE_WITH_CREDENTIALS &&
+        base::strcasecmp(display_email_iter->second.c_str(),
+                         possibly_invalid_username_.c_str()) != 0) {
+      OnGetUserInfoKeyNotFound(kGetInfoDisplayEmailKey);
+      return;
+    }
+
     SetAuthenticatedUsername(email_iter->second);
     possibly_invalid_username_.clear();
     profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                     authenticated_username_);
-
   }
   UserInfoMap::const_iterator service_iter = data.find(kGetInfoServicesKey);
   if (service_iter == data.end()) {
@@ -455,11 +507,19 @@ void SigninManager::OnGetUserInfoSuccess(const UserInfoMap& data) {
       content::Details<const GoogleServiceSigninSuccessDetails>(&details));
 
   password_.clear();  // Don't need it anymore.
+  DisableOneClickSignIn(profile_);  // Don't ever offer again.
 
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
   token_service->UpdateCredentials(last_result_);
   DCHECK(token_service->AreCredentialsValid());
   token_service->StartFetchingTokens();
+
+  // If we have oauth2 tokens, tell token service about them so it does not
+  // need to fetch them again.
+  if (!temp_oauth_login_tokens_.refresh_token.empty()) {
+    token_service->UpdateCredentialsWithOAuth2(temp_oauth_login_tokens_);
+    temp_oauth_login_tokens_ = ClientOAuthResult();
+  }
 }
 
 void SigninManager::OnGetUserInfoFailure(const GoogleServiceAuthError& error) {
@@ -472,17 +532,6 @@ void SigninManager::Observe(int type,
                             const content::NotificationSource& source,
                             const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_PREF_CHANGED:
-      DCHECK(*content::Details<std::string>(details).ptr() ==
-             prefs::kGoogleServicesUsernamePattern);
-      if (!authenticated_username_.empty() &&
-          !IsAllowedUsername(authenticated_username_)) {
-        // Signed in user is invalid according to the current policy so sign
-        // the user out.
-        SignOut();
-      }
-      break;
-
 #if !defined(OS_CHROMEOS)
     case chrome::NOTIFICATION_TOKEN_AVAILABLE: {
       TokenService::TokenAvailableDetails* tok_details =
@@ -512,3 +561,15 @@ void SigninManager::Observe(int type,
   }
 }
 
+void SigninManager::OnGoogleServicesUsernamePatternChanged() {
+  if (!authenticated_username_.empty() &&
+      !IsAllowedUsername(authenticated_username_)) {
+    // Signed in user is invalid according to the current policy so sign
+    // the user out.
+    SignOut();
+  }
+}
+
+AboutSigninInternals* SigninManager::about_signin_internals() {
+  return &about_signin_internals_;
+}

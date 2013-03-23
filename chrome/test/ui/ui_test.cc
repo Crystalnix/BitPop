@@ -18,11 +18,12 @@
 #include "base/environment.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/test/test_file_util.h"
@@ -32,6 +33,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -45,9 +47,9 @@
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/base/chrome_process_util.h"
-#include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/test_switches.h"
-#include "content/common/debug_flags.h"
+#include "chrome/test/base/testing_profile.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "ui/gl/gl_implementation.h"
@@ -175,6 +177,9 @@ void UITestBase::SetLaunchSwitches() {
   // chrome/test/pyautolib/pyauto.py as well to take effect for all tests
   // on chromeos.
 
+  // Propagate commandline settings from test_launcher_utils.
+  test_launcher_utils::PrepareBrowserCommandLineForTests(&launch_arguments_);
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kWaitForDebugger))
     launch_arguments_.AppendSwitch(switches::kWaitForDebugger);
 
@@ -184,7 +189,8 @@ void UITestBase::SetLaunchSwitches() {
   if (dom_automation_enabled_)
     launch_arguments_.AppendSwitch(switches::kDomAutomationController);
   // Allow off-store extension installs.
-  launch_arguments_.AppendSwitch(switches::kEnableEasyOffStoreExtensionInstall);
+  launch_arguments_.AppendSwitchASCII(
+      switches::kEasyOffStoreExtensionInstall, "1");
   if (!homepage_.empty()) {
     // Pass |homepage_| both as an arg (so that it opens on startup) and to the
     // homepage switch (so that the homepage is set).
@@ -309,27 +315,6 @@ void UITestBase::NavigateToURLBlockUntilNavigationsComplete(
                 url, number_of_navigations)) << url.spec();
 }
 
-bool UITestBase::WaitForBookmarkBarVisibilityChange(BrowserProxy* browser,
-                                                    bool wait_for_open) {
-  const int kCycles = 10;
-  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
-  for (int i = 0; i < kCycles; i++) {
-    bool visible = false;
-    bool animating = true;
-    bool detached;
-    if (!browser->GetBookmarkBarVisibility(&visible, &animating, &detached))
-      return false;  // Some error.
-    if (visible == wait_for_open && !animating)
-      return true;  // Bookmark bar visibility change complete.
-
-    // Give it a chance to catch up.
-    base::PlatformThread::Sleep(kDelay);
-  }
-
-  ADD_FAILURE() << "Timeout reached in WaitForBookmarkBarVisibilityChange";
-  return false;
-}
-
 GURL UITestBase::GetActiveTabURL(int window_index) {
   scoped_refptr<TabProxy> tab_proxy(GetActiveTab(window_index));
   EXPECT_TRUE(tab_proxy.get());
@@ -437,24 +422,17 @@ FilePath UITestBase::ComputeTypicalUserDataSource(
   source_history_file = source_history_file.AppendASCII("profiles");
   switch (profile_type) {
     case UITestBase::DEFAULT_THEME:
-      source_history_file = source_history_file.AppendASCII("typical_history");
+      source_history_file = source_history_file.AppendASCII(
+          "profile_with_default_theme");
       break;
     case UITestBase::COMPLEX_THEME:
-      source_history_file = source_history_file.AppendASCII("complex_theme");
-      break;
-    case UITestBase::NATIVE_THEME:
-      source_history_file = source_history_file.AppendASCII("gtk_theme");
-      break;
-    case UITestBase::CUSTOM_FRAME:
-      source_history_file = source_history_file.AppendASCII("custom_frame");
-      break;
-    case UITestBase::CUSTOM_FRAME_NATIVE_THEME:
-      source_history_file =
-          source_history_file.AppendASCII("custom_frame_gtk_theme");
+      source_history_file = source_history_file.AppendASCII(
+          "profile_with_complex_theme");
       break;
     default:
       NOTREACHED();
   }
+
   return source_history_file;
 }
 
@@ -736,7 +714,8 @@ void UITest::TerminateBrowser() {
   // Make sure session restore says we didn't crash.
   scoped_ptr<DictionaryValue> profile_prefs(GetDefaultProfilePreferences());
   ASSERT_TRUE(profile_prefs.get());
-  ASSERT_TRUE(profile_prefs->GetBoolean(prefs::kSessionExitedCleanly,
-                                        &exited_cleanly));
-  ASSERT_TRUE(exited_cleanly);
+  std::string exit_type;
+  ASSERT_TRUE(profile_prefs->GetString(prefs::kSessionExitedCleanly,
+                                        &exit_type));
+  EXPECT_EQ(ProfileImpl::kPrefExitTypeNormal, exit_type);
 }

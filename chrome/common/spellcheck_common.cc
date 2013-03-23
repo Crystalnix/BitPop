@@ -9,15 +9,19 @@
 namespace chrome {
 namespace spellcheck_common {
 
-static const struct {
-  // The language.
-  const char* language;
+struct LanguageRegion {
+  const char* language;  // The language.
+  const char* language_region;  // language & region, used by dictionaries.
+};
 
-  // The corresponding language and region, used by the dictionaries.
-  const char* language_region;
-} g_supported_spellchecker_languages[] = {
+struct LanguageVersion {
+  const char* language;  // The language input.
+  const char* version;   // The corresponding version.
+};
+
+static const LanguageRegion g_supported_spellchecker_languages[] = {
   // Several languages are not to be included in the spellchecker list:
-  // th-TH, uk-UA
+  // th-TH
   {"af", "af-ZA"},
   {"bg", "bg-BG"},
   {"ca", "ca-ES"},
@@ -58,10 +62,19 @@ static const struct {
   {"vi", "vi-VN"},
 };
 
+bool IsValidRegion(const std::string& region) {
+  for (size_t i = 0; i < arraysize(g_supported_spellchecker_languages);
+       ++i) {
+    if (g_supported_spellchecker_languages[i].language_region == region)
+      return true;
+  }
+  return false;
+}
+
 // This function returns the language-region version of language name.
 // e.g. returns hi-IN for hi.
 std::string GetSpellCheckLanguageRegion(const std::string& input_language) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(g_supported_spellchecker_languages);
+  for (size_t i = 0; i < arraysize(g_supported_spellchecker_languages);
        ++i) {
     if (g_supported_spellchecker_languages[i].language == input_language) {
       return std::string(
@@ -78,13 +91,7 @@ FilePath GetVersionedFileName(const std::string& input_language,
   // with additional words found by the translation team.
   static const char kDefaultVersionString[] = "-1-2";
 
-  static const struct {
-    // The language input.
-    const char* language;
-
-    // The corresponding version.
-    const char* version;
-  } special_version_string[] = {
+  static LanguageVersion special_version_string[] = {
     {"es-ES", "-1-1"},  // 1-1: Have not been augmented with addtional words.
     {"nl-NL", "-1-1"},
     {"sv-SE", "-1-1"},
@@ -105,14 +112,15 @@ FilePath GetVersionedFileName(const std::string& input_language,
     {"uk-UA", "-2-0"},
     {"pt-BR", "-2-2"},  // 2-2 (Mar 2011): upgraded a dictionary.
     {"sh",    "-2-2"},  // 2-2 (Mar 2011): added a dictionary.
-    {"en-US", "-2-3"},  // 2-3 (May 2012): fixed affixes + more words.
-    {"en-CA", "-2-3"},
-    {"en-GB", "-2-3"},
-    {"en-AU", "-2-3"},
     {"ca-ES", "-2-3"},  // 2-3 (May 2012): upgraded a dictionary.
     {"sv-SE", "-2-3"},  // 2-3 (May 2012): upgraded a dictionary.
     {"af-ZA", "-2-3"},  // 2-3 (May 2012): added a dictionary.
     {"fo-FO", "-2-3"},  // 2-3 (May 2012): added a dictionary.
+    {"en-US", "-2-4"},  // 2-4 (October 2012): add more words.
+    {"en-CA", "-2-4"},
+    {"en-GB", "-2-5"},  // 2-5 (Nov 2012): Added NOSUGGEST flag = !.
+    {"en-AU", "-2-5"},  // Marked 1 word in each.
+
   };
 
   // Generate the bdict file name using default version string or special
@@ -120,7 +128,7 @@ FilePath GetVersionedFileName(const std::string& input_language,
   std::string language = GetSpellCheckLanguageRegion(input_language);
   std::string versioned_bdict_file_name(language + kDefaultVersionString +
                                         ".bdic");
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(special_version_string); ++i) {
+  for (size_t i = 0; i < arraysize(special_version_string); ++i) {
     if (language == special_version_string[i].language) {
       versioned_bdict_file_name =
           language + special_version_string[i].version + ".bdic";
@@ -133,7 +141,7 @@ FilePath GetVersionedFileName(const std::string& input_language,
 
 std::string GetCorrespondingSpellCheckLanguage(const std::string& language) {
   // Look for exact match in the Spell Check language list.
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(g_supported_spellchecker_languages);
+  for (size_t i = 0; i < arraysize(g_supported_spellchecker_languages);
        ++i) {
     // First look for exact match in the language region of the list.
     std::string spellcheck_language(
@@ -148,31 +156,12 @@ std::string GetCorrespondingSpellCheckLanguage(const std::string& language) {
       return g_supported_spellchecker_languages[i].language;
   }
 
-  // Look for a match by comparing only language parts. All the 'en-RR'
-  // except for 'en-GB' exactly matched in the above loop, will match
-  // 'en-US'. This is not ideal because 'en-ZA', 'en-NZ' had
-  // better be matched with 'en-GB'. This does not handle cases like
-  // 'az-Latn-AZ' vs 'az-Arab-AZ', either, but we don't use 3-part
-  // locale ids with a script code in the middle, yet.
-  // TODO(jungshik): Add a better fallback.
-  std::string language_part(language, 0, language.find('-'));
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(g_supported_spellchecker_languages);
-       ++i) {
-    std::string spellcheck_language(
-        g_supported_spellchecker_languages[i].language_region);
-    if (spellcheck_language.substr(0, spellcheck_language.find('-')) ==
-        language_part) {
-      return spellcheck_language;
-    }
-  }
-
   // No match found - return blank.
   return std::string();
 }
 
-
 void SpellCheckLanguages(std::vector<std::string>* languages) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(g_supported_spellchecker_languages);
+  for (size_t i = 0; i < arraysize(g_supported_spellchecker_languages);
        ++i) {
     languages->push_back(g_supported_spellchecker_languages[i].language);
   }

@@ -22,13 +22,10 @@
 #include "webkit/glue/web_intent_data.h"
 #include "webkit/glue/web_intent_reply_data.h"
 
-using content::ChildProcessSecurityPolicy;
-using content::RenderViewHost;
-using content::WebContents;
-using content::WebIntentsDispatcher;
+namespace content {
 
 IntentInjector::IntentInjector(WebContents* web_contents)
-    : content::WebContentsObserver(web_contents),
+    : WebContentsObserver(web_contents),
       intents_dispatcher_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DCHECK(web_contents);
@@ -39,8 +36,8 @@ IntentInjector::~IntentInjector() {
 
 void IntentInjector::WebContentsDestroyed(WebContents* contents) {
   if (intents_dispatcher_) {
-    intents_dispatcher_->SendReplyMessage(
-        webkit_glue::WEB_INTENT_SERVICE_CONTENTS_CLOSED, string16());
+    intents_dispatcher_->SendReply(webkit_glue::WebIntentReply(
+        webkit_glue::WEB_INTENT_SERVICE_CONTENTS_CLOSED, string16()));
   }
 
   delete this;
@@ -58,7 +55,7 @@ void IntentInjector::SetIntent(
       base::Bind(&IntentInjector::OnSendReturnMessage,
                  weak_factory_.GetWeakPtr()));
   source_intent_.reset(new webkit_glue::WebIntentData(intent));
-  initial_url_ = web_contents()->GetPendingSiteInstance()->GetSite();
+  initial_url_ = web_contents()->GetPendingSiteInstance()->GetSiteURL();
 }
 
 void IntentInjector::Abandon() {
@@ -78,12 +75,15 @@ void IntentInjector::RenderViewCreated(RenderViewHost* render_view_host) {
   // Only deliver the intent to the renderer if it has the same origin
   // as the initial delivery target.
   if (initial_url_.GetOrigin() !=
-      render_view_host->GetSiteInstance()->GetSite().GetOrigin()) {
+      render_view_host->GetSiteInstance()->GetSiteURL().GetOrigin()) {
     return;
   }
 
-  if (source_intent_->data_type == webkit_glue::WebIntentData::BLOB) {
-    // Grant read permission on the blob file to the delivered context.
+  // If we're passing a browser-originated blob, either directly or as part of a
+  // payload, grant read permission on the blob file to the delivered context.
+  if (source_intent_->data_type == webkit_glue::WebIntentData::BLOB ||
+      (source_intent_->data_type == webkit_glue::WebIntentData::MIME_TYPE &&
+       !source_intent_->blob_file.empty())) {
     const int child_id = render_view_host->GetProcess()->GetID();
     ChildProcessSecurityPolicy* policy =
          ChildProcessSecurityPolicy::GetInstance();
@@ -117,13 +117,14 @@ bool IntentInjector::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void IntentInjector::OnReply(webkit_glue::WebIntentReplyType reply_type,
-                             const string16& data) {
+void IntentInjector::OnReply(const webkit_glue::WebIntentReply& reply) {
   if (!intents_dispatcher_)
     return;
 
   // Ensure SendReplyMessage is only called once.
   WebIntentsDispatcher* intents_dispatcher = intents_dispatcher_;
   intents_dispatcher_ = NULL;
-  intents_dispatcher->SendReplyMessage(reply_type, data);
+  intents_dispatcher->SendReply(reply);
 }
+
+}  // namespace content

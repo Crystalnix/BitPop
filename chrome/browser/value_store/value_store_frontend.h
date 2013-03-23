@@ -8,13 +8,13 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/values.h"
 
+class FilePath;
 class ValueStore;
 
 // A frontend for a LeveldbValueStore, for use on the UI thread.
@@ -24,10 +24,13 @@ class ValueStoreFrontend
  public:
   typedef base::Callback<void(scoped_ptr<base::Value>)> ReadCallback;
 
+  ValueStoreFrontend();
   explicit ValueStoreFrontend(const FilePath& db_path);
   // This variant is useful for testing (using a mock ValueStore).
   explicit ValueStoreFrontend(ValueStore* value_store);
   ~ValueStoreFrontend();
+
+  void Init(const FilePath& db_path);
 
   // Retrieves a value from the database asynchronously, passing a copy to
   // |callback| when ready. NULL is passed if no matching entry is found.

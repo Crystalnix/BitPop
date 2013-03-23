@@ -38,11 +38,10 @@ void DrawRoundedRect(gfx::Canvas* canvas,
     p[0].set(SkIntToScalar(rect.left()), SkIntToScalar(rect.top()));
     p[1].set(SkIntToScalar(rect.left()), SkIntToScalar(rect.bottom()));
     SkColor colors[2] = { top_color, bottom_color };
-    SkShader* s = SkGradientShader::CreateLinear(p, colors, NULL, 2,
-        SkShader::kClamp_TileMode, NULL);
-    paint.setShader(s);
-    // Need to unref shader, otherwise never deleted.
-    s->unref();
+    skia::RefPtr<SkShader> s = skia::AdoptRef(
+        SkGradientShader::CreateLinear(
+            p, colors, NULL, 2, SkShader::kClamp_TileMode, NULL));
+    paint.setShader(s.get());
   } else {
     paint.setColor(top_color);
   }
@@ -59,9 +58,10 @@ void DrawRoundedRectShadow(gfx::Canvas* canvas,
   paint.setFlags(SkPaint::kAntiAlias_Flag);
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(color);
-  SkMaskFilter* filter = SkBlurMaskFilter::Create(
-      shadow / 2, SkBlurMaskFilter::kNormal_BlurStyle);
-  paint.setMaskFilter(filter)->unref();
+  skia::RefPtr<SkMaskFilter> filter = skia::AdoptRef(
+      SkBlurMaskFilter::Create(
+          shadow / 2, SkBlurMaskFilter::kNormal_BlurStyle));
+  paint.setMaskFilter(filter.get());
   SkRect inset_rect(rect);
   inset_rect.inset(SkIntToScalar(shadow / 2), SkIntToScalar(shadow / 2));
   canvas->sk_canvas()->drawRoundRect(
@@ -118,8 +118,8 @@ class RoundedRectBorder : public views::Border {
       : border_(border) {
   }
 
-  virtual void Paint(const views::View& view, gfx::Canvas* canvas) const;
-  virtual void GetInsets(gfx::Insets* insets) const;
+  virtual void Paint(const views::View& view, gfx::Canvas* canvas);
+  virtual gfx::Insets GetInsets() const;
 
  private:
   const BorderDefinition* const border_;
@@ -127,16 +127,14 @@ class RoundedRectBorder : public views::Border {
   DISALLOW_COPY_AND_ASSIGN(RoundedRectBorder);
 };
 
-void RoundedRectBorder::Paint(const views::View& view,
-                              gfx::Canvas* canvas) const {
+void RoundedRectBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   // Don't paint anything. RoundedRectBorder is used to provide insets only.
 }
 
-void RoundedRectBorder::GetInsets(gfx::Insets* insets) const {
-  DCHECK(insets);
+gfx::Insets RoundedRectBorder::GetInsets() const {
   int shadow = border_->shadow;
   int inset = border_->corner_radius / 2 + border_->padding + shadow;
-  insets->Set(inset - shadow / 3, inset, inset + shadow / 3, inset);
+  return gfx::Insets(inset - shadow / 3, inset, inset + shadow / 3, inset);
 }
 
 // Simple solid round background.

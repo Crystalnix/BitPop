@@ -15,6 +15,7 @@
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/link_listener.h"
 
+class BookmarkBubbleViewObserver;
 class Profile;
 
 namespace views {
@@ -32,6 +33,7 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
                            public views::ComboboxListener {
  public:
   static void ShowBubble(views::View* anchor_view,
+                         BookmarkBubbleViewObserver* observer,
                          Profile* profile,
                          const GURL& url,
                          bool newly_bookmarked);
@@ -42,9 +44,8 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
 
   virtual ~BookmarkBubbleView();
 
-  // views::BubbleDelegateView methods.
+  // views::BubbleDelegateView method.
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual gfx::Rect GetAnchorRect() OVERRIDE;
 
   // views::WidgetDelegate method.
   virtual void WindowClosing() OVERRIDE;
@@ -59,6 +60,7 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
  private:
   // Creates a BookmarkBubbleView.
   BookmarkBubbleView(views::View* anchor_view,
+                     BookmarkBubbleViewObserver* observer,
                      Profile* profile,
                      const GURL& url,
                      bool newly_bookmarked);
@@ -74,7 +76,7 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
   // Overridden from views::ButtonListener:
   // Closes the bubble or opens the edit dialog.
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // Overridden from views::ComboboxListener:
   virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
@@ -91,15 +93,14 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
   // The bookmark bubble, if we're showing one.
   static BookmarkBubbleView* bookmark_bubble_;
 
+  // Our observer, to notify when the bubble shows or hides.
+  BookmarkBubbleViewObserver* observer_;
+
   // The profile.
   Profile* profile_;
 
   // The bookmark URL.
   const GURL url_;
-
-  // Title of the bookmark. This is initially the title supplied to the
-  // constructor, which is typically the title of the page.
-  std::wstring title_;
 
   // If true, the page was just bookmarked.
   const bool newly_bookmarked_;

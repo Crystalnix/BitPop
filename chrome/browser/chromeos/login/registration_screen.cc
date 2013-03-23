@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -116,6 +117,7 @@ WebContents* RegistrationScreen::OpenURLFromTab(WebContents* source,
 }
 
 void RegistrationScreen::HandleKeyboardEvent(
+    content::WebContents* source,
     const NativeWebKeyboardEvent& event) {
   unhandled_keyboard_handler_.HandleKeyboardEvent(event,
                                                   view()->GetFocusManager());
@@ -130,17 +132,19 @@ void RegistrationScreen::CloseScreen(ScreenObserver::ExitCodes code) {
   if (g_browser_process) {
     const std::string locale = g_browser_process->GetApplicationLocale();
     input_method::InputMethodManager* manager =
-        input_method::InputMethodManager::GetInstance();
+        input_method::GetInputMethodManager();
     manager->EnableLayouts(locale, "");
   }
   delegate()->GetObserver()->OnExit(code);
 }
 
 // static
-net::URLRequestJob* RegistrationScreen::Factory(net::URLRequest* request,
-                                                const std::string& scheme) {
+net::URLRequestJob* RegistrationScreen::Factory(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
+    const std::string& scheme) {
   VLOG(1) << "Handling url: " << request->url().spec().c_str();
-  return new net::URLRequestAboutJob(request);
+  return new net::URLRequestAboutJob(request, network_delegate);
 }
 
 }  // namespace chromeos

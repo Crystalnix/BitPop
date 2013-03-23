@@ -15,7 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/web_ui_browsertest.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -71,8 +71,7 @@ void AddCacheEntryOnIOThread(net::URLRequestContextGetter* context_getter,
 
   // Add entry to the cache.
   cache->Set(net::HostCache::Key(hostname, net::ADDRESS_FAMILY_UNSPECIFIED, 0),
-             net_error,
-             address_list,
+             net::HostCache::Entry(net_error, address_list),
              base::TimeTicks::Now(),
              ttl);
 }
@@ -96,9 +95,13 @@ void AddDummyHttpPipelineFeedbackOnIOThread(
 
 // Called on IO thread.  Adds an entry to the list of known HTTP pipelining
 // hosts.
-void EnableHttpPipeliningOnIOThread(bool enable) {
+void EnableHttpPipeliningOnIOThread(
+    net::URLRequestContextGetter* context_getter, bool enable) {
   ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  net::HttpStreamFactory::set_http_pipelining_enabled(enable);
+  net::URLRequestContext* context = context_getter->GetURLRequestContext();
+  net::HttpNetworkSession* http_network_session =
+      context->http_transaction_factory()->GetSession();
+  http_network_session->set_http_pipelining_enabled(enable);
 }
 
 }  // namespace
@@ -128,6 +131,9 @@ class NetInternalsTest::MessageHandler : public content::WebUIMessageHandler {
   // as parameters.  If the error code indicates failure, the ip address
   // must be an empty string.
   void AddCacheEntry(const base::ListValue* list_value);
+
+  // Opens the given URL in a new tab.
+  void LoadPage(const base::ListValue* list_value);
 
   // Opens a page in a new tab that prerenders the given URL.
   void PrerenderPage(const base::ListValue* list_value);
@@ -172,6 +178,9 @@ void NetInternalsTest::MessageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("addCacheEntry",
       base::Bind(&NetInternalsTest::MessageHandler::AddCacheEntry,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("loadPage",
+      base::Bind(&NetInternalsTest::MessageHandler::LoadPage,
+                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("prerenderPage",
       base::Bind(&NetInternalsTest::MessageHandler::PrerenderPage,
                   base::Unretained(this)));
@@ -230,6 +239,18 @@ void NetInternalsTest::MessageHandler::AddCacheEntry(
                  static_cast<int>(expire_days_from_now)));
 }
 
+void NetInternalsTest::MessageHandler::LoadPage(
+    const ListValue* list_value) {
+  std::string url;
+  ASSERT_TRUE(list_value->GetString(0, &url));
+  LOG(WARNING) << "url: [" << url << "]";
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(),
+      GURL(url),
+      NEW_BACKGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_NONE);
+}
+
 void NetInternalsTest::MessageHandler::PrerenderPage(
     const ListValue* list_value) {
   std::string prerender_url;
@@ -263,7 +284,7 @@ void NetInternalsTest::MessageHandler::CreateIncognitoBrowser(
 void NetInternalsTest::MessageHandler::CloseIncognitoBrowser(
     const ListValue* list_value) {
   ASSERT_TRUE(incognito_browser_);
-  chrome::CloseAllTabs(incognito_browser_);
+  incognito_browser_->tab_strip_model()->CloseAllTabs();
   // Closing all a Browser's tabs will ultimately result in its destruction,
   // thought it may not have been destroyed yet.
   incognito_browser_ = NULL;
@@ -275,7 +296,9 @@ void NetInternalsTest::MessageHandler::EnableHttpPipelining(
   ASSERT_TRUE(list_value->GetBoolean(0, &enable));
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&EnableHttpPipeliningOnIOThread, enable));
+      base::Bind(&EnableHttpPipeliningOnIOThread,
+                 make_scoped_refptr(browser()->profile()->GetRequestContext()),
+                 enable));
 }
 
 void NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback(

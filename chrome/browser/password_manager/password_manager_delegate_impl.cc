@@ -7,26 +7,28 @@
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/autofill/autofill_manager.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/autofill_messages.h"
-#include "chrome/common/net/gaia/gaia_urls.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/password_form.h"
 #include "content/public/common/ssl_status.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/cert_status_flags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/forms/password_form.h"
+
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordManagerDelegateImpl)
 
 // After a successful *new* login attempt, we take the PasswordFormManager in
 // provisional_save_manager_ and move it to a SavePasswordInfoBarDelegate while
@@ -122,13 +124,23 @@ InfoBarDelegate::InfoBarAutomationType
 
 // PasswordManagerDelegateImpl ------------------------------------------------
 
-void PasswordManagerDelegateImpl::FillPasswordForm(
-    const webkit::forms::PasswordFormFillData& form_data) {
-  bool disable_popup = tab_contents_->autofill_manager()->HasExternalDelegate();
+PasswordManagerDelegateImpl::PasswordManagerDelegateImpl(
+    content::WebContents* web_contents)
+    : web_contents_(web_contents) {
+}
 
-  tab_contents_->web_contents()->GetRenderViewHost()->Send(
+PasswordManagerDelegateImpl::~PasswordManagerDelegateImpl() {
+}
+
+void PasswordManagerDelegateImpl::FillPasswordForm(
+    const PasswordFormFillData& form_data) {
+  AutofillManager* autofill_manager =
+      AutofillManager::FromWebContents(web_contents_);
+  bool disable_popup = autofill_manager->HasExternalDelegate();
+
+  web_contents_->GetRenderViewHost()->Send(
       new AutofillMsg_FillPasswordForm(
-          tab_contents_->web_contents()->GetRenderViewHost()->GetRoutingID(),
+          web_contents_->GetRenderViewHost()->GetRoutingID(),
           form_data,
           disable_popup));
 }
@@ -144,24 +156,26 @@ void PasswordManagerDelegateImpl::AddSavePasswordInfoBarIfPermitted(
   // referenced here: crbug.com/133275
   if ((realm == GURL(GaiaUrls::GetInstance()->gaia_login_form_realm()) ||
       realm == GURL("https://www.google.com/")) &&
-      OneClickSigninHelper::CanOffer(tab_contents_->web_contents(),
-          UTF16ToUTF8(form_to_save->associated_username()), true)) {
+      OneClickSigninHelper::CanOffer(web_contents_,
+          OneClickSigninHelper::CAN_OFFER_FOR_INTERSTITAL_ONLY,
+          UTF16ToUTF8(form_to_save->associated_username()), NULL)) {
     return;
   }
 #endif
 
-  tab_contents_->infobar_tab_helper()->AddInfoBar(
-      new SavePasswordInfoBarDelegate(
-          tab_contents_->infobar_tab_helper(), form_to_save));
+  InfoBarTabHelper* infobar_tab_helper =
+      InfoBarTabHelper::FromWebContents(web_contents_);
+  infobar_tab_helper->AddInfoBar(
+      new SavePasswordInfoBarDelegate(infobar_tab_helper, form_to_save));
 }
 
 Profile* PasswordManagerDelegateImpl::GetProfile() {
-  return tab_contents_->profile();
+  return Profile::FromBrowserContext(web_contents_->GetBrowserContext());
 }
 
 bool PasswordManagerDelegateImpl::DidLastPageLoadEncounterSSLErrors() {
   content::NavigationEntry* entry =
-      tab_contents_->web_contents()->GetController().GetActiveEntry();
+      web_contents_->GetController().GetActiveEntry();
   if (!entry) {
     NOTREACHED();
     return false;

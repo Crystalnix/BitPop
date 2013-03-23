@@ -7,9 +7,10 @@
 #include "base/i18n/number_formatting.h"
 #include "base/i18n/rtl.h"
 #include "base/string16.h"
+#include "base/supports_user_data.h"
 #include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
 #include "base/time.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/common/time_format.h"
 #include "content/public/browser/download_danger_type.h"
@@ -21,102 +22,220 @@
 #include "ui/base/text/bytes_formatting.h"
 #include "ui/base/text/text_elider.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/gdata/gdata_download_observer.h"
-#endif
-
 using base::TimeDelta;
 using content::DownloadItem;
+
+namespace {
+
+// Per DownloadItem data used by DownloadItemModel. The model doesn't keep any
+// state since there could be multiple models associated with a single
+// DownloadItem, and the lifetime of the model is shorter than the DownloadItem.
+class DownloadItemModelData : public base::SupportsUserData::Data {
+ public:
+  // Get the DownloadItemModelData object for |download|. Returns NULL if
+  // there's no model data.
+  static const DownloadItemModelData* Get(const DownloadItem* download);
+
+  // Get the DownloadItemModelData object for |download|. Creates a model data
+  // object if not found. Always returns a non-NULL pointer, unless OOM.
+  static DownloadItemModelData* GetOrCreate(DownloadItem* download);
+
+  bool should_show_in_shelf() const { return should_show_in_shelf_; }
+  void set_should_show_in_shelf(bool should_show_in_shelf) {
+    should_show_in_shelf_ = should_show_in_shelf;
+  }
+
+ private:
+  DownloadItemModelData();
+  virtual ~DownloadItemModelData() {}
+
+  static const char kKey[];
+
+  // Whether the download should be displayed in the download shelf. True by
+  // default.
+  bool should_show_in_shelf_;
+};
+
+// static
+const char DownloadItemModelData::kKey[] = "DownloadItemModelData key";
+
+// static
+const DownloadItemModelData* DownloadItemModelData::Get(
+    const DownloadItem* download) {
+  return static_cast<const DownloadItemModelData*>(download->GetUserData(kKey));
+}
+
+// static
+DownloadItemModelData* DownloadItemModelData::GetOrCreate(
+    DownloadItem* download) {
+  DownloadItemModelData* data =
+      static_cast<DownloadItemModelData*>(download->GetUserData(kKey));
+  if (data == NULL) {
+    data = new DownloadItemModelData();
+    download->SetUserData(kKey, data);
+  }
+  return data;
+}
+
+DownloadItemModelData::DownloadItemModelData()
+    : should_show_in_shelf_(true) {
+}
+
+string16 InterruptReasonStatusMessage(int reason) {
+  int string_id = 0;
+
+  switch (reason) {
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_ACCESS_DENIED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_DISK_FULL;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NAME_TOO_LONG:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_PATH_TOO_LONG;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_LARGE:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_FILE_TOO_LARGE;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_VIRUS;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_TEMPORARY_PROBLEM;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_BLOCKED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_BLOCKED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SECURITY_CHECK_FAILED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_ERROR;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_TIMEOUT:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_TIMEOUT;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_DISCONNECTED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_DISCONNECTED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SERVER_DOWN;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SERVER_PROBLEM;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NO_FILE;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED:
+      string_id = IDS_DOWNLOAD_STATUS_CANCELLED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
+    case content::DOWNLOAD_INTERRUPT_REASON_CRASH:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SHUTDOWN;
+      break;
+    default:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
+      break;
+  }
+
+  return l10n_util::GetStringUTF16(string_id);
+}
+
+string16 InterruptReasonMessage(int reason) {
+  int string_id = 0;
+  string16 status_text;
+
+  switch (reason) {
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_ACCESS_DENIED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_DISK_FULL;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NAME_TOO_LONG:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_PATH_TOO_LONG;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_LARGE:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_FILE_TOO_LARGE;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_VIRUS;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_TEMPORARY_PROBLEM;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_BLOCKED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_BLOCKED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SECURITY_CHECK_FAILED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_ERROR;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_TIMEOUT:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_TIMEOUT;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_DISCONNECTED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_DISCONNECTED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SERVER_DOWN;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SERVER_PROBLEM;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NO_FILE;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED:
+      string_id = IDS_DOWNLOAD_STATUS_CANCELLED;
+      break;
+    case content::DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
+    case content::DOWNLOAD_INTERRUPT_REASON_CRASH:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SHUTDOWN;
+      break;
+    default:
+      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
+      break;
+  }
+
+  status_text = l10n_util::GetStringUTF16(string_id);
+
+  return status_text;
+}
+
+} // namespace
 
 // -----------------------------------------------------------------------------
 // DownloadItemModel
 
 DownloadItemModel::DownloadItemModel(DownloadItem* download)
-    : BaseDownloadItemModel(download) {
+    : download_(download) {
+}
+
+DownloadItemModel::~DownloadItemModel() {
 }
 
 void DownloadItemModel::CancelTask() {
   download_->Cancel(true /* update history service */);
 }
 
-string16 DownloadItemModel::GetStatusText() {
-  int64 size = download_->GetReceivedBytes();
-  int64 total = download_->AllDataSaved() ? size : download_->GetTotalBytes();
-  bool is_gdata = false;
-#if defined(OS_CHROMEOS)
-  is_gdata = gdata::GDataDownloadObserver::IsGDataDownload(download_);
-  // For GData downloads, the size is the count of bytes uploaded.
-  if (is_gdata)
-    size = gdata::GDataDownloadObserver::GetUploadedBytes(download_);
-#endif
-
-  ui::DataUnits amount_units = ui::GetByteDisplayUnits(total);
-  string16 simple_size = ui::FormatBytesWithUnits(size, amount_units, false);
-
-  // In RTL locales, we render the text "size/total" in an RTL context. This
-  // is problematic since a string such as "123/456 MB" is displayed
-  // as "MB 123/456" because it ends with an LTR run. In order to solve this,
-  // we mark the total string as an LTR string if the UI layout is
-  // right-to-left so that the string "456 MB" is treated as an LTR run.
-  string16 simple_total = base::i18n::GetDisplayStringInLTRDirectionality(
-      ui::FormatBytesWithUnits(total, amount_units, true));
-
-  // TODO(asanka): Calculate a TimeRemaining() for GData uploads.
-  TimeDelta remaining;
-  string16 simple_time;
-  if (download_->IsInProgress() && download_->IsPaused()) {
-    simple_time = l10n_util::GetStringUTF16(IDS_DOWNLOAD_PROGRESS_PAUSED);
-  } else if (!is_gdata && download_->TimeRemaining(&remaining)) {
-    simple_time = download_->GetOpenWhenComplete() ?
-                      TimeFormat::TimeRemainingShort(remaining) :
-                      TimeFormat::TimeRemaining(remaining);
+string16 DownloadItemModel::GetInterruptReasonText() const {
+  if (download_->GetState() != DownloadItem::INTERRUPTED ||
+      download_->GetLastReason() ==
+      content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED) {
+    return string16();
   }
+  return InterruptReasonMessage(download_->GetLastReason());
+}
 
-  string16 size_text;
+string16 DownloadItemModel::GetStatusText() const {
   string16 status_text;
-  content::DownloadInterruptReason reason;
   switch (download_->GetState()) {
     case DownloadItem::IN_PROGRESS:
-#if defined(OS_CHROMEOS)
-      if (is_gdata && size == 0) {
-        // We haven't started the upload yet. The download needs to progress
-        // further before we will see any upload progress. Show "Downloading..."
-        // until we start uploading.
-        status_text = l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_WAITING);
-        break;
-      }
-#endif
-      if (download_crx_util::IsExtensionDownload(*download_) &&
-          download_->AllDataSaved() &&
-          download_->GetState() == DownloadItem::IN_PROGRESS) {
-        // The download is a CRX (app, extension, theme, ...) and it is
-        // being unpacked and validated.
-        status_text = l10n_util::GetStringUTF16(
-            IDS_DOWNLOAD_STATUS_CRX_INSTALL_RUNNING);
-      } else if (download_->GetOpenWhenComplete()) {
-        if (simple_time.empty()) {
-          status_text =
-              l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_OPEN_WHEN_COMPLETE);
-        } else {
-          status_text = l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_OPEN_IN,
-                                                   simple_time);
-        }
-      } else {
-        if (!simple_time.empty()) {
-          status_text = l10n_util::GetStringFUTF16(
-              IDS_DOWNLOAD_STATUS_IN_PROGRESS, simple_size, simple_total,
-              simple_time);
-        } else if (total > 0 && size > 0) {
-          status_text = l10n_util::GetStringFUTF16(
-              IDS_DOWNLOAD_STATUS_IN_PROGRESS_SIZES_ONLY,
-              simple_size, simple_total);
-        } else {
-          // Instead of displaying "0 B" we keep the "Starting..." string.
-          status_text = (size == 0)
-              ? l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_STARTING)
-              : ui::FormatBytes(size);
-        }
-      }
+      status_text = GetInProgressStatusString();
       break;
     case DownloadItem::COMPLETE:
       if (download_->GetFileExternallyRemoved()) {
@@ -128,22 +247,18 @@ string16 DownloadItemModel::GetStatusText() {
     case DownloadItem::CANCELLED:
       status_text = l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_CANCELLED);
       break;
-    case DownloadItem::REMOVING:
-      break;
-    case DownloadItem::INTERRUPTED:
-      reason = download_->GetLastReason();
-      status_text = InterruptReasonStatusMessage(reason);
-      if (total <= 0) {
-        size_text = ui::FormatBytes(size);
+    case DownloadItem::INTERRUPTED: {
+      content::DownloadInterruptReason reason = download_->GetLastReason();
+      if (reason != content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED) {
+        string16 interrupt_reason = InterruptReasonStatusMessage(reason);
+        status_text = l10n_util::GetStringFUTF16(
+            IDS_DOWNLOAD_STATUS_INTERRUPTED, interrupt_reason);
       } else {
-        size_text = l10n_util::GetStringFUTF16(IDS_DOWNLOAD_RECEIVED_SIZE,
-                                               simple_size,
-                                               simple_total);
+        // Same as DownloadItem::CANCELLED.
+        status_text = l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_CANCELLED);
       }
-      size_text = size_text + ASCIIToUTF16(" ");
-      if (reason != content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED)
-        status_text = size_text + status_text;
       break;
+    }
     default:
       NOTREACHED();
   }
@@ -165,18 +280,8 @@ string16 DownloadItemModel::GetTooltipText(const gfx::Font& font,
   return tooltip;
 }
 
-int DownloadItemModel::PercentComplete() const {
-#if defined(OS_CHROMEOS)
-  // For GData uploads, progress is based on the number of bytes
-  // uploaded. Progress is unknown until the upload starts.
-  if (gdata::GDataDownloadObserver::IsGDataDownload(download_))
-    return gdata::GDataDownloadObserver::PercentComplete(download_);
-#endif
-  return download_->PercentComplete();
-}
-
 string16 DownloadItemModel::GetWarningText(const gfx::Font& font,
-                                           int base_width) {
+                                           int base_width) const {
   // Should only be called if IsDangerous().
   DCHECK(IsDangerous());
   switch (download_->GetDangerType()) {
@@ -214,7 +319,7 @@ string16 DownloadItemModel::GetWarningText(const gfx::Font& font,
   return string16();
 }
 
-string16 DownloadItemModel::GetWarningConfirmButtonText() {
+string16 DownloadItemModel::GetWarningConfirmButtonText() const {
   // Should only be called if IsDangerous()
   DCHECK(IsDangerous());
   if (download_->GetDangerType() ==
@@ -226,7 +331,27 @@ string16 DownloadItemModel::GetWarningConfirmButtonText() {
   }
 }
 
-bool DownloadItemModel::IsMalicious() {
+int64 DownloadItemModel::GetCompletedBytes() const {
+  return download_->GetReceivedBytes();
+}
+
+int64 DownloadItemModel::GetTotalBytes() const {
+  return download_->AllDataSaved() ? download_->GetReceivedBytes() :
+                                     download_->GetTotalBytes();
+}
+
+// TODO(asanka,rdsmith): Once 'open' moves exclusively to the
+//     ChromeDownloadManagerDelegate, we should calculate the percentage here
+//     instead of calling into the DownloadItem.
+int DownloadItemModel::PercentComplete() const {
+  return download_->PercentComplete();
+}
+
+bool DownloadItemModel::IsDangerous() const {
+  return download_->GetSafetyState() == DownloadItem::DANGEROUS;
+}
+
+bool DownloadItemModel::IsMalicious() const {
   if (!IsDangerous())
     return false;
   switch (download_->GetDangerType()) {
@@ -248,123 +373,86 @@ bool DownloadItemModel::IsMalicious() {
   return false;
 }
 
-bool DownloadItemModel::IsDangerous() {
-  return download_->GetSafetyState() == DownloadItem::DANGEROUS;
+bool DownloadItemModel::ShouldShowInShelf() const {
+  const DownloadItemModelData* data = DownloadItemModelData::Get(download_);
+  return !data || data->should_show_in_shelf();
 }
 
-// static
-string16 BaseDownloadItemModel::InterruptReasonStatusMessage(int reason) {
-  int string_id = 0;
-
-  switch (reason) {
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_ACCESS_DENIED;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_DISK_FULL;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NAME_TOO_LONG:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_PATH_TOO_LONG;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_LARGE:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_FILE_TOO_LARGE;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_VIRUS;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_TEMPORARY_PROBLEM;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_TIMEOUT:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_TIMEOUT;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_DISCONNECTED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_DISCONNECTED;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SERVER_DOWN;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NETWORK_ERROR;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_NO_FILE;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SERVER_PROBLEM;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
-    case content::DOWNLOAD_INTERRUPT_REASON_CRASH:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS_SHUTDOWN;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED:
-      string_id = IDS_DOWNLOAD_STATUS_CANCELLED;
-      break;
-    default:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
-      break;
-  }
-
-  return l10n_util::GetStringUTF16(string_id);
+void DownloadItemModel::SetShouldShowInShelf(bool should_show) {
+  DownloadItemModelData* data = DownloadItemModelData::GetOrCreate(download_);
+  data->set_should_show_in_shelf(should_show);
 }
 
-// static
-string16 BaseDownloadItemModel::InterruptReasonMessage(int reason) {
-  int string_id = 0;
-  string16 status_text;
+string16 DownloadItemModel::GetProgressSizesString() const {
+  string16 size_ratio;
+  int64 size = GetCompletedBytes();
+  int64 total = GetTotalBytes();
+  if (total > 0) {
+    ui::DataUnits amount_units = ui::GetByteDisplayUnits(total);
+    string16 simple_size = ui::FormatBytesWithUnits(size, amount_units, false);
 
-  switch (reason) {
-    case content::DOWNLOAD_INTERRUPT_REASON_NONE:
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_ACCESS_DENIED;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_DISK_FULL;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_NAME_TOO_LONG:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_PATH_TOO_LONG;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_LARGE:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_FILE_TOO_LARGE;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_VIRUS;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_TEMPORARY_PROBLEM;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_TIMEOUT:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_TIMEOUT;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_DISCONNECTED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_DISCONNECTED;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SERVER_DOWN;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NETWORK_ERROR;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_NO_FILE;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SERVER_PROBLEM;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN:
-    case content::DOWNLOAD_INTERRUPT_REASON_CRASH:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_DESCRIPTION_SHUTDOWN;
-      break;
-    case content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED:
-      string_id = IDS_DOWNLOAD_STATUS_CANCELLED;
-      break;
-    default:
-      string_id = IDS_DOWNLOAD_INTERRUPTED_STATUS;
-      break;
+    // In RTL locales, we render the text "size/total" in an RTL context. This
+    // is problematic since a string such as "123/456 MB" is displayed
+    // as "MB 123/456" because it ends with an LTR run. In order to solve this,
+    // we mark the total string as an LTR string if the UI layout is
+    // right-to-left so that the string "456 MB" is treated as an LTR run.
+    string16 simple_total = base::i18n::GetDisplayStringInLTRDirectionality(
+        ui::FormatBytesWithUnits(total, amount_units, true));
+    size_ratio = l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_SIZES,
+                                            simple_size, simple_total);
+  } else {
+    size_ratio = ui::FormatBytes(size);
+  }
+  return size_ratio;
+}
+
+string16 DownloadItemModel::GetInProgressStatusString() const {
+  DCHECK(download_->IsInProgress());
+
+  TimeDelta time_remaining;
+  // time_remaining is only known if the download isn't paused.
+  bool time_remaining_known = (!download_->IsPaused() &&
+                               download_->TimeRemaining(&time_remaining));
+
+  // Indication of progress. (E.g.:"100/200 MB" or "100MB")
+  string16 size_ratio = GetProgressSizesString();
+
+  // The download is a CRX (app, extension, theme, ...) and it is being unpacked
+  // and validated.
+  if (download_->AllDataSaved() &&
+      download_crx_util::IsExtensionDownload(*download_)) {
+    return l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_CRX_INSTALL_RUNNING);
   }
 
-  status_text = l10n_util::GetStringUTF16(string_id);
+  // A paused download: "100/120 MB, Paused"
+  if (download_->IsPaused()) {
+    return l10n_util::GetStringFUTF16(
+        IDS_DOWNLOAD_STATUS_IN_PROGRESS, size_ratio,
+        l10n_util::GetStringUTF16(IDS_DOWNLOAD_PROGRESS_PAUSED));
+  }
 
-  return status_text;
+  // A download scheduled to be opened when complete: "Opening in 10 secs"
+  if (download_->GetOpenWhenComplete()) {
+    if (!time_remaining_known)
+      return l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_OPEN_WHEN_COMPLETE);
+
+    return l10n_util::GetStringFUTF16(
+        IDS_DOWNLOAD_STATUS_OPEN_IN,
+        TimeFormat::TimeRemainingShort(time_remaining));
+  }
+
+  // In progress download with known time left: "100/120 MB, 10 secs left"
+  if (time_remaining_known) {
+    return l10n_util::GetStringFUTF16(
+        IDS_DOWNLOAD_STATUS_IN_PROGRESS, size_ratio,
+        TimeFormat::TimeRemaining(time_remaining));
+  }
+
+  // In progress download with no known time left and non-zero completed bytes:
+  // "100/120 MB" or "100 MB"
+  if (GetCompletedBytes() > 0)
+    return size_ratio;
+
+  // Instead of displaying "0 B" we say "Starting..."
+  return l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_STARTING);
 }

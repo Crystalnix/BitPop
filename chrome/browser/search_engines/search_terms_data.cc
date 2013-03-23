@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,17 @@
 
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
+#include "base/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/instant/instant_controller.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_instant_controller.h"
+#include "chrome/browser/ui/search/search.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 
 #if defined(ENABLE_RLZ)
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/rlz/rlz.h"
 #endif
 
@@ -54,13 +56,19 @@ std::string SearchTermsData::GetApplicationLocale() const {
   return "en";
 }
 
-#if defined(ENABLE_RLZ)
 string16 SearchTermsData::GetRlzParameterValue() const {
   return string16();
 }
-#endif
+
+std::string SearchTermsData::GetSearchClient() const {
+  return std::string();
+}
 
 std::string SearchTermsData::InstantEnabledParam() const {
+  return std::string();
+}
+
+std::string SearchTermsData::InstantExtendedEnabledParam() const {
   return std::string();
 }
 
@@ -70,12 +78,12 @@ std::string* UIThreadSearchTermsData::google_base_url_ = NULL;
 UIThreadSearchTermsData::UIThreadSearchTermsData(Profile* profile)
     : profile_(profile) {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 std::string UIThreadSearchTermsData::GoogleBaseURLValue() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (google_base_url_)
     return *google_base_url_;
   return profile_ ? GoogleURLTracker::GoogleURL(profile_).spec() :
@@ -84,15 +92,17 @@ std::string UIThreadSearchTermsData::GoogleBaseURLValue() const {
 
 std::string UIThreadSearchTermsData::GetApplicationLocale() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
   return g_browser_process->GetApplicationLocale();
 }
 
-#if defined(ENABLE_RLZ)
+// Android implementations are located in search_terms_data_android.cc.
+#if !defined(OS_ANDROID)
 string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
   string16 rlz_string;
+#if defined(ENABLE_RLZ)
   // For organic brandcodes do not use rlz at all. Empty brandcode usually
   // means a chromium install. This is ok.
   std::string brand;
@@ -101,16 +111,47 @@ string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
     // This call will return false the first time(s) it is called until the
     // value has been cached. This normally would mean that at most one omnibox
     // search might not send the RLZ data but this is not really a problem.
-    RLZTracker::GetAccessPointRlz(rlz_lib::CHROME_OMNIBOX, &rlz_string);
+    RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz_string);
   }
+#endif
   return rlz_string;
+}
+
+// We can enable this on non-Android if other platforms ever want a non-empty
+// search client string.  There is already a unit test in place for Android
+// called TemplateURLTest::SearchClient.
+std::string UIThreadSearchTermsData::GetSearchClient() const {
+  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return std::string();
 }
 #endif
 
 std::string UIThreadSearchTermsData::InstantEnabledParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return InstantController::IsEnabled(profile_) ? "&ion=1" : std::string();
+  if (profile_) {
+    uint32 instant_extended_api_version =
+        chrome::search::EmbeddedSearchPageVersion(profile_);
+    if (instant_extended_api_version == 0 &&
+        chrome::BrowserInstantController::IsInstantEnabled(profile_))
+      return "ion=1&";
+  }
+  return std::string();
+}
+
+std::string UIThreadSearchTermsData::InstantExtendedEnabledParam() const {
+  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+         BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (profile_) {
+    uint32 instant_extended_api_version =
+        chrome::search::EmbeddedSearchPageVersion(profile_);
+    if (instant_extended_api_version != 0) {
+      return std::string(google_util::kInstantExtendedAPIParam) + "=" +
+          base::Uint64ToString(instant_extended_api_version) + "&";
+    }
+  }
+  return std::string();
 }
 
 // static

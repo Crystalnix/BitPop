@@ -11,6 +11,7 @@
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_input_module_constants.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 
 namespace keys = extension_input_module_constants;
@@ -124,6 +125,17 @@ bool ReadMenuItems(
   return true;
 }
 
+static void DispatchEventToExtension(Profile* profile,
+                                     const std::string& extension_id,
+                                     const std::string& event_name,
+                                     scoped_ptr<ListValue> args) {
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      event_name, args.Pass()));
+  event->restrict_to_profile = profile;
+  extensions::ExtensionSystem::Get(profile)->event_router()->
+      DispatchEventToExtension(extension_id, event.Pass());
+}
+
 }  // namespace
 
 namespace events {
@@ -151,33 +163,30 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
 
   virtual ~ImeObserver() {}
 
-  virtual void OnActivate(const std::string& engine_id) {
+  virtual void OnActivate(const std::string& engine_id) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
-    ListValue args;
-    args.Append(Value::CreateStringValue(engine_id));
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateStringValue(engine_id));
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnActivate, json_args, profile_, GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnActivate, args.Pass());
   }
 
-  virtual void OnDeactivated(const std::string& engine_id) {
+  virtual void OnDeactivated(const std::string& engine_id) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
-    ListValue args;
-    args.Append(Value::CreateStringValue(engine_id));
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateStringValue(engine_id));
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnDeactivated, json_args, profile_, GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnDeactivated, args.Pass());
   }
 
-  virtual void OnFocus(const InputMethodEngine::InputContext& context) {
+  virtual void OnFocus(
+      const InputMethodEngine::InputContext& context) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
@@ -185,30 +194,26 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     dict->SetInteger("contextID", context.id);
     dict->SetString("type", context.type);
 
-    ListValue args;
-    args.Append(dict);
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(dict);
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnFocus, json_args, profile_, GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnFocus, args.Pass());
   }
 
-  virtual void OnBlur(int context_id) {
+  virtual void OnBlur(int context_id) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
-    ListValue args;
-    args.Append(Value::CreateIntegerValue(context_id));
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateIntegerValue(context_id));
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnBlur, json_args, profile_, GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnBlur, args.Pass());
   }
 
   virtual void OnInputContextUpdate(
-      const InputMethodEngine::InputContext& context) {
+      const InputMethodEngine::InputContext& context) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
@@ -216,19 +221,17 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     dict->SetInteger("contextID", context.id);
     dict->SetString("type", context.type);
 
-    ListValue args;
-    args.Append(dict);
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(dict);
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnInputContextUpdate, json_args, profile_,
-        GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnInputContextUpdate, args.Pass());
   }
 
-  virtual void OnKeyEvent(const std::string& engine_id,
-                          const InputMethodEngine::KeyboardEvent& event,
-                          chromeos::input_method::KeyEventHandle* key_data) {
+  virtual void OnKeyEvent(
+      const std::string& engine_id,
+      const InputMethodEngine::KeyboardEvent& event,
+      chromeos::input_method::KeyEventHandle* key_data) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
@@ -244,63 +247,55 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     dict->SetBoolean("ctrlKey", event.ctrl_key);
     dict->SetBoolean("shiftKey", event.shift_key);
 
-    ListValue args;
-    args.Append(Value::CreateStringValue(engine_id));
-    args.Append(dict);
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(dict);
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnKeyEvent, json_args, profile_, GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnKeyEvent, args.Pass());
   }
 
   virtual void OnCandidateClicked(
       const std::string& engine_id,
       int candidate_id,
-      chromeos::InputMethodEngine::MouseButtonEvent button) {
+      chromeos::InputMethodEngine::MouseButtonEvent button) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
-    ListValue args;
-    args.Append(Value::CreateStringValue(engine_id));
-    args.Append(Value::CreateIntegerValue(candidate_id));
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(Value::CreateIntegerValue(candidate_id));
     switch (button) {
       case chromeos::InputMethodEngine::MOUSE_BUTTON_MIDDLE:
-        args.Append(Value::CreateStringValue("middle"));
+        args->Append(Value::CreateStringValue("middle"));
         break;
 
       case chromeos::InputMethodEngine::MOUSE_BUTTON_RIGHT:
-        args.Append(Value::CreateStringValue("right"));
+        args->Append(Value::CreateStringValue("right"));
         break;
 
       case chromeos::InputMethodEngine::MOUSE_BUTTON_LEFT:
       // Default to left.
       default:
-        args.Append(Value::CreateStringValue("left"));
+        args->Append(Value::CreateStringValue("left"));
         break;
     }
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnCandidateClicked, json_args, profile_,
-        GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnCandidateClicked, args.Pass());
   }
 
   virtual void OnMenuItemActivated(const std::string& engine_id,
-                                   const std::string& menu_id) {
+                                   const std::string& menu_id) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
-    ListValue args;
-    args.Append(Value::CreateStringValue(engine_id));
-    args.Append(Value::CreateStringValue(menu_id));
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(Value::CreateStringValue(menu_id));
 
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id_, events::kOnMenuItemActivated, json_args, profile_,
-        GURL());
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnMenuItemActivated, args.Pass());
   }
 
  private:
@@ -424,7 +419,7 @@ chromeos::InputMethodEngine* InputImeEventRouter::GetActiveEngine(
   return NULL;
 }
 
-void InputImeEventRouter::OnEventHandled(
+void InputImeEventRouter::OnKeyEventHandled(
     const std::string& extension_id,
     const std::string& request_id,
     bool handled) {
@@ -669,6 +664,7 @@ bool SetCandidatesFunction::ReadCandidates(
     int id;
     std::string label;
     std::string annotation;
+    chromeos::InputMethodEngine::UsageEntry usage_entry;
 
     EXTENSION_FUNCTION_VALIDATE(candidate_dict->GetString(keys::kCandidateKey,
                                                           &candidate));
@@ -684,11 +680,22 @@ bool SetCandidatesFunction::ReadCandidates(
           &annotation));
     }
 
+    if (candidate_dict->HasKey(keys::kUsageKey)) {
+      DictionaryValue* usage_dict;
+      EXTENSION_FUNCTION_VALIDATE(candidate_dict->GetDictionary(keys::kUsageKey,
+                                                                &usage_dict));
+      EXTENSION_FUNCTION_VALIDATE(usage_dict->GetString(keys::kUsageTitleKey,
+                                                        &usage_entry.title));
+      EXTENSION_FUNCTION_VALIDATE(usage_dict->GetString(keys::kUsageBodyKey,
+                                                        &usage_entry.body));
+    }
+
     output->push_back(chromeos::InputMethodEngine::Candidate());
     output->back().value = candidate;
     output->back().id = id;
     output->back().label = label;
     output->back().annotation = annotation;
+    output->back().usage = usage_entry;
 
     if (candidate_dict->HasKey(keys::kCandidatesKey)) {
       ListValue* sub_list;
@@ -816,14 +823,14 @@ bool UpdateMenuItemsFunction::RunImpl() {
   return true;
 }
 
-bool InputEventHandled::RunImpl() {
+bool KeyEventHandled::RunImpl() {
   std::string request_id_str;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &request_id_str));
 
   bool handled = false;
   EXTENSION_FUNCTION_VALIDATE(args_->GetBoolean(1, &handled));
 
-  InputImeEventRouter::GetInstance()->OnEventHandled(
+  InputImeEventRouter::GetInstance()->OnKeyEventHandled(
       extension_id(), request_id_str, handled);
 
   return true;

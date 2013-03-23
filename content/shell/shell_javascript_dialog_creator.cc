@@ -9,9 +9,9 @@
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "content/shell/layout_test_controller_host.h"
 #include "content/shell/shell_javascript_dialog.h"
 #include "content/shell/shell_switches.h"
+#include "content/shell/webkit_test_controller.h"
 #include "net/base/net_util.h"
 
 namespace content {
@@ -32,14 +32,14 @@ void ShellJavaScriptDialogCreator::RunJavaScriptDialog(
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    WebKitTestResultPrinter* printer = WebKitTestController::Get()->printer();
     if (javascript_message_type == JAVASCRIPT_MESSAGE_TYPE_ALERT) {
-      printf("ALERT: %s\n", UTF16ToUTF8(message_text).c_str());
+      printer->AddMessage(std::string("ALERT: ") + UTF16ToUTF8(message_text));
     } else if (javascript_message_type == JAVASCRIPT_MESSAGE_TYPE_CONFIRM) {
-      printf("CONFIRM: %s\n", UTF16ToUTF8(message_text).c_str());
+      printer->AddMessage(std::string("CONFIRM: ") + UTF16ToUTF8(message_text));
     } else {  // JAVASCRIPT_MESSAGE_TYPE_PROMPT
-      printf("PROMPT: %s, default text: %s\n",
-             UTF16ToUTF8(message_text).c_str(),
-             UTF16ToUTF8(default_prompt_text).c_str());
+      printer->AddMessage(std::string("PROMPT: ") + UTF16ToUTF8(message_text) +
+                         "default text: " + UTF16ToUTF8(default_prompt_text));
     }
     callback.Run(true, string16());
     return;
@@ -86,10 +86,10 @@ void ShellJavaScriptDialogCreator::RunBeforeUnloadDialog(
     bool is_reload,
     const DialogClosedCallback& callback) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
-    printf("CONFIRM NAVIGATION: %s\n", UTF16ToUTF8(message_text).c_str());
-    LayoutTestControllerHost* controller =
-        LayoutTestControllerHost::FromRenderViewHost(
-            web_contents->GetRenderViewHost());
+    WebKitTestResultPrinter* printer = WebKitTestController::Get()->printer();
+    printer->AddMessage(
+        std::string("CONFIRM NAVIGATION: ") + UTF16ToUTF8(message_text));
+    WebKitTestController* controller = WebKitTestController::Get();
     callback.Run(
         !controller->should_stay_on_page_after_handling_before_unload(),
         string16());

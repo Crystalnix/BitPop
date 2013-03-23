@@ -98,7 +98,7 @@ FilePath ChildProcessHost::GetChildPath(int flags) {
   // Valgrind executable, which then crashes. However, it's almost safe to
   // assume that the updates won't happen while testing with Valgrind tools.
   if (child_path.empty() && flags & CHILD_ALLOW_SELF && !RunningOnValgrind())
-    child_path = FilePath("/proc/self/exe");
+    child_path = FilePath(base::kProcSelfExe);
 #endif
 
   // On most platforms, the child executable is the same as the current
@@ -197,7 +197,7 @@ bool ChildProcessHostImpl::Send(IPC::Message* message) {
 }
 
 void ChildProcessHostImpl::AllocateSharedMemory(
-      uint32 buffer_size, base::ProcessHandle child_process_handle,
+      size_t buffer_size, base::ProcessHandle child_process_handle,
       base::SharedMemoryHandle* shared_memory_handle) {
   base::SharedMemory shared_buf;
   if (!shared_buf.CreateAndMapAnonymous(buffer_size)) {

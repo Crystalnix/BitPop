@@ -76,7 +76,7 @@ string16 ReadAndDecryptValue(RegKey* key, const wchar_t* value_name) {
   result = key->ReadValue(value_name, &(data[0]), &data_size, &data_type);
   if (result == ERROR_SUCCESS) {
     std::string out_data;
-    if (DecryptData(data, &out_data)) {
+    if (syncer::DecryptData(data, &out_data)) {
       // The actual data is in UTF16 already.
       if (!(out_data.size() & 1) && (out_data.size() > 2) &&
           !out_data[out_data.size() - 1] && !out_data[out_data.size() - 2]) {
@@ -150,15 +150,16 @@ bool ImportSingleProfile(FormGroup* profile,
 
       // We need to store phone data in |phone| before building the whole number
       // at the end. The rest of the fields are set "as is".
+      // TODO(isherman): Call SetInfo(), rather than SetRawInfo().
       if (!phone.SetInfo(it->second, field_value))
-        profile->SetInfo(it->second, field_value);
+        profile->SetRawInfo(it->second, field_value);
     }
   }
   // Now re-construct the phones if needed.
   string16 constructed_number;
   if (!phone.IsEmpty() &&
       phone.ParseNumber(std::string("US"), &constructed_number)) {
-    profile->SetCanonicalizedInfo(PHONE_HOME_WHOLE_NUMBER, constructed_number);
+    profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, constructed_number);
   }
 
   return has_non_empty_fields;
@@ -255,7 +256,8 @@ bool ImportCurrentUserProfiles(std::vector<AutofillProfile>* profiles,
       RegKey key(HKEY_CURRENT_USER, key_name.c_str(), KEY_READ);
       CreditCard credit_card;
       if (ImportSingleProfile(&credit_card, &key, reg_to_field)) {
-        string16 cc_number = credit_card.GetInfo(CREDIT_CARD_NUMBER);
+        // TODO(isherman): Call into GetInfo() below, rather than GetRawInfo().
+        string16 cc_number = credit_card.GetRawInfo(CREDIT_CARD_NUMBER);
         if (!cc_number.empty())
           credit_cards->push_back(credit_card);
       }
@@ -272,4 +274,3 @@ bool ImportAutofillDataWin(PersonalDataManager* pdm) {
   // importer will self delete.
   return importer->ImportProfiles();
 }
-

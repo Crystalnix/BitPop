@@ -45,7 +45,7 @@ class LinuxSandbox {
   // process type (this is for instance the case with the Zygote).
   // In that case, it is crucial that PreinitializeSandboxFinish() gets
   // called for every child process.
-  // TODO(markus,jln) we know this is not always done at the moment
+  // TODO(markus, jln) we know this is not always done at the moment
   // (crbug.com/139877).
   void PreinitializeSandbox(const std::string& process_type);
   // These should be called together.
@@ -59,8 +59,10 @@ class LinuxSandbox {
   // started, this returns what will actually happen once the various Start*
   // functions are called from inside a renderer.
   int GetStatus() const;
-  // Is the current process single threaded ?
+  // Is the current process single threaded?
   bool IsSingleThreaded() const;
+  // Did we start Seccomp BPF?
+  bool seccomp_bpf_started() const;
 
   // Simple accessor for our instance of the setuid sandbox. Will never return
   // NULL.
@@ -70,8 +72,14 @@ class LinuxSandbox {
 
   // Check the policy and eventually start the seccomp-legacy sandbox.
   bool StartSeccompLegacy(const std::string& process_type);
-  // Check the policy and eventually start the seccomp-bpf sandbox.
+  // Check the policy and eventually start the seccomp-bpf sandbox. This should
+  // never be called with threads started. If we detect that thread have
+  // started we will crash.
   bool StartSeccompBpf(const std::string& process_type);
+
+  // Limit the address space of the current process (and its children).
+  // to make some vulnerabilities harder to exploit.
+  bool LimitAddressSpace(const std::string& process_type);
 
  private:
   friend struct DefaultSingletonTraits<LinuxSandbox>;
@@ -81,7 +89,8 @@ class LinuxSandbox {
   bool seccomp_bpf_supported() const;
 
   int proc_fd_;
-  // Have we been through PreinitializeSandbox or PreinitializeSandboxBegin ?
+  bool seccomp_bpf_started_;
+  // Have we been through PreinitializeSandbox or PreinitializeSandboxBegin?
   bool pre_initialized_;
   bool seccomp_legacy_supported_;  // Accurate if pre_initialized_.
   bool seccomp_bpf_supported_;  // Accurate if pre_initialized_.

@@ -23,6 +23,12 @@ function FileListContext(metadataCache, fileList, showHidden) {
    */
   this.filters_ = {};
   this.setFilterHidden(!showHidden);
+
+  // Do not show entries marked as 'deleted'.
+  this.addFilter('deleted', function(entry) {
+    var internal = this.metadataCache.getCached(entry, 'internal');
+    return !(internal && internal.deleted);
+  }.bind(this));
 }
 
 /**
@@ -155,9 +161,16 @@ DirectoryContents.prototype.isSearch = function() {
 
 /**
  * @return {DirectoryEntry} A DirectoryEntry for current directory. In case of
- *     search -- the top directory from which search is run
+ *     search -- the top directory from which search is run.
  */
 DirectoryContents.prototype.getDirectoryEntry = function() {
+  throw 'Not implemented.';
+};
+
+/**
+ * @return {DirectoryEntry} A DirectoryEntry for the last non search contents.
+ */
+DirectoryContents.prototype.getLastNonSearchDirectoryEntry = function() {
   throw 'Not implemented.';
 };
 
@@ -304,9 +317,16 @@ DirectoryContentsBasic.prototype.getPath = function() {
 };
 
 /**
- * @return {DirectoryEntry?} DirectoryEntry of the current directory.
+ * @return {DirectoryEntry} DirectoryEntry of the current directory.
  */
 DirectoryContentsBasic.prototype.getDirectoryEntry = function() {
+  return this.entry_;
+};
+
+/**
+ * @return {DirectoryEntry} DirectoryEntry for the currnet entry.
+ */
+DirectoryContentsBasic.prototype.getLastNonSearchDirectoryEntry = function() {
   return this.entry_;
 };
 
@@ -314,8 +334,10 @@ DirectoryContentsBasic.prototype.getDirectoryEntry = function() {
  * Start directory scan.
  */
 DirectoryContentsBasic.prototype.scan = function() {
-  if (this.entry_ === DirectoryModel.fakeGDataEntry_)
+  if (this.entry_ === DirectoryModel.fakeGDataEntry_) {
+    this.lastChunkReceived();
     return;
+  }
 
   metrics.startInterval('DirectoryScan');
   this.reader_ = this.entry_.createReader();
@@ -391,12 +413,18 @@ DirectoryContentsGDataSearch.MAX_RESULTS = 999;
  * @extends {DirectoryContents}
  * @param {FileListContext} context File list context.
  * @param {DirectoryEntry} dirEntry Current directory.
+ * @param {DirectoryEntry} previousDirEntry DirectoryEntry that was current
+ *     before the search.
  * @param {string} query Search query.
  */
-function DirectoryContentsGDataSearch(context, dirEntry, query) {
+function DirectoryContentsGDataSearch(context,
+                                      dirEntry,
+                                      previousDirEntry,
+                                      query) {
   DirectoryContents.call(this, context);
   this.query_ = query;
   this.directoryEntry_ = dirEntry;
+  this.previousDirectoryEntry_ = previousDirEntry;
   this.nextFeed_ = '';
   this.done_ = false;
   this.fetchedResultsNum_ = 0;
@@ -424,10 +452,20 @@ DirectoryContentsGDataSearch.prototype.isSearch = function() {
 };
 
 /**
- * @return {DirectoryEntry} DirectoryEntry for current directory.
+ * @return {DirectoryEntry} A DirectoryEntry for the top directory from which
+ *     search is run (i.e. drive root).
  */
 DirectoryContentsGDataSearch.prototype.getDirectoryEntry = function() {
   return this.directoryEntry_;
+};
+
+/**
+ * @return {DirectoryEntry} DirectoryEntry for the directory that was current
+ *     before the search.
+ */
+DirectoryContentsGDataSearch.prototype.getLastNonSearchDirectoryEntry =
+    function() {
+  return this.previousDirectoryEntry_;
 };
 
 /**
@@ -459,25 +497,32 @@ DirectoryContentsGDataSearch.prototype.readNextChunk = function() {
     return;
   }
 
-  var searchCallback = (function(entries, nextFeed) {
+  var searchCallback = (function(results, nextFeed) {
     // TODO(tbarzic): Improve error handling.
-    if (!entries) {
+    if (!results) {
       console.log('Drive search encountered an error');
       this.lastChunkReceived();
       return;
     }
     this.nextFeed_ = nextFeed;
-    this.fetchedResultsNum_ += entries.length;
+    this.fetchedResultsNum_ += results.length;
     if (this.fetchedResultsNum_ >= DirectoryContentsGDataSearch.MAX_RESULTS)
       this.nextFeed_ = '';
 
     this.done_ = (this.nextFeed_ == '');
+
+    // TODO(haruki): Use the file properties as well when we implement the UI
+    // side.
+    var entries = results.map(function(r) { return r.entry; });
     this.onNewEntries(entries);
   }).bind(this);
 
-  chrome.fileBrowserPrivate.searchGData(this.query_,
-                                        this.nextFeed_,
-                                        searchCallback);
+  var searchParams = {
+    'query': this.query_,
+    'sharedWithMe': false,  // (leave out for false)
+    'nextFeed': this.nextFeed_
+  };
+  chrome.fileBrowserPrivate.searchDrive(searchParams, searchCallback);
 };
 
 
@@ -523,10 +568,19 @@ DirectoryContentsLocalSearch.prototype.isSearch = function() {
 };
 
 /**
- * @return {DirectoryEntry} A DirectoryEntry for current directory. In case of
- *     search -- the top directory from which search is run
+ * @return {DirectoryEntry} A DirectoryEntry for the top directory from which
+ *     search is run.
  */
 DirectoryContentsLocalSearch.prototype.getDirectoryEntry = function() {
+  return this.directoryEntry_;
+};
+
+/**
+ * @return {DirectoryEntry} DirectoryEntry for current directory (the search is
+ *     run from the directory that was current before search).
+ */
+DirectoryContentsLocalSearch.prototype.getLastNonSearchDirectoryEntry =
+    function() {
   return this.directoryEntry_;
 };
 

@@ -21,6 +21,7 @@ class DictionaryValue;
 }
 
 namespace content {
+class DevToolsClientHost;
 class WebContents;
 }
 
@@ -29,7 +30,7 @@ class DebuggerFunction : public AsyncExtensionFunction {
   DebuggerFunction();
   virtual ~DebuggerFunction() {}
 
-  bool InitTabContents();
+  bool InitWebContents();
   bool InitClientHost();
 
   content::WebContents* contents_;

@@ -11,13 +11,13 @@
 #include "content/public/utility/content_utility_client.h"
 #include "printing/pdf_render_settings.h"
 
-class ExternalProcessImporterBridge;
 class FilePath;
 class Importer;
 
 namespace base {
 class DictionaryValue;
 class Thread;
+struct FileDescriptor;
 }
 
 namespace gfx {
@@ -60,7 +60,15 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
       const FilePath& metafile_path,
       const printing::PdfRenderSettings& pdf_render_settings,
       const std::vector<printing::PageRange>& page_ranges);
+  void OnRobustJPEGDecodeImage(
+      const std::vector<unsigned char>& encoded_data);
   void OnParseJSON(const std::string& json);
+
+#if defined(OS_CHROMEOS)
+  void OnCreateZipFile(const FilePath& src_dir,
+                       const std::vector<FilePath>& src_relative_paths,
+                       const base::FileDescriptor& dest_fd);
+#endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_WIN)
   // Helper method for Windows.

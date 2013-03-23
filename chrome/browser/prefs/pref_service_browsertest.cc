@@ -6,9 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/test/test_file_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -34,11 +34,17 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, PRE_Test) {
   browser()->window()->SetBounds(gfx::Rect(20, 30, 400, 500));
 }
 
-IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, Test) {
+// Fails on Chrome OS as the browser thinks it is restarting after a crash, see
+// http://crbug.com/168044
+#if defined(OS_CHROMEOS)
+#define MAYBE_Test DISABLED_Test
+#else
+#define MAYBE_Test Test
+#endif
+IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, MAYBE_Test) {
   gfx::Rect bounds = browser()->window()->GetBounds();
-
   gfx::Rect expected_bounds(gfx::Rect(20, 30, 400, 500));
-  ASSERT_EQ(expected_bounds, bounds);
+  ASSERT_EQ(expected_bounds.ToString(), bounds.ToString());
 }
 
 #endif  // defined(TOOLKIT_GTK)
@@ -142,8 +148,7 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsLoaded, Test) {
   EXPECT_EQ(right, bounds.x() + bounds.width());
 
   // Find if launched window is maximized.
-  bool is_window_maximized =
-      chrome::GetSavedWindowShowState(browser()) == ui::SHOW_STATE_MAXIMIZED;
+  bool is_window_maximized = browser()->window()->IsMaximized();
   bool is_maximized = false;
   EXPECT_TRUE(root_dict->GetBoolean(kBrowserWindowPlacement + ".maximized",
       &is_maximized));
@@ -201,8 +206,7 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsMigrated, Test) {
   EXPECT_EQ(right, bounds.x() + bounds.width());
 
   // Find if launched window is maximized.
-  bool is_window_maximized =
-      chrome::GetSavedWindowShowState(browser()) == ui::SHOW_STATE_MAXIMIZED;
+  bool is_window_maximized = browser()->window()->IsMaximized();
   bool is_maximized = false;
   EXPECT_TRUE(root_dict->GetBoolean(kBrowserWindowPlacement + ".maximized",
       &is_maximized));

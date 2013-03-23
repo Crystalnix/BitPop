@@ -6,14 +6,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/eintr_wrapper.h"
 #include "base/lazy_instance.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/common/view_messages.h"
 
@@ -86,7 +86,12 @@ RenderWidgetHelper::RenderWidgetHelper()
 
 RenderWidgetHelper::~RenderWidgetHelper() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  g_widget_helpers.Get().erase(render_process_id_);
+
+  // Delete this RWH from the map if it is found.
+  WidgetHelperMap& widget_map = g_widget_helpers.Get();
+  WidgetHelperMap::iterator it = widget_map.find(render_process_id_);
+  if (it != widget_map.end() && it->second == this)
+    widget_map.erase(it);
 
   // The elements of pending_paints_ each hold an owning reference back to this
   // object, so we should not be destroyed unless pending_paints_ is empty!
@@ -133,11 +138,11 @@ void RenderWidgetHelper::CancelResourceRequests(int render_widget_id) {
                  render_widget_id));
 }
 
-void RenderWidgetHelper::CrossSiteSwapOutACK(
+void RenderWidgetHelper::SimulateSwapOutACK(
     const ViewMsg_SwapOut_Params& params) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&RenderWidgetHelper::OnCrossSiteSwapOutACK,
+      base::Bind(&RenderWidgetHelper::OnSimulateSwapOutACK,
                  this,
                  params));
 }
@@ -252,9 +257,9 @@ void RenderWidgetHelper::OnCancelResourceRequests(
       render_process_id_, render_widget_id);
 }
 
-void RenderWidgetHelper::OnCrossSiteSwapOutACK(
+void RenderWidgetHelper::OnSimulateSwapOutACK(
     const ViewMsg_SwapOut_Params& params) {
-  resource_dispatcher_host_->OnSwapOutACK(params);
+  resource_dispatcher_host_->OnSimulateSwapOutACK(params);
 }
 
 void RenderWidgetHelper::CreateNewWindow(

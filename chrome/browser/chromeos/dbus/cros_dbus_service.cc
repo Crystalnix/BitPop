@@ -8,6 +8,8 @@
 #include "base/chromeos/chromeos_version.h"
 #include "base/stl_util.h"
 #include "base/threading/platform_thread.h"
+#include "chrome/browser/chromeos/dbus/liveness_service_provider.h"
+#include "chrome/browser/chromeos/dbus/printer_service_provider.h"
 #include "chrome/browser/chromeos/dbus/proxy_resolution_service_provider.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "dbus/bus.h"
@@ -105,10 +107,12 @@ void CrosDBusService::Initialize() {
     LOG(WARNING) << "CrosDBusService was already initialized";
     return;
   }
-  if (base::chromeos::IsRunningOnChromeOS()) {
-    dbus::Bus* bus = DBusThreadManager::Get()->GetSystemBus();
+  dbus::Bus* bus = DBusThreadManager::Get()->GetSystemBus();
+  if (base::chromeos::IsRunningOnChromeOS() && bus) {
     CrosDBusServiceImpl* service = new CrosDBusServiceImpl(bus);
     service->RegisterServiceProvider(ProxyResolutionServiceProvider::Create());
+    service->RegisterServiceProvider(new LivenessServiceProvider);
+    service->RegisterServiceProvider(new PrinterServiceProvider);
     g_cros_dbus_service = service;
     service->Start();
   } else {

@@ -1,16 +1,14 @@
 {
   "name": "Platform App Launch Test",
   "version": "1",
-  "manifest_version": 2,
-  "intents": {
-    "http://webintents.org/view": {
-      "type": [
+  "file_handlers": {
+    "text": {
+      "types": [
         "text/*"
       ],
       "title": "Test editor"
     }
   },
-  "permissions": ["experimental"],
   "app": {
     "background": {
       "scripts": ["test.js"]

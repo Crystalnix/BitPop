@@ -11,12 +11,15 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
+#include "chrome/common/cancelable_task_tracker.h"
+#include "content/public/browser/browser_thread.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 
 namespace content {
 class NotificationRegistrar;
@@ -51,7 +54,7 @@ class ShellLinkItem : public base::RefCountedThreadSafe<ShellLinkItem> {
   const std::wstring& title() const { return title_; }
   const std::wstring& icon() const { return icon_; }
   int index() const { return index_; }
-  scoped_refptr<base::RefCountedMemory> data() const { return data_; }
+  const SkBitmap& data() const { return data_; }
 
   void SetArguments(const std::wstring& arguments) {
     arguments_ = arguments;
@@ -67,7 +70,7 @@ class ShellLinkItem : public base::RefCountedThreadSafe<ShellLinkItem> {
     favicon_ = favicon;
   }
 
-  void SetIconData(scoped_refptr<base::RefCountedMemory> data) {
+  void SetIconData(const SkBitmap& data) {
     data_ = data;
   }
 
@@ -79,7 +82,7 @@ class ShellLinkItem : public base::RefCountedThreadSafe<ShellLinkItem> {
   std::wstring arguments_;
   std::wstring title_;
   std::wstring icon_;
-  scoped_refptr<base::RefCountedMemory> data_;
+  SkBitmap data_;
   int index_;
   bool favicon_;
 
@@ -103,9 +106,13 @@ typedef std::vector<scoped_refptr<ShellLinkItem> > ShellLinkItemList;
 // Updating a JumpList requires some file operations and it is not good to
 // update it in a UI thread. To solve this problem, this class posts to a
 // runnable method when it actually updates a JumpList.
+//
+// Note. CancelableTaskTracker is not thread safe, so we always delete JumpList
+// on UI thread (the same thread it got constructed on).
 class JumpList : public TabRestoreServiceObserver,
                  public content::NotificationObserver,
-                 public base::RefCountedThreadSafe<JumpList> {
+                 public base::RefCountedThreadSafe<
+                     JumpList, content::BrowserThread::DeleteOnUIThread> {
  public:
   JumpList();
 
@@ -160,8 +167,10 @@ class JumpList : public TabRestoreServiceObserver,
                  size_t max_items);
 
   // Starts loading a favicon for each URL in |icon_urls_|.
-  // This function just sends a query to HistoryService.
-  bool StartLoadingFavicon();
+  // This function sends a query to HistoryService.
+  // When finishing loading all favicons, this function posts a task that
+  // decompresses collected favicons and updates a JumpList.
+  void StartLoadingFavicon();
 
   // A callback function for HistoryService that notify when the "Most Visited"
   // list is available.
@@ -174,10 +183,7 @@ class JumpList : public TabRestoreServiceObserver,
   // is available.
   // To avoid file operations, this function just attaches the given data to
   // a ShellLinkItem object.
-  // When finishing loading all favicons, this function posts a task that
-  // decompresses collected favicons and updates a JumpList.
-  void OnFaviconDataAvailable(HistoryService::Handle handle,
-                              history::FaviconData favicon);
+  void OnFaviconDataAvailable(const history::FaviconImageResult& image_result);
 
   // Callback for TopSites that notifies when the "Most
   // Visited" list is available. This function updates the ShellLinkItemList
@@ -190,18 +196,21 @@ class JumpList : public TabRestoreServiceObserver,
   // has been fetched.
   void RunUpdate();
 
-  // Helper method for RunUpdate to decode the data about the asynchrounously
+  // Helper method for RunUpdate to create icon files for the asynchrounously
   // loaded icons.
-  void DecodeIconData(const ShellLinkItemList& item_list);
+  void CreateIconFiles(const ShellLinkItemList& item_list);
 
  private:
-  friend class base::RefCountedThreadSafe<JumpList>;
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<JumpList>;
   ~JumpList();
 
-  // Our consumers for HistoryService.
-  CancelableRequestConsumer most_visited_consumer_;
-  CancelableRequestConsumer favicon_consumer_;
-  CancelableRequestConsumer topsites_consumer_;
+  // For callbacks may be run after destruction.
+  base::WeakPtrFactory<JumpList> weak_ptr_factory_;
+
+  // Tracks FaviconService tasks.
+  CancelableTaskTracker cancelable_task_tracker_;
 
   // The Profile object is used to listen for events
   Profile* profile_;
@@ -228,9 +237,9 @@ class JumpList : public TabRestoreServiceObserver,
   typedef std::pair<std::string, scoped_refptr<ShellLinkItem> > URLPair;
   std::list<URLPair> icon_urls_;
 
-  // Handle of last favicon request used to cancel if a new request
-  // comes in before the current one returns.
-  FaviconService::Handle handle_;
+  // Id of last favicon task. It's used to cancel current task if a new one
+  // comes in before it finishes.
+  CancelableTaskTracker::TaskId task_id_;
 
   // Lock for most_visited_pages_, recently_closed_pages_, icon_urls_
   // as they may be used by up to 3 threads.

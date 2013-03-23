@@ -117,6 +117,7 @@ var SourceEntry = (function() {
             // If the parent of |this| is a HOST_RESOLVER_IMPL_JOB, use
             // '<DNS Server IP> [<host we're resolving>]'.
             if (this.entries_[0].type == EventType.SOCKET_ALIVE &&
+                this.entries_[0].params &&
                 this.entries_[0].params.source_dependency != undefined) {
               var parentId = this.entries_[0].params.source_dependency.id;
               var parent = SourceTracker.getInstance().getSourceEntry(parentId);
@@ -205,7 +206,8 @@ var SourceEntry = (function() {
             this.entries_[1].type == EventType.UDP_CONNECT) {
           return this.entries_[1];
         }
-        if (this.entries_[0].type == EventType.REQUEST_ALIVE) {
+        if (this.entries_[0].type == EventType.REQUEST_ALIVE &&
+            this.entries_[0].params == undefined) {
           var start_index = 1;
           // Skip over URL_REQUEST_BLOCKED_ON_DELEGATE events for URL_REQUESTs.
           while (start_index + 1 < this.entries_.length &&
@@ -311,7 +313,7 @@ var SourceEntry = (function() {
     printAsText: function(parent) {
       // The date will be undefined if not viewing a loaded log file.
       printLogEntriesAsText(this.entries_, parent,
-                            SourceTracker.getInstance().getSecurityStripping(),
+                            SourceTracker.getInstance().getPrivacyStripping(),
                             Constants.clientInfo.numericDate);
     }
   };

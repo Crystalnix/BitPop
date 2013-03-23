@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/constants.h"
 
 namespace extensions {
 
@@ -34,10 +35,6 @@ FrameNavigationState::FrameID::FrameID(
     content::RenderViewHost* render_view_host)
     : frame_num(frame_num),
       render_view_host(render_view_host) {
-}
-
-bool FrameNavigationState::FrameID::IsValid() const {
-  return frame_num >= 0 && render_view_host;
 }
 
 bool FrameNavigationState::FrameID::operator<(
@@ -83,12 +80,13 @@ bool FrameNavigationState::IsValidUrl(const GURL& url) const {
   // Allow about:blank.
   if (url.spec() == chrome::kAboutBlankURL)
     return true;
-  if (allow_extension_scheme_ && url.scheme() == chrome::kExtensionScheme)
+  if (allow_extension_scheme_ && url.scheme() == extensions::kExtensionScheme)
     return true;
   return false;
 }
 
 void FrameNavigationState::TrackFrame(FrameID frame_id,
+                                      FrameID parent_frame_id,
                                       const GURL& url,
                                       bool is_main_frame,
                                       bool is_error_page) {
@@ -99,6 +97,12 @@ void FrameNavigationState::TrackFrame(FrameID frame_id,
   frame_state.is_navigating = true;
   frame_state.is_committed = false;
   frame_state.is_server_redirected = false;
+  if (!is_main_frame) {
+    frame_state.parent_frame_num = parent_frame_id.frame_num;
+  } else {
+    DCHECK(parent_frame_id.frame_num == -1);
+    frame_state.parent_frame_num = -1;
+  }
   frame_ids_.insert(frame_id);
 }
 
@@ -154,6 +158,18 @@ bool FrameNavigationState::IsMainFrame(FrameID frame_id) const {
 
 FrameNavigationState::FrameID FrameNavigationState::GetMainFrameID() const {
   return main_frame_id_;
+}
+
+FrameNavigationState::FrameID FrameNavigationState::GetParentFrameID(
+    FrameID frame_id) const {
+  FrameIdToStateMap::const_iterator frame_state =
+      frame_state_map_.find(frame_id);
+  if (frame_state == frame_state_map_.end()) {
+    NOTREACHED();
+    return FrameID();
+  }
+  return FrameID(frame_state->second.parent_frame_num,
+                 frame_id.render_view_host);
 }
 
 void FrameNavigationState::SetErrorOccurredInFrame(FrameID frame_id) {

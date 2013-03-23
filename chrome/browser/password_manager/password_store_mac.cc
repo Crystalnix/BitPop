@@ -22,16 +22,16 @@
 #include "chrome/browser/password_manager/password_store_change.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
-#include "crypto/keychain_mac.h"
+#include "crypto/apple_keychain.h"
 
-using crypto::MacKeychain;
-using webkit::forms::PasswordForm;
+using crypto::AppleKeychain;
+using content::PasswordForm;
 
 // Utility class to handle the details of constructing and running a keychain
 // search from a set of attributes.
 class KeychainSearch {
  public:
-  explicit KeychainSearch(const MacKeychain& keychain);
+  explicit KeychainSearch(const AppleKeychain& keychain);
   ~KeychainSearch();
 
   // Sets up a keycahin search based on an non "null" (NULL for char*,
@@ -49,12 +49,12 @@ class KeychainSearch {
   void FindMatchingItems(std::vector<SecKeychainItemRef>* matches);
 
  private:
-  const MacKeychain* keychain_;
+  const AppleKeychain* keychain_;
   SecKeychainAttributeList search_attributes_;
   SecKeychainSearchRef search_ref_;
 };
 
-KeychainSearch::KeychainSearch(const MacKeychain& keychain)
+KeychainSearch::KeychainSearch(const AppleKeychain& keychain)
     : keychain_(&keychain), search_ref_(NULL) {
   search_attributes_.count = 0;
   search_attributes_.attr = NULL;
@@ -231,7 +231,7 @@ PasswordForm::Scheme SchemeForAuthType(SecAuthenticationType auth_type) {
   }
 }
 
-bool FillPasswordFormFromKeychainItem(const MacKeychain& keychain,
+bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
                                       const SecKeychainItemRef& keychain_item,
                                       PasswordForm* form) {
   DCHECK(form);
@@ -444,7 +444,8 @@ void MergePasswordForms(std::vector<PasswordForm*>* keychain_forms,
 }
 
 std::vector<PasswordForm*> GetPasswordsForForms(
-    const MacKeychain& keychain, std::vector<PasswordForm*>* database_forms) {
+    const AppleKeychain& keychain,
+    std::vector<PasswordForm*>* database_forms) {
   MacKeychainPasswordFormAdapter keychain_adapter(&keychain);
 
   std::vector<PasswordForm*> merged_forms;
@@ -469,7 +470,7 @@ std::vector<PasswordForm*> GetPasswordsForForms(
 #pragma mark -
 
 MacKeychainPasswordFormAdapter::MacKeychainPasswordFormAdapter(
-    const MacKeychain* keychain)
+    const AppleKeychain* keychain)
     : keychain_(keychain), finds_only_owned_(false) {
 }
 
@@ -643,7 +644,7 @@ SecKeychainItemRef MacKeychainPasswordFormAdapter::KeychainItemForForm(
 std::vector<SecKeychainItemRef>
     MacKeychainPasswordFormAdapter::MatchingKeychainItems(
         const std::string& signon_realm,
-        webkit::forms::PasswordForm::Scheme scheme,
+        content::PasswordForm::Scheme scheme,
         const char* path, const char* username) {
   std::vector<SecKeychainItemRef> matches;
 
@@ -734,7 +735,7 @@ OSType MacKeychainPasswordFormAdapter::CreatorCodeForSearch() {
 
 #pragma mark -
 
-PasswordStoreMac::PasswordStoreMac(MacKeychain* keychain,
+PasswordStoreMac::PasswordStoreMac(AppleKeychain* keychain,
                                    LoginDatabase* login_db)
     : keychain_(keychain), login_metadata_db_(login_db) {
   DCHECK(keychain_.get());
@@ -762,6 +763,9 @@ bool PasswordStoreMac::Init() {
 void PasswordStoreMac::ShutdownOnUIThread() {
 }
 
+// Mac stores passwords in the system keychain, which can block for an
+// arbitrarily long time (most notably, it can block on user confirmation
+// from a dialog). Use a dedicated thread to avoid blocking DB thread.
 bool PasswordStoreMac::ScheduleTask(const base::Closure& task) {
   if (thread_.get()) {
     thread_->message_loop()->PostTask(FROM_HERE, task);
@@ -887,8 +891,9 @@ void PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
   }
 }
 
-void PasswordStoreMac::GetLoginsImpl(GetLoginsRequest* request,
-                                     const webkit::forms::PasswordForm& form) {
+void PasswordStoreMac::GetLoginsImpl(
+    const content::PasswordForm& form,
+    const ConsumerCallbackRunner& callback_runner) {
   MacKeychainPasswordFormAdapter keychain_adapter(keychain_.get());
   std::vector<PasswordForm*> keychain_forms =
       keychain_adapter.PasswordsFillingForm(form);
@@ -896,17 +901,18 @@ void PasswordStoreMac::GetLoginsImpl(GetLoginsRequest* request,
   std::vector<PasswordForm*> database_forms;
   login_metadata_db_->GetLogins(form, &database_forms);
 
-  std::vector<PasswordForm*>& merged_forms = request->value;
+  std::vector<PasswordForm*> matched_forms;
   internal_keychain_helpers::MergePasswordForms(&keychain_forms,
                                                 &database_forms,
-                                                &merged_forms);
+                                                &matched_forms);
 
   // Strip any blacklist entries out of the unused Keychain array, then take
   // all the entries that are left (which we can use as imported passwords).
   std::vector<PasswordForm*> keychain_blacklist_forms =
       internal_keychain_helpers::ExtractBlacklistForms(&keychain_forms);
-  merged_forms.insert(merged_forms.end(), keychain_forms.begin(),
-                      keychain_forms.end());
+  matched_forms.insert(matched_forms.end(),
+                       keychain_forms.begin(),
+                       keychain_forms.end());
   keychain_forms.clear();
   STLDeleteElements(&keychain_blacklist_forms);
 
@@ -914,7 +920,7 @@ void PasswordStoreMac::GetLoginsImpl(GetLoginsRequest* request,
   RemoveDatabaseForms(database_forms);
   STLDeleteElements(&database_forms);
 
-  ForwardLoginsResult(request);
+  callback_runner.Run(matched_forms);
 }
 
 void PasswordStoreMac::GetBlacklistLoginsImpl(GetLoginsRequest* request) {
@@ -961,7 +967,7 @@ bool PasswordStoreMac::AddToKeychainIfNecessary(const PasswordForm& form) {
 }
 
 bool PasswordStoreMac::DatabaseHasFormMatchingKeychainForm(
-    const webkit::forms::PasswordForm& form) {
+    const content::PasswordForm& form) {
   bool has_match = false;
   std::vector<PasswordForm*> database_forms;
   login_metadata_db_->GetLogins(form, &database_forms);

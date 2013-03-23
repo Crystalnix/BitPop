@@ -14,7 +14,7 @@
 // The feeds are located in chrome/test/data/chromeos/drive/.
 var kDirectoryPath = 'drive/Folder';
 var kFileName = 'File.aBc';
-var kExpectedContents = 'hello, world\0';
+var kExpectedContents = 'hello, world!';
 var kWriteOffset = 12;
 var kWriteData = '!!!';
 var kExpectedAfterWrite = 'hello, world!!!';
@@ -23,6 +23,7 @@ var kExpectedAfterTruncateShort = 'hello';
 var kTruncateLongLength = 7;
 var kExpectedAfterTruncateLong = 'hello\0\0';
 var kNewDirectoryPath = 'drive/FolderNew';
+var kFileManagerExtensionId = 'hhaomjibdihmijegdhdafkllkbggdgoj';
 
 // Gets local filesystem used in tests.
 TestRunner.prototype.init = function() {
@@ -115,12 +116,13 @@ TestRunner.prototype.runExecuteReadTask = function() {
   // Add listener to be invoked when filesystem handler extension sends us
   // response.
   this.listener_ = this.onHandlerRequest_.bind(this);
-  chrome.extension.onRequestExternal.addListener(this.listener_);
+  chrome.extension.onMessageExternal.addListener(this.listener_);
 
   var self = this;
   var fileURL = this.fileEntry_.toURL();
-  chrome.fileBrowserPrivate.getFileTasks([fileURL],
+  chrome.fileBrowserPrivate.getFileTasks([fileURL], [],
     function(tasks) {
+      tasks = self.filterTasks_(tasks);
       if (!tasks || !tasks.length) {
         self.errorCallback_({message: 'No tasks registered'},
                             'Error fetching tasks: ');
@@ -133,11 +135,57 @@ TestRunner.prototype.runExecuteReadTask = function() {
     });
 };
 
+TestRunner.prototype.filterTasks_ = function(tasks) {
+  if (!tasks) return tasks;
+  var result = [];
+  for (var i = 0; i < tasks.length; i++) {
+    if (tasks[i].taskId.split('|')[0] != kFileManagerExtensionId) {
+      result.push(tasks[i]);
+    }
+  }
+  return result;
+};
+
+TestRunner.prototype.runCancelTest = function(fileName, type) {
+  var self = this;
+  chrome.test.assertTrue(!!this.directoryEntry_);
+  this.directoryEntry_.getFile(fileName, {},
+      function(entry) {
+        entry.createWriter(
+          function(writer) {
+            var sawAbort = false;
+
+            writer.onerror = self.errorCallback_.bind(self,
+                                                      'Error writing file: ');
+            writer.onabort = function(e) {
+              chrome.test.assertFalse(sawAbort);
+              sawAbort = true;
+            };
+            writer.onwritestart = function(e) {
+              writer.abort();
+            };
+            writer.onwrite = function(e) {
+              chrome.test.fail('onwrite is called after abort.');
+            };
+            writer.onwriteend = function(e) {
+              chrome.test.assertTrue(sawAbort);
+              chrome.test.succeed();
+            };
+            if (type == 'write')
+              writer.write(new Blob([kWriteData], {'type': 'text/plain'}));
+            else
+              writer.truncate(0);
+          },
+          self.errorCallback_.bind(self, 'Error creating writer: '));
+      },
+      self.errorCallback_.bind(self, 'Error opening file: '));
+};
+
 // Processes the response from file handler for which file task was executed.
 TestRunner.prototype.onHandlerRequest_ =
     function(request, sender, sendResponse) {
   // We don't have to listen for a response anymore.
-  chrome.extension.onRequestExternal.removeListener(this.listener_);
+  chrome.extension.onMessageExternal.removeListener(this.listener_);
 
   this.verifyHandlerRequest(request,
       chrome.test.succeed,
@@ -247,6 +295,12 @@ chrome.test.runTests([function initTests() {
   },
   function readFileAfterTruncateLong() {
     testRunner.runReadFileTest(kFileName, kExpectedAfterTruncateLong);
+  },
+  function cancelWrite() {
+    testRunner.runCancelTest(kFileName, 'write');
+  },
+  function cancelTruncate() {
+    testRunner.runCancelTest(kFileName, 'truncate');
   },
   function createDir() {
     // Creates new directory.

@@ -7,30 +7,29 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/renderer/pepper/pepper_instance_state_accessor_impl.h"
+#include "ppapi/proxy/connection.h"
 #include "webkit/plugins/ppapi/resource_creation_impl.h"
-
-class RenderViewImpl;
-
-namespace ppapi {
-class PpapiPermissions;
-}
 
 namespace content {
 
+class RendererPpapiHostImpl;
+
 // This class provides creation functions for the new resources with IPC
 // backends that live in content/renderer/pepper.
+//
+// (See pepper_in_process_router.h for more information.)
 //
 // This is a bit confusing. The "old-style" resources live in
 // webkit/plugins/ppapi and are created by the ResourceCreationImpl in that
 // directory. The "new-style" IPC-only resources are in ppapi/proxy and are
 // created by the RessourceCreationProxy in that directory.
 //
-// This class allows us to run new-style IPC-only resources in-process. We have
-// an IPC reflector to run it in process. But then we have a problem with
-// allocating the resources since src/webkit can't depend on IPC or see our IPC
-// backend in content. This class overrides the normal in-process resource
-// creation and adds in the resources that we implement in ppapi/proxy.
+// This class allows us to run new-style IPC-only resources in-process. We use
+// the PepperInProcessRouter to run it in process. But then we have a problem
+// with allocating the resources since src/webkit can't depend on IPC or see
+// our IPC backend in content. This class overrides the normal in-process
+// resource creation and adds in the resources that we implement in
+// ppapi/proxy.
 //
 // When we convert all resources to use the new-style, we can just use the
 // ResourceCreationProxy for all resources. This class is just glue to manage
@@ -38,25 +37,37 @@ namespace content {
 class PepperInProcessResourceCreation
     : public webkit::ppapi::ResourceCreationImpl {
  public:
-  PepperInProcessResourceCreation(RenderViewImpl* render_view,
-                                  webkit::ppapi::PluginInstance* instance,
-                                  const ppapi::PpapiPermissions& perms);
+  PepperInProcessResourceCreation(RendererPpapiHostImpl* host_impl,
+                                  webkit::ppapi::PluginInstance* instance);
   virtual ~PepperInProcessResourceCreation();
 
   // ResourceCreation_API implementation.
+  virtual PP_Resource CreateBrowserFont(
+      PP_Instance instance,
+      const PP_BrowserFont_Trusted_Description* description) OVERRIDE;
   virtual PP_Resource CreateFileChooser(
       PP_Instance instance,
       PP_FileChooserMode_Dev mode,
       const char* accept_types) OVERRIDE;
+  virtual PP_Resource CreateGraphics2D(
+      PP_Instance pp_instance,
+      const PP_Size& size,
+      PP_Bool is_always_opaque) OVERRIDE;
+  virtual PP_Resource CreatePrinting(
+      PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateURLRequestInfo(
+      PP_Instance instance,
+      const ::ppapi::URLRequestInfoData& data) OVERRIDE;
+  virtual PP_Resource CreateURLResponseInfo(
+      PP_Instance instance,
+      const ::ppapi::URLResponseInfoData& data,
+      PP_Resource file_ref_resource) OVERRIDE;
+  virtual PP_Resource CreateWebSocket(
+      PP_Instance instance) OVERRIDE;
 
  private:
-  PepperInstanceStateAccessorImpl instance_state_;
-
-  class HostToPluginRouter;
-  scoped_ptr<HostToPluginRouter> host_to_plugin_router_;
-
-  class PluginToHostRouter;
-  scoped_ptr<PluginToHostRouter> plugin_to_host_router_;
+  // Non-owning pointer to the host for the current plugin.
+  RendererPpapiHostImpl* host_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperInProcessResourceCreation);
 };

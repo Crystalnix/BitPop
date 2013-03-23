@@ -7,51 +7,27 @@
 
 #include "third_party/skia/include/core/SkColor.h"
 
-namespace gfx {
-class Font;
-class Rect;
-class Size;
-}
-
 namespace chrome {
 namespace search {
 
-// Background color of the NTP.
-extern const SkColor kNTPBackgroundColor;
+// The minimum height of the content view for which the detached bookmark bar
+// should be visible. This value is calculated from the
+// chrome/browser/resources/ntp_search/ tile_page.js
+// HEIGHT_FOR_BOTTOM_PANEL constant.
+static const int kMinContentHeightForBottomBookmarkBar = 531;
 
-// Color for the placeholder text on NTP.
-extern const SkColor kNTPPlaceholderTextColor;
+// The maximum width of the detached bookmark bar.
+static const int kMaxWidthForBottomBookmarkBar = 720;
 
-// Color for the omnibox background
-extern const SkColor kOmniboxBackgroundColor;
+// The left and right padding of the detached bookmark bar.
+static const int kHorizontalPaddingForBottomBookmarkBar = 130;
 
-// Color for the separator between results and the page.
-extern const SkColor kResultsSeparatorColor;
+// The alpha used to draw the bookmark bar background when themed.
+// This value ranges from 0.0 (fully transparent) to 1.0 (fully opaque).
+static const float kBookmarkBarThemeBackgroundAlphaFactor = 0.8f;
 
-// Background color for search results.
-extern const SkColor kSearchBackgroundColor;
-
-// Background color for suggest overlay.
-extern const SkColor kSuggestBackgroundColor;
-
-// Font size use in the omnibox for non-NTP pages.
-extern const int kOmniboxFontSize;
-
-// Y-coordinate of the omnibox when over the page.
-extern const int kOmniboxYPosition;
-
-// Initial height of the search results.
-extern const int kSearchResultsHeight;
-
-// Get location of NTP omnibox in |web_contents_size|.  A height of 0 is
-// returned, it is platform-specific.
-gfx::Rect GetNTPOmniboxBounds(const gfx::Size& web_contents_size);
-
-// Returns the derived |font| for NTP omnibox use.
-gfx::Font GetNTPOmniboxFont(const gfx::Font& font);
-
-// Returns the height of NTP given the |font| to be used.
-int GetNTPOmniboxHeight(const gfx::Font& font);
+// Returns the color to use to draw the bookmark bar separator when not themed.
+SkColor GetBookmarkBarNoThemeSeparatorColor();
 
 }  // namespace search
 }  // namespace chrome

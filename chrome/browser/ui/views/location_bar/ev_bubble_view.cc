@@ -16,21 +16,19 @@ EVBubbleView::EVBubbleView(const int background_images[],
 EVBubbleView::~EVBubbleView() {
 }
 
-bool EVBubbleView::OnMousePressed(const views::MouseEvent& event) {
+bool EVBubbleView::OnMousePressed(const ui::MouseEvent& event) {
   // We want to show the dialog on mouse release; that is the standard behavior
   // for buttons.
   return true;
 }
 
-void EVBubbleView::OnMouseReleased(const views::MouseEvent& event) {
+void EVBubbleView::OnMouseReleased(const ui::MouseEvent& event) {
   page_info_helper_.ProcessEvent(event);
 }
 
-ui::GestureStatus EVBubbleView::OnGestureEvent(
-    const views::GestureEvent& event) {
-  if (event.type() == ui::ET_GESTURE_TAP) {
-    page_info_helper_.ProcessEvent(event);
-    return ui::GESTURE_STATUS_CONSUMED;
+void EVBubbleView::OnGestureEvent(ui::GestureEvent* event) {
+  if (event->type() == ui::ET_GESTURE_TAP) {
+    page_info_helper_.ProcessEvent(*event);
+    event->SetHandled();
   }
-  return ui::GESTURE_STATUS_UNKNOWN;
 }

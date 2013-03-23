@@ -19,6 +19,8 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "media/video/capture/video_capture.h"
 
+namespace content {
+
 class CONTENT_EXPORT VideoCaptureMessageFilter
     : public IPC::ChannelProxy::MessageFilter {
  public:
@@ -33,7 +35,7 @@ class CONTENT_EXPORT VideoCaptureMessageFilter
 
     // Called when state of a video capture device has changed in the browser
     // process.
-    virtual void OnStateChanged(video_capture::State state) = 0;
+    virtual void OnStateChanged(VideoCaptureState state) = 0;
 
     // Called when device info is received from video capture device in the
     // browser process.
@@ -84,8 +86,7 @@ class CONTENT_EXPORT VideoCaptureMessageFilter
                         int buffer_id, base::Time timestamp);
 
   // State of browser process' video capture device has changed.
-  void OnDeviceStateChanged(int device_id,
-                            video_capture::State state);
+  void OnDeviceStateChanged(int device_id, VideoCaptureState state);
 
   // Receive device info from browser process.
   void OnDeviceInfoReceived(int device_id,
@@ -102,5 +103,7 @@ class CONTENT_EXPORT VideoCaptureMessageFilter
 
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureMessageFilter);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_VIDEO_CAPTURE_MESSAGE_FILTER_H_

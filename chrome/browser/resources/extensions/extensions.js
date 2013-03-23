@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="../shared/js/cr/ui/drag_wrapper.js"></include>
 <include src="../uber/uber_utils.js"></include>
 <include src="extension_commands_overlay.js"></include>
 <include src="extension_focus_manager.js"></include>
@@ -39,6 +38,7 @@ cr.define('extensions', function() {
     },
     // @inheritdoc
     doDragOver: function(e) {
+      e.preventDefault();
     },
     // @inheritdoc
     doDrop: function(e) {
@@ -116,6 +116,16 @@ cr.define('extensions', function() {
       cr.ui.overlay.setupOverlay($('dropTargetOverlay'));
 
       extensions.ExtensionFocusManager.getInstance().initialize();
+
+      var path = document.location.pathname;
+      if (path.length > 1) {
+        // Skip starting slash and remove trailing slash (if any).
+        var overlayName = path.slice(1).replace(/\/$/, '');
+        if (overlayName == 'configureCommands')
+          this.showExtensionCommandsConfigUi_();
+      }
+
+      preventDefaultOnPoundLinkClicks();  // From shared/js/util.js.
     },
 
     /**
@@ -143,15 +153,23 @@ cr.define('extensions', function() {
     },
 
     /**
+     * Shows the Extension Commands configuration UI.
+     * @param {Event} e Change event.
+     * @private
+     */
+    showExtensionCommandsConfigUi_: function(e) {
+      ExtensionSettings.showOverlay($('extensionCommandsOverlay'));
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_ExtensionCommands']);
+    },
+
+    /**
      * Handles the Configure (Extension) Commands link.
      * @param {Event} e Change event.
      * @private
      */
     handleExtensionCommandsConfig_: function(e) {
-      ExtensionSettings.showOverlay($('extensionCommandsOverlay'));
-      chrome.send('coreOptionsUserMetricsAction',
-                  ['Options_ExtensionCommands']);
-      e.preventDefault();
+      this.showExtensionCommandsConfigUi_();
     },
 
     /**
@@ -225,15 +243,24 @@ cr.define('extensions', function() {
     }
 
     var pageDiv = $('extension-settings');
+    var marginTop = 0;
     if (extensionsData.managedMode) {
       pageDiv.classList.add('showing-banner');
       pageDiv.classList.add('managed-mode');
       $('toggle-dev-on').disabled = true;
+      marginTop += 45;
     } else {
       pageDiv.classList.remove('showing-banner');
       pageDiv.classList.remove('managed-mode');
       $('toggle-dev-on').disabled = false;
     }
+
+    if (extensionsData.showDisabledExtensionsWarning) {
+      pageDiv.classList.add('showing-banner');
+      pageDiv.classList.add('sideload-wipeout');
+      marginTop += 60;
+    }
+    pageDiv.style.marginTop = marginTop + 'px';
 
     if (extensionsData.developerMode && !extensionsData.managedMode) {
       pageDiv.classList.add('dev-mode');

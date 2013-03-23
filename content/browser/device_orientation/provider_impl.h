@@ -11,7 +11,6 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
 #include "content/browser/device_orientation/data_fetcher.h"
 #include "content/browser/device_orientation/device_data.h"
 #include "content/browser/device_orientation/provider.h"
@@ -19,7 +18,7 @@
 
 class MessageLoop;
 
-namespace device_orientation {
+namespace content {
 
 class ProviderImpl : public Provider {
  public:
@@ -75,6 +74,6 @@ class ProviderImpl : public Provider {
   PollingThread* polling_thread_;
 };
 
-}  // namespace device_orientation
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_DEVICE_ORIENTATION_PROVIDER_IMPL_H_

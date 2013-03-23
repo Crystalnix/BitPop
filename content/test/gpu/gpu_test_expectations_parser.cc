@@ -12,6 +12,7 @@
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "content/public/common/content_paths.h"
 
 namespace {
 
@@ -30,10 +31,12 @@ enum Token {
   kConfigWinXP = 0,
   kConfigWinVista,
   kConfigWin7,
+  kConfigWin8,
   kConfigWin,
   kConfigMacLeopard,
   kConfigMacSnowLeopard,
   kConfigMacLion,
+  kConfigMacMountainLion,
   kConfigMac,
   kConfigLinux,
   kConfigChromeOS,
@@ -73,10 +76,12 @@ const TokenInfo kTokenData[] = {
   { "xp", GPUTestConfig::kOsWinXP },
   { "vista", GPUTestConfig::kOsWinVista },
   { "win7", GPUTestConfig::kOsWin7 },
+  { "win8", GPUTestConfig::kOsWin8 },
   { "win", GPUTestConfig::kOsWin },
   { "leopard", GPUTestConfig::kOsMacLeopard },
   { "snowleopard", GPUTestConfig::kOsMacSnowLeopard },
   { "lion", GPUTestConfig::kOsMacLion },
+  { "mountainlion", GPUTestConfig::kOsMacMountainLion },
   { "mac", GPUTestConfig::kOsMac },
   { "linux", GPUTestConfig::kOsLinux },
   { "chromeos", GPUTestConfig::kOsChromeOS },
@@ -229,10 +234,12 @@ bool GPUTestExpectationsParser::ParseConfig(
       case kConfigWinXP:
       case kConfigWinVista:
       case kConfigWin7:
+      case kConfigWin8:
       case kConfigWin:
       case kConfigMacLeopard:
       case kConfigMacSnowLeopard:
       case kConfigMacLion:
+      case kConfigMacMountainLion:
       case kConfigMac:
       case kConfigLinux:
       case kConfigChromeOS:
@@ -277,10 +284,12 @@ bool GPUTestExpectationsParser::ParseLine(
       case kConfigWinXP:
       case kConfigWinVista:
       case kConfigWin7:
+      case kConfigWin8:
       case kConfigWin:
       case kConfigMacLeopard:
       case kConfigMacSnowLeopard:
       case kConfigMacLion:
+      case kConfigMacMountainLion:
       case kConfigMac:
       case kConfigLinux:
       case kConfigChromeOS:
@@ -388,10 +397,12 @@ bool GPUTestExpectationsParser::UpdateTestConfig(
     case kConfigWinXP:
     case kConfigWinVista:
     case kConfigWin7:
+    case kConfigWin8:
     case kConfigWin:
     case kConfigMacLeopard:
     case kConfigMacSnowLeopard:
     case kConfigMacLion:
+    case kConfigMacMountainLion:
     case kConfigMac:
     case kConfigLinux:
     case kConfigChromeOS:
@@ -499,11 +510,9 @@ bool GPUTestExpectationsParser::GetExpectationsPath(
   bool rt = true;
   switch (profile) {
     case kWebGLConformanceTest:
-      rt = PathService::Get(base::DIR_SOURCE_ROOT, path);
+      rt = PathService::Get(content::DIR_TEST_DATA, path);
       if (rt) {
-        *path = path->Append(FILE_PATH_LITERAL("chrome"))
-            .Append(FILE_PATH_LITERAL("test"))
-            .Append(FILE_PATH_LITERAL("gpu"))
+        *path = path->Append(FILE_PATH_LITERAL("gpu"))
             .Append(FILE_PATH_LITERAL(
                 "webgl_conformance_test_expectations.txt"));
         rt = file_util::PathExists(*path);

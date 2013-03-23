@@ -12,6 +12,8 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "chrome/common/cancelable_task_tracker.h"
+#include "ui/gfx/favicon_size.h"
 
 class Profile;
 
@@ -51,27 +53,45 @@ class FaviconSource : public ChromeURLDataManager::DataSource {
   Profile* profile_;
 
  private:
+  // Defines the allowed pixel sizes for requested favicons.
+  enum IconSize {
+    SIZE_16,
+    SIZE_32,
+    SIZE_64,
+    NUM_SIZES
+  };
+
+  struct IconRequest {
+    IconRequest()
+      : request_id(0),
+        size_in_dip(gfx::kFaviconSize),
+        scale_factor(ui::SCALE_FACTOR_NONE) {
+    }
+    IconRequest(int id, int size, ui::ScaleFactor scale)
+      : request_id(id),
+        size_in_dip(size),
+        scale_factor(scale) {
+    }
+    int request_id;
+    int size_in_dip;
+    ui::ScaleFactor scale_factor;
+  };
+
   void Init(Profile* profile, IconType type);
 
   // Called when favicon data is available from the history backend.
-  void OnFaviconDataAvailable(FaviconService::Handle request_handle,
-                              history::FaviconData favicon);
+  void OnFaviconDataAvailable(
+      const IconRequest& request,
+      const history::FaviconBitmapResult& bitmap_result);
 
   // Sends the default favicon.
-  void SendDefaultResponse(int request_id);
+  void SendDefaultResponse(const IconRequest& request);
 
-  CancelableRequestConsumerT<int, 0> cancelable_consumer_;
+  CancelableTaskTracker cancelable_task_tracker_;
 
-  // Map from request ID to size requested (in pixels). TODO(estade): Get rid of
-  // this map when we properly support multiple favicon sizes.
-  std::map<int, int> request_size_map_;
-
-  // Raw PNG representation of the favicon to show when the favicon
-  // database doesn't have a favicon for a webpage.
-  // 16x16
-  scoped_refptr<base::RefCountedMemory> default_favicon_;
-  // 32x32
-  scoped_refptr<base::RefCountedMemory> default_favicon_large_;
+  // Raw PNG representations of favicons of each size to show when the favicon
+  // database doesn't have a favicon for a webpage. Indexed by IconSize values.
+  scoped_refptr<base::RefCountedMemory> default_favicons_[NUM_SIZES];
 
   // The history::IconTypes of icon that this FaviconSource handles.
   int icon_types_;

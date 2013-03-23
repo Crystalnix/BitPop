@@ -15,6 +15,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
+#include "net/socket/tcp_client_socket.h"
 
 namespace net {
 class AddressList;
@@ -30,11 +31,18 @@ typedef base::Callback<void(int, scoped_refptr<net::IOBuffer> io_buffer)>
 typedef base::Callback<
   void(int, scoped_refptr<net::IOBuffer> io_buffer, const std::string&, int)>
       RecvFromCompletionCallback;
+typedef base::Callback<
+  void(int, net::TCPClientSocket*)> AcceptCompletionCallback;
 
 // A Socket wraps a low-level socket and includes housekeeping information that
 // we need to manage it in the context of an extension.
 class Socket : public ApiResource {
  public:
+  enum SocketType {
+    TYPE_TCP,
+    TYPE_UDP,
+  };
+
   virtual ~Socket();
   virtual void Connect(const std::string& address,
                        int port,
@@ -63,12 +71,16 @@ class Socket : public ApiResource {
 
   virtual bool SetKeepAlive(bool enable, int delay);
   virtual bool SetNoDelay(bool no_delay);
+  virtual int Listen(const std::string& address, int port, int backlog,
+                     std::string* error_msg);
+  virtual void Accept(const AcceptCompletionCallback &callback);
 
   bool IsConnected();
-  virtual bool IsTCPSocket() = 0;
 
   virtual bool GetPeerAddress(net::IPEndPoint* address) = 0;
   virtual bool GetLocalAddress(net::IPEndPoint* address) = 0;
+
+  virtual SocketType GetSocketType() const = 0;
 
   static bool StringAndPortToAddressList(const std::string& ip_address_str,
                                          int port,
@@ -81,7 +93,7 @@ class Socket : public ApiResource {
                                         int* port);
 
  protected:
-  explicit Socket(ApiResourceEventNotifier* event_notifier);
+  explicit Socket(const std::string& owner_extension_id_);
 
   void WriteData();
   virtual int WriteImpl(net::IOBuffer* io_buffer,
@@ -90,19 +102,14 @@ class Socket : public ApiResource {
   virtual void OnWriteComplete(int result);
 
   const std::string address_;
-  int port_;
   bool is_connected_;
 
  private:
   struct WriteRequest {
     WriteRequest(scoped_refptr<net::IOBuffer> io_buffer,
                  int byte_count,
-                 const CompletionCallback& callback)
-      : io_buffer(io_buffer),
-        byte_count(byte_count),
-        callback(callback),
-        bytes_written(0) { }
-    ~WriteRequest() { }
+                 const CompletionCallback& callback);
+    ~WriteRequest();
     scoped_refptr<net::IOBuffer> io_buffer;
     int byte_count;
     CompletionCallback callback;

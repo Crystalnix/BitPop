@@ -16,18 +16,19 @@
 #include "base/threading/thread.h"
 #include "chrome/browser/sync/glue/backend_data_type_configurer.h"
 #include "chrome/browser/sync/glue/chrome_extensions_activity_monitor.h"
-#include "chrome/common/net/gaia/google_service_auth_error.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "googleurl/src/gurl.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
+#include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 #include "sync/internal_api/public/util/weak_handle.h"
-#include "sync/notifier/sync_notifier_factory.h"
-#include "sync/notifier/sync_notifier_observer.h"
+#include "sync/notifier/invalidation_handler.h"
+#include "sync/notifier/invalidator_factory.h"
 #include "sync/protocol/encryption.pb.h"
 #include "sync/protocol/sync_protocol_error.h"
 
@@ -42,17 +43,18 @@ namespace browser_sync {
 
 class ChangeProcessor;
 class ChromeSyncNotificationBridge;
-struct Experiments;
 class InvalidatorStorage;
 class SyncBackendRegistrar;
 class SyncPrefs;
+class SyncedDeviceTracker;
+struct Experiments;
 
 // SyncFrontend is the interface used by SyncBackendHost to communicate with
 // the entity that created it and, presumably, is interested in sync-related
 // activity.
 // NOTE: All methods will be invoked by a SyncBackendHost on the same thread
 // used to create that SyncBackendHost.
-class SyncFrontend : public syncer::SyncNotifierObserver {
+class SyncFrontend : public syncer::InvalidationHandler {
  public:
   SyncFrontend() {}
 
@@ -65,6 +67,8 @@ class SyncFrontend : public syncer::SyncNotifierObserver {
   // is initialized only if |success| is true.
   virtual void OnBackendInitialized(
       const syncer::WeakHandle<syncer::JsBackend>& js_backend,
+      const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
+          debug_info_listener,
       bool success) = 0;
 
   // The backend queried the server recently and received some updates.
@@ -177,7 +181,7 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
           report_unrecoverable_error_function);
 
   // Called on |frontend_loop| to update SyncCredentials.
-  void UpdateCredentials(const syncer::SyncCredentials& credentials);
+  virtual void UpdateCredentials(const syncer::SyncCredentials& credentials);
 
   // Registers the underlying frontend for the given IDs to the underlying
   // notifier.  This lasts until StopSyncingForShutdown() is called.
@@ -231,7 +235,6 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
       syncer::ConfigureReason reason,
       syncer::ModelTypeSet types_to_add,
       syncer::ModelTypeSet types_to_remove,
-      NigoriState nigori_state,
       const base::Callback<void(syncer::ModelTypeSet)>& ready_task,
       const base::Callback<void()>& retry_callback) OVERRIDE;
 
@@ -267,8 +270,13 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // Whether or not we are syncing encryption keys.
   bool IsNigoriEnabled() const;
 
-  // Whether or not the Nigori node is encrypted using an explicit passphrase.
-  bool IsUsingExplicitPassphrase();
+  // Returns the type of passphrase being used to encrypt data. See
+  // sync_encryption_handler.h.
+  syncer::PassphraseType GetPassphraseType() const;
+
+  // If an explicit passphrase is in use, returns the time at which that
+  // passphrase was set (if available).
+  base::Time GetExplicitPassphraseTime() const;
 
   // True if the cryptographer has any keys available to attempt decryption.
   // Could mean we've downloaded and loaded Nigori objects, or we bootstrapped
@@ -276,6 +284,9 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   bool IsCryptographerReady(const syncer::BaseTransaction* trans) const;
 
   void GetModelSafeRoutingInfo(syncer::ModelSafeRoutingInfo* out) const;
+
+  // Fetches the DeviceInfo tracker.
+  virtual SyncedDeviceTracker* GetSyncedDeviceTracker() const;
 
  protected:
   // The types and functions below are protected so that test
@@ -299,7 +310,7 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
         MakeHttpBridgeFactoryFn make_http_bridge_factory_fn,
         const syncer::SyncCredentials& credentials,
         ChromeSyncNotificationBridge* chrome_sync_notification_bridge,
-        syncer::SyncNotifierFactory* sync_notifier_factory,
+        syncer::InvalidatorFactory* invalidator_factory,
         syncer::SyncManagerFactory* sync_manager_factory,
         bool delete_sync_data_folder,
         const std::string& restored_key_for_bootstrapping,
@@ -321,7 +332,7 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
     MakeHttpBridgeFactoryFn make_http_bridge_factory_fn;
     syncer::SyncCredentials credentials;
     ChromeSyncNotificationBridge* const chrome_sync_notification_bridge;
-    syncer::SyncNotifierFactory* const sync_notifier_factory;
+    syncer::InvalidatorFactory* const invalidator_factory;
     syncer::SyncManagerFactory* const sync_manager_factory;
     std::string lsid;
     bool delete_sync_data_folder;
@@ -351,8 +362,12 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
       const base::Callback<void(syncer::ModelTypeSet)>& ready_task);
 
   // Called when the SyncManager has been constructed and initialized.
+  // Stores |js_backend| and |debug_info_listener| on the UI thread for
+  // consumption when initialization is complete.
   virtual void HandleSyncManagerInitializationOnFrontendLoop(
-      const syncer::WeakHandle<syncer::JsBackend>& js_backend, bool success,
+      const syncer::WeakHandle<syncer::JsBackend>& js_backend,
+      const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
+          debug_info_listener,
       syncer::ModelTypeSet restored_types);
 
   SyncFrontend* frontend() { return frontend_; }
@@ -364,24 +379,14 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // An enum representing the steps to initializing the SyncBackendHost.
   enum InitializationState {
     NOT_ATTEMPTED,
-    CREATING_SYNC_MANAGER,  // We're waiting for the first callback from the
-                            // sync thread to inform us that the sync manager
-                            // has been created.
-    NOT_INITIALIZED,        // Initialization hasn't completed, but we've
-                            // constructed a SyncManager.
-    DOWNLOADING_NIGORI,     // The SyncManager is initialized, but
-                            // we're fetching encryption information.
-    REFRESHING_NIGORI,      // The SyncManager is initialized, and we
-                            // have the encryption information, but we
-                            // still need to refresh encryption. Also, we need
-                            // to update the device information in the nigori.
-    INITIALIZED,            // Initialization is complete.
-  };
-
-  // Enum used to distinguish which bootstrap encryption token is being updated.
-  enum BootstrapTokenType {
-    PASSPHRASE_BOOTSTRAP_TOKEN,
-    KEYSTORE_BOOTSTRAP_TOKEN
+    CREATING_SYNC_MANAGER,     // We're waiting for the first callback from the
+                               // sync thread to inform us that the sync
+                               // manager has been created.
+    NOT_INITIALIZED,           // Initialization hasn't completed, but we've
+                               // constructed a SyncManager.
+    INITIALIZATING_CONTROL_TYPES,  // Downloading control types and
+                               // initializing their handlers.
+    INITIALIZED,               // Initialization is complete.
   };
 
   // Checks if we have received a notice to turn on experimental datatypes
@@ -389,14 +394,14 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // Note: it is illegal to call this before the backend is initialized.
   void AddExperimentalTypes();
 
-  // Downloading of nigori failed and will be retried.
-  void OnNigoriDownloadRetry();
+  // Downloading of control types failed and will be retried. Invokes the
+  // frontend's sync configure retry method.
+  void HandleControlTypesDownloadRetry();
 
   // InitializationComplete passes through the SyncBackendHost to forward
   // on to |frontend_|, and so that tests can intercept here if they need to
   // set up initial conditions.
   void HandleInitializationCompletedOnFrontendLoop(
-      const syncer::WeakHandle<syncer::JsBackend>& js_backend,
       bool success);
 
   // Called from Core::OnSyncCycleCompleted to handle updating frontend
@@ -415,7 +420,7 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // storage.
   void PersistEncryptionBootstrapToken(
       const std::string& token,
-      BootstrapTokenType token_type);
+      syncer::BootstrapTokenType token_type);
 
   // For convenience, checks if initialization state is INITIALIZED.
   bool initialized() const { return initialization_state_ == INITIALIZED; }
@@ -455,6 +460,15 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // Invoked when sync finishes encrypting new datatypes.
   void NotifyEncryptionComplete();
 
+  // Invoked when the passphrase state has changed. Caches the passphrase state
+  // for later use on the UI thread.
+  // If |type| is FROZEN_IMPLICIT_PASSPHRASE or CUSTOM_PASSPHRASE,
+  // |explicit_passphrase_time| is the time at which that passphrase was set
+  // (if available).
+  void HandlePassphraseTypeChangedOnFrontendLoop(
+      syncer::PassphraseType type,
+      base::Time explicit_passphrase_time);
+
   void HandleStopSyncingPermanentlyOnFrontendLoop();
 
   // Dispatched to from OnConnectionStatusChange to handle updating
@@ -462,23 +476,12 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   void HandleConnectionStatusChangeOnFrontendLoop(
       syncer::ConnectionStatus status);
 
-  // Called when configuration of the Nigori node has completed as
-  // part of the initialization process.
-  void HandleNigoriConfigurationCompletedOnFrontendLoop(
-      const syncer::WeakHandle<syncer::JsBackend>& js_backend,
-      syncer::ModelTypeSet failed_configuration_types);
-
-  // syncer::SyncNotifierObserver-like functions.
-  void HandleNotificationsEnabledOnFrontendLoop();
-  void HandleNotificationsDisabledOnFrontendLoop(
-      syncer::NotificationsDisabledReason reason);
-  void HandleIncomingNotificationOnFrontendLoop(
-      const syncer::ObjectIdPayloadMap& id_payloads,
-      syncer::IncomingNotificationSource source);
-
-  // Must be called on |frontend_loop_|.  |done_callback| is called on
-  // |frontend_loop_|.
-  void RefreshNigori(const base::Closure& done_callback);
+  // syncer::InvalidationHandler-like functions.
+  void HandleInvalidatorStateChangeOnFrontendLoop(
+      syncer::InvalidatorState state);
+  void HandleIncomingInvalidationOnFrontendLoop(
+      const syncer::ObjectIdInvalidationMap& invalidation_map,
+      syncer::IncomingInvalidationSource source);
 
   // Handles stopping the core's SyncManager, accounting for whether
   // initialization is done yet.
@@ -509,7 +512,7 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // into invalidations (on the sync thread).
   scoped_ptr<ChromeSyncNotificationBridge> chrome_sync_notification_bridge_;
 
-  syncer::SyncNotifierFactory sync_notifier_factory_;
+  syncer::InvalidatorFactory invalidator_factory_;
 
   ChromeExtensionsActivityMonitor extensions_activity_monitor_;
 
@@ -528,8 +531,25 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // were cached.
   sync_pb::EncryptedData cached_pending_keys_;
 
+  // The state of the passphrase required to decrypt the bag of encryption keys
+  // in the nigori node. Updated whenever a new nigori node arrives or the user
+  // manually changes their passphrase state. Cached so we can synchronously
+  // check it from the UI thread.
+  syncer::PassphraseType cached_passphrase_type_;
+
+  // If an explicit passphrase is in use, the time at which the passphrase was
+  // first set (if available).
+  base::Time cached_explicit_passphrase_time_;
+
   // UI-thread cache of the last SyncSessionSnapshot received from syncapi.
   syncer::sessions::SyncSessionSnapshot last_snapshot_;
+
+  // Temporary holder of sync manager's initialization results. Set by
+  // HandleSyncManagerInitializationOnFrontendLoop, and consumed when we pass
+  // it via OnBackendInitialized in the final state of
+  // HandleInitializationCompletedOnFrontendLoop.
+  syncer::WeakHandle<syncer::JsBackend> js_backend_;
+  syncer::WeakHandle<syncer::DataTypeDebugInfoListener> debug_info_listener_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncBackendHost);
 };

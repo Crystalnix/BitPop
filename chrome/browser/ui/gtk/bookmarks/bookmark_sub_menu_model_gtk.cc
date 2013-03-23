@@ -82,7 +82,7 @@ void BookmarkNodeMenuModel::PopulateMenu() {
       AddItem(kBookmarkItemCommandId, label);
       const gfx::Image& node_icon = model_->GetFavicon(child);
       if (!node_icon.IsEmpty())
-        SetIcon(GetItemCount() - 1, *node_icon.ToSkBitmap());
+        SetIcon(GetItemCount() - 1, node_icon);
       // TODO(mdm): set up an observer to watch for icon load events and set
       // the icons in response.
     }
@@ -168,7 +168,7 @@ void BookmarkSubMenuModel::MenuWillShow() {
     return;
   // The node count includes the node itself, so 1 means empty.
   if (model()->bookmark_bar_node()->GetTotalNodeCount() > 1) {
-    AddSeparator();
+    AddSeparator(ui::NORMAL_SEPARATOR);
     fixed_items_ = GetItemCount();
     if (!node())
       set_node(model()->bookmark_bar_node());
@@ -180,13 +180,13 @@ void BookmarkSubMenuModel::MenuWillShow() {
   // other node and/or mobile node. Keep track of whether we've added it yet.
   bool added_separator = false;
   if (model()->other_node()->GetTotalNodeCount() > 1) {
-    AddSeparator();
+    AddSeparator(ui::NORMAL_SEPARATOR);
     added_separator = true;
     AddSubMenuForNode(model()->other_node());
   }
   if (model()->mobile_node()->GetTotalNodeCount() > 1) {
     if (!added_separator)
-      AddSeparator();
+      AddSeparator(ui::NORMAL_SEPARATOR);
     AddSubMenuForNode(model()->mobile_node());
   }
 }

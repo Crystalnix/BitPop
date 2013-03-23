@@ -42,7 +42,7 @@ class Observer : public chrome::BrowserListObserver,
   // chrome::BrowserListObserver:
   virtual void OnBrowserAdded(Browser* browser) {}
   virtual void OnBrowserRemoved(Browser* browser) {
-    [controller_ activeBrowserChangedTo:browser::GetLastActiveBrowser()];
+    [controller_ activeBrowserChangedTo:chrome::GetLastActiveBrowser()];
   }
   virtual void OnBrowserSetLastActive(Browser* browser) {
     [controller_ activeBrowserChangedTo:browser];
@@ -82,9 +82,16 @@ class Observer : public chrome::BrowserListObserver,
   return self;
 }
 
-- (IBAction)switchToProfile:(id)sender {
+- (IBAction)switchToProfileFromMenu:(id)sender {
   model_->SwitchToProfile([sender tag], false);
   ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_MENU);
+}
+
+- (IBAction)switchToProfileFromDock:(id)sender {
+  // Explicitly bring to the foreground when taking action from the dock.
+  [NSApp activateIgnoringOtherApps:YES];
+  model_->SwitchToProfile([sender tag], false);
+  ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_DOCK);
 }
 
 - (IBAction)editProfile:(id)sender {
@@ -94,6 +101,43 @@ class Observer : public chrome::BrowserListObserver,
 - (IBAction)newProfile:(id)sender {
   model_->AddNewProfile();
   ProfileMetrics::LogProfileAddNewUser(ProfileMetrics::ADD_NEW_USER_MENU);
+}
+
+- (BOOL)insertItemsIntoMenu:(NSMenu*)menu
+                   atOffset:(NSInteger)offset
+                   fromDock:(BOOL)dock {
+  if (!model_->ShouldShowAvatarMenu())
+    return NO;
+
+  if (dock) {
+    NSString* headerName =
+        l10n_util::GetNSStringWithFixup(IDS_PROFILES_OPTIONS_GROUP_NAME);
+    scoped_nsobject<NSMenuItem> header(
+        [[NSMenuItem alloc] initWithTitle:headerName
+                                   action:NULL
+                            keyEquivalent:@""]);
+    [header setEnabled:NO];
+    [menu insertItem:header atIndex:offset++];
+  }
+
+  for (size_t i = 0; i < model_->GetNumberOfItems(); ++i) {
+    const AvatarMenuModel::Item& itemData = model_->GetItemAt(i);
+    NSString* name = base::SysUTF16ToNSString(itemData.name);
+    SEL action = dock ? @selector(switchToProfileFromDock:)
+                      : @selector(switchToProfileFromMenu:);
+    NSMenuItem* item = [self createItemWithTitle:name
+                                          action:action];
+    [item setTag:itemData.model_index];
+    if (dock) {
+      [item setIndentationLevel:1];
+    } else {
+      [item setImage:itemData.icon.ToNSImage()];
+      [item setState:itemData.active ? NSOnState : NSOffState];
+    }
+    [menu insertItem:item atIndex:i + offset];
+  }
+
+  return YES;
 }
 
 // Private /////////////////////////////////////////////////////////////////////
@@ -152,19 +196,9 @@ class Observer : public chrome::BrowserListObserver,
     [menu removeItemAtIndex:0];
   }
 
-  for (size_t i = 0; i < model_->GetNumberOfItems(); ++i) {
-    const AvatarMenuModel::Item& itemData = model_->GetItemAt(i);
-    NSString* name = base::SysUTF16ToNSString(itemData.name);
-    NSMenuItem* item = [self createItemWithTitle:name
-                                          action:@selector(switchToProfile:)];
-    [item setTag:itemData.model_index];
-    [item setImage:itemData.icon.ToNSImage()];
-    if (itemData.active)
-      [item setState:NSOnState];
-    [menu insertItem:item atIndex:i];
-  }
+  BOOL hasContent = [self insertItemsIntoMenu:menu atOffset:0 fromDock:NO];
 
-  [mainMenuItem_ setHidden:!model_->ShouldShowAvatarMenu()];
+  [mainMenuItem_ setHidden:!hasContent];
 }
 
 - (NSMenuItem*)createItemWithTitle:(NSString*)title action:(SEL)sel {

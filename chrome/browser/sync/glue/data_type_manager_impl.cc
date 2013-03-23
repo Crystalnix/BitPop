@@ -18,49 +18,51 @@
 #include "base/stringprintf.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/sync/glue/data_type_manager_observer.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
 
 using content::BrowserThread;
 
 namespace browser_sync {
 
 DataTypeManagerImpl::DataTypeManagerImpl(
+    const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
+        debug_info_listener,
     BackendDataTypeConfigurer* configurer,
-    const DataTypeController::TypeMap* controllers)
+    const DataTypeController::TypeMap* controllers,
+    DataTypeManagerObserver* observer)
     : configurer_(configurer),
       controllers_(controllers),
       state_(DataTypeManager::STOPPED),
       needs_reconfigure_(false),
       last_configure_reason_(syncer::CONFIGURE_REASON_UNKNOWN),
-      last_nigori_state_(BackendDataTypeConfigurer::WITHOUT_NIGORI),
       weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-      model_association_manager_(controllers,
-                                 ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      model_association_manager_(debug_info_listener,
+                                 controllers,
+                                 ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      observer_(observer) {
   DCHECK(configurer_);
+  DCHECK(observer_);
 }
 
 DataTypeManagerImpl::~DataTypeManagerImpl() {}
 
 void DataTypeManagerImpl::Configure(TypeSet desired_types,
                                     syncer::ConfigureReason reason) {
-  ConfigureImpl(desired_types, reason,
-                BackendDataTypeConfigurer::WITH_NIGORI);
+  desired_types.PutAll(syncer::ControlTypes());
+  ConfigureImpl(desired_types, reason);
 }
 
-void DataTypeManagerImpl::ConfigureWithoutNigori(TypeSet desired_types,
+void DataTypeManagerImpl::PurgeForMigration(
+    TypeSet undesired_types,
     syncer::ConfigureReason reason) {
-  ConfigureImpl(desired_types, reason,
-                BackendDataTypeConfigurer::WITHOUT_NIGORI);
+  TypeSet remainder = Difference(last_requested_types_, undesired_types);
+  ConfigureImpl(remainder, reason);
 }
 
 void DataTypeManagerImpl::ConfigureImpl(
     TypeSet desired_types,
-    syncer::ConfigureReason reason,
-    BackendDataTypeConfigurer::NigoriState nigori_state) {
+    syncer::ConfigureReason reason) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_NE(reason, syncer::CONFIGURE_REASON_UNKNOWN);
   if (state_ == STOPPING) {
@@ -81,7 +83,6 @@ void DataTypeManagerImpl::ConfigureImpl(
   }
 
   last_requested_types_ = desired_types;
-  last_nigori_state_ = nigori_state;
   // Only proceed if we're in a steady state or blocked.
   if (state_ != STOPPED && state_ != CONFIGURED && state_ != BLOCKED) {
     DVLOG(1) << "Received configure request while configuration in flight. "
@@ -91,12 +92,10 @@ void DataTypeManagerImpl::ConfigureImpl(
     return;
   }
 
-  Restart(reason, nigori_state);
+  Restart(reason);
 }
 
-void DataTypeManagerImpl::Restart(
-    syncer::ConfigureReason reason,
-    BackendDataTypeConfigurer::NigoriState nigori_state) {
+void DataTypeManagerImpl::Restart(syncer::ConfigureReason reason) {
   DVLOG(1) << "Restarting...";
   model_association_manager_.Initialize(last_requested_types_);
   last_restart_time_ = base::Time::Now();
@@ -113,12 +112,13 @@ void DataTypeManagerImpl::Restart(
   // Tell the backend about the new set of data types we wish to sync.
   // The task will be invoked when updates are downloaded.
   state_ = DOWNLOAD_PENDING;
-  // Hopefully http://crbug.com/79970 will make this less verbose.
   syncer::ModelTypeSet all_types;
   for (DataTypeController::TypeMap::const_iterator it =
            controllers_->begin(); it != controllers_->end(); ++it) {
     all_types.Put(it->first);
   }
+  // These have no controller.  We must add them manually.
+  all_types.PutAll(syncer::ControlTypes());
   const syncer::ModelTypeSet types_to_add = last_requested_types_;
   // Check that types_to_add \subseteq all_types.
   DCHECK(all_types.HasAll(types_to_add));
@@ -129,7 +129,6 @@ void DataTypeManagerImpl::Restart(
       reason,
       types_to_add,
       types_to_remove,
-      nigori_state,
       base::Bind(&DataTypeManagerImpl::DownloadReady,
                  weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&DataTypeManagerImpl::OnDownloadRetry,
@@ -157,28 +156,16 @@ bool DataTypeManagerImpl::ProcessReconfigure() {
       base::Bind(&DataTypeManagerImpl::ConfigureImpl,
                  weak_ptr_factory_.GetWeakPtr(),
                  last_requested_types_,
-                 last_configure_reason_,
-                 last_nigori_state_));
+                 last_configure_reason_));
 
   needs_reconfigure_ = false;
   last_configure_reason_ = syncer::CONFIGURE_REASON_UNKNOWN;
-  last_nigori_state_ = BackendDataTypeConfigurer::WITHOUT_NIGORI;
   return true;
 }
 
 void DataTypeManagerImpl::OnDownloadRetry() {
   DCHECK_EQ(state_, DOWNLOAD_PENDING);
-
-  // Inform the listeners we are waiting.
-  ConfigureResult result;
-  result.status = DataTypeManager::RETRY;
-
-  // TODO(lipalani): Add a new  NOTIFICATION_SYNC_CONFIGURE_RETRY.
-  // crbug.com/111676.
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_SYNC_CONFIGURE_DONE,
-      content::Source<DataTypeManager>(this),
-      content::Details<const ConfigureResult>(&result));
+  observer_->OnConfigureRetry();
 }
 
 void DataTypeManagerImpl::DownloadReady(
@@ -249,8 +236,7 @@ void DataTypeManagerImpl::OnTypesLoaded() {
     return;
   }
 
-  Restart(syncer::CONFIGURE_REASON_RECONFIGURATION,
-          last_nigori_state_);
+  Restart(syncer::CONFIGURE_REASON_RECONFIGURATION);
 }
 
 
@@ -306,10 +292,7 @@ void DataTypeManagerImpl::Abort(ConfigureStatus status,
 }
 
 void DataTypeManagerImpl::NotifyStart() {
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_SYNC_CONFIGURE_START,
-      content::Source<DataTypeManager>(this),
-      content::NotificationService::NoDetails());
+  observer_->OnConfigureStart();
 }
 
 void DataTypeManagerImpl::NotifyDone(const ConfigureResult& result) {
@@ -342,10 +325,7 @@ void DataTypeManagerImpl::NotifyDone(const ConfigureResult& result) {
       NOTREACHED();
       break;
   }
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_SYNC_CONFIGURE_DONE,
-      content::Source<DataTypeManager>(this),
-      content::Details<const ConfigureResult>(&result));
+  observer_->OnConfigureDone(result);
 }
 
 DataTypeManager::State DataTypeManagerImpl::state() const {
@@ -357,10 +337,7 @@ void DataTypeManagerImpl::SetBlockedAndNotify() {
   AddToConfigureTime();
   DVLOG(1) << "Accumulated spent configuring: "
            << configure_time_delta_.InSecondsF() << "s";
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_SYNC_CONFIGURE_BLOCKED,
-      content::Source<DataTypeManager>(this),
-      content::NotificationService::NoDetails());
+  observer_->OnConfigureBlocked();
 }
 
 void DataTypeManagerImpl::AddToConfigureTime() {

@@ -5,16 +5,18 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_SETTINGS_SETTINGS_BACKEND_H_
 #define CHROME_BROWSER_EXTENSIONS_SETTINGS_SETTINGS_BACKEND_H_
 
+#include <map>
+#include <set>
+#include <string>
+
 #include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/observer_list_threadsafe.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/settings/settings_observer.h"
 #include "chrome/browser/extensions/settings/settings_storage_factory.h"
 #include "chrome/browser/extensions/settings/settings_storage_quota_enforcer.h"
-#include "chrome/browser/extensions/settings/syncable_settings_storage.h"
-#include "chrome/browser/value_store/leveldb_value_store.h"
 #include "sync/api/syncable_service.h"
 
 namespace syncer {
@@ -22,6 +24,9 @@ class SyncErrorFactory;
 }
 
 namespace extensions {
+
+class SettingsSyncProcessor;
+class SyncableSettingsStorage;
 
 // Manages ValueStore objects for extensions, including routing
 // changes from sync to them.
@@ -50,7 +55,7 @@ class SettingsBackend : public syncer::SyncableService {
   // syncer::SyncableService implementation.
   virtual syncer::SyncDataList GetAllSyncData(
       syncer::ModelType type) const OVERRIDE;
-  virtual syncer::SyncError MergeDataAndStartSyncing(
+  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
       syncer::ModelType type,
       const syncer::SyncDataList& initial_sync_data,
       scoped_ptr<syncer::SyncChangeProcessor> sync_processor,

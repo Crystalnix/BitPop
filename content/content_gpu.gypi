@@ -97,6 +97,7 @@
     }],
     ['OS=="linux"', {
       'dependencies': [
+        '../build/linux/system.gyp:libpci',
         '../third_party/libXNVCtrl/libXNVCtrl.gyp:libXNVCtrl',
       ],
     }],

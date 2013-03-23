@@ -16,6 +16,10 @@ namespace extension_urls {
   // slash. Do not use this as a prefix/extent for the store.
   std::string GetWebstoreLaunchURL();
 
+  // Returns the URL to the extensions category on the Web Store. This is
+  // derived from GetWebstoreLaunchURL().
+  std::string GetExtensionGalleryURL();
+
   // Returns the URL prefix for an item in the extension/app gallery. This URL
   // will contain a trailing slash and should be concatenated with an item ID
   // to get the item detail URL.
@@ -71,7 +75,9 @@ namespace extension_info_keys {
   extern const char kNameKey[];
   extern const char kOfflineEnabledKey[];
   extern const char kOptionsUrlKey[];
+  extern const char kDetailsUrlKey[];
   extern const char kVersionKey[];
+  extern const char kPackagedAppKey[];
 }
 
 namespace extension_misc {
@@ -104,6 +110,12 @@ namespace extension_misc {
 
   // The extension id of the Crosh component app for ChromeOS.
   extern const char kCroshBuiltinAppId[];
+
+  // The extension id of the Office Viewer extension.
+  extern const char kQuickOfficeExtensionId[];
+
+  // The extension id of the Office Viewer dev extension.
+  extern const char kQuickOfficeDevExtensionId[];
 
   // The extension id of the Web Store component application.
   extern const char kWebStoreAppId[];
@@ -205,10 +217,14 @@ namespace extension_misc {
   };
 
 #if defined(OS_CHROMEOS)
-  // The directory path on a ChromeOS device where accessibility extensions are
-  // stored.
-  extern const char kAccessExtensionPath[];
-  extern const char kChromeVoxDirectoryName[];
+  // Path to preinstalled ChromeVox screen reader extension.
+  extern const char kChromeVoxExtensionPath[];
+  // Path to preinstalled speech synthesis extension.
+  extern const char kSpeechSynthesisExtensionPath[];
+  // The extension id of the speech synthesis extension.
+  extern const char kSpeechSynthesisExtensionId[];
+  // The extension id of the wallpaper manager application.
+  extern const char kWallpaperManagerId[];
 #endif
 
   // What causes an extension to be installed? Used in histograms, so don't
@@ -227,6 +243,7 @@ namespace extension_misc {
     UNLOAD_REASON_UPDATE,     // Extension is being updated to a newer version.
     UNLOAD_REASON_UNINSTALL,  // Extension is being uninstalled.
     UNLOAD_REASON_TERMINATE,  // Extension has terminated.
+    UNLOAD_REASON_BLACKLIST,  // Extension has been blacklisted.
   };
 
   // The states that an app can be in, as reported by chrome.app.installState
@@ -244,6 +261,33 @@ namespace extension_misc {
   // Error indicating that the app notifications API is not accessible by split
   // mode extensions in incognito windows.
   extern const char kAppNotificationsIncognitoError[];
+
+  // NOTE: If you change this list, you should also change kExtensionIconSizes
+  // in cc file.
+  enum ExtensionIcons {
+    EXTENSION_ICON_GIGANTOR = 512,
+    EXTENSION_ICON_EXTRA_LARGE = 256,
+    EXTENSION_ICON_LARGE = 128,
+    EXTENSION_ICON_MEDIUM = 48,
+    EXTENSION_ICON_SMALL = 32,
+    EXTENSION_ICON_SMALLISH = 24,
+    EXTENSION_ICON_ACTION = 19,
+    EXTENSION_ICON_BITTY = 16,
+    EXTENSION_ICON_INVALID = 0,
+  };
+
+  // List of sizes for extension icons that can be defined in the manifest.
+  extern const int kExtensionIconSizes[];
+  extern const size_t kNumExtensionIconSizes;
+
+  // List of sizes for extension icons that can be defined in the manifest.
+  extern const int kExtensionActionIconSizes[];
+  extern const size_t kNumExtensionActionIconSizes;
+
+  // List of sizes for extension icons that can be defined in the manifest.
+  extern const int kScriptBadgeIconSizes[];
+  extern const size_t kNumScriptBadgeIconSizes;
+
 }  // extension_misc
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_

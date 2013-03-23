@@ -19,12 +19,6 @@
 #include "ui/base/win/hwnd_subclass.h"
 #include "ui/gfx/screen.h"
 
-using content::RenderViewHost;
-using content::RenderWidgetHostView;
-using content::RenderWidgetHostViewWin;
-using content::WebContents;
-using content::WebContentsViewDelegate;
-
 namespace content {
 WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
@@ -33,7 +27,6 @@ WebContentsView* CreateWebContentsView(
   WebContentsViewWin* rv = new WebContentsViewWin(web_contents, delegate);
   *render_view_host_delegate_view = rv;
   return rv;
-}
 }
 
 namespace {
@@ -59,7 +52,7 @@ BOOL CALLBACK EnumChildProc(HWND hwnd, LPARAM lParam) {
   RenderWidgetHostViewWin* rwhv = static_cast<RenderWidgetHostViewWin*>(
       wcv->web_contents()->GetRenderWidgetHostView());
   if (rwhv)
-    rwhv->UpdateScreenInfo();
+    rwhv->UpdateScreenInfo(rwhv->GetNativeView());
 
   return TRUE;  // must return TRUE to continue enumeration.
 }
@@ -75,7 +68,7 @@ class PositionChangedMessageFilter : public ui::HWNDMessageFilter {
                              WPARAM w_param,
                              LPARAM l_param,
                              LRESULT* l_result) OVERRIDE {
-    if (message == WM_WINDOWPOSCHANGED)
+    if (message == WM_WINDOWPOSCHANGED || message == WM_SETTINGCHANGE)
       EnumChildWindows(hwnd, EnumChildProc, 0);
 
     return false;
@@ -97,9 +90,7 @@ void AddFilterToParentHwndSubclass(HWND hwnd, ui::HWNDMessageFilter* filter) {
 WebContentsViewWin::WebContentsViewWin(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
-      view_(NULL),
       delegate_(delegate),
-      close_tab_after_drag_ends_(false),
       hwnd_message_filter_(new PositionChangedMessageFilter) {
 }
 
@@ -110,7 +101,8 @@ WebContentsViewWin::~WebContentsViewWin() {
     DestroyWindow(hwnd());
 }
 
-void WebContentsViewWin::CreateView(const gfx::Size& initial_size) {
+void WebContentsViewWin::CreateView(
+    const gfx::Size& initial_size, gfx::NativeView context) {
   initial_size_ = initial_size;
 
   set_window_style(WS_VISIBLE | WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
@@ -121,14 +113,14 @@ void WebContentsViewWin::CreateView(const gfx::Size& initial_size) {
   RevokeDragDrop(GetNativeView());
   drag_dest_ = new WebDragDest(hwnd(), web_contents_);
   if (delegate_.get()) {
-    content::WebDragDestDelegate* delegate = delegate_->GetDragDestDelegate();
+    WebDragDestDelegate* delegate = delegate_->GetDragDestDelegate();
     if (delegate)
       drag_dest_->set_delegate(delegate);
   }
 }
 
 RenderWidgetHostView* WebContentsViewWin::CreateViewForWidget(
-    content::RenderWidgetHost* render_widget_host)  {
+    RenderWidgetHost* render_widget_host)  {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -139,12 +131,12 @@ RenderWidgetHostView* WebContentsViewWin::CreateViewForWidget(
     return render_widget_host->GetView();
   }
 
-  view_ = static_cast<RenderWidgetHostViewWin*>(
+  RenderWidgetHostViewWin* view = static_cast<RenderWidgetHostViewWin*>(
       RenderWidgetHostView::CreateViewForWidget(render_widget_host));
-  view_->CreateWnd(GetNativeView());
-  view_->ShowWindow(SW_SHOW);
-  view_->SetSize(initial_size_);
-  return view_;
+  view->CreateWnd(GetNativeView());
+  view->ShowWindow(SW_SHOW);
+  view->SetSize(initial_size_);
+  return view;
 }
 
 gfx::NativeView WebContentsViewWin::GetNativeView() const {
@@ -177,9 +169,6 @@ void WebContentsViewWin::SetPageTitle(const string16& title) {
 
 void WebContentsViewWin::OnTabCrashed(base::TerminationStatus status,
                                       int error_code) {
-  // TODO(avi): No other TCV implementation does anything in this callback. Can
-  // this be moved elsewhere so that |OnTabCrashed| can be removed everywhere?
-  view_ = NULL;
 }
 
 void WebContentsViewWin::SizeContents(const gfx::Size& size) {
@@ -233,19 +222,6 @@ void WebContentsViewWin::RestoreFocus() {
     delegate_->RestoreFocus();
 }
 
-bool WebContentsViewWin::IsDoingDrag() const {
-  return drag_handler_.get() != NULL;
-}
-
-void WebContentsViewWin::CancelDragAndCloseTab() {
-  DCHECK(IsDoingDrag());
-  // We can't close the tab while we're in the drag and
-  // |drag_handler_->CancelDrag()| is async.  Instead, set a flag to cancel
-  // the drag and when the drag nested message loop ends, close the tab.
-  drag_handler_->CancelDrag();
-  close_tab_after_drag_ends_ = true;
-}
-
 WebDropData* WebContentsViewWin::GetDropData() const {
   return drag_dest_->current_drop_data();
 }
@@ -264,9 +240,10 @@ gfx::Rect WebContentsViewWin::GetViewBounds() const {
 }
 
 void WebContentsViewWin::ShowContextMenu(
-    const content::ContextMenuParams& params) {
+    const ContextMenuParams& params,
+    ContextMenuSourceType type) {
   if (delegate_.get())
-    delegate_->ShowContextMenu(params);
+    delegate_->ShowContextMenu(params, type);
 }
 
 void WebContentsViewWin::ShowPopupMenu(const gfx::Rect& bounds,
@@ -283,7 +260,8 @@ void WebContentsViewWin::ShowPopupMenu(const gfx::Rect& bounds,
 void WebContentsViewWin::StartDragging(const WebDropData& drop_data,
                                        WebKit::WebDragOperationsMask operations,
                                        const gfx::ImageSkia& image,
-                                       const gfx::Point& image_offset) {
+                                       const gfx::Vector2d& image_offset,
+                                       const DragEventSourceInfo& event_info) {
   drag_handler_ = new WebContentsDragWin(
       GetNativeView(),
       web_contents_,
@@ -303,7 +281,7 @@ void WebContentsViewWin::GotFocus() {
 
 void WebContentsViewWin::TakeFocus(bool reverse) {
   if (web_contents_->GetDelegate() &&
-      !web_contents_->GetDelegate()->TakeFocus(reverse) &&
+      !web_contents_->GetDelegate()->TakeFocus(web_contents_, reverse) &&
       delegate_.get()) {
     delegate_->TakeFocus(reverse);
   }
@@ -311,10 +289,6 @@ void WebContentsViewWin::TakeFocus(bool reverse) {
 
 void WebContentsViewWin::EndDragging() {
   drag_handler_ = NULL;
-  if (close_tab_after_drag_ends_) {
-    close_tab_timer_.Start(FROM_HERE, base::TimeDelta::FromMilliseconds(0),
-                           this, &WebContentsViewWin::CloseTab);
-  }
   web_contents_->SystemDragEnded();
 }
 
@@ -335,6 +309,10 @@ LRESULT WebContentsViewWin::OnDestroy(
   if (drag_dest_.get()) {
     RevokeDragDrop(GetNativeView());
     drag_dest_ = NULL;
+  }
+  if (drag_handler_.get()) {
+    drag_handler_->CancelDrag();
+    drag_handler_ = NULL;
   }
   return 0;
 }
@@ -359,7 +337,7 @@ LRESULT WebContentsViewWin::OnWindowPosChanged(
   RenderWidgetHostView* rwhv = web_contents_->GetRenderWidgetHostView();
   if (rwhv) {
     RenderWidgetHostViewWin* view = static_cast<RenderWidgetHostViewWin*>(rwhv);
-    view->UpdateScreenInfo();
+    view->UpdateScreenInfo(view->GetNativeView());
   }
 
   // Unless we were specifically told not to size, cause the renderer to be
@@ -395,7 +373,9 @@ LRESULT WebContentsViewWin::OnMouseMove(
   // bubble state).
   if (web_contents_->GetDelegate()) {
     web_contents_->GetDelegate()->ContentsMouseEvent(
-        web_contents_, gfx::Screen::GetCursorScreenPoint(), true);
+        web_contents_,
+        gfx::Screen::GetNativeScreen()->GetCursorScreenPoint(),
+        true);
   }
   return 0;
 }
@@ -494,3 +474,5 @@ LRESULT WebContentsViewWin::OnSize(
 
   return 1;
 }
+
+}  // namespace content

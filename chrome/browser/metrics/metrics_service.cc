@@ -123,11 +123,16 @@
 //
 // The one unusual case is when the user asks that we stop logging.  When that
 // happens, any staged (transmission in progress) log is persisted, and any log
-// log that is currently accumulating is also finalized and persisted.  We then
+// that is currently accumulating is also finalized and persisted.  We then
 // regress back to the SEND_OLD_LOGS state in case the user enables log
 // recording again during this session.  This way anything we have persisted
 // will be sent automatically if/when we progress back to SENDING_CURRENT_LOG
 // state.
+//
+// Another similar case is on mobile, when the application is backgrounded and
+// then foregrounded again. Backgrounding created new "old" stored logs, so the
+// state drops back from SENDING_CURRENT_LOGS to SENDING_OLD_LOGS so those logs
+// will be sent.
 //
 // Also note that whenever we successfully send an old log, we mirror the list
 // of logs into the PrefService. This ensures that IF we crash, we won't start
@@ -185,6 +190,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/common/metrics/metrics_log_manager.h"
 #include "chrome/common/net/test_server_locations.h"
 #include "chrome/common/pref_names.h"
@@ -195,6 +201,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "webkit/plugins/webplugininfo.h"
@@ -212,6 +220,7 @@
 
 #if defined(OS_WIN)
 #include <windows.h>  // Needed for STATUS_* codes
+#include "sandbox/win/src/sandbox_types.h"  // For termination codes.
 #endif
 
 using base::Time;
@@ -232,7 +241,15 @@ bool IsSingleThreaded() {
 
 // The delay, in seconds, after starting recording before doing expensive
 // initialization work.
+#if defined(OS_ANDROID) || defined(OS_IOS)
+// On mobile devices, a significant portion of sessions last less than a minute.
+// Use a shorter timer on these platforms to avoid losing data.
+// TODO(dfalcantara): To avoid delaying startup, tighten up initialization so
+//                    that it occurs after the user gets their initial page.
+const int kInitializationDelaySeconds = 5;
+#else
 const int kInitializationDelaySeconds = 30;
+#endif
 
 // This specifies the amount of time to wait for all renderers to send their
 // data.
@@ -274,12 +291,16 @@ ResponseStatus ResponseCodeToStatus(int response_code) {
 // The argument used to generate a non-identifying entropy source. We want no
 // more than 13 bits of entropy, so use this max to return a number between 1
 // and 2^13 = 8192 as the entropy source.
-const uint32 kMaxEntropySize = (1 << 13);
+const uint32 kMaxLowEntropySize = (1 << 13);
+
+// Default prefs value for prefs::kMetricsLowEntropySource to indicate that the
+// value has not yet been set.
+const int kLowEntropySourceNotSet = -1;
 
 // Generates a new non-identifying entropy source used to seed persistent
 // activities.
 int GenerateLowEntropySource() {
-  return base::RandInt(1, kMaxEntropySize);
+  return base::RandInt(0, kMaxLowEntropySize - 1);
 }
 
 // Converts an exit code into something that can be inserted into our
@@ -339,12 +360,18 @@ std::vector<int> GetAllCrashExitCodes() {
 
   for (size_t i = 0; i < arraysize(kExceptionCodes); ++i)
     codes.push_back(MapCrashExitCodeForHistogram(kExceptionCodes[i]));
+
+  // Add the sandbox fatal termination codes.
+  for (int i = sandbox::SBOX_FATAL_INTEGRITY;
+       i <= sandbox::SBOX_FATAL_LAST; ++i) {
+    codes.push_back(MapCrashExitCodeForHistogram(i));
+  }
 #endif
 
   return codes;
 }
 
-}
+}  // namespace
 
 // static
 MetricsService::ShutdownCleanliness MetricsService::clean_shutdown_status_ =
@@ -412,7 +439,8 @@ class MetricsMemoryDetails : public MemoryDetails {
 void MetricsService::RegisterPrefs(PrefService* local_state) {
   DCHECK(IsSingleThreaded());
   local_state->RegisterStringPref(prefs::kMetricsClientID, "");
-  local_state->RegisterIntegerPref(prefs::kMetricsLowEntropySource, 0);
+  local_state->RegisterIntegerPref(prefs::kMetricsLowEntropySource,
+                                   kLowEntropySourceNotSet);
   local_state->RegisterInt64Pref(prefs::kMetricsClientIDTimestamp, 0);
   local_state->RegisterInt64Pref(prefs::kStabilityLaunchTimeSec, 0);
   local_state->RegisterInt64Pref(prefs::kStabilityLastTimestampSec, 0);
@@ -496,6 +524,7 @@ void MetricsService::DiscardOldStabilityStats(PrefService* local_state) {
 MetricsService::MetricsService()
     : recording_active_(false),
       reporting_active_(false),
+      test_mode_active_(false),
       state_(INITIALIZED),
       low_entropy_source_(0),
       idle_since_last_transmission_(false),
@@ -515,31 +544,44 @@ MetricsService::MetricsService()
 }
 
 MetricsService::~MetricsService() {
-  SetRecording(false);
+  DisableRecording();
 }
 
 void MetricsService::Start() {
   HandleIdleSinceLastTransmission(false);
-  SetRecording(true);
-  SetReporting(true);
+  EnableRecording();
+  EnableReporting();
 }
 
-void MetricsService::StartRecordingOnly() {
-  SetRecording(true);
-  SetReporting(false);
+void MetricsService::StartRecordingForTests() {
+  test_mode_active_ = true;
+  EnableRecording();
+  DisableReporting();
 }
 
 void MetricsService::Stop() {
   HandleIdleSinceLastTransmission(false);
-  SetReporting(false);
-  SetRecording(false);
+  DisableReporting();
+  DisableRecording();
+}
+
+void MetricsService::EnableReporting() {
+  if (reporting_active_)
+    return;
+  reporting_active_ = true;
+  StartSchedulerIfNecessary();
+}
+
+void MetricsService::DisableReporting() {
+  reporting_active_ = false;
 }
 
 std::string MetricsService::GetClientId() {
   return client_id_;
 }
 
-std::string MetricsService::GetEntropySource(bool reporting_will_be_enabled) {
+scoped_ptr<const base::FieldTrial::EntropyProvider>
+    MetricsService::CreateEntropyProvider(bool reporting_will_be_enabled) {
   // For metrics reporting-enabled users, we combine the client ID and low
   // entropy source to get the final entropy source. Otherwise, only use the low
   // entropy source.
@@ -547,17 +589,22 @@ std::string MetricsService::GetEntropySource(bool reporting_will_be_enabled) {
   //  1) It makes the entropy source less identifiable for parties that do not
   //     know the low entropy source.
   //  2) It makes the final entropy source resettable.
-  std::string low_entropy_source = base::IntToString(GetLowEntropySource());
   if (reporting_will_be_enabled) {
     if (entropy_source_returned_ == LAST_ENTROPY_NONE)
       entropy_source_returned_ = LAST_ENTROPY_HIGH;
     DCHECK_EQ(LAST_ENTROPY_HIGH, entropy_source_returned_);
-    return client_id_ + low_entropy_source;
+    const std::string high_entropy_source =
+        client_id_ + base::IntToString(GetLowEntropySource());
+    return scoped_ptr<const base::FieldTrial::EntropyProvider>(
+        new metrics::SHA1EntropyProvider(high_entropy_source));
   }
+
   if (entropy_source_returned_ == LAST_ENTROPY_NONE)
     entropy_source_returned_ = LAST_ENTROPY_LOW;
   DCHECK_EQ(LAST_ENTROPY_LOW, entropy_source_returned_);
-  return low_entropy_source;
+  return scoped_ptr<const base::FieldTrial::EntropyProvider>(
+      new metrics::PermutedEntropyProvider(GetLowEntropySource(),
+                                           kMaxLowEntropySize));
 }
 
 void MetricsService::ForceClientIdCreation() {
@@ -576,37 +623,36 @@ void MetricsService::ForceClientIdCreation() {
                   base::Int64ToString(Time::Now().ToTimeT()));
 }
 
-void MetricsService::SetRecording(bool enabled) {
+void MetricsService::EnableRecording() {
   DCHECK(IsSingleThreaded());
 
-  if (enabled == recording_active_)
+  if (recording_active_)
     return;
+  recording_active_ = true;
 
-  if (enabled) {
-    ForceClientIdCreation();
-    child_process_logging::SetClientId(client_id_);
-    StartRecording();
+  ForceClientIdCreation();
+  child_process_logging::SetClientId(client_id_);
+  if (!log_manager_.current_log())
+    OpenNewLog();
 
-    SetUpNotifications(&registrar_, this);
-  } else {
-    registrar_.RemoveAll();
-    PushPendingLogsToPersistentStorage();
-    DCHECK(!log_manager_.has_staged_log());
-  }
-  recording_active_ = enabled;
+  SetUpNotifications(&registrar_, this);
+}
+
+void MetricsService::DisableRecording() {
+  DCHECK(IsSingleThreaded());
+
+  if (!recording_active_)
+    return;
+  recording_active_ = false;
+
+  registrar_.RemoveAll();
+  PushPendingLogsToPersistentStorage();
+  DCHECK(!log_manager_.has_staged_log());
 }
 
 bool MetricsService::recording_active() const {
   DCHECK(IsSingleThreaded());
   return recording_active_;
-}
-
-void MetricsService::SetReporting(bool enable) {
-  if (reporting_active_ != enable) {
-    reporting_active_ = enable;
-    if (reporting_active_)
-      StartSchedulerIfNecessary();
-  }
 }
 
 bool MetricsService::reporting_active() const {
@@ -666,14 +712,26 @@ void MetricsService::Observe(int type,
       break;
 
     case chrome::NOTIFICATION_BROWSER_OPENED:
-    case chrome::NOTIFICATION_BROWSER_CLOSED:
-      LogWindowChange(type, source, details);
+    case chrome::NOTIFICATION_BROWSER_CLOSED: {
+      Browser* browser = content::Source<Browser>(source).ptr();
+      LogWindowOrTabChange(type, reinterpret_cast<uintptr_t>(browser));
       break;
+    }
 
-    case chrome::NOTIFICATION_TAB_PARENTED:
-    case chrome::NOTIFICATION_TAB_CLOSING:
-      LogWindowChange(type, source, details);
+    case chrome::NOTIFICATION_TAB_PARENTED: {
+      content::WebContents* web_contents =
+          content::Source<content::WebContents>(source).ptr();
+      LogWindowOrTabChange(type, reinterpret_cast<uintptr_t>(web_contents));
       break;
+    }
+
+    case chrome::NOTIFICATION_TAB_CLOSING: {
+      content::NavigationController* controller =
+          content::Source<content::NavigationController>(source).ptr();
+      content::WebContents* web_contents = controller->GetWebContents();
+      LogWindowOrTabChange(type, reinterpret_cast<uintptr_t>(web_contents));
+      break;
+    }
 
     case content::NOTIFICATION_LOAD_STOP:
       LogLoadComplete(type, source, details);
@@ -752,7 +810,7 @@ void MetricsService::RecordCompletedSessionEnd() {
   RecordBooleanPrefValue(prefs::kStabilitySessionEndCompleted, true);
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
 void MetricsService::OnAppEnterBackground() {
   scheduler_->Stop();
 
@@ -765,10 +823,10 @@ void MetricsService::OnAppEnterBackground() {
   // to continue logging and uploading if the process does return.
   if (recording_active() && state_ >= INITIAL_LOG_READY) {
     PushPendingLogsToPersistentStorage();
-    // Persisting logs stops recording, so start recording a new log immediately
-    // to capture any background work that might be done before the process is
-    // killed.
-    StartRecording();
+    // Persisting logs closes the current log, so start recording a new log
+    // immediately to capture any background work that might be done before the
+    // process is killed.
+    OpenNewLog();
   }
 
   // Start writing right away (write happens on a different thread).
@@ -1016,12 +1074,25 @@ int MetricsService::GetLowEntropySource() {
   const CommandLine* command_line(CommandLine::ForCurrentProcess());
   // Only try to load the value from prefs if the user did not request a reset.
   // Otherwise, skip to generating a new value.
-  if (!command_line->HasSwitch(switches::kResetVariationState)) {
-    low_entropy_source_ = pref->GetInteger(prefs::kMetricsLowEntropySource);
-    if (low_entropy_source_)
+  bool reset_variations =
+      command_line->HasSwitch(switches::kResetVariationState);
+  // TODO(stevet): This histogram is temporary. Remove this after default group
+  // investigations are complete.
+  UMA_HISTOGRAM_BOOLEAN("UMA.UsedResetVariationsFlag", reset_variations);
+  if (!reset_variations) {
+    const int value = pref->GetInteger(prefs::kMetricsLowEntropySource);
+    if (value != kLowEntropySourceNotSet) {
+      // Ensure the prefs value is in the range [0, kMaxLowEntropySize). Old
+      // versions of the code would generate values in the range of [1, 8192],
+      // so the below line ensures 8192 gets mapped to 0 and also guards against
+      // the case of corrupted values.
+      low_entropy_source_ = value % kMaxLowEntropySize;
+      UMA_HISTOGRAM_BOOLEAN("UMA.GeneratedLowEntropySource", false);
       return low_entropy_source_;
+    }
   }
 
+  UMA_HISTOGRAM_BOOLEAN("UMA.GeneratedLowEntropySource", true);
   low_entropy_source_ = GenerateLowEntropySource();
   pref->SetInteger(prefs::kMetricsLowEntropySource, low_entropy_source_);
 
@@ -1062,9 +1133,8 @@ void MetricsService::SaveLocalState() {
 //------------------------------------------------------------------------------
 // Recording control methods
 
-void MetricsService::StartRecording() {
-  if (log_manager_.current_log())
-    return;
+void MetricsService::OpenNewLog() {
+  DCHECK(!log_manager_.current_log());
 
   log_manager_.BeginLoggingWithLog(new MetricsLog(client_id_, session_id_),
                                    MetricsLogManager::ONGOING_LOG);
@@ -1086,7 +1156,7 @@ void MetricsService::StartRecording() {
   }
 }
 
-void MetricsService::StopRecording() {
+void MetricsService::CloseCurrentLog() {
   if (!log_manager_.current_log())
     return;
 
@@ -1096,7 +1166,7 @@ void MetricsService::StopRecording() {
     UMA_HISTOGRAM_COUNTS("UMA.Discarded Log Events",
                          log_manager_.current_log()->num_events());
     log_manager_.DiscardCurrentLog();
-    StartRecording();  // Start trivial log to hold our histograms.
+    OpenNewLog();  // Start trivial log to hold our histograms.
   }
 
   // Adds to ongoing logs.
@@ -1130,7 +1200,7 @@ void MetricsService::PushPendingLogsToPersistentStorage() {
     log_manager_.StoreStagedLogAsUnsent(store_type);
   }
   DCHECK(!log_manager_.has_staged_log());
-  StopRecording();
+  CloseCurrentLog();
   StoreUnsentLogs();
 
   // If there was a staged and/or current log, then there is now at least one
@@ -1143,7 +1213,14 @@ void MetricsService::PushPendingLogsToPersistentStorage() {
 // Transmission of logs methods
 
 void MetricsService::StartSchedulerIfNecessary() {
-  if (reporting_active() && recording_active())
+  // Never schedule cutting or uploading of logs in test mode.
+  if (test_mode_active_)
+    return;
+
+  // Even if reporting is disabled, the scheduler is needed to trigger the
+  // creation of the initial log, which must be done in order for any logs to be
+  // persisted on shutdown or backgrounding.
+  if (recording_active() && (reporting_active() || state_ < INITIAL_LOG_READY))
     scheduler_->Start();
 }
 
@@ -1151,11 +1228,14 @@ void MetricsService::StartScheduledUpload() {
   // If we're getting no notifications, then the log won't have much in it, and
   // it's possible the computer is about to go to sleep, so don't upload and
   // stop the scheduler.
-  // Similarly, if logs should no longer be uploaded, stop here.
+  // If recording has been turned off, the scheduler doesn't need to run.
+  // If reporting is off, proceed if the initial log hasn't been created, since
+  // that has to happen in order for logs to be cut and stored when persisting.
   // TODO(stuartmorgan): Call Stop() on the schedule when reporting and/or
   // recording are turned off instead of letting it fire and then aborting.
   if (idle_since_last_transmission_ ||
-      !recording_active() || !reporting_active()) {
+      !recording_active() ||
+      (!reporting_active() && state_ >= INITIAL_LOG_READY)) {
     scheduler_->Stop();
     scheduler_->UploadCancelled();
     return;
@@ -1248,13 +1328,26 @@ void MetricsService::OnFinalLogInfoCollectionDone() {
     return;
 
   // Abort if metrics were turned off during the final info gathering.
-  if (!recording_active() || !reporting_active()) {
+  if (!recording_active()) {
     scheduler_->Stop();
     scheduler_->UploadCancelled();
     return;
   }
 
   StageNewLog();
+
+  // If logs shouldn't be uploaded, stop here. It's important that this check
+  // be after StageNewLog(), otherwise the previous logs will never be loaded,
+  // and thus the open log won't be persisted.
+  // TODO(stuartmorgan): This is unnecessarily complicated; restructure loading
+  // of previous logs to not require running part of the upload logic.
+  // http://crbug.com/157337
+  if (!reporting_active()) {
+    scheduler_->Stop();
+    scheduler_->UploadCancelled();
+    return;
+  }
+
   SendStagedLog();
 }
 
@@ -1280,8 +1373,8 @@ void MetricsService::StageNewLog() {
       return;
 
     case SENDING_CURRENT_LOGS:
-      StopRecording();
-      StartRecording();
+      CloseCurrentLog();
+      OpenNewLog();
       log_manager_.StageNextLogForUpload();
       break;
 
@@ -1499,12 +1592,8 @@ void MetricsService::OnURLFetchComplete(const net::URLFetcher* source) {
   }
 }
 
-void MetricsService::LogWindowChange(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+void MetricsService::LogWindowOrTabChange(int type, uintptr_t window_or_tab) {
   int controller_id = -1;
-  uintptr_t window_or_tab = source.map_key();
   MetricsLog::WindowEventType window_type;
 
   // Note: since we stop all logging when a single OTR session is active, it is
@@ -1575,6 +1664,7 @@ void MetricsService::IncrementLongPrefsValue(const char* path) {
 }
 
 void MetricsService::LogLoadStarted() {
+  content::RecordAction(content::UserMetricsAction("PageLoad"));
   HISTOGRAM_ENUMERATION("Chrome.UmaPageloadCounter", 1, 2);
   IncrementPrefValue(prefs::kStabilityPageLoadCount);
   IncrementLongPrefsValue(prefs::kUninstallMetricsPageLoadCount);
@@ -1633,27 +1723,11 @@ bool MetricsService::UmaMetricsProperlyShutdown() {
   return clean_shutdown_status_ == CLEANLY_SHUTDOWN;
 }
 
-// For use in hack in LogCleanShutdown.
-static void Signal(base::WaitableEvent* event) {
-  event->Signal();
-}
-
 void MetricsService::LogCleanShutdown() {
   // Redundant hack to write pref ASAP.
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
   pref->CommitPendingWrite();
-  // Hack: TBD: Remove this wait.
-  // We are so concerned that the pref gets written, we are now willing to stall
-  // the UI thread until we get assurance that a pref-writing task has
-  // completed.
-  base::WaitableEvent done_writing(false, false);
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          base::Bind(Signal, &done_writing));
-  // http://crbug.com/124954
-  base::ThreadRestrictions::ScopedAllowWait allow_wait;
-  done_writing.TimedWait(base::TimeDelta::FromHours(1));
-
   // Redundant setting to assure that we always reset this value at shutdown
   // (and that we don't use some alternate path, and not call LogCleanShutdown).
   clean_shutdown_status_ = CLEANLY_SHUTDOWN;

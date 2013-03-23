@@ -15,6 +15,7 @@
 #include "third_party/libjingle/source/talk/app/webrtc/peerconnectioninterface.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamDescriptor.h"
 
+namespace content {
 class MediaStreamDependencyFactory;
 
 // PeerConnectionHandlerBase is the base class of a delegate for the
@@ -30,9 +31,14 @@ class CONTENT_EXPORT PeerConnectionHandlerBase
   virtual ~PeerConnectionHandlerBase();
 
   void AddStream(const WebKit::WebMediaStreamDescriptor& stream);
+  bool AddStream(const WebKit::WebMediaStreamDescriptor& stream,
+                 const webrtc::MediaConstraintsInterface* constraints);
   void RemoveStream(const WebKit::WebMediaStreamDescriptor& stream);
   WebKit::WebMediaStreamDescriptor CreateWebKitStreamDescriptor(
       webrtc::MediaStreamInterface* stream);
+  webrtc::MediaStreamTrackInterface* GetLocalNativeMediaStreamTrack(
+      const WebKit::WebMediaStreamDescriptor& stream,
+      const WebKit::WebMediaStreamComponent& component);
 
   // dependency_factory_ is a raw pointer, and is valid for the lifetime of
   // MediaStreamImpl.
@@ -40,8 +46,7 @@ class CONTENT_EXPORT PeerConnectionHandlerBase
 
   // native_peer_connection_ is the native PeerConnection object,
   // it handles the ICE processing and media engine.
-  talk_base::scoped_refptr<webrtc::PeerConnectionInterface>
-      native_peer_connection_;
+  scoped_refptr<webrtc::PeerConnectionInterface> native_peer_connection_;
 
   typedef std::map<webrtc::MediaStreamInterface*,
                    WebKit::WebMediaStreamDescriptor> RemoteStreamMap;
@@ -53,5 +58,7 @@ class CONTENT_EXPORT PeerConnectionHandlerBase
 
   DISALLOW_COPY_AND_ASSIGN(PeerConnectionHandlerBase);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_PEER_CONNECTION_HANDLER_BASE_H_

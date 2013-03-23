@@ -58,12 +58,11 @@ class Shell : public WebContentsDelegate,
   void Stop();
   void UpdateNavigationControls();
   void Close();
+  void ShowDevTools();
+  void CloseDevTools();
 
   // Do one time initialization at application startup.
   static void PlatformInitialize();
-
-  // This is called indirectly by the modules that need access resources.
-  static base::StringPiece PlatformResourceProvider(int key);
 
   static Shell* CreateNewWindow(BrowserContext* browser_context,
                                 const GURL& url,
@@ -104,9 +103,18 @@ class Shell : public WebContentsDelegate,
                                       const OpenURLParams& params) OVERRIDE;
   virtual void LoadingStateChanged(WebContents* source) OVERRIDE;
 #if defined(OS_ANDROID)
-  virtual void LoadProgressChanged(double progress) OVERRIDE;
+  virtual void LoadProgressChanged(WebContents* source,
+                                   double progress) OVERRIDE;
 #endif
+  virtual void ToggleFullscreenModeForTab(WebContents* web_contents,
+                                          bool enter_fullscreen) OVERRIDE;
+  virtual bool IsFullscreenForTabOrPending(
+      const WebContents* web_contents) const OVERRIDE;
+  virtual void RequestToLockMouse(WebContents* web_contents,
+                                  bool user_gesture,
+                                  bool last_unlocked_by_target) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
+  virtual bool CanOverscrollContent() const OVERRIDE;
   virtual void WebContentsCreated(WebContents* source_contents,
                                   int64 source_frame_id,
                                   const GURL& target_url,
@@ -116,6 +124,7 @@ class Shell : public WebContentsDelegate,
   virtual JavaScriptDialogCreator* GetJavaScriptDialogCreator() OVERRIDE;
 #if defined(OS_MACOSX)
   virtual void HandleKeyboardEvent(
+      WebContents* source,
       const NativeWebKeyboardEvent& event) OVERRIDE;
 #endif
   virtual bool AddMessageToConsole(WebContents* source,
@@ -123,6 +132,7 @@ class Shell : public WebContentsDelegate,
                                    const string16& message,
                                    int32 line_no,
                                    const string16& source_id) OVERRIDE;
+  virtual void RendererUnresponsive(WebContents* source) OVERRIDE;
 
  private:
   enum UIControl {
@@ -154,6 +164,12 @@ class Shell : public WebContentsDelegate,
   void PlatformSetIsLoading(bool loading);
   // Set the title of shell window
   void PlatformSetTitle(const string16& title);
+#if defined(OS_ANDROID)
+  void PlatformToggleFullscreenModeForTab(WebContents* web_contents,
+                                          bool enter_fullscreen);
+  bool PlatformIsFullscreenForTabOrPending(
+      const WebContents* web_contents) const;
+#endif
 
 #if (defined(OS_WIN) && !defined(USE_AURA)) || defined(TOOLKIT_GTK)
   // Resizes the main window to the given dimensions.
@@ -181,6 +197,8 @@ class Shell : public WebContentsDelegate,
 
   CHROMEG_CALLBACK_3(Shell, gboolean, OnCloseWindowKeyPressed, GtkAccelGroup*,
                      GObject*, guint, GdkModifierType);
+  CHROMEG_CALLBACK_3(Shell, gboolean, OnNewWindowKeyPressed, GtkAccelGroup*,
+                     GObject*, guint, GdkModifierType);
   CHROMEG_CALLBACK_3(Shell, gboolean, OnHighlightURLView, GtkAccelGroup*,
                      GObject*, guint, GdkModifierType);
 #endif
@@ -188,6 +206,10 @@ class Shell : public WebContentsDelegate,
   scoped_ptr<ShellJavaScriptDialogCreator> dialog_creator_;
 
   scoped_ptr<WebContents> web_contents_;
+
+  Shell* dev_tools_;
+
+  bool is_fullscreen_;
 
   gfx::NativeWindow window_;
   gfx::NativeEditView url_edit_view_;

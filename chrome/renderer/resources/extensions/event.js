@@ -158,6 +158,24 @@
     return result;
   };
 
+  chromeHidden.parseEventOptions = function(opt_eventOptions) {
+    function merge(dest, src) {
+      for (var k in src) {
+        if (!dest.hasOwnProperty(k)) {
+          dest[k] = src[k];
+        }
+      }
+    }
+
+    var options = opt_eventOptions || {};
+    merge(options,
+        {supportsFilters: false,
+         supportsListeners: true,
+         supportsRules: false,
+        });
+    return options;
+  };
+
   // Event object.  If opt_eventName is provided, this object represents
   // the unique instance of that named event, and dispatching an event
   // with that name will route through this object's listeners. Note that
@@ -174,11 +192,7 @@
   chrome.Event = function(opt_eventName, opt_argSchemas, opt_eventOptions) {
     this.eventName_ = opt_eventName;
     this.listeners_ = [];
-    this.eventOptions_ = opt_eventOptions ||
-        {supportsFilters: false,
-         supportsListeners: true,
-         supportsRules: false,
-        };
+    this.eventOptions_ = chromeHidden.parseEventOptions(opt_eventOptions);
 
     if (this.eventOptions_.supportsRules && !opt_eventName)
       throw new Error("Events that support rules require an event name.");
@@ -207,10 +221,11 @@
     }
   };
 
+
   chromeHidden.Event = {};
 
   // callback is a function(args, dispatch). args are the args we receive from
-  // dispatchJSON(), and dispatch is a function(args) that dispatches args to
+  // dispatchEvent(), and dispatch is a function(args) that dispatches args to
   // its listeners.
   chromeHidden.Event.registerArgumentMassager = function(name, callback) {
     if (eventArgumentMassagers[name])
@@ -218,10 +233,9 @@
     eventArgumentMassagers[name] = callback;
   };
 
-  // Dispatches a named event with the given JSON array, which is deserialized
-  // before dispatch. The JSON array is the list of arguments that will be
-  // sent with the event callback.
-  chromeHidden.Event.dispatchJSON = function(name, args, filteringInfo) {
+  // Dispatches a named event with the given argument array. The args array is
+  // the list of arguments that will be sent to the event callback.
+  chromeHidden.Event.dispatchEvent = function(name, args, filteringInfo) {
     var listenerIDs = null;
 
     if (filteringInfo)
@@ -230,12 +244,6 @@
     var event = attachedNamedEvents[name];
     if (!event)
       return;
-
-    // TODO(asargent): This is an antiquity. Until all callers of
-    // dispatchJSON use actual values, this must remain here to catch the
-    // cases where a caller has hard-coded a JSON string to pass in.
-    if (typeof(args) == "string")
-      args = chromeHidden.JSON.parse(args);
 
     var dispatchArgs = function(args) {
       result = event.dispatch_(args, listenerIDs);
@@ -438,6 +446,10 @@
                   this.eventOptions_.actions);
 
     ensureRuleSchemasLoaded();
+    // We remove the first parameter from the validation to give the user more
+    // meaningful error messages.
+    validate([rules, opt_cb],
+             ruleFunctionSchemas.addRules.parameters.slice().splice(1));
     sendRequest("events.addRules", [this.eventName_, rules, opt_cb],
                 ruleFunctionSchemas.addRules.parameters);
   }
@@ -446,6 +458,10 @@
     if (!this.eventOptions_.supportsRules)
       throw new Error("This event does not support rules.");
     ensureRuleSchemasLoaded();
+    // We remove the first parameter from the validation to give the user more
+    // meaningful error messages.
+    validate([ruleIdentifiers, opt_cb],
+             ruleFunctionSchemas.removeRules.parameters.slice().splice(1));
     sendRequest("events.removeRules",
                 [this.eventName_, ruleIdentifiers, opt_cb],
                 ruleFunctionSchemas.removeRules.parameters);
@@ -455,6 +471,11 @@
     if (!this.eventOptions_.supportsRules)
       throw new Error("This event does not support rules.");
     ensureRuleSchemasLoaded();
+    // We remove the first parameter from the validation to give the user more
+    // meaningful error messages.
+    validate([ruleIdentifiers, cb],
+             ruleFunctionSchemas.getRules.parameters.slice().splice(1));
+
     sendRequest("events.getRules",
                 [this.eventName_, ruleIdentifiers, cb],
                 ruleFunctionSchemas.getRules.parameters);

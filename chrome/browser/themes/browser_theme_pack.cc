@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -29,6 +30,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/skia_util.h"
 
 using content::BrowserThread;
 using extensions::Extension;
@@ -38,7 +40,7 @@ namespace {
 // Version number of the current theme pack. We just throw out and rebuild
 // theme packs that aren't int-equal to this. Increment this number if you
 // change default theme assets.
-const int kThemePackVersion = 24;
+const int kThemePackVersion = 27;
 
 // IDs that are in the DataPack won't clash with the positive integer
 // uint16. kHeaderID should always have the maximum value because we want the
@@ -55,7 +57,7 @@ const int kScaleFactorsID = kMaxID - 6;
 
 // Static size of the tint/color/display property arrays that are mmapped.
 const int kTintArraySize = 6;
-const int kColorArraySize = 19;
+const int kColorArraySize = 18;
 const int kDisplayPropertySize = 3;
 
 // The sum of kFrameBorderThickness and kNonClientRestoredExtraThickness from
@@ -253,7 +255,6 @@ StringToIntTable kColorTable[] = {
   { "ntp_section_link", ThemeService::COLOR_NTP_SECTION_LINK },
   { "ntp_section_link_underline",
     ThemeService::COLOR_NTP_SECTION_LINK_UNDERLINE },
-  { "control_background", ThemeService::COLOR_CONTROL_BACKGROUND },
   { "button_background", ThemeService::COLOR_BUTTON_BACKGROUND },
   { NULL, 0 }
 };
@@ -353,6 +354,42 @@ gfx::Image* CreateHSLShiftedImage(const gfx::Image& image,
       *src_image, hsl_shift));
 }
 
+// A ImageSkiaSource that scales 100P image to the target scale factor
+// if the ImageSkiaRep for the target scale factor isn't available.
+class ThemeImageSource: public gfx::ImageSkiaSource {
+ public:
+  ThemeImageSource(const gfx::ImageSkia& source) : source_(source) {
+  }
+  virtual ~ThemeImageSource() {}
+
+  virtual gfx::ImageSkiaRep GetImageForScale(
+      ui::ScaleFactor scale_factor) OVERRIDE {
+    if (source_.HasRepresentation(scale_factor))
+      return source_.GetRepresentation(scale_factor);
+    const gfx::ImageSkiaRep& rep_100p =
+        source_.GetRepresentation(ui::SCALE_FACTOR_100P);
+    float scale = ui::GetScaleFactorScale(scale_factor);
+    gfx::Size size(rep_100p.GetWidth() * scale, rep_100p.GetHeight() * scale);
+    SkBitmap resized_bitmap;
+    resized_bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(),
+                             size.height());
+    if (!resized_bitmap.allocPixels())
+      SK_CRASH();
+    resized_bitmap.eraseARGB(0, 0, 0, 0);
+    SkCanvas canvas(resized_bitmap);
+    SkRect resized_bounds = RectToSkRect(gfx::Rect(size));
+    // Note(oshima): The following scaling code doesn't work with
+    // a mask image.
+    canvas.drawBitmapRect(rep_100p.sk_bitmap(), NULL, resized_bounds);
+    return gfx::ImageSkiaRep(resized_bitmap, scale_factor);
+  }
+
+ private:
+  const gfx::ImageSkia source_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThemeImageSource);
+};
+
 class TabBackgroundImageSource: public gfx::CanvasImageSource {
  public:
   TabBackgroundImageSource(const gfx::ImageSkia& image_to_tint,
@@ -436,11 +473,14 @@ scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromExtension(
   pack->CreateImages(&pack->images_on_ui_thread_);
   pack->CreateImages(&pack->images_on_file_thread_);
 
-  // For M22, as it is not possible to easily determine which scale factors are
-  // in use, assume that the 1x scale factor is in use.
-  std::vector<ui::ScaleFactor> scale_factors_in_use;
-  scale_factors_in_use.push_back(ui::SCALE_FACTOR_100P);
-  pack->GenerateImageReps(scale_factors_in_use);
+  // Make sure the |images_on_file_thread_| has bitmaps for supported
+  // scale factors before passing to FILE thread.
+  for (ImageCache::iterator it = pack->images_on_file_thread_.begin();
+       it != pack->images_on_file_thread_.end(); ++it) {
+    gfx::ImageSkia* image_skia =
+        const_cast<gfx::ImageSkia*>(it->second->ToImageSkia());
+    image_skia->MakeThreadSafe();
+  }
 
   // The BrowserThemePack is now in a consistent state.
   return pack;
@@ -514,7 +554,6 @@ scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromDataPack(
 }
 
 bool BrowserThemePack::WriteToDisk(const FilePath& path) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   // Add resources for each of the property arrays.
   RawDataForWriting resources;
   resources[kHeaderID] = base::StringPiece(
@@ -591,17 +630,6 @@ bool BrowserThemePack::GetDisplayProperty(int id, int* result) const {
   return false;
 }
 
-SkBitmap* BrowserThemePack::GetBitmapNamed(int idr_id) const {
-  const gfx::Image* image = GetImageNamed(idr_id);
-  if (!image)
-    return NULL;
-
-  // TODO(sail): This cast should be removed. Currently we use this const_cast
-  // to avoid changing the BrowserThemePack::GetBitmapNamed API. Once we
-  // switch to using gfx::Image everywhere this can be removed.
-  return const_cast<SkBitmap*>(image->ToSkBitmap());
-}
-
 const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
   int prs_id = GetPersistentIDByIDR(idr_id);
   if (prs_id == -1)
@@ -614,11 +642,10 @@ const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
 
   // TODO(pkotwicz): Do something better than loading the bitmaps
   // for all the scale factors associated with |idr_id|.
-  gfx::ImageSkia image_skia;
+  gfx::ImageSkia source_image_skia;
   for (size_t i = 0; i < scale_factors_.size(); ++i) {
     scoped_refptr<base::RefCountedMemory> memory =
         GetRawData(idr_id, scale_factors_[i]);
-
     if (memory.get()) {
       // Decode the PNG.
       SkBitmap bitmap;
@@ -626,19 +653,20 @@ const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
                                  &bitmap)) {
         NOTREACHED() << "Unable to decode theme image resource " << idr_id
                      << " from saved DataPack.";
-        return NULL;
+        continue;
       }
-      image_skia.AddRepresentation(
+      source_image_skia.AddRepresentation(
           gfx::ImageSkiaRep(bitmap, scale_factors_[i]));
     }
   }
 
-  if (!image_skia.isNull()) {
+  if (!source_image_skia.isNull()) {
+    ThemeImageSource* source = new ThemeImageSource(source_image_skia);
+    gfx::ImageSkia image_skia(source, source_image_skia.size());
     gfx::Image* ret = new gfx::Image(image_skia);
     images_on_ui_thread_[prs_id] = ret;
     return ret;
   }
-
   return NULL;
 }
 
@@ -685,11 +713,7 @@ BrowserThemePack::BrowserThemePack()
       colors_(NULL),
       display_properties_(NULL),
       source_images_(NULL) {
-#if defined(OS_MACOSX)
   scale_factors_ = ui::GetSupportedScaleFactors();
-#else
-  scale_factors_.push_back(ui::SCALE_FACTOR_100P);
-#endif
 }
 
 void BrowserThemePack::BuildHeader(const Extension* extension) {
@@ -1113,21 +1137,10 @@ void BrowserThemePack::CreateTabBackgroundImages(ImageCache* images) const {
 
 void BrowserThemePack::RepackImages(const ImageCache& images,
                                     RawImages* reencoded_images) const {
-
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
   typedef std::vector<ui::ScaleFactor> ScaleFactors;
   for (ImageCache::const_iterator it = images.begin();
        it != images.end(); ++it) {
     gfx::ImageSkia image_skia = *it->second->ToImageSkia();
-
-    // Attempt to generate image reps for all supported scale factors.
-    for (ScaleFactors::const_iterator factor_it = scale_factors_.begin();
-         factor_it != scale_factors_.end(); ++factor_it) {
-      // Ask for representation to force the representation to be generated
-      // if it wasn't already.
-      image_skia.GetRepresentation(*factor_it);
-    }
 
     typedef std::vector<gfx::ImageSkiaRep> ImageSkiaReps;
     ImageSkiaReps image_reps = image_skia.image_reps();
@@ -1145,34 +1158,6 @@ void BrowserThemePack::RepackImages(const ImageCache& images,
       int raw_id = GetRawIDByPersistentID(it->first, rep_it->scale_factor());
       (*reencoded_images)[raw_id] =
           base::RefCountedBytes::TakeVector(&bitmap_data);
-    }
-  }
-}
-
-void BrowserThemePack::GenerateImageReps(
-    const std::vector<ui::ScaleFactor>& scale_factors) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  for (ImageCache::const_iterator it = images_on_ui_thread_.begin();
-       it != images_on_ui_thread_.end();
-       ++it) {
-    const gfx::ImageSkia* image1 = it->second->ToImageSkia();
-    const gfx::ImageSkia* image2 =
-        images_on_file_thread_[it->first]->ToImageSkia();
-
-    // Ensure that image reps are generated and cached in |image1| by
-    // calling GetRepresentation().
-    for (size_t i = 0; i < scale_factors.size(); ++i)
-      image1->GetRepresentation(scale_factors[i]);
-
-    // |image1| and |image2| have ImageSkiaSources which produce pixel
-    // equivalent output. Instead of regenerating again, copy the image reps
-    // which were generated for |image1| into |image2|.
-    // Don't do a deep copy of the SkBitmaps as SkBitmap is thread safe.
-    std::vector<gfx::ImageSkiaRep> image1_reps = image1->image_reps();
-    for (size_t i = 0; i < image1_reps.size(); ++i) {
-      gfx::ImageSkiaRep image1_rep = image1_reps[i];
-      const_cast<gfx::ImageSkia*>(image2)->AddRepresentation(gfx::ImageSkiaRep(
-          image1_rep.sk_bitmap(), image1_rep.scale_factor()));
     }
   }
 }
@@ -1199,7 +1184,6 @@ void BrowserThemePack::CopyImagesTo(const ImageCache& source,
 
 void BrowserThemePack::AddRawImagesTo(const RawImages& images,
                                       RawDataForWriting* out) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   for (RawImages::const_iterator it = images.begin(); it != images.end();
        ++it) {
     (*out)[it->first] = base::StringPiece(

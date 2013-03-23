@@ -12,6 +12,7 @@
 // This looks like it should be forward-declarable, but it does some tricky
 // moves that make it easier to just include it.
 #include "net/socket/tcp_client_socket.h"
+#include "net/socket/tcp_server_socket.h"
 
 namespace net {
 class Socket;
@@ -19,11 +20,13 @@ class Socket;
 
 namespace extensions {
 
-class ApiResourceEventNotifier;
-
 class TCPSocket : public Socket {
  public:
-  explicit TCPSocket(ApiResourceEventNotifier* event_notifier);
+  explicit TCPSocket(const std::string& owner_extension_id);
+  TCPSocket(net::TCPClientSocket* tcp_client_socket,
+            const std::string& owner_extension_id,
+            bool is_connected = false);
+
   virtual ~TCPSocket();
 
   virtual void Connect(const std::string& address,
@@ -42,13 +45,20 @@ class TCPSocket : public Socket {
                       const CompletionCallback& callback) OVERRIDE;
   virtual bool SetKeepAlive(bool enable, int delay) OVERRIDE;
   virtual bool SetNoDelay(bool no_delay) OVERRIDE;
-  virtual bool IsTCPSocket() OVERRIDE;
+  virtual int Listen(const std::string& address, int port,
+                     int backlog, std::string* error_msg) OVERRIDE;
+  virtual void Accept(const AcceptCompletionCallback &callback) OVERRIDE;
+
   virtual bool GetPeerAddress(net::IPEndPoint* address) OVERRIDE;
   virtual bool GetLocalAddress(net::IPEndPoint* address) OVERRIDE;
+  virtual Socket::SocketType GetSocketType() const OVERRIDE;
 
   static TCPSocket* CreateSocketForTesting(
       net::TCPClientSocket* tcp_client_socket,
-      ApiResourceEventNotifier* event_notifier);
+      const std::string& owner_extension_id);
+  static TCPSocket* CreateServerSocketForTesting(
+      net::TCPServerSocket* tcp_server_socket,
+      const std::string& owner_extension_id);
 
  protected:
   virtual int WriteImpl(net::IOBuffer* io_buffer,
@@ -59,15 +69,27 @@ class TCPSocket : public Socket {
   void OnConnectComplete(int result);
   void OnReadComplete(scoped_refptr<net::IOBuffer> io_buffer,
                       int result);
+  void OnAccept(int result);
 
-  TCPSocket(net::TCPClientSocket* tcp_client_socket,
-            ApiResourceEventNotifier* event_notifier);
+  TCPSocket(net::TCPServerSocket* tcp_server_socket,
+            const std::string& owner_extension_id);
 
   scoped_ptr<net::TCPClientSocket> socket_;
+  scoped_ptr<net::TCPServerSocket> server_socket_;
+
+  enum SocketMode {
+    UNKNOWN = 0,
+    CLIENT,
+    SERVER,
+  };
+  SocketMode socket_mode_;
 
   CompletionCallback connect_callback_;
 
   ReadCompletionCallback read_callback_;
+
+  scoped_ptr<net::StreamSocket> accept_socket_;
+  AcceptCompletionCallback accept_callback_;
 };
 
 }  //  namespace extensions

@@ -21,12 +21,14 @@ chrome::BrowserListImpl* GetNativeList() {
 
 // static
 void BrowserList::AddBrowser(Browser* browser) {
-  GetNativeList()->AddBrowser(browser);
+  chrome::BrowserListImpl::GetInstance(browser->host_desktop_type())->
+      AddBrowser(browser);
 }
 
 // static
 void BrowserList::RemoveBrowser(Browser* browser) {
-  GetNativeList()->RemoveBrowser(browser);
+  chrome::BrowserListImpl::GetInstance(browser->host_desktop_type())->
+      RemoveBrowser(browser);
 }
 
 // static
@@ -86,9 +88,4 @@ bool BrowserList::IsOffTheRecordSessionActive() {
 // static
 bool BrowserList::IsOffTheRecordSessionActiveForProfile(Profile* profile) {
   return GetNativeList()->IsIncognitoWindowOpenForProfile(profile);
-}
-
-// static
-Browser* BrowserList::GetLastActive() {
-  return GetNativeList()->GetLastActive();
 }

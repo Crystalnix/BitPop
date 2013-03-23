@@ -7,14 +7,89 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/stringprintf.h"
+#include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_internals_observer.h"
 #include "chrome/browser/media/media_stream_capture_indicator.h"
+#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_ui.h"
 #include "media/base/media_log.h"
 #include "media/base/media_log_event.h"
 
 using content::BrowserThread;
+
+namespace media {
+
+namespace {
+
+const content::MediaStreamDevice* FindDefaultDeviceWithId(
+    const content::MediaStreamDevices& devices,
+    const std::string& device_id) {
+  if (devices.empty())
+    return NULL;
+
+  content::MediaStreamDevices::const_iterator iter = devices.begin();
+  for (; iter != devices.end(); ++iter) {
+    if (iter->id == device_id) {
+      return &(*iter);
+    }
+  }
+
+  return &(*devices.begin());
+};
+
+}  // namespace
+
+void GetDefaultDevicesForProfile(Profile* profile,
+                                 bool audio,
+                                 bool video,
+                                 content::MediaStreamDevices* devices) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(audio || video);
+
+  PrefService* prefs = profile->GetPrefs();
+  std::string default_device;
+  if (audio) {
+    default_device = prefs->GetString(prefs::kDefaultAudioCaptureDevice);
+    GetRequestedDevice(default_device, true, false, devices);
+  }
+
+  if (video) {
+    default_device = prefs->GetString(prefs::kDefaultVideoCaptureDevice);
+    GetRequestedDevice(default_device, false, true, devices);
+  }
+}
+
+void GetRequestedDevice(const std::string& requested_device_id,
+                        bool audio,
+                        bool video,
+                        content::MediaStreamDevices* devices) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(audio || video);
+
+  MediaCaptureDevicesDispatcher* dispatcher =
+      MediaInternals::GetInstance()->GetMediaCaptureDevicesDispatcher();
+  if (audio) {
+    const content::MediaStreamDevices& audio_devices =
+        dispatcher->GetAudioCaptureDevices();
+    const content::MediaStreamDevice* const device =
+        media::FindDefaultDeviceWithId(audio_devices, requested_device_id);
+    if (device)
+      devices->push_back(*device);
+  }
+  if (video) {
+    const content::MediaStreamDevices& video_devices =
+        dispatcher->GetVideoCaptureDevices();
+    const content::MediaStreamDevice* const device =
+        media::FindDefaultDeviceWithId(video_devices, requested_device_id);
+    if (device)
+      devices->push_back(*device);
+  }
+}
+
+} // namespace media
 
 MediaInternals* MediaInternals::GetInstance() {
   return Singleton<MediaInternals>::get();
@@ -69,8 +144,6 @@ void MediaInternals::OnCaptureDevicesOpened(
     int render_view_id,
     const content::MediaStreamDevices& devices) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (!media_stream_capture_indicator_.get())
-    media_stream_capture_indicator_ = new MediaStreamCaptureIndicator();
   media_stream_capture_indicator_->CaptureDevicesOpened(render_process_id,
                                                         render_view_id,
                                                         devices);
@@ -84,6 +157,34 @@ void MediaInternals::OnCaptureDevicesClosed(
   media_stream_capture_indicator_->CaptureDevicesClosed(render_process_id,
                                                         render_view_id,
                                                         devices);
+}
+
+void MediaInternals::OnAudioCaptureDevicesChanged(
+    const content::MediaStreamDevices& devices) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  media_devices_dispatcher_->AudioCaptureDevicesChanged(devices);
+}
+
+void MediaInternals::OnVideoCaptureDevicesChanged(
+    const content::MediaStreamDevices& devices) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  media_devices_dispatcher_->VideoCaptureDevicesChanged(devices);
+}
+
+void MediaInternals::OnMediaRequestStateChanged(
+    int render_process_id,
+    int render_view_id,
+    const content::MediaStreamDevice& device,
+    content::MediaRequestState state) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if (observers_.size()) {
+    FOR_EACH_OBSERVER(
+        MediaInternalsObserver, observers_, OnRequestUpdate(render_process_id,
+                                                            render_view_id,
+                                                            device,
+                                                            state));
+  }
 }
 
 void MediaInternals::AddObserver(MediaInternalsObserver* observer) {
@@ -101,7 +202,20 @@ void MediaInternals::SendEverything() {
   SendUpdate("media.onReceiveEverything", &data_);
 }
 
-MediaInternals::MediaInternals() {}
+scoped_refptr<MediaCaptureDevicesDispatcher>
+MediaInternals::GetMediaCaptureDevicesDispatcher() {
+  return media_devices_dispatcher_;
+}
+
+scoped_refptr<MediaStreamCaptureIndicator>
+MediaInternals::GetMediaStreamCaptureIndicator() {
+  return media_stream_capture_indicator_.get();
+}
+
+MediaInternals::MediaInternals()
+    : media_stream_capture_indicator_(new MediaStreamCaptureIndicator()),
+      media_devices_dispatcher_(new MediaCaptureDevicesDispatcher()) {
+}
 
 void MediaInternals::UpdateAudioStream(
     void* host, int stream_id, const std::string& property, Value* value) {

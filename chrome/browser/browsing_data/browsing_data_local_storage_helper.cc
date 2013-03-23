@@ -9,12 +9,12 @@
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/dom_storage_context.h"
+#include "content/public/browser/storage_partition.h"
+#include "webkit/dom_storage/dom_storage_types.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DOMStorageContext;
-using dom_storage::DomStorageContext;
 
 BrowsingDataLocalStorageHelper::LocalStorageInfo::LocalStorageInfo(
     const GURL& origin_url, int64 size, base::Time last_modified)
@@ -25,7 +25,8 @@ BrowsingDataLocalStorageHelper::LocalStorageInfo::~LocalStorageInfo() {}
 BrowsingDataLocalStorageHelper::BrowsingDataLocalStorageHelper(
     Profile* profile)
     : dom_storage_context_(
-          BrowserContext::GetDefaultDOMStorageContext(profile)),
+          BrowserContext::GetDefaultStoragePartition(profile)->
+              GetDOMStorageContext()),
       is_fetching_(false) {
   DCHECK(dom_storage_context_);
 }
@@ -41,23 +42,23 @@ void BrowsingDataLocalStorageHelper::StartFetching(
 
   is_fetching_ = true;
   completion_callback_ = callback;
-  dom_storage_context_->GetUsageInfo(
+  dom_storage_context_->GetLocalStorageUsage(
       base::Bind(
           &BrowsingDataLocalStorageHelper::GetUsageInfoCallback, this));
 }
 
 void BrowsingDataLocalStorageHelper::DeleteOrigin(const GURL& origin) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  dom_storage_context_->DeleteOrigin(origin);
+  dom_storage_context_->DeleteLocalStorage(origin);
 }
 
 void BrowsingDataLocalStorageHelper::GetUsageInfoCallback(
-    const std::vector<DomStorageContext::UsageInfo>& infos) {
+    const std::vector<dom_storage::LocalStorageUsageInfo>& infos) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   for (size_t i = 0; i < infos.size(); ++i) {
     // Non-websafe state is not considered browsing data.
-    const DomStorageContext::UsageInfo& info = infos[i];
+    const dom_storage::LocalStorageUsageInfo& info = infos[i];
     if (BrowsingDataHelper::HasWebScheme(info.origin)) {
       local_storage_info_.push_back(
           LocalStorageInfo(info.origin, info.data_size, info.last_modified));

@@ -21,7 +21,8 @@ class LoginView : public views::View, public LoginModelObserver {
   // |model| is observed for the entire lifetime of the LoginView.
   // Therefore |model| should not be destroyed before the LoginView
   // object.
-  LoginView(const string16& explanation, LoginModel* model);
+  LoginView(const string16& explanation,
+            LoginModel* model);
   virtual ~LoginView();
 
   // Access the data in the username/password text fields.

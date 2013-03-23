@@ -2,23 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/ui/views/bookmarks/bookmark_context_menu.h"
+
 #include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/views/bookmarks/bookmark_context_menu.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/clipboard/clipboard.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
@@ -71,8 +75,11 @@ class BookmarkContextMenuTest : public testing::Test {
     bookmark_utils::DisableBookmarkBarViewAnimationsForTesting(false);
 #endif
 
+    ui::Clipboard::DestroyClipboardForCurrentThread();
+
+    BrowserThread::GetBlockingPool()->FlushForTesting();
     // Flush the message loop to make application verifiers happy.
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
  protected:
@@ -88,6 +95,7 @@ class BookmarkContextMenuTest : public testing::Test {
   // a
   // F1
   //  f1a
+  // -f1b as "chrome://settings"
   //  F11
   //   f11a
   // F2
@@ -100,7 +108,8 @@ class BookmarkContextMenuTest : public testing::Test {
     model_->AddURL(bb_node, 0, ASCIIToUTF16("a"), GURL(test_base + "a"));
     const BookmarkNode* f1 = model_->AddFolder(bb_node, 1, ASCIIToUTF16("F1"));
     model_->AddURL(f1, 0, ASCIIToUTF16("f1a"), GURL(test_base + "f1a"));
-    const BookmarkNode* f11 = model_->AddFolder(f1, 1, ASCIIToUTF16("F11"));
+    model_->AddURL(f1, 1, ASCIIToUTF16("f1b"), GURL("chrome://settings"));
+    const BookmarkNode* f11 = model_->AddFolder(f1, 2, ASCIIToUTF16("F11"));
     model_->AddURL(f11, 0, ASCIIToUTF16("f11a"), GURL(test_base + "f11a"));
     model_->AddFolder(bb_node, 2, ASCIIToUTF16("F2"));
     model_->AddFolder(bb_node, 3, ASCIIToUTF16("F3"));
@@ -126,9 +135,19 @@ TEST_F(BookmarkContextMenuTest, DeleteURL) {
 // Tests open all on a folder with a couple of bookmarks.
 TEST_F(BookmarkContextMenuTest, OpenAll) {
   const BookmarkNode* folder = model_->bookmark_bar_node()->GetChild(1);
-  bookmark_utils::OpenAll(NULL, &navigator_, folder, NEW_FOREGROUND_TAB);
+  chrome::OpenAll(NULL, &navigator_, folder, NEW_FOREGROUND_TAB, NULL);
 
   // Should have navigated to F1's child but not F11's child.
+  ASSERT_EQ(static_cast<size_t>(2), navigator_.urls_.size());
+  ASSERT_TRUE(folder->GetChild(0)->url() == navigator_.urls_[0]);
+}
+
+// Tests open all on a folder with a couple of bookmarks in incognito window.
+TEST_F(BookmarkContextMenuTest, OpenAllIngonito) {
+  const BookmarkNode* folder = model_->bookmark_bar_node()->GetChild(1);
+  chrome::OpenAll(NULL, &navigator_, folder, OFF_THE_RECORD, NULL);
+
+  // Should have navigated to only f1a but not f2a.
   ASSERT_EQ(static_cast<size_t>(1), navigator_.urls_.size());
   ASSERT_TRUE(folder->GetChild(0)->url() == navigator_.urls_[0]);
 }

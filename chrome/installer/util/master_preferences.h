@@ -93,6 +93,10 @@ class MasterPreferences {
   // switches with the distribution dictionary.
   explicit MasterPreferences(const FilePath& prefs_path);
 
+  // Parses a preferences directly from |prefs| and does not merge any command
+  // line switches with the distribution dictionary.
+  explicit MasterPreferences(const std::string& prefs);
+
   ~MasterPreferences();
 
   // Each of the Get methods below returns true if the named value was found in
@@ -168,6 +172,10 @@ class MasterPreferences {
     return chrome_app_host_;
   }
 
+  bool install_chrome_app_launcher() const {
+    return chrome_app_launcher_;
+  }
+
   bool install_chrome_frame() const {
     return chrome_frame_;
   }
@@ -183,9 +191,17 @@ class MasterPreferences {
   static const MasterPreferences& ForCurrentProcess();
 
  protected:
+  void InitializeFromCommandLine(const CommandLine& cmd_line);
+
+  // Initializes the instance from a given JSON string, returning true if the
+  // string was successfully parsed.
+  bool InitializeFromString(const std::string& json_data);
+
   void InitializeProductFlags();
 
-  void InitializeFromCommandLine(const CommandLine& cmd_line);
+  // Enforces legacy preferences that should no longer be used, but could be
+  // found in older master_preferences files.
+  void EnforceLegacyPreferences();
 
  protected:
   scoped_ptr<base::DictionaryValue> master_dictionary_;
@@ -193,6 +209,7 @@ class MasterPreferences {
   bool preferences_read_from_file_;
   bool chrome_;
   bool chrome_app_host_;
+  bool chrome_app_launcher_;
   bool chrome_frame_;
   bool multi_install_;
 

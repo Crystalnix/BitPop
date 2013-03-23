@@ -16,6 +16,10 @@
 
 class MessageLoop;
 
+namespace base {
+class HistogramSamples;
+}  // namespace base
+
 namespace content {
 
 class ChildHistogramMessageFilter : public base::HistogramFlattener,
@@ -32,10 +36,12 @@ class ChildHistogramMessageFilter : public base::HistogramFlattener,
 
   // HistogramFlattener interface (override) methods.
   virtual void RecordDelta(const base::Histogram& histogram,
-                           const base::Histogram::SampleSet& snapshot) OVERRIDE;
-  virtual void InconsistencyDetected(int problem) OVERRIDE;
-  virtual void UniqueInconsistencyDetected(int problem) OVERRIDE;
-  virtual void SnapshotProblemResolved(int amount) OVERRIDE;
+                           const base::HistogramSamples& snapshot) OVERRIDE;
+  virtual void InconsistencyDetected(
+      base::Histogram::Inconsistencies problem) OVERRIDE;
+  virtual void UniqueInconsistencyDetected(
+      base::Histogram::Inconsistencies problem) OVERRIDE;
+  virtual void InconsistencyDetectedInLoggedCount(int amount) OVERRIDE;
 
  private:
   typedef std::vector<std::string> HistogramPickledList;
@@ -47,7 +53,7 @@ class ChildHistogramMessageFilter : public base::HistogramFlattener,
 
   // Extract snapshot data and then send it off the the Browser process.
   // Send only a delta to what we have already sent.
-  void UploadAllHistrograms(int sequence_number);
+  void UploadAllHistograms(int sequence_number);
 
   IPC::Channel* channel_;
 

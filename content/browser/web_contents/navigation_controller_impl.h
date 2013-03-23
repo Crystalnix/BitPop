@@ -6,78 +6,58 @@
 #define CONTENT_BROWSER_WEB_CONTENTS_NAVIGATION_CONTROLLER_IMPL_H_
 
 #include "build/build_config.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
 #include "base/time.h"
 #include "content/browser/ssl/ssl_manager.h"
-#include "content/public/browser/android/navigation_controller_webview.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
 
-class SessionStorageNamespaceImpl;
 struct ViewHostMsg_FrameNavigate_Params;
-class WebContentsImpl;
 
 namespace content {
 class NavigationEntryImpl;
-struct LoadCommittedDetails;
+class WebContentsImpl;
 class SiteInstance;
-}
+struct LoadCommittedDetails;
 
 class CONTENT_EXPORT NavigationControllerImpl
-    : public NON_EXPORTED_BASE(content::NavigationController),
-      public NON_EXPORTED_BASE(content::NavigationControllerWebView) {
+    : public NON_EXPORTED_BASE(NavigationController) {
  public:
   NavigationControllerImpl(
       WebContentsImpl* web_contents,
-      content::BrowserContext* browser_context,
-      SessionStorageNamespaceImpl* session_storage_namespace);
+      BrowserContext* browser_context);
   virtual ~NavigationControllerImpl();
 
   // NavigationController implementation:
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContext() const OVERRIDE;
+  virtual WebContents* GetWebContents() const OVERRIDE;
+  virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual void SetBrowserContext(
-      content::BrowserContext* browser_context) OVERRIDE;
+      BrowserContext* browser_context) OVERRIDE;
   virtual void Restore(
       int selected_navigation,
-      bool from_last_session,
-      std::vector<content::NavigationEntry*>* entries) OVERRIDE;
-  virtual content::NavigationEntry* GetActiveEntry() const OVERRIDE;
-  virtual content::NavigationEntry* GetVisibleEntry() const OVERRIDE;
+      RestoreType type,
+      std::vector<NavigationEntry*>* entries) OVERRIDE;
+  virtual NavigationEntry* GetActiveEntry() const OVERRIDE;
+  virtual NavigationEntry* GetVisibleEntry() const OVERRIDE;
   virtual int GetCurrentEntryIndex() const OVERRIDE;
-  virtual content::NavigationEntry* GetLastCommittedEntry() const OVERRIDE;
+  virtual NavigationEntry* GetLastCommittedEntry() const OVERRIDE;
   virtual int GetLastCommittedEntryIndex() const OVERRIDE;
   virtual bool CanViewSource() const OVERRIDE;
   virtual int GetEntryCount() const OVERRIDE;
-  virtual content::NavigationEntry* GetEntryAtIndex(int index) const OVERRIDE;
-  virtual content::NavigationEntry* GetEntryAtOffset(int offset) const OVERRIDE;
+  virtual NavigationEntry* GetEntryAtIndex(int index) const OVERRIDE;
+  virtual NavigationEntry* GetEntryAtOffset(int offset) const OVERRIDE;
   virtual void DiscardNonCommittedEntries() OVERRIDE;
-  virtual content::NavigationEntry* GetPendingEntry() const OVERRIDE;
+  virtual NavigationEntry* GetPendingEntry() const OVERRIDE;
   virtual int GetPendingEntryIndex() const OVERRIDE;
-  virtual content::NavigationEntry* GetTransientEntry() const OVERRIDE;
+  virtual NavigationEntry* GetTransientEntry() const OVERRIDE;
   virtual void LoadURL(const GURL& url,
-                       const content::Referrer& referrer,
-                       content::PageTransition type,
+                       const Referrer& referrer,
+                       PageTransition type,
                        const std::string& extra_headers) OVERRIDE;
-  virtual void LoadURLFromRenderer(const GURL& url,
-                                   const content::Referrer& referrer,
-                                   content::PageTransition type,
-                                   const std::string& extra_headers) OVERRIDE;
-  virtual void LoadURLWithUserAgentOverride(
-      const GURL& url,
-      const content::Referrer& referrer,
-      content::PageTransition type,
-      bool is_renderer_initiated,
-      const std::string& extra_headers,
-      bool is_overriding_user_agent) OVERRIDE;
-  virtual void TransferURL(
-      const GURL& url,
-      const content::Referrer& referrer,
-      content::PageTransition transition,
-      const std::string& extra_headers,
-      const content::GlobalRequestID& transferred_global_request_id,
-      bool is_renderer_initiated) OVERRIDE;
+  virtual void LoadURLWithParams(const LoadURLParams& params) OVERRIDE;
   virtual void LoadIfNecessary() OVERRIDE;
   virtual bool CanGoBack() const OVERRIDE;
   virtual bool CanGoForward() const OVERRIDE;
@@ -87,8 +67,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual void GoToIndex(int index) OVERRIDE;
   virtual void GoToOffset(int offset) OVERRIDE;
   virtual void RemoveEntryAtIndex(int index) OVERRIDE;
-  virtual content::SessionStorageNamespace*
-      GetSessionStorageNamespace() const OVERRIDE;
+  virtual const SessionStorageNamespaceMap&
+      GetSessionStorageNamespaceMap() const OVERRIDE;
+  virtual SessionStorageNamespace*
+      GetDefaultSessionStorageNamespace() OVERRIDE;
   virtual void SetMaxRestoredPageID(int32 max_id) OVERRIDE;
   virtual int32 GetMaxRestoredPageID() const OVERRIDE;
   virtual bool NeedsReload() const OVERRIDE;
@@ -97,45 +79,34 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual bool IsInitialNavigation() OVERRIDE;
   virtual void Reload(bool check_for_repost) OVERRIDE;
   virtual void ReloadIgnoringCache(bool check_for_repost) OVERRIDE;
-  virtual void NotifyEntryChanged(const content::NavigationEntry* entry,
+  virtual void ReloadOriginalRequestURL(bool check_for_repost) OVERRIDE;
+  virtual void NotifyEntryChanged(const NavigationEntry* entry,
                                  int index) OVERRIDE;
   virtual void CopyStateFrom(
-      const content::NavigationController& source) OVERRIDE;
+      const NavigationController& source) OVERRIDE;
   virtual void CopyStateFromAndPrune(
-      content::NavigationController* source) OVERRIDE;
+      NavigationController* source) OVERRIDE;
   virtual void PruneAllButActive() OVERRIDE;
 
-  // NavigationControllerWebView implementation.
-  virtual void LoadDataWithBaseURL(
-      const GURL& data_url,
-      const content::Referrer& referrer,
-      const GURL& base_url,
-      const GURL& history_url,
-      bool is_overriding_user_agent) OVERRIDE;
-  virtual void PostURL(const GURL& url,
-                       const content::Referrer& referrer,
-                       const base::RefCountedMemory& http_body,
-                       bool is_overriding_user_agent) OVERRIDE;
+  // The session storage namespace that all child RenderViews belonging to
+  // |instance| should use.
+  SessionStorageNamespace* GetSessionStorageNamespace(
+      SiteInstance* instance);
 
   // Returns the index of the specified entry, or -1 if entry is not contained
   // in this NavigationController.
-  int GetIndexOfEntry(const content::NavigationEntryImpl* entry) const;
+  int GetIndexOfEntry(const NavigationEntryImpl* entry) const;
 
   // Return the index of the entry with the corresponding instance and page_id,
   // or -1 if not found.
-  int GetEntryIndexWithPageID(content::SiteInstance* instance,
+  int GetEntryIndexWithPageID(SiteInstance* instance,
                               int32 page_id) const;
 
   // Return the entry with the corresponding instance and page_id, or NULL if
   // not found.
-  content::NavigationEntryImpl* GetEntryWithPageID(
-      content::SiteInstance* instance,
+  NavigationEntryImpl* GetEntryWithPageID(
+      SiteInstance* instance,
       int32 page_id) const;
-
-  // Reloads the current entry using the original URL used to create it.  This
-  // is used for cases where the user wants to refresh a page using a different
-  // user agent after following a redirect.
-  void ReloadOriginalRequestURL(bool check_for_repost);
 
   // Transient entry -----------------------------------------------------------
 
@@ -146,7 +117,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // represented as an entry, but should go away when the user navigates away
   // from them.
   // Note that adding a transient entry does not change the active contents.
-  void AddTransientEntry(content::NavigationEntryImpl* entry);
+  void AddTransientEntry(NavigationEntryImpl* entry);
 
   // WebContentsImpl -----------------------------------------------------------
 
@@ -170,7 +141,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // In the case that nothing has changed, the details structure is undefined
   // and it will return false.
   bool RendererDidNavigate(const ViewHostMsg_FrameNavigate_Params& params,
-                           content::LoadCommittedDetails* details);
+                           LoadCommittedDetails* details);
 
   // Notifies us that we just became active. This is used by the WebContentsImpl
   // so that we know to load URLs that were pending as "lazy" loads.
@@ -182,13 +153,34 @@ class CONTENT_EXPORT NavigationControllerImpl
   // pending and in page navigations only happen on committed pages. If there
   // is no last committed entry, then nothing will be in-page.
   //
-  // Special note: if the URLs are the same, it does NOT count as an in-page
-  // navigation. Neither does an input URL that has no ref, even if the rest is
-  // the same. This may seem weird, but when we're considering whether a
-  // navigation happened without loading anything, the same URL would be a
-  // reload, while only a different ref would be in-page (pages can't clear
+  // Special note: if the URLs are the same, it does NOT automatically count as
+  // an in-page navigation. Neither does an input URL that has no ref, even if
+  // the rest is the same. This may seem weird, but when we're considering
+  // whether a navigation happened without loading anything, the same URL could
+  // be a reload, while only a different ref would be in-page (pages can't clear
   // refs without reload, only change to "#" which we don't count as empty).
-  bool IsURLInPageNavigation(const GURL& url) const;
+  bool IsURLInPageNavigation(const GURL& url) const {
+    return IsURLInPageNavigation(url, false);
+  }
+
+  // The situation is made murkier by history.replaceState(), which could
+  // provide the same URL as part of an in-page navigation, not a reload. So
+  // we need this form which lets the (untrustworthy) renderer resolve the
+  // ambiguity, but only when the URLs are equal. This should be safe since the
+  // origin isn't changing.
+  bool IsURLInPageNavigation(const GURL& url, bool renderer_says_in_page) const;
+
+  // Sets the SessionStorageNamespace for the given |partition_id|. This is
+  // used during initialization of a new NavigationController to allow
+  // pre-population of the SessionStorageNamespace objects. Session restore,
+  // prerendering, and the implementaion of window.open() are the primary users
+  // of this API.
+  //
+  // Calling this function when a SessionStorageNamespace has already been
+  // associated with a |partition_id| will CHECK() fail.
+  void SetSessionStorageNamespace(
+      const std::string& partition_id,
+      SessionStorageNamespace* session_storage_namespace);
 
   // Random data ---------------------------------------------------------------
 
@@ -200,19 +192,42 @@ class CONTENT_EXPORT NavigationControllerImpl
   }
   static size_t max_entry_count();
 
+  void SetGetTimestampCallbackForTest(
+      const base::Callback<base::Time()>& get_timestamp_callback);
+
  private:
-  class RestoreHelper;
   friend class RestoreHelper;
   friend class WebContentsImpl;  // For invoking OnReservedPageIDRange.
 
+  FRIEND_TEST_ALL_PREFIXES(TimeSmoother, Basic);
+  FRIEND_TEST_ALL_PREFIXES(TimeSmoother, SingleDuplicate);
+  FRIEND_TEST_ALL_PREFIXES(TimeSmoother, ManyDuplicates);
+  FRIEND_TEST_ALL_PREFIXES(TimeSmoother, ClockBackwardsJump);
+
+  // Helper class to smooth out runs of duplicate timestamps while still
+  // allowing time to jump backwards.
+  //
+  // TODO(akalin): Use CONTENT_EXPORT_PRIVATE once we have that.
+  class CONTENT_EXPORT TimeSmoother {
+   public:
+    // Returns |t| with possibly some time added on.
+    base::Time GetSmoothedTime(base::Time t);
+
+   private:
+    // |low_water_mark_| is the first time in a sequence of adjusted
+    // times and |high_water_mark_| is the last.
+    base::Time low_water_mark_;
+    base::Time high_water_mark_;
+  };
+
   // Classifies the given renderer navigation (see the NavigationType enum).
-  content::NavigationType ClassifyNavigation(
+  NavigationType ClassifyNavigation(
       const ViewHostMsg_FrameNavigate_Params& params) const;
 
   // Causes the controller to load the specified entry. The function assumes
   // ownership of the pointer since it is put in the navigation list.
   // NOTE: Do not pass an entry that the controller already owns!
-  void LoadEntry(content::NavigationEntryImpl* entry);
+  void LoadEntry(NavigationEntryImpl* entry);
 
   // Handlers for the different types of navigation types. They will actually
   // handle the navigations corresponding to the different NavClasses above.
@@ -227,7 +242,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // whether the last entry has been replaced or not.
   // See LoadCommittedDetails.did_replace_entry.
   void RendererDidNavigateToNewPage(
-      const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry);
+      const ViewHostMsg_FrameNavigate_Params& params, bool replace_entry);
   void RendererDidNavigateToExistingPage(
       const ViewHostMsg_FrameNavigate_Params& params);
   void RendererDidNavigateToSamePage(
@@ -247,21 +262,21 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Allows the derived class to issue notifications that a load has been
   // committed. This will fill in the active entry to the details structure.
-  void NotifyNavigationEntryCommitted(content::LoadCommittedDetails* details);
+  void NotifyNavigationEntryCommitted(LoadCommittedDetails* details);
 
   // Updates the virtual URL of an entry to match a new URL, for cases where
   // the real renderer URL is derived from the virtual URL, like view-source:
-  void UpdateVirtualURLToURL(content::NavigationEntryImpl* entry,
+  void UpdateVirtualURLToURL(NavigationEntryImpl* entry,
                              const GURL& new_url);
 
   // Invoked after session/tab restore or cloning a tab. Resets the transition
   // type of the entries, updates the max page id and creates the active
-  // contents. See RestoreFromState for a description of from_last_session.
-  void FinishRestore(int selected_index, bool from_last_session);
+  // contents.
+  void FinishRestore(int selected_index, RestoreType type);
 
   // Inserts a new entry or replaces the current entry with a new one, removing
   // all entries after it. The new entry will become the active one.
-  void InsertOrReplaceEntry(content::NavigationEntryImpl* entry, bool replace);
+  void InsertOrReplaceEntry(NavigationEntryImpl* entry, bool replace);
 
   // Removes the entry at |index|, as long as it is not the current entry.
   void RemoveEntryAtIndexInternal(int index);
@@ -296,11 +311,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   // ---------------------------------------------------------------------------
 
   // The user browser context associated with this controller.
-  content::BrowserContext* browser_context_;
+  BrowserContext* browser_context_;
 
   // List of NavigationEntry for this tab
-  typedef std::vector<linked_ptr<content::NavigationEntryImpl> >
-      NavigationEntries;
+  typedef std::vector<linked_ptr<NavigationEntryImpl> > NavigationEntries;
   NavigationEntries entries_;
 
   // An entry we haven't gotten a response for yet.  This will be discarded
@@ -310,7 +324,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // This may refer to an item in the entries_ list if the pending_entry_index_
   // == -1, or it may be its own entry that should be deleted. Be careful with
   // the memory management.
-  content::NavigationEntryImpl* pending_entry_;
+  NavigationEntryImpl* pending_entry_;
 
   // currently visible entry
   int last_committed_entry_index_;
@@ -341,11 +355,18 @@ class CONTENT_EXPORT NavigationControllerImpl
   // Whether we need to be reloaded when made active.
   bool needs_reload_;
 
-  // The time ticks at which the last document was loaded.
-  base::TimeTicks last_document_loaded_;
+  // Whether this is the initial navigation.
+  // Becomes false when initial navigation is loaded.
+  bool is_initial_navigation_;
 
-  // The session storage id that any (indirectly) owned RenderView should use.
-  scoped_refptr<SessionStorageNamespaceImpl> session_storage_namespace_;
+  // Used to find the appropriate SessionStorageNamespace for the storage
+  // partition of a NavigationEntry.
+  //
+  // A NavigationController may contain NavigationEntries that correspond to
+  // different StoragePartitions. Even though they are part of the same
+  // NavigationController, only entries in the same StoragePartition may
+  // share session storage state with one another.
+  SessionStorageNamespaceMap session_storage_namespace_map_;
 
   // The maximum number of entries that a navigation controller can store.
   static size_t max_entry_count_for_testing_;
@@ -354,7 +375,19 @@ class CONTENT_EXPORT NavigationControllerImpl
   // NO_RELOAD otherwise.
   ReloadType pending_reload_;
 
+  // Used to get timestamps for newly-created navigation entries.
+  base::Callback<base::Time()> get_timestamp_callback_;
+
+  // Used to smooth out timestamps from |get_timestamp_callback_|.
+  // Without this, whenever there is a run of redirects or
+  // code-generated navigations, those navigations may occur within
+  // the timer resolution, leading to things sometimes showing up in
+  // the wrong order in the history view.
+  TimeSmoother time_smoother_;
+
   DISALLOW_COPY_AND_ASSIGN(NavigationControllerImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_WEB_CONTENTS_NAVIGATION_CONTROLLER_IMPL_H_

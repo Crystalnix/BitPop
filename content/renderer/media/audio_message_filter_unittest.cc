@@ -8,6 +8,7 @@
 #include "media/audio/audio_output_ipc.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace content {
 namespace {
 
 class MockAudioDelegate : public media::AudioOutputIPCDelegate {
@@ -101,7 +102,7 @@ TEST(AudioMessageFilterTest, Basic) {
   EXPECT_EQ(media::AudioOutputIPCDelegate::kPlaying, delegate.state());
   delegate.Reset();
 
-  message_loop.RunAllPending();
+  message_loop.RunUntilIdle();
   filter->RemoveDelegate(stream_id);
 }
 
@@ -135,8 +136,10 @@ TEST(AudioMessageFilterTest, Delegates) {
   EXPECT_TRUE(delegate2.state_changed_received());
   delegate2.Reset();
 
-  message_loop.RunAllPending();
+  message_loop.RunUntilIdle();
 
   filter->RemoveDelegate(stream_id1);
   filter->RemoveDelegate(stream_id2);
 }
+
+}  // namespace content

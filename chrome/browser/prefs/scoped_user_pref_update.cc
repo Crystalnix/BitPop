@@ -5,7 +5,7 @@
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 
 #include "base/logging.h"
-#include "chrome/browser/prefs/pref_notifier.h"
+#include "base/prefs/pref_notifier.h"
 #include "chrome/browser/prefs/pref_service.h"
 
 namespace subtle {
@@ -20,7 +20,7 @@ ScopedUserPrefUpdateBase::~ScopedUserPrefUpdateBase() {
   Notify();
 }
 
-Value* ScopedUserPrefUpdateBase::Get(base::Value::Type type) {
+Value* ScopedUserPrefUpdateBase::GetValueOfType(base::Value::Type type) {
   if (!value_)
     value_ = service_->GetMutableUserPref(path_.c_str(), type);
   return value_;

@@ -4,35 +4,44 @@
 
 #include "chrome/common/extensions/extension.h"
 
-#include "base/format_macros.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/format_macros.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/command.h"
-#include "chrome/common/extensions/extension_action.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
+#include "chrome/common/extensions/permissions/socket_permission.h"
+#include "chrome/common/extensions/permissions/usb_device_permission.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/error_utils.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/mime_sniffer.h"
-#include "skia/ext/image_operations.h"
 #include "net/base/mock_host_resolver.h"
+#include "skia/ext/image_operations.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
+using content::SocketPermissionRequest;
+using extensions::APIPermission;
 using extensions::APIPermissionSet;
+using extensions::ErrorUtils;
 using extensions::Extension;
+using extensions::Feature;
 using extensions::PermissionSet;
+using extensions::SocketPermission;
+using extensions::URLPatternSet;
+using extensions::UsbDevicePermission;
 
 namespace keys = extension_manifest_keys;
 namespace values = extension_manifest_values;
@@ -40,16 +49,7 @@ namespace errors = extension_manifest_errors;
 
 namespace {
 
-void CompareLists(const std::vector<std::string>& expected,
-                  const std::vector<std::string>& actual) {
-  ASSERT_EQ(expected.size(), actual.size());
-
-  for (size_t i = 0; i < expected.size(); ++i) {
-    EXPECT_EQ(expected[i], actual[i]);
-  }
-}
-
-static scoped_refptr<Extension> LoadManifestUnchecked(
+scoped_refptr<Extension> LoadManifestUnchecked(
     const std::string& dir,
     const std::string& test_file,
     Extension::Location location,
@@ -101,10 +101,18 @@ static scoped_refptr<Extension> LoadManifestStrict(
   return LoadManifest(dir, test_file, Extension::NO_FLAGS);
 }
 
-static scoped_ptr<ExtensionAction> LoadAction(const std::string& manifest) {
+static scoped_ptr<Extension::ActionInfo> LoadAction(
+    const std::string& manifest) {
   scoped_refptr<Extension> extension = LoadManifest("page_action",
       manifest);
-  return extension->page_action()->CopyForTest();
+  EXPECT_TRUE(extension->page_action_info());
+  if (extension->page_action_info()) {
+    return make_scoped_ptr(new Extension::ActionInfo(
+        *extension->page_action_info()));
+  }
+  ADD_FAILURE() << "Expected manifest in " << manifest
+                << " to include a page_action section.";
+  return scoped_ptr<Extension::ActionInfo>();
 }
 
 static void LoadActionAndExpectError(const std::string& manifest,
@@ -206,7 +214,7 @@ TEST(ExtensionTest, GetAbsolutePathNoError) {
 }
 
 TEST(ExtensionTest, LoadPageActionHelper) {
-  scoped_ptr<ExtensionAction> action;
+  scoped_ptr<Extension::ActionInfo> action;
 
   // First try with an empty dictionary.
   action = LoadAction("page_action_empty.json");
@@ -216,17 +224,16 @@ TEST(ExtensionTest, LoadPageActionHelper) {
   const std::string id("MyExtensionActionId");
   const std::string name("MyExtensionActionName");
   std::string img1("image1.png");
-  std::string img2("image2.png");
 
   action = LoadAction("page_action.json");
   ASSERT_TRUE(NULL != action.get());
-  ASSERT_EQ(id, action->id());
+  ASSERT_EQ(id, action->id);
 
   // No title, so fall back to name.
-  ASSERT_EQ(name, action->GetTitle(1));
-  ASSERT_EQ(2u, action->icon_paths()->size());
-  ASSERT_EQ(img1, (*action->icon_paths())[0]);
-  ASSERT_EQ(img2, (*action->icon_paths())[1]);
+  ASSERT_EQ(name, action->default_title);
+  ASSERT_EQ(img1,
+            action->default_icon.Get(extension_misc::EXTENSION_ICON_ACTION,
+                                     ExtensionIconSet::MATCH_EXACTLY));
 
   // Same test with explicitly set type.
   action = LoadAction("page_action_type.json");
@@ -239,7 +246,7 @@ TEST(ExtensionTest, LoadPageActionHelper) {
   // Then try without the name key. It's optional, so no error.
   action = LoadAction("page_action_no_name.json");
   ASSERT_TRUE(NULL != action.get());
-  ASSERT_TRUE(action->GetTitle(1).empty());
+  ASSERT_TRUE(action->default_title.empty());
 
   // Then try without the icon paths key.
   action = LoadAction("page_action_no_icon.json");
@@ -252,8 +259,8 @@ TEST(ExtensionTest, LoadPageActionHelper) {
 
   action = LoadAction("page_action_new_format.json");
   ASSERT_TRUE(action.get());
-  ASSERT_EQ(kTitle, action->GetTitle(1));
-  ASSERT_EQ(0u, action->icon_paths()->size());
+  ASSERT_EQ(kTitle, action->default_title);
+  ASSERT_FALSE(action->default_icon.empty());
 
   // Invalid title should give an error even with a valid name.
   LoadActionAndExpectError("page_action_invalid_title.json",
@@ -262,7 +269,7 @@ TEST(ExtensionTest, LoadPageActionHelper) {
   // Invalid name should give an error only with no title.
   action = LoadAction("page_action_invalid_name.json");
   ASSERT_TRUE(NULL != action.get());
-  ASSERT_EQ(kTitle, action->GetTitle(1));
+  ASSERT_EQ(kTitle, action->default_title);
 
   LoadActionAndExpectError("page_action_invalid_name_no_title.json",
       errors::kInvalidPageActionName);
@@ -278,11 +285,11 @@ TEST(ExtensionTest, LoadPageActionHelper) {
   ASSERT_TRUE(NULL != action.get());
   ASSERT_STREQ(
       extension->url().Resolve(kPopupHtmlFile).spec().c_str(),
-      action->GetPopupUrl(ExtensionAction::kDefaultTabId).spec().c_str());
+      action->default_popup_url.spec().c_str());
 
   // Use both "popup" and "default_popup", expect failure.
   LoadActionAndExpectError("page_action_popup_and_default_popup.json",
-      ExtensionErrorUtils::FormatErrorMessage(
+      ErrorUtils::FormatErrorMessage(
           errors::kInvalidPageActionOldAndNewKeys,
           keys::kPageActionDefaultPopup,
           keys::kPageActionPopup));
@@ -293,24 +300,24 @@ TEST(ExtensionTest, LoadPageActionHelper) {
   ASSERT_TRUE(NULL != action.get());
   ASSERT_STREQ(
       extension->url().Resolve(kPopupHtmlFile).spec().c_str(),
-      action->GetPopupUrl(ExtensionAction::kDefaultTabId).spec().c_str());
+      action->default_popup_url.spec().c_str());
 
   // Setting default_popup to "" is the same as having no popup.
   action = LoadAction("page_action_empty_default_popup.json");
   ASSERT_TRUE(NULL != action.get());
-  EXPECT_FALSE(action->HasPopup(ExtensionAction::kDefaultTabId));
+  EXPECT_TRUE(action->default_popup_url.is_empty());
   ASSERT_STREQ(
       "",
-      action->GetPopupUrl(ExtensionAction::kDefaultTabId).spec().c_str());
+      action->default_popup_url.spec().c_str());
 
   // Setting popup to "" is the same as having no popup.
   action = LoadAction("page_action_empty_popup.json");
 
   ASSERT_TRUE(NULL != action.get());
-  EXPECT_FALSE(action->HasPopup(ExtensionAction::kDefaultTabId));
+  EXPECT_TRUE(action->default_popup_url.is_empty());
   ASSERT_STREQ(
       "",
-      action->GetPopupUrl(ExtensionAction::kDefaultTabId).spec().c_str());
+      action->default_popup_url.spec().c_str());
 }
 
 TEST(ExtensionTest, IdIsValid) {
@@ -444,6 +451,50 @@ TEST(ExtensionTest, EffectiveHostPermissions) {
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 }
 
+static bool CheckSocketPermission(scoped_refptr<Extension> extension,
+    SocketPermissionRequest::OperationType type,
+    const char* host,
+    int port) {
+  SocketPermission::CheckParam param(type, host, port);
+  return extension->CheckAPIPermissionWithParam(
+      APIPermission::kSocket, &param);
+}
+
+TEST(ExtensionTest, SocketPermissions) {
+  // Set feature current channel to appropriate value.
+  Feature::ScopedCurrentChannel scoped_channel(
+      chrome::VersionInfo::CHANNEL_DEV);
+  scoped_refptr<Extension> extension;
+  std::string error;
+
+  extension = LoadManifest("socket_permissions", "empty.json");
+  EXPECT_FALSE(CheckSocketPermission(extension,
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+
+  extension = LoadManifestUnchecked("socket_permissions",
+                                    "socket1.json",
+                                    Extension::INTERNAL, Extension::NO_FLAGS,
+                                    &error);
+  EXPECT_TRUE(extension == NULL);
+  ASSERT_EQ(ErrorUtils::FormatErrorMessage(
+        errors::kInvalidPermission, "socket"), error);
+
+  extension = LoadManifest("socket_permissions", "socket2.json");
+  EXPECT_TRUE(CheckSocketPermission(extension,
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+  EXPECT_FALSE(CheckSocketPermission(
+        extension, SocketPermissionRequest::UDP_BIND, "", 80));
+  EXPECT_TRUE(CheckSocketPermission(
+        extension, SocketPermissionRequest::UDP_BIND, "", 8888));
+
+  EXPECT_FALSE(CheckSocketPermission(
+        extension, SocketPermissionRequest::UDP_SEND_TO, "example.com", 1900));
+  EXPECT_TRUE(CheckSocketPermission(
+        extension,
+        SocketPermissionRequest::UDP_SEND_TO,
+        "239.255.255.250", 1900));
+}
+
 // Returns a copy of |source| resized to |size| x |size|.
 static SkBitmap ResizedCopy(const SkBitmap& source, int size) {
   return skia::ImageOperations::Resize(source,
@@ -549,16 +600,17 @@ TEST(ExtensionTest, ApiPermissions) {
     { "bookmarks",      false },
     { "cookies",        false },
     { "history",        false },
-    { "tabs.onUpdated", false },
     // Make sure we find the module name after stripping '.' and '/'.
     { "browserAction/abcd/onClick",  true },
     { "browserAction.abcd.onClick",  true },
     // Test Tabs functions.
     { "tabs.create",      true},
+    { "tabs.duplicate",   true},
     { "tabs.onRemoved",   true},
     { "tabs.remove",      true},
     { "tabs.update",      true},
-    { "tabs.getSelected", false},
+    { "tabs.getSelected", true},
+    { "tabs.onUpdated",   true },
     // Test getPermissionWarnings functions. Only one requires permissions.
     { "management.getPermissionWarningsById", false },
     { "management.getPermissionWarningsByManifest", true },
@@ -620,62 +672,68 @@ TEST(ExtensionTest, WantsFileAccess) {
   // <all_urls> permission
   extension = LoadManifest("permissions", "permissions_all_urls.json");
   EXPECT_TRUE(extension->wants_file_access());
-  EXPECT_FALSE(extension->CanExecuteScriptOnPage(file_url, -1, NULL, NULL));
+  EXPECT_FALSE(extension->CanExecuteScriptOnPage(
+      file_url, file_url, -1, NULL, NULL));
   extension = LoadManifest(
       "permissions", "permissions_all_urls.json", Extension::ALLOW_FILE_ACCESS);
   EXPECT_TRUE(extension->wants_file_access());
-  EXPECT_TRUE(extension->CanExecuteScriptOnPage(file_url, -1, NULL, NULL));
+  EXPECT_TRUE(extension->CanExecuteScriptOnPage(
+      file_url, file_url, -1, NULL, NULL));
 
   // file:///* permission
   extension = LoadManifest("permissions", "permissions_file_scheme.json");
   EXPECT_TRUE(extension->wants_file_access());
-  EXPECT_FALSE(extension->CanExecuteScriptOnPage(file_url, -1, NULL, NULL));
+  EXPECT_FALSE(extension->CanExecuteScriptOnPage(
+      file_url, file_url, -1, NULL, NULL));
   extension = LoadManifest("permissions", "permissions_file_scheme.json",
       Extension::ALLOW_FILE_ACCESS);
   EXPECT_TRUE(extension->wants_file_access());
-  EXPECT_TRUE(extension->CanExecuteScriptOnPage(file_url, -1, NULL, NULL));
+  EXPECT_TRUE(extension->CanExecuteScriptOnPage(
+      file_url, file_url, -1, NULL, NULL));
 
   // http://* permission
   extension = LoadManifest("permissions", "permissions_http_scheme.json");
   EXPECT_FALSE(extension->wants_file_access());
-  EXPECT_FALSE(extension->CanExecuteScriptOnPage(file_url, -1, NULL, NULL));
+  EXPECT_FALSE(extension->CanExecuteScriptOnPage(
+      file_url, file_url, -1, NULL, NULL));
   extension = LoadManifest("permissions", "permissions_http_scheme.json",
       Extension::ALLOW_FILE_ACCESS);
   EXPECT_FALSE(extension->wants_file_access());
-  EXPECT_FALSE(extension->CanExecuteScriptOnPage(file_url, -1, NULL, NULL));
+  EXPECT_FALSE(extension->CanExecuteScriptOnPage(
+      file_url, file_url, -1, NULL, NULL));
 
   // <all_urls> content script match
   extension = LoadManifest("permissions", "content_script_all_urls.json");
   EXPECT_TRUE(extension->wants_file_access());
   EXPECT_FALSE(extension->CanExecuteScriptOnPage(
-      file_url, -1, &extension->content_scripts()[0], NULL));
+      file_url, file_url, -1, &extension->content_scripts()[0], NULL));
   extension = LoadManifest("permissions", "content_script_all_urls.json",
       Extension::ALLOW_FILE_ACCESS);
   EXPECT_TRUE(extension->wants_file_access());
   EXPECT_TRUE(extension->CanExecuteScriptOnPage(
-      file_url, -1, &extension->content_scripts()[0], NULL));
+      file_url, file_url, -1, &extension->content_scripts()[0], NULL));
 
   // file:///* content script match
   extension = LoadManifest("permissions", "content_script_file_scheme.json");
   EXPECT_TRUE(extension->wants_file_access());
   EXPECT_FALSE(extension->CanExecuteScriptOnPage(
-      file_url, -1, &extension->content_scripts()[0], NULL));
+      file_url, file_url, -1, &extension->content_scripts()[0], NULL));
   extension = LoadManifest("permissions", "content_script_file_scheme.json",
       Extension::ALLOW_FILE_ACCESS);
   EXPECT_TRUE(extension->wants_file_access());
   EXPECT_TRUE(extension->CanExecuteScriptOnPage(
-      file_url, -1, &extension->content_scripts()[0], NULL));
+      file_url, file_url, -1, &extension->content_scripts()[0], NULL));
 
   // http://* content script match
   extension = LoadManifest("permissions", "content_script_http_scheme.json");
   EXPECT_FALSE(extension->wants_file_access());
   EXPECT_FALSE(extension->CanExecuteScriptOnPage(
-      file_url, -1, &extension->content_scripts()[0], NULL));
+      file_url, file_url, -1, &extension->content_scripts()[0], NULL));
   extension = LoadManifest("permissions", "content_script_http_scheme.json",
       Extension::ALLOW_FILE_ACCESS);
   EXPECT_FALSE(extension->wants_file_access());
   EXPECT_FALSE(extension->CanExecuteScriptOnPage(
-      file_url, -1, &extension->content_scripts()[0], NULL));
+      file_url, file_url, -1, &extension->content_scripts()[0], NULL));
 }
 
 TEST(ExtensionTest, ExtraFlags) {
@@ -727,12 +785,22 @@ class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
     urls_.insert(about_url);
   }
 
+  bool AllowedScript(const Extension* extension, const GURL& url,
+                     const GURL& top_url) {
+    return extension->CanExecuteScriptOnPage(url, top_url, -1, NULL, NULL);
+  }
+
+  bool BlockedScript(const Extension* extension, const GURL& url,
+                     const GURL& top_url) {
+    return !extension->CanExecuteScriptOnPage(url, top_url, -1, NULL, NULL);
+  }
+
   bool Allowed(const Extension* extension, const GURL& url) {
     return Allowed(extension, url, -1);
   }
 
   bool Allowed(const Extension* extension, const GURL& url, int tab_id) {
-    return (extension->CanExecuteScriptOnPage(url, tab_id, NULL, NULL) &&
+    return (extension->CanExecuteScriptOnPage(url, url, tab_id, NULL, NULL) &&
             extension->CanCaptureVisiblePage(url, tab_id, NULL));
   }
 
@@ -741,7 +809,7 @@ class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
   }
 
   bool CaptureOnly(const Extension* extension, const GURL& url, int tab_id) {
-    return !extension->CanExecuteScriptOnPage(url, tab_id, NULL, NULL) &&
+    return !extension->CanExecuteScriptOnPage(url, url, tab_id, NULL, NULL) &&
             extension->CanCaptureVisiblePage(url, tab_id, NULL);
   }
 
@@ -750,7 +818,7 @@ class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
   }
 
   bool Blocked(const Extension* extension, const GURL& url, int tab_id) {
-    return !(extension->CanExecuteScriptOnPage(url, tab_id, NULL, NULL) ||
+    return !(extension->CanExecuteScriptOnPage(url, url, tab_id, NULL, NULL) ||
              extension->CanCaptureVisiblePage(url, tab_id, NULL));
   }
 
@@ -804,6 +872,15 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, Permissions) {
   EXPECT_TRUE(Blocked(extension, about_url));
   EXPECT_TRUE(Blocked(extension, extension_url));
 
+  // Test access to iframed content.
+  GURL within_extension_url = extension->GetResourceURL("page.html");
+  EXPECT_TRUE(AllowedScript(extension, http_url, http_url_with_path));
+  EXPECT_TRUE(AllowedScript(extension, https_url, http_url_with_path));
+  EXPECT_TRUE(AllowedScript(extension, http_url, within_extension_url));
+  EXPECT_TRUE(AllowedScript(extension, https_url, within_extension_url));
+  EXPECT_TRUE(BlockedScript(extension, http_url, extension_url));
+  EXPECT_TRUE(BlockedScript(extension, https_url, extension_url));
+
   EXPECT_FALSE(extension->HasHostPermission(settings_url));
   EXPECT_FALSE(extension->HasHostPermission(about_url));
   EXPECT_TRUE(extension->HasHostPermission(favicon_url));
@@ -829,8 +906,8 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, Permissions) {
                                     Extension::INTERNAL, Extension::NO_FLAGS,
                                     &error);
   EXPECT_TRUE(extension == NULL);
-  EXPECT_EQ(ExtensionErrorUtils::FormatErrorMessage(
-      errors::kInvalidPermissionScheme, base::IntToString(1)), error);
+  EXPECT_EQ(ErrorUtils::FormatErrorMessage(
+      errors::kInvalidPermissionScheme, "chrome://*/"), error);
 
   // Having chrome://favicon/* should not give you chrome://*
   extension = LoadManifestStrict("script_and_capture",
@@ -982,7 +1059,8 @@ static scoped_refptr<Extension> MakeSyncTestExtension(
     const GURL& launch_url,
     Extension::Location location,
     int num_plugins,
-    const FilePath& extension_path) {
+    const FilePath& extension_path,
+    int creation_flags) {
   DictionaryValue source;
   source.SetString(extension_manifest_keys::kName,
                    "PossiblySyncableExtension");
@@ -1013,7 +1091,7 @@ static scoped_refptr<Extension> MakeSyncTestExtension(
 
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(
-      extension_path, location, source, Extension::NO_FLAGS, &error);
+      extension_path, location, source, creation_flags, &error);
   EXPECT_TRUE(extension);
   EXPECT_EQ("", error);
   return extension;
@@ -1028,42 +1106,49 @@ static const char kValidUpdateUrl2[] =
 TEST(ExtensionTest, GetSyncTypeNormalExtensionNoUpdateUrl) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::INTERNAL, 0, FilePath()));
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_NE(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
 TEST(ExtensionTest, GetSyncTypeUserScriptValidUpdateUrl) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(USER_SCRIPT, GURL(kValidUpdateUrl1), GURL(),
-                            Extension::INTERNAL, 0, FilePath()));
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_NE(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
 TEST(ExtensionTest, GetSyncTypeUserScriptNoUpdateUrl) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(USER_SCRIPT, GURL(), GURL(),
-                            Extension::INTERNAL, 0, FilePath()));
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_EQ(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
 TEST(ExtensionTest, GetSyncTypeThemeNoUpdateUrl) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(THEME, GURL(), GURL(),
-                            Extension::INTERNAL, 0, FilePath()));
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_EQ(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
 TEST(ExtensionTest, GetSyncTypeExtensionWithLaunchUrl) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL("http://www.google.com"),
-                            Extension::INTERNAL, 0, FilePath()));
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_NE(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
 TEST(ExtensionTest, GetSyncTypeExtensionExternal) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::EXTERNAL_PREF, 0, FilePath()));
+                            Extension::EXTERNAL_PREF, 0, FilePath(),
+                            Extension::NO_FLAGS));
+
   EXPECT_EQ(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
@@ -1071,32 +1156,121 @@ TEST(ExtensionTest, GetSyncTypeUserScriptThirdPartyUpdateUrl) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(
           USER_SCRIPT, GURL("http://third-party.update_url.com"), GURL(),
-          Extension::INTERNAL, 0, FilePath()));
+          Extension::INTERNAL, 0, FilePath(), Extension::NO_FLAGS));
   EXPECT_EQ(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
 
 TEST(ExtensionTest, OnlyDisplayAppsInLauncher) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::INTERNAL, 0, FilePath()));
-  EXPECT_FALSE(extension->ShouldDisplayInLauncher());
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
+
+  EXPECT_FALSE(extension->ShouldDisplayInAppLauncher());
+  EXPECT_FALSE(extension->ShouldDisplayInNewTabPage());
 
   scoped_refptr<Extension> app(
       MakeSyncTestExtension(APP, GURL(), GURL("http://www.google.com"),
-                            Extension::INTERNAL, 0, FilePath()));
-  EXPECT_TRUE(app->ShouldDisplayInLauncher());
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
+  EXPECT_TRUE(app->ShouldDisplayInAppLauncher());
+  EXPECT_TRUE(app->ShouldDisplayInNewTabPage());
+}
+
+TEST(ExtensionTest, DisplayInXManifestProperties) {
+  DictionaryValue manifest;
+  manifest.SetString(keys::kName, "TestComponentApp");
+  manifest.SetString(keys::kVersion, "0.0.0.0");
+  manifest.SetString(keys::kApp, "true");
+  manifest.SetString(keys::kPlatformAppBackgroundPage, "");
+
+  std::string error;
+  scoped_refptr<Extension> app;
+
+  // Default to true.
+  app = Extension::Create(
+      FilePath(), Extension::COMPONENT, manifest, 0, &error);
+  EXPECT_EQ(error, std::string());
+  EXPECT_TRUE(app->ShouldDisplayInAppLauncher());
+  EXPECT_TRUE(app->ShouldDisplayInNewTabPage());
+
+  // Value display_in_NTP defaults to display_in_launcher.
+  manifest.SetBoolean(keys::kDisplayInLauncher, false);
+  app = Extension::Create(
+      FilePath(), Extension::COMPONENT, manifest, 0, &error);
+  EXPECT_EQ(error, std::string());
+  EXPECT_FALSE(app->ShouldDisplayInAppLauncher());
+  EXPECT_FALSE(app->ShouldDisplayInNewTabPage());
+
+  // Value display_in_NTP = true overriding display_in_launcher = false.
+  manifest.SetBoolean(keys::kDisplayInNewTabPage, true);
+  app = Extension::Create(
+      FilePath(), Extension::COMPONENT, manifest, 0, &error);
+  EXPECT_EQ(error, std::string());
+  EXPECT_FALSE(app->ShouldDisplayInAppLauncher());
+  EXPECT_TRUE(app->ShouldDisplayInNewTabPage());
+
+  // Value display_in_NTP = false only, overrides default = true.
+  manifest.Remove(keys::kDisplayInLauncher, NULL);
+  manifest.SetBoolean(keys::kDisplayInNewTabPage, false);
+  app = Extension::Create(
+      FilePath(), Extension::COMPONENT, manifest, 0, &error);
+  EXPECT_EQ(error, std::string());
+  EXPECT_TRUE(app->ShouldDisplayInAppLauncher());
+  EXPECT_FALSE(app->ShouldDisplayInNewTabPage());
+
+  // Error checking.
+  manifest.SetString(keys::kDisplayInNewTabPage, "invalid");
+  app = Extension::Create(
+      FilePath(), Extension::COMPONENT, manifest, 0, &error);
+  EXPECT_EQ(error, std::string(errors::kInvalidDisplayInNewTabPage));
 }
 
 TEST(ExtensionTest, OnlySyncInternal) {
   scoped_refptr<Extension> extension_internal(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::INTERNAL, 0, FilePath()));
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_TRUE(extension_internal->IsSyncable());
 
   scoped_refptr<Extension> extension_noninternal(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::COMPONENT, 0, FilePath()));
+                            Extension::COMPONENT, 0, FilePath(),
+                            Extension::NO_FLAGS));
   EXPECT_FALSE(extension_noninternal->IsSyncable());
+}
+
+TEST(ExtensionTest, DontSyncDefault) {
+  scoped_refptr<Extension> extension_default(
+      MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
+                            Extension::INTERNAL, 0, FilePath(),
+                            Extension::WAS_INSTALLED_BY_DEFAULT));
+  EXPECT_FALSE(extension_default->IsSyncable());
+}
+
+TEST(ExtensionTest, OptionalOnlyPermission) {
+  // Set feature current channel to dev because the only permission that must
+  // be optional (usbDevices) is only available on dev channel.
+  Feature::ScopedCurrentChannel scoped_channel(
+      chrome::VersionInfo::CHANNEL_DEV);
+
+  scoped_refptr<Extension> extension;
+  std::string error;
+  extension = LoadManifestUnchecked("optional_only_permission",
+                                    "manifest1.json",
+                                    Extension::INTERNAL, Extension::NO_FLAGS,
+                                    &error);
+  EXPECT_TRUE(extension == NULL);
+  ASSERT_EQ(ErrorUtils::FormatErrorMessage(
+        errors::kPermissionMustBeOptional, "usbDevices"), error);
+
+  error.clear();
+  extension = LoadManifestUnchecked("optional_only_permission",
+                                    "manifest2.json",
+                                    Extension::INTERNAL, Extension::NO_FLAGS,
+                                    &error);
+  EXPECT_TRUE(extension != NULL);
+  EXPECT_TRUE(error.empty());
 }
 
 // These last 2 tests don't make sense on Chrome OS, where extension plugins
@@ -1105,7 +1279,8 @@ TEST(ExtensionTest, OnlySyncInternal) {
 TEST(ExtensionTest, GetSyncTypeExtensionWithPlugin) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::INTERNAL, 1, FilePath()));
+                            Extension::INTERNAL, 1, FilePath(),
+                            Extension::NO_FLAGS));
   if (extension)
     EXPECT_EQ(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }
@@ -1113,7 +1288,8 @@ TEST(ExtensionTest, GetSyncTypeExtensionWithPlugin) {
 TEST(ExtensionTest, GetSyncTypeExtensionWithTwoPlugins) {
   scoped_refptr<Extension> extension(
       MakeSyncTestExtension(EXTENSION, GURL(), GURL(),
-                            Extension::INTERNAL, 2, FilePath()));
+                            Extension::INTERNAL, 2, FilePath(),
+                            Extension::NO_FLAGS));
   if (extension)
     EXPECT_EQ(extension->GetSyncType(), Extension::SYNC_TYPE_NONE);
 }

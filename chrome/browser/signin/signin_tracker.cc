@@ -5,14 +5,16 @@
 #include "chrome/browser/signin/signin_tracker.h"
 
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "google_apis/gaia/gaia_constants.h"
 
 static const char* kSignedInServices[] = {
   GaiaConstants::kSyncService,
@@ -126,6 +128,16 @@ void SigninTracker::HandleServiceStateChange() {
     // Ignore service updates until after our GAIA credentials are validated.
     return;
   }
+
+  if (SigninManagerFactory::GetForProfile(profile_)->
+      GetAuthenticatedUsername().empty()) {
+    // User is signed out, trigger a signin failure.
+    state_ = WAITING_FOR_GAIA_VALIDATION;
+    observer_->SigninFailed(
+        GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+    return;
+  }
+
   // Wait until all of our services are logged in. For now this just means sync.
   // Long term, we should separate out service auth failures from the signin
   // process, but for the current UI flow we'll validate service signin status
@@ -141,6 +153,7 @@ void SigninTracker::HandleServiceStateChange() {
     // been cleared yet).
     return;
   }
+
   // If we haven't loaded all our service tokens yet, just exit (we'll be called
   // again when another token is loaded, or will transition to SigninFailed if
   // the loading fails).

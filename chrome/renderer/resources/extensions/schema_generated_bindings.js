@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This script contains privileged chrome extension related javascript APIs.
-// It is loaded by pages whose URL has the chrome-extension protocol.
+// Generates the chrome.* API bindings from a list of schemas.
 
   // TODO(battre): cleanup the usage of packages everywhere, as described here
   // http://codereview.chromium.org/10392008/diff/38/chrome/renderer/resources/extensions/schema_generated_bindings.js
@@ -14,7 +13,6 @@
       requireNative('apiDefinitions').GetExtensionAPIDefinition;
   var sendRequest = require('sendRequest').sendRequest;
   var utils = require('utils');
-  var isDevChannel = requireNative('channel').IsDevChannel;
   var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
   var schemaUtils = require('schemaUtils');
 
@@ -204,17 +202,13 @@
     var apiDefinitions = GetExtensionAPIDefinition();
 
     // Read api definitions and setup api functions in the chrome namespace.
-    // TODO(rafaelw): Consider defining a json schema for an api definition
-    //   and validating either here, in a unit_test or both.
-    // TODO(rafaelw): Handle synchronous functions.
-    // TODO(rafaelw): Consider providing some convenient override points
-    //   for api functions that wish to insert themselves into the call.
     var platform = getPlatform();
 
     apiDefinitions.forEach(function(apiDef) {
       // TODO(kalman): Remove this, or refactor schema_generated_bindings.js so
-      // that it isn't necessary. For now, chrome.app is entirely handwritten.
-      if (apiDef.namespace === 'app')
+      // that it isn't necessary. For now, chrome.app and chrome.webstore are
+      // entirely handwritten.
+      if (['app', 'webstore'].indexOf(apiDef.namespace) >= 0)
         return;
 
       if (!isSchemaNodeSupported(apiDef, platform, manifestVersion))
@@ -312,9 +306,12 @@
             if (this.handleRequest) {
               retval = this.handleRequest.apply(this, args);
             } else {
+              var optArgs = {
+                customCallback: this.customCallback
+              };
               retval = sendRequest(this.name, args,
                                    this.definition.parameters,
-                                   {customCallback: this.customCallback});
+                                   optArgs);
             }
 
             // Validate return value if defined - only in debug.
@@ -343,15 +340,20 @@
 
           var eventName = apiDef.namespace + "." + eventDef.name;
           var customEvent = customEvents[apiDef.namespace];
+          var options = eventDef.options || {};
+
+          if (eventDef.filters && eventDef.filters.length > 0)
+            options.supportsFilters = true;
+
           if (customEvent) {
             mod[eventDef.name] = new customEvent(
                 eventName, eventDef.parameters, eventDef.extraParameters,
-                eventDef.options);
+                options);
           } else if (eventDef.anonymous) {
             mod[eventDef.name] = new chrome.Event();
           } else {
             mod[eventDef.name] = new chrome.Event(
-                eventName, eventDef.parameters, eventDef.options);
+                eventName, eventDef.parameters, options);
           }
         });
       }
@@ -429,14 +431,6 @@
         apiDefinitions: apiDefinitions,
       }, extensionId, contextType);
     });
-
-    // TODO(mihaip): remove this alias once the webstore stops calling
-    // beginInstallWithManifest2.
-    // See http://crbug.com/100242
-    if (chrome.webstorePrivate) {
-      chrome.webstorePrivate.beginInstallWithManifest2 =
-          chrome.webstorePrivate.beginInstallWithManifest3;
-    }
 
     if (chrome.test)
       chrome.test.getApiDefinitions = GetExtensionAPIDefinition;

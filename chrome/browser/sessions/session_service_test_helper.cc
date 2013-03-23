@@ -9,6 +9,7 @@
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_types.h"
+#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -19,12 +20,6 @@ SessionServiceTestHelper::SessionServiceTestHelper(SessionService* service)
     : service_(service) {}
 
 SessionServiceTestHelper::~SessionServiceTestHelper() {}
-
-void SessionServiceTestHelper::RestoreSessionFromCommands(
-    const std::vector<SessionCommand*>& commands,
-    std::vector<SessionWindow*>* valid_windows) {
-  service()->RestoreSessionFromCommands(commands, valid_windows);
-}
 
 void SessionServiceTestHelper::PrepareTabInWindow(const SessionID& window_id,
                                                   const SessionID& tab_id,
@@ -50,13 +45,21 @@ void SessionServiceTestHelper::SetTabUserAgentOverride(
   service()->SetTabUserAgentOverride(window_id, tab_id, user_agent_override);
 }
 
+void SessionServiceTestHelper::SetForceBrowserNotAliveWithNoWindows(
+    bool force_browser_not_alive_with_no_windows) {
+  service()->force_browser_not_alive_with_no_windows_ =
+      force_browser_not_alive_with_no_windows;
+}
+
 // Be sure and null out service to force closing the file.
 void SessionServiceTestHelper::ReadWindows(
-    std::vector<SessionWindow*>* windows) {
+    std::vector<SessionWindow*>* windows,
+    SessionID::id_type* active_window_id) {
   Time last_time;
   ScopedVector<SessionCommand> read_commands;
   backend()->ReadLastSessionCommandsImpl(&(read_commands.get()));
-  RestoreSessionFromCommands(read_commands.get(), windows);
+  service()->RestoreSessionFromCommands(
+      read_commands.get(), windows, active_window_id);
 }
 
 void SessionServiceTestHelper::AssertTabEquals(SessionID& window_id,
@@ -83,16 +86,7 @@ void SessionServiceTestHelper::AssertTabEquals(
 void SessionServiceTestHelper::AssertNavigationEquals(
     const TabNavigation& expected,
     const TabNavigation& actual) {
-  EXPECT_TRUE(expected.virtual_url() == actual.virtual_url());
-  EXPECT_EQ(expected.referrer().url, actual.referrer().url);
-  EXPECT_EQ(expected.referrer().policy, actual.referrer().policy);
-  EXPECT_EQ(expected.title(), actual.title());
-  EXPECT_EQ(expected.state(), actual.state());
-  EXPECT_EQ(expected.transition(), actual.transition());
-  EXPECT_EQ(expected.type_mask(), actual.type_mask());
-  EXPECT_TRUE(expected.original_request_url() == actual.original_request_url());
-  EXPECT_EQ(expected.is_overriding_user_agent(),
-      actual.is_overriding_user_agent());
+  SessionTypesTestHelper::ExpectNavigationEquals(expected, actual);
 }
 
 void SessionServiceTestHelper::AssertSingleWindowWithSingleTab(

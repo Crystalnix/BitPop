@@ -24,7 +24,7 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/string16.h"
 #include "chrome/browser/autofill/field_types.h"
-#include "chrome/browser/cancelable_request.h"
+#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/content_settings.h"
 #include "content/public/browser/browser_thread.h"
@@ -36,7 +36,6 @@
 
 #if defined(OS_WIN) && !defined(USE_AURA)
 #include "ui/gfx/native_widget_types.h"
-#include "ui/views/events/event.h"
 #endif  // defined(OS_WIN) && !defined(USE_AURA)
 
 class AutomationBrowserTracker;
@@ -156,7 +155,8 @@ class AutomationProvider
   // Get the DictionaryValue equivalent for a download item. Caller owns the
   // DictionaryValue.
   base::DictionaryValue* GetDictionaryFromDownloadItem(
-      const content::DownloadItem* download);
+      const content::DownloadItem* download,
+      bool incognito);
 
  protected:
   friend struct content::BrowserThread::DeleteOnThread<
@@ -189,7 +189,6 @@ class AutomationProvider
   scoped_ptr<AutomationBrowserTracker> browser_tracker_;
   scoped_ptr<InitialLoadObserver> initial_load_observer_;
   scoped_ptr<MetricEventDurationObserver> metric_event_duration_observer_;
-  scoped_ptr<NavigationControllerRestoredObserver> restore_tracker_;
   scoped_ptr<AutomationTabTracker> tab_tracker_;
   scoped_ptr<AutomationWindowTracker> window_tracker_;
 

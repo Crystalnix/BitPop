@@ -16,7 +16,10 @@
 
 using extensions::Extension;
 
-ExtensionManifestTest::ExtensionManifestTest() : enable_apps_(true) {}
+ExtensionManifestTest::ExtensionManifestTest()
+    : enable_apps_(true),
+      // UNKNOWN == trunk.
+      current_channel_(chrome::VersionInfo::CHANNEL_UNKNOWN) {}
 
 // static
 DictionaryValue* ExtensionManifestTest::LoadManifestFile(
@@ -173,7 +176,7 @@ void ExtensionManifestTest::LoadAndExpectError(
       Manifest(manifest_name), expected_error, location, flags);
 }
 
-void ExtensionManifestTest::AddPattern(URLPatternSet* extent,
+void ExtensionManifestTest::AddPattern(extensions::URLPatternSet* extent,
                                        const std::string& pattern) {
   int schemes = URLPattern::SCHEME_ALL;
   extent->AddPattern(URLPattern(schemes, pattern));

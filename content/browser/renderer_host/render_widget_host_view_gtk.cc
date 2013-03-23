@@ -101,7 +101,7 @@ GdkCursor* GetMozSpinningCursor() {
   return moz_spinning_cursor;
 }
 
-bool MovedToCenter(const WebKit::WebMouseEvent& mouse_event,
+bool MovedToPoint(const WebKit::WebMouseEvent& mouse_event,
                    const gfx::Point& center) {
   return mouse_event.globalX == center.x() &&
          mouse_event.globalY == center.y();
@@ -208,7 +208,7 @@ class RenderWidgetHostViewGtkWidget {
                                    GdkEventConfigure* event,
                                    RenderWidgetHostViewGtk* host_view) {
     host_view->MarkCachedWidgetCenterStale();
-    host_view->UpdateScreenInfo();
+    host_view->UpdateScreenInfo(host_view->GetNativeView());
     return FALSE;
   }
 
@@ -225,7 +225,9 @@ class RenderWidgetHostViewGtkWidget {
     if (should_close_on_escape && GDK_Escape == event->keyval) {
       host_view->host_->Shutdown();
     } else if (host_view->host_ &&
-               host_view->host_->KeyPressListenersHandleEvent(event)) {
+               host_view->host_->KeyPressListenersHandleEvent(
+                   NativeWebKeyboardEvent(reinterpret_cast<GdkEvent*>(
+                       event)))) {
       return TRUE;
     } else {
       // Send key event to input method.
@@ -391,7 +393,7 @@ class RenderWidgetHostViewGtkWidget {
     if (host_view->mouse_locked_) {
       gfx::Point center = host_view->GetWidgetCenter();
 
-      bool moved_to_center = MovedToCenter(mouse_event, center);
+      bool moved_to_center = MovedToPoint(mouse_event, center);
       if (moved_to_center)
         host_view->mouse_has_been_warped_to_new_center_ = true;
 
@@ -408,8 +410,12 @@ class RenderWidgetHostViewGtkWidget {
       }
     } else {  // Mouse is not locked.
       host_view->ModifyEventMovementAndCoords(&mouse_event);
-      RenderWidgetHostImpl::From(
-          host_view->GetRenderWidgetHost())->ForwardMouseEvent(mouse_event);
+      // Do not send mouse events while the mouse cursor is being warped back
+      // to the unlocked location.
+      if (!host_view->mouse_is_being_warped_to_unlocked_position_) {
+        RenderWidgetHostImpl::From(
+            host_view->GetRenderWidgetHost())->ForwardMouseEvent(mouse_event);
+      }
     }
     return FALSE;
   }
@@ -454,27 +460,6 @@ class RenderWidgetHostViewGtkWidget {
             << " data_format: " << event->data_format
             << " data: " << event->data.l;
     return TRUE;
-  }
-
-  // Allow the vertical scroll delta to be overridden from the command line.
-  // This will allow us to test more easily to discover the amount
-  // (either hard coded or computed) that's best.
-  static float GetScrollPixelsPerTick() {
-    static float scroll_pixels = -1;
-    if (scroll_pixels < 0) {
-      // TODO(brettw): Remove the command line switch (crbug.com/63525)
-      scroll_pixels = kDefaultScrollPixelsPerTick;
-      CommandLine* command_line = CommandLine::ForCurrentProcess();
-      std::string scroll_pixels_option =
-          command_line->GetSwitchValueASCII(switches::kScrollPixels);
-      if (!scroll_pixels_option.empty()) {
-        double v;
-        if (base::StringToDouble(scroll_pixels_option, &v))
-          scroll_pixels = static_cast<float>(v);
-      }
-      DCHECK_GT(scroll_pixels, 0);
-    }
-    return scroll_pixels;
   }
 
   // Return the net up / down (or left / right) distance represented by events
@@ -522,7 +507,7 @@ class RenderWidgetHostViewGtkWidget {
       gdk_event_put(event);
       gdk_event_free(event);
     }
-    return num_clicks * GetScrollPixelsPerTick();
+    return num_clicks * kDefaultScrollPixelsPerTick;
   }
 
   static gboolean OnMouseScrollEvent(GtkWidget* widget,
@@ -546,15 +531,15 @@ class RenderWidgetHostViewGtkWidget {
     if (event->direction == GDK_SCROLL_UP ||
         event->direction == GDK_SCROLL_DOWN) {
       if (event->direction == GDK_SCROLL_UP)
-        web_event.deltaY = GetScrollPixelsPerTick();
+        web_event.deltaY = kDefaultScrollPixelsPerTick;
       else
-        web_event.deltaY = -GetScrollPixelsPerTick();
+        web_event.deltaY = -kDefaultScrollPixelsPerTick;
       web_event.deltaY += GetPendingScrollDelta(true, event->state);
     } else {
       if (event->direction == GDK_SCROLL_LEFT)
-        web_event.deltaX = GetScrollPixelsPerTick();
+        web_event.deltaX = kDefaultScrollPixelsPerTick;
       else
-        web_event.deltaX = -GetScrollPixelsPerTick();
+        web_event.deltaX = -kDefaultScrollPixelsPerTick;
       web_event.deltaX += GetPendingScrollDelta(false, event->state);
     }
     RenderWidgetHostImpl::From(
@@ -576,6 +561,7 @@ RenderWidgetHostViewGtk::RenderWidgetHostViewGtk(RenderWidgetHost* widget_host)
       do_x_grab_(false),
       is_fullscreen_(false),
       made_active_(false),
+      mouse_is_being_warped_to_unlocked_position_(false),
       destroy_handler_id_(0),
       dragged_at_horizontal_edge_(0),
       dragged_at_vertical_edge_(0),
@@ -730,6 +716,7 @@ void RenderWidgetHostViewGtk::SetSize(const gfx::Size& size) {
   if (requested_size_.width() != width ||
       requested_size_.height() != height) {
     requested_size_ = gfx::Size(width, height);
+    host_->SendScreenRects();
     host_->WasResized();
   }
 }
@@ -758,6 +745,7 @@ gfx::NativeViewAccessible RenderWidgetHostViewGtk::GetNativeViewAccessible() {
 }
 
 void RenderWidgetHostViewGtk::MovePluginWindows(
+    const gfx::Vector2d& scroll_offset,
     const std::vector<webkit::npapi::WebPluginGeometry>& moves) {
   for (size_t i = 0; i < moves.size(); ++i) {
     plugin_container_manager_.MovePluginContainer(moves[i]);
@@ -837,9 +825,8 @@ void RenderWidgetHostViewGtk::SetIsLoading(bool is_loading) {
 }
 
 void RenderWidgetHostViewGtk::TextInputStateChanged(
-    ui::TextInputType type,
-    bool can_compose_inline) {
-  im_context_->UpdateInputMethodState(type, can_compose_inline);
+    const ViewHostMsg_TextInputState_Params& params) {
+  im_context_->UpdateInputMethodState(params.type, params.can_compose_inline);
 }
 
 void RenderWidgetHostViewGtk::ImeCancelComposition() {
@@ -847,7 +834,8 @@ void RenderWidgetHostViewGtk::ImeCancelComposition() {
 }
 
 void RenderWidgetHostViewGtk::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect, int scroll_dx, int scroll_dy,
+    const gfx::Rect& scroll_rect,
+    const gfx::Vector2d& scroll_delta,
     const std::vector<gfx::Rect>& copy_rects) {
   TRACE_EVENT0("ui::gtk", "RenderWidgetHostViewGtk::DidUpdateBackingStore");
 
@@ -858,19 +846,19 @@ void RenderWidgetHostViewGtk::DidUpdateBackingStore(
   // be done using XCopyArea?  Perhaps similar to
   // BackingStore::ScrollBackingStore?
   if (about_to_validate_and_paint_)
-    invalid_rect_ = invalid_rect_.Union(scroll_rect);
+    invalid_rect_.Union(scroll_rect);
   else
     Paint(scroll_rect);
 
   for (size_t i = 0; i < copy_rects.size(); ++i) {
     // Avoid double painting.  NOTE: This is only relevant given the call to
     // Paint(scroll_rect) above.
-    gfx::Rect rect = copy_rects[i].Subtract(scroll_rect);
+    gfx::Rect rect = gfx::SubtractRects(copy_rects[i], scroll_rect);
     if (rect.IsEmpty())
       continue;
 
     if (about_to_validate_and_paint_)
-      invalid_rect_ = invalid_rect_.Union(rect);
+      invalid_rect_.Union(rect);
     else
       Paint(rect);
   }
@@ -914,7 +902,7 @@ void RenderWidgetHostViewGtk::Destroy() {
   // this code is currently executing within the context of a gtk signal
   // handler.  Note that |view_| is still alive after this call.  It will be
   // deallocated in the destructor.
-  // See http://www.crbug.com/11847 for details.
+  // See http://crbug.com/11847 for details.
   gtk_widget_destroy(view_.get());
 
   // The RenderWidgetHost's destruction led here, so don't call it.
@@ -965,8 +953,10 @@ void RenderWidgetHostViewGtk::SelectionChanged(const string16& text,
 
 void RenderWidgetHostViewGtk::SelectionBoundsChanged(
     const gfx::Rect& start_rect,
-    const gfx::Rect& end_rect) {
-  im_context_->UpdateCaretBounds(start_rect.Union(end_rect));
+    WebKit::WebTextDirection start_direction,
+    const gfx::Rect& end_rect,
+    WebKit::WebTextDirection end_direction) {
+  im_context_->UpdateCaretBounds(gfx::UnionRects(start_rect, end_rect));
 }
 
 GdkEventButton* RenderWidgetHostViewGtk::GetLastMouseDown() {
@@ -1036,32 +1026,31 @@ void RenderWidgetHostViewGtk::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
     const base::Callback<void(bool)>& callback,
-    skia::PlatformCanvas* output) {
+    skia::PlatformBitmap* output) {
   base::ScopedClosureRunner scoped_callback_runner(base::Bind(callback, false));
 
-  const gfx::Rect bounds = GetViewBounds();
-  XImage* image = XGetImage(ui::GetXDisplay(), ui::GetX11RootWindow(),
-                            bounds.x() + src_subrect.x(),
-                            bounds.y() + src_subrect.y(),
-                            src_subrect.width(),
-                            src_subrect.height(),
-                            AllPlanes, ZPixmap);
-  if (!image)
+  gfx::Rect src_subrect_in_view = src_subrect;
+  src_subrect_in_view.Offset(GetViewBounds().OffsetFromOrigin());
+
+  ui::XScopedImage image(XGetImage(ui::GetXDisplay(), ui::GetX11RootWindow(),
+                                   src_subrect_in_view.x(),
+                                   src_subrect_in_view.y(),
+                                   src_subrect_in_view.width(),
+                                   src_subrect_in_view.height(),
+                                   AllPlanes, ZPixmap));
+  if (!image.get())
     return;
 
-  if (!output->initialize(src_subrect.width(), src_subrect.height(), true)) {
-    XFree(image);
+  if (!output->Allocate(src_subrect.width(), src_subrect.height(), true))
     return;
-  }
 
-  const SkBitmap& bitmap = output->getTopDevice()->accessBitmap(true);
+  const SkBitmap& bitmap = output->GetBitmap();
   const size_t bitmap_size = bitmap.getSize();
   DCHECK_EQ(bitmap_size,
             static_cast<size_t>(image->height * image->bytes_per_line));
   unsigned char* pixels = static_cast<unsigned char*>(bitmap.getPixels());
   memcpy(pixels, image->data, bitmap_size);
 
-  XFree(image);
   scoped_callback_runner.Release();
   callback.Run(true);
 }
@@ -1069,15 +1058,21 @@ void RenderWidgetHostViewGtk::CopyFromCompositingSurface(
 void RenderWidgetHostViewGtk::AcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
     int gpu_host_id) {
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(
-      params.route_id, gpu_host_id, 0);
+   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+   ack_params.surface_handle = params.surface_handle;
+   ack_params.sync_point = 0;
+   RenderWidgetHostImpl::AcknowledgeBufferPresent(
+      params.route_id, gpu_host_id, ack_params);
 }
 
 void RenderWidgetHostViewGtk::AcceleratedSurfacePostSubBuffer(
     const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
     int gpu_host_id) {
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(
-      params.route_id, gpu_host_id, 0);
+   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+   ack_params.surface_handle = params.surface_handle;
+   ack_params.sync_point = 0;
+   RenderWidgetHostImpl::AcknowledgeBufferPresent(
+      params.route_id, gpu_host_id, ack_params);
 }
 
 void RenderWidgetHostViewGtk::AcceleratedSurfaceSuspend() {
@@ -1176,7 +1171,7 @@ void RenderWidgetHostViewGtk::Paint(const gfx::Rect& damage_rect) {
   about_to_validate_and_paint_ = false;
 
   gfx::Rect paint_rect = gfx::Rect(0, 0, kMaxWindowWidth, kMaxWindowHeight);
-  paint_rect = paint_rect.Intersect(invalid_rect_);
+  paint_rect.Intersect(invalid_rect_);
 
   if (backing_store) {
     // Only render the widget if it is attached to a window; there's a short
@@ -1240,10 +1235,6 @@ void RenderWidgetHostViewGtk::CreatePluginContainer(
 void RenderWidgetHostViewGtk::DestroyPluginContainer(
     gfx::PluginWindowHandle id) {
   plugin_container_manager_.DestroyPluginContainer(id);
-}
-
-void RenderWidgetHostViewGtk::ProcessTouchAck(
-    WebKit::WebInputEvent::Type type, bool processed) {
 }
 
 void RenderWidgetHostViewGtk::SetHasHorizontalScrollbar(
@@ -1360,6 +1351,7 @@ void RenderWidgetHostViewGtk::UnlockMouse() {
   gdk_display_warp_pointer(display, screen,
                            unlocked_global_mouse_position_.x(),
                            unlocked_global_mouse_position_.y());
+  mouse_is_being_warped_to_unlocked_position_ = true;
 
   if (host_)
     host_->LostMouseLock();
@@ -1453,6 +1445,15 @@ void RenderWidgetHostViewGtk::ModifyEventMovementAndCoords(
   event->movementX = event->globalX - global_mouse_position_.x();
   event->movementY = event->globalY - global_mouse_position_.y();
 
+  // While the cursor is being warped back to the unlocked position, suppress
+  // the movement member data.
+  if (mouse_is_being_warped_to_unlocked_position_) {
+    event->movementX = 0;
+    event->movementY = 0;
+    if (MovedToPoint(*event, unlocked_global_mouse_position_))
+      mouse_is_being_warped_to_unlocked_position_ = false;
+  }
+
   global_mouse_position_.SetPoint(event->globalX, event->globalY);
 
   // Under mouse lock, coordinates of mouse are locked to what they were when
@@ -1522,6 +1523,11 @@ void RenderWidgetHostViewGtk::AccessibilitySetTextSelection(
     return;
 
   host_->AccessibilitySetTextSelection(acc_obj_id, start_offset, end_offset);
+}
+
+gfx::Point RenderWidgetHostViewGtk::GetLastTouchEventLocation() const {
+  // Not needed on Linux.
+  return gfx::Point();
 }
 
 void RenderWidgetHostViewGtk::OnAccessibilityNotifications(

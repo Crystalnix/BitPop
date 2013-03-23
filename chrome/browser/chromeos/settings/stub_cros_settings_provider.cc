@@ -20,6 +20,7 @@ const char* kHandledSettings[] = {
   kAccountsPrefShowUserNamesOnSignIn,
   kAccountsPrefUsers,
   kAccountsPrefEphemeralUsersEnabled,
+  kAccountsPrefDeviceLocalAccounts,
   kDeviceOwner,
   kPolicyMissingMitigationMode,
   kReleaseChannel,
@@ -30,6 +31,7 @@ const char* kHandledSettings[] = {
   kSettingProxyEverywhere,
   kSignedDataRoamingEnabled,
   kStatsReportingPref,
+  kSystemTimezonePolicy,
   // Kiosk mode settings.
   kIdleLogoutTimeout,
   kIdleLogoutWarningDuration,
@@ -73,9 +75,6 @@ bool StubCrosSettingsProvider::HandlesSetting(const std::string& path) const {
   return std::find(kHandledSettings, end, path) != end;
 }
 
-void StubCrosSettingsProvider::Reload() {
-}
-
 void StubCrosSettingsProvider::DoSet(const std::string& path,
                                      const base::Value& value) {
   values_.SetValue(path, value.DeepCopy());
@@ -86,6 +85,7 @@ void StubCrosSettingsProvider::SetDefaults() {
   values_.SetBoolean(kAccountsPrefAllowGuest, true);
   values_.SetBoolean(kAccountsPrefAllowNewUser, true);
   values_.SetBoolean(kAccountsPrefShowUserNamesOnSignIn, true);
+  values_.SetValue(kAccountsPrefDeviceLocalAccounts, new ListValue);
   // |kDeviceOwner| will be set to the logged-in user by |UserManager|.
 }
 

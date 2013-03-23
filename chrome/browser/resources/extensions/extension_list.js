@@ -35,34 +35,52 @@ cr.define('options', function() {
   ExtensionsList.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       this.textContent = '';
 
       this.showExtensionNodes_();
     },
 
+    getIdQueryParam_: function() {
+      return parseQueryParams(document.location)['id'];
+    },
+
     /**
      * Creates all extension items from scratch.
      * @private
      */
-     showExtensionNodes_: function() {
-       // Iterate over the extension data and add each item to the list.
-       this.data_.extensions.forEach(this.createNode_, this);
+    showExtensionNodes_: function() {
+      // Iterate over the extension data and add each item to the list.
+      this.data_.extensions.forEach(this.createNode_, this);
 
-       if (this.data_.extensions.length == 0)
-         this.classList.add('empty-extension-list');
-       else
-         this.classList.remove('empty-extension-list');
-     },
+      var id_to_highlight = this.getIdQueryParam_();
+      if (id_to_highlight) {
+        // Scroll offset should be calculated slightly higher than the actual
+        // offset of the element being scrolled to, so that it ends up not all
+        // the way at the top. That way it is clear that there are more elements
+        // above the element being scrolled to.
+        var scroll_fudge = 1.2;
+        var offset = $(id_to_highlight).offsetTop -
+                     (scroll_fudge * $(id_to_highlight).clientHeight);
+        var wrapper = this.parentNode;
+        var list = wrapper.parentNode;
+        list.scrollTop = offset;
+      }
 
-     /**
-      * Synthesizes and initializes an HTML element for the extension metadata
-      * given in |extension|.
-      * @param {Object} extension A dictionary of extension metadata.
-      * @private
-      */
-     createNode_: function(extension) {
+      if (this.data_.extensions.length == 0)
+        this.classList.add('empty-extension-list');
+      else
+        this.classList.remove('empty-extension-list');
+    },
+
+    /**
+     * Synthesizes and initializes an HTML element for the extension metadata
+     * given in |extension|.
+     * @param {Object} extension A dictionary of extension metadata.
+     * @private
+     */
+    createNode_: function(extension) {
       var template = $('template-collection').querySelector(
           '.extension-list-item-wrapper');
       var node = template.cloneNode(true);
@@ -74,6 +92,10 @@ cr.define('options', function() {
       if (!extension.userModifiable)
         node.classList.add('may-not-disable');
 
+      var id_to_highlight = this.getIdQueryParam_();
+      if (node.id == id_to_highlight)
+        node.classList.add('extension-highlight');
+
       var item = node.querySelector('.extension-list-item');
       item.style.backgroundImage = 'url(' + extension.icon + ')';
 
@@ -83,7 +105,13 @@ cr.define('options', function() {
       var version = node.querySelector('.extension-version');
       version.textContent = extension.version;
 
-      var description = node.querySelector('.extension-description');
+      var disableReason = node.querySelector('.extension-disable-reason');
+      disableReason.textContent = extension.disableReason;
+
+      var locationText = node.querySelector('.location-text');
+      locationText.textContent = extension.locationText;
+
+      var description = node.querySelector('.extension-description span');
       description.textContent = extension.description;
 
       // The 'Show Browser Action' button.
@@ -96,16 +124,19 @@ cr.define('options', function() {
       }
 
       // The 'allow in incognito' checkbox.
-      var incognito = node.querySelector('.incognito-control');
+      var incognito = node.querySelector('.incognito-control input');
+      incognito.disabled = !extension.incognitoCanBeEnabled;
+      incognito.checked = extension.enabledIncognito;
+      if (!incognito.disabled) {
+        incognito.addEventListener('change', function(e) {
+          var checked = e.target.checked;
+          butterBarVisibility[extension.id] = checked;
+          butterBar.hidden = !checked || extension.is_hosted_app;
+          chrome.send('extensionSettingsEnableIncognito',
+                      [extension.id, String(checked)]);
+        });
+      }
       var butterBar = node.querySelector('.butter-bar');
-      incognito.addEventListener('click', function(e) {
-        var checked = e.target.checked;
-        butterBarVisibility[extension.id] = checked;
-        butterBar.hidden = !checked || extension.is_hosted_app;
-        chrome.send('extensionSettingsEnableIncognito',
-                    [extension.id, String(checked)]);
-      });
-      incognito.querySelector('input').checked = extension.enabledIncognito;
       butterBar.hidden = !butterBarVisibility[extension.id];
 
       // The 'allow file:// access' checkbox.
@@ -156,13 +187,29 @@ cr.define('options', function() {
         siteLink.hidden = false;
       }
 
-      // The 'Reload' checkbox.
       if (extension.allow_reload) {
+        // The 'Reload' link.
         var reload = node.querySelector('.reload-link');
         reload.addEventListener('click', function(e) {
           chrome.send('extensionSettingsReload', [extension.id]);
         });
         reload.hidden = false;
+
+        if (extension.is_platform_app) {
+          // The 'Launch' link.
+          var launch = node.querySelector('.launch-link');
+          launch.addEventListener('click', function(e) {
+            chrome.send('extensionSettingsLaunch', [extension.id]);
+          });
+          launch.hidden = false;
+
+          // The 'Restart' link.
+          var restart = node.querySelector('.restart-link');
+          restart.addEventListener('click', function(e) {
+            chrome.send('extensionSettingsRestart', [extension.id]);
+          });
+          restart.hidden = false;
+        }
       }
 
       if (!extension.terminated) {
@@ -175,6 +222,13 @@ cr.define('options', function() {
           enable.addEventListener('click', function(e) {
             chrome.send('extensionSettingsEnable',
                         [extension.id, e.target.checked ? 'true' : 'false']);
+
+            // This may seem counter-intuitive (to not set/clear the checkmark)
+            // but this page will be updated asynchronously if the extension
+            // becomes enabled/disabled. It also might not become enabled or
+            // disabled, because the user might e.g. get prompted when enabling
+            // and choose not to.
+            e.preventDefault();
           });
         }
 

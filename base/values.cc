@@ -5,8 +5,10 @@
 #include "base/values.h"
 
 #include <algorithm>
+#include <ostream>
 
 #include "base/float_util.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -172,7 +174,13 @@ bool Value::Equals(const Value* a, const Value* b) {
   return a->Equals(b);
 }
 
-Value::Value(Type type) : type_(type) {
+Value::Value(Type type) : type_(type) {}
+
+Value::Value(const Value& that) : type_(that.type_) {}
+
+Value& Value::operator=(const Value& that) {
+  type_ = that.type_;
+  return *this;
 }
 
 ///////////////////// FundamentalValue ////////////////////
@@ -441,6 +449,31 @@ void DictionaryValue::SetWithoutPathExpansion(const std::string& key,
   }
 }
 
+void DictionaryValue::SetBooleanWithoutPathExpansion(
+    const std::string& path, bool in_value) {
+  SetWithoutPathExpansion(path, CreateBooleanValue(in_value));
+}
+
+void DictionaryValue::SetIntegerWithoutPathExpansion(
+    const std::string& path, int in_value) {
+  SetWithoutPathExpansion(path, CreateIntegerValue(in_value));
+}
+
+void DictionaryValue::SetDoubleWithoutPathExpansion(
+    const std::string& path, double in_value) {
+  SetWithoutPathExpansion(path, CreateDoubleValue(in_value));
+}
+
+void DictionaryValue::SetStringWithoutPathExpansion(
+    const std::string& path, const std::string& in_value) {
+  SetWithoutPathExpansion(path, CreateStringValue(in_value));
+}
+
+void DictionaryValue::SetStringWithoutPathExpansion(
+    const std::string& path, const string16& in_value) {
+  SetWithoutPathExpansion(path, CreateStringValue(in_value));
+}
+
 bool DictionaryValue::Get(
     const std::string& path, const Value** out_value) const {
   DCHECK(IsStringUTF8(path));
@@ -606,6 +639,15 @@ bool DictionaryValue::GetWithoutPathExpansion(const std::string& key,
       const_cast<const Value**>(out_value));
 }
 
+bool DictionaryValue::GetBooleanWithoutPathExpansion(const std::string& key,
+                                                     bool* out_value) const {
+  const Value* value;
+  if (!GetWithoutPathExpansion(key, &value))
+    return false;
+
+  return value->GetAsBoolean(out_value);
+}
+
 bool DictionaryValue::GetIntegerWithoutPathExpansion(const std::string& key,
                                                      int* out_value) const {
   const Value* value;
@@ -749,6 +791,18 @@ void DictionaryValue::MergeDictionary(const DictionaryValue* dictionary) {
 void DictionaryValue::Swap(DictionaryValue* other) {
   dictionary_.swap(other->dictionary_);
 }
+
+DictionaryValue::key_iterator::key_iterator(ValueMap::const_iterator itr) {
+  itr_ = itr;
+}
+
+DictionaryValue::key_iterator::key_iterator(const key_iterator& rhs) {
+  itr_ = rhs.itr_;
+}
+
+DictionaryValue::Iterator::Iterator(const DictionaryValue& target)
+    : target_(target),
+      it_(target.dictionary_.begin()) {}
 
 DictionaryValue* DictionaryValue::DeepCopy() const {
   DictionaryValue* result = new DictionaryValue;
@@ -973,6 +1027,40 @@ void ListValue::Append(Value* in_value) {
   list_.push_back(in_value);
 }
 
+void ListValue::AppendBoolean(bool in_value) {
+  Append(CreateBooleanValue(in_value));
+}
+
+void ListValue::AppendInteger(int in_value) {
+  Append(CreateIntegerValue(in_value));
+}
+
+void ListValue::AppendDouble(double in_value) {
+  Append(CreateDoubleValue(in_value));
+}
+
+void ListValue::AppendString(const std::string& in_value) {
+  Append(CreateStringValue(in_value));
+}
+
+void ListValue::AppendString(const string16& in_value) {
+  Append(CreateStringValue(in_value));
+}
+
+void ListValue::AppendStrings(const std::vector<std::string>& in_values) {
+  for (std::vector<std::string>::const_iterator it = in_values.begin();
+       it != in_values.end(); ++it) {
+    AppendString(*it);
+  }
+}
+
+void ListValue::AppendStrings(const std::vector<string16>& in_values) {
+  for (std::vector<string16>::const_iterator it = in_values.begin();
+       it != in_values.end(); ++it) {
+    AppendString(*it);
+  }
+}
+
 bool ListValue::AppendIfNotPresent(Value* in_value) {
   DCHECK(in_value);
   for (ValueVector::const_iterator i(list_.begin()); i != list_.end(); ++i) {
@@ -1043,6 +1131,14 @@ bool ListValue::Equals(const Value* other) const {
 }
 
 ValueSerializer::~ValueSerializer() {
+}
+
+std::ostream& operator<<(std::ostream& out, const Value& value) {
+  std::string json;
+  JSONWriter::WriteWithOptions(&value,
+                               JSONWriter::OPTIONS_PRETTY_PRINT,
+                               &json);
+  return out << json;
 }
 
 }  // namespace base

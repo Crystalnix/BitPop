@@ -36,6 +36,8 @@
 
 using gpu::gles2::TextureManager;
 
+namespace content {
+
 static bool MakeDecoderContextCurrent(
     const base::WeakPtr<GpuCommandBufferStub> stub) {
   if (!stub) {
@@ -59,7 +61,8 @@ GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
       init_done_msg_(NULL),
       host_route_id_(host_route_id),
       stub_(stub->AsWeakPtr()),
-      video_decode_accelerator_(NULL) {
+      video_decode_accelerator_(NULL),
+      texture_target_(0) {
   if (!stub_)
     return;
   stub_->AddDestructionObserver(this);
@@ -102,6 +105,7 @@ void GpuVideoDecodeAccelerator::ProvidePictureBuffers(
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_ProvidePictureBuffers) "
                 << "failed";
   }
+  texture_target_ = texture_target;
 }
 
 void GpuVideoDecodeAccelerator::DismissPictureBuffer(
@@ -175,7 +179,8 @@ void GpuVideoDecodeAccelerator::Initialize(
   video_decode_accelerator_.reset(new OmxVideoDecodeAccelerator(
       gfx::GLSurfaceEGL::GetHardwareDisplay(),
       stub_->decoder()->GetGLContext()->GetHandle(),
-      this));
+      this,
+      make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
   gfx::GLContextGLX* glx_context =
       static_cast<gfx::GLContextGLX*>(stub_->decoder()->GetGLContext());
@@ -200,8 +205,13 @@ void GpuVideoDecodeAccelerator::Initialize(
 }
 
 void GpuVideoDecodeAccelerator::OnDecode(
-    base::SharedMemoryHandle handle, int32 id, int32 size) {
+    base::SharedMemoryHandle handle, int32 id, uint32 size) {
   DCHECK(video_decode_accelerator_.get());
+  if (id < 0) {
+    DLOG(FATAL) << "BitstreamBuffer id " << id << " out of range";
+    NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
+    return;
+  }
   video_decode_accelerator_->Decode(media::BitstreamBuffer(id, handle, size));
 }
 
@@ -209,16 +219,34 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
       const std::vector<int32>& buffer_ids,
       const std::vector<uint32>& texture_ids,
       const std::vector<gfx::Size>& sizes) {
+  if (buffer_ids.size() != texture_ids.size() ||
+      buffer_ids.size() != sizes.size()) {
+    NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
+    return;
+  }
+
   gpu::gles2::GLES2Decoder* command_decoder = stub_->decoder();
   gpu::gles2::TextureManager* texture_manager =
       command_decoder->GetContextGroup()->texture_manager();
 
   std::vector<media::PictureBuffer> buffers;
   for (uint32 i = 0; i < buffer_ids.size(); ++i) {
+    if (buffer_ids[i] < 0) {
+      DLOG(FATAL) << "Buffer id " << buffer_ids[i] << " out of range";
+      NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
+      return;
+    }
     gpu::gles2::TextureManager::TextureInfo* info =
         texture_manager->GetTextureInfo(texture_ids[i]);
     if (!info) {
       DLOG(FATAL) << "Failed to find texture id " << texture_ids[i];
+      NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
+      return;
+    }
+    GLsizei width, height;
+    info->GetLevelSize(texture_target_, 0, &width, &height);
+    if (width != sizes[i].width() || height != sizes[i].height()) {
+      DLOG(FATAL) << "Size mismatch for texture id " << texture_ids[i];
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
@@ -303,3 +331,5 @@ bool GpuVideoDecodeAccelerator::Send(IPC::Message* message) {
   DCHECK(sender_);
   return sender_->Send(message);
 }
+
+}  // namespace content

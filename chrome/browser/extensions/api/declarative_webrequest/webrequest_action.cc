@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "base/stringprintf.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
@@ -18,7 +17,10 @@
 #include "chrome/browser/extensions/api/web_request/web_request_permissions.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/common/extensions/extension.h"
+#include "content/public/common/url_constants.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/url_request/url_request.h"
+#include "third_party/re2/re2/re2.h"
 
 namespace extensions {
 
@@ -52,28 +54,50 @@ scoped_ptr<helpers::RequestCookie> ParseRequestCookie(
   return result.Pass();
 }
 
-scoped_ptr<helpers::ResponseCookie> ParseResponseCookie(
-    const DictionaryValue* dict) {
-  scoped_ptr<helpers::ResponseCookie> result(new helpers::ResponseCookie);
+void ParseResponseCookieImpl(const DictionaryValue* dict,
+                             helpers::ResponseCookie* cookie) {
   std::string string_tmp;
   int int_tmp = 0;
   bool bool_tmp = false;
   if (dict->GetString(keys::kNameKey, &string_tmp))
-    result->name.reset(new std::string(string_tmp));
+    cookie->name.reset(new std::string(string_tmp));
   if (dict->GetString(keys::kValueKey, &string_tmp))
-    result->value.reset(new std::string(string_tmp));
+    cookie->value.reset(new std::string(string_tmp));
   if (dict->GetString(keys::kExpiresKey, &string_tmp))
-    result->expires.reset(new std::string(string_tmp));
+    cookie->expires.reset(new std::string(string_tmp));
   if (dict->GetInteger(keys::kMaxAgeKey, &int_tmp))
-    result->max_age.reset(new int(int_tmp));
+    cookie->max_age.reset(new int(int_tmp));
   if (dict->GetString(keys::kDomainKey, &string_tmp))
-    result->domain.reset(new std::string(string_tmp));
+    cookie->domain.reset(new std::string(string_tmp));
   if (dict->GetString(keys::kPathKey, &string_tmp))
-    result->path.reset(new std::string(string_tmp));
+    cookie->path.reset(new std::string(string_tmp));
   if (dict->GetBoolean(keys::kSecureKey, &bool_tmp))
-    result->secure.reset(new bool(bool_tmp));
+    cookie->secure.reset(new bool(bool_tmp));
   if (dict->GetBoolean(keys::kHttpOnlyKey, &bool_tmp))
-    result->http_only.reset(new bool(bool_tmp));
+    cookie->http_only.reset(new bool(bool_tmp));
+}
+
+scoped_ptr<helpers::ResponseCookie> ParseResponseCookie(
+    const DictionaryValue* dict) {
+  scoped_ptr<helpers::ResponseCookie> result(new helpers::ResponseCookie);
+  ParseResponseCookieImpl(dict, result.get());
+  return result.Pass();
+}
+
+scoped_ptr<helpers::FilterResponseCookie> ParseFilterResponseCookie(
+    const DictionaryValue* dict) {
+  scoped_ptr<helpers::FilterResponseCookie> result(
+      new helpers::FilterResponseCookie);
+  ParseResponseCookieImpl(dict, result.get());
+
+  int int_tmp = 0;
+  bool bool_tmp = false;
+  if (dict->GetInteger(keys::kAgeUpperBoundKey, &int_tmp))
+    result->age_upper_bound.reset(new int(int_tmp));
+  if (dict->GetInteger(keys::kAgeLowerBoundKey, &int_tmp))
+    result->age_lower_bound.reset(new int(int_tmp));
+  if (dict->GetBoolean(keys::kSessionCookieKey, &bool_tmp))
+    result->session_cookie.reset(new bool(bool_tmp));
   return result.Pass();
 }
 
@@ -108,20 +132,18 @@ scoped_ptr<WebRequestAction> CreateRedirectRequestByRegExAction(
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kFromKey, &from));
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kToKey, &to));
 
-  // TODO(battre): Add this line once we migrate from ICU RegEx to RE2 RegEx.s
-  // to = WebRequestRedirectByRegExAction::PerlToRe2Style(to);
+  to = WebRequestRedirectByRegExAction::PerlToRe2Style(to);
 
-  UParseError parse_error;
-  UErrorCode status = U_ZERO_ERROR;
-  scoped_ptr<icu::RegexPattern> pattern(
-      icu::RegexPattern::compile(icu::UnicodeString(from.data(), from.size()),
-                                 0, parse_error, status));
-  if (U_FAILURE(status) || !pattern.get()) {
+  RE2::Options options;
+  options.set_case_sensitive(false);
+  scoped_ptr<RE2> from_pattern(new RE2(from, options));
+
+  if (!from_pattern->ok()) {
     *error = "Invalid pattern '" + from + "' -> '" + to + "'";
     return scoped_ptr<WebRequestAction>(NULL);
   }
   return scoped_ptr<WebRequestAction>(
-      new WebRequestRedirectByRegExAction(pattern.Pass(), to));
+      new WebRequestRedirectByRegExAction(from_pattern.Pass(), to));
 }
 
 scoped_ptr<WebRequestAction> CreateSetRequestHeaderAction(
@@ -253,7 +275,7 @@ scoped_ptr<WebRequestAction> CreateResponseCookieAction(
       modification->type == helpers::REMOVE) {
     const DictionaryValue* filter = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kFilterKey, &filter));
-    modification->filter = ParseResponseCookie(filter);
+    modification->filter = ParseFilterResponseCookie(filter);
   }
 
   // Get new value.
@@ -337,11 +359,16 @@ int WebRequestAction::GetMinimumPriority() const {
   return std::numeric_limits<int>::min();
 }
 
+WebRequestAction::HostPermissionsStrategy
+WebRequestAction::GetHostPermissionsStrategy() const {
+  return STRATEGY_DEFAULT;
+}
+
 bool WebRequestAction::HasPermission(const ExtensionInfoMap* extension_info_map,
                                      const std::string& extension_id,
                                      const net::URLRequest* request,
                                      bool crosses_incognito) const {
-  if (WebRequestPermissions::HideRequest(request))
+  if (WebRequestPermissions::HideRequest(extension_info_map, request))
     return false;
 
   // In unit tests we don't have an extension_info_map object here and skip host
@@ -349,12 +376,30 @@ bool WebRequestAction::HasPermission(const ExtensionInfoMap* extension_info_map,
   if (!extension_info_map)
     return true;
 
-  return WebRequestPermissions::CanExtensionAccessURL(
-      extension_info_map, extension_id, request->url(), crosses_incognito,
-      ShouldEnforceHostPermissions());
+  HostPermissionsStrategy strategy = GetHostPermissionsStrategy();
+  if (strategy == STRATEGY_NONE || strategy == STRATEGY_DEFAULT) {
+    bool check_host_permissions = strategy != STRATEGY_NONE;
+    return WebRequestPermissions::CanExtensionAccessURL(
+        extension_info_map, extension_id, request->url(), crosses_incognito,
+        check_host_permissions);
+  }
+  return true;
 }
 
-bool WebRequestAction::ShouldEnforceHostPermissions() const {
+bool WebRequestAction::DeltaHasPermission(
+    const ExtensionInfoMap* extension_info_map,
+    const std::string& extension_id,
+    const net::URLRequest* request,
+    bool crosses_incognito,
+    const LinkedPtrEventResponseDelta& delta) const {
+  if (GetHostPermissionsStrategy() == STRATEGY_ALLOW_SAME_DOMAIN) {
+    return
+        net::RegistryControlledDomainService::SameDomainOrHost(
+            request->url(), delta->new_url) ||
+        WebRequestPermissions::CanExtensionAccessURL(
+            extension_info_map, extension_id, request->url(), crosses_incognito,
+            true);
+  }
   return true;
 }
 
@@ -429,8 +474,12 @@ std::list<LinkedPtrEventResponseDelta> WebRequestActionSet::CreateDeltas(
     if ((*i)->GetStages() & request_data.stage) {
       LinkedPtrEventResponseDelta delta = (*i)->CreateDelta(
           request_data, extension_id, extension_install_time);
-      if (delta.get())
-        result.push_back(delta);
+      if (delta.get()) {
+        if ((*i)->DeltaHasPermission(extension_info_map, extension_id,
+                                     request_data.request, crosses_incognito,
+                                     delta))
+          result.push_back(delta);
+      }
     }
   }
   return result;
@@ -461,6 +510,11 @@ WebRequestAction::Type WebRequestCancelAction::GetType() const {
   return WebRequestAction::ACTION_CANCEL_REQUEST;
 }
 
+WebRequestAction::HostPermissionsStrategy
+WebRequestCancelAction::GetHostPermissionsStrategy() const {
+  return WebRequestAction::STRATEGY_NONE;
+}
+
 LinkedPtrEventResponseDelta WebRequestCancelAction::CreateDelta(
     const WebRequestRule::RequestData& request_data,
     const std::string& extension_id,
@@ -487,6 +541,11 @@ int WebRequestRedirectAction::GetStages() const {
 
 WebRequestAction::Type WebRequestRedirectAction::GetType() const {
   return WebRequestAction::ACTION_REDIRECT_REQUEST;
+}
+
+WebRequestAction::HostPermissionsStrategy
+WebRequestRedirectAction::GetHostPermissionsStrategy() const {
+  return WebRequestAction::STRATEGY_ALLOW_SAME_DOMAIN;
 }
 
 LinkedPtrEventResponseDelta WebRequestRedirectAction::CreateDelta(
@@ -521,9 +580,9 @@ WebRequestRedirectToTransparentImageAction::GetType() const {
   return WebRequestAction::ACTION_REDIRECT_TO_TRANSPARENT_IMAGE;
 }
 
-bool WebRequestRedirectToTransparentImageAction::ShouldEnforceHostPermissions()
-    const {
-  return false;
+WebRequestAction::HostPermissionsStrategy
+WebRequestRedirectToTransparentImageAction::GetHostPermissionsStrategy() const {
+  return WebRequestAction::STRATEGY_NONE;
 }
 
 LinkedPtrEventResponseDelta
@@ -557,9 +616,9 @@ WebRequestRedirectToEmptyDocumentAction::GetType() const {
   return WebRequestAction::ACTION_REDIRECT_TO_EMPTY_DOCUMENT;
 }
 
-bool
-WebRequestRedirectToEmptyDocumentAction::ShouldEnforceHostPermissions() const {
-  return false;
+WebRequestAction::HostPermissionsStrategy
+WebRequestRedirectToEmptyDocumentAction::GetHostPermissionsStrategy() const {
+  return WebRequestAction::STRATEGY_NONE;
 }
 
 LinkedPtrEventResponseDelta
@@ -579,7 +638,7 @@ WebRequestRedirectToEmptyDocumentAction::CreateDelta(
 //
 
 WebRequestRedirectByRegExAction::WebRequestRedirectByRegExAction(
-    scoped_ptr<icu::RegexPattern> from_pattern,
+    scoped_ptr<RE2> from_pattern,
     const std::string& to_pattern)
     : from_pattern_(from_pattern.Pass()),
       to_pattern_(to_pattern.data(), to_pattern.size()) {}
@@ -647,6 +706,11 @@ WebRequestAction::Type WebRequestRedirectByRegExAction::GetType() const {
   return WebRequestAction::ACTION_REDIRECT_BY_REGEX_DOCUMENT;
 }
 
+WebRequestAction::HostPermissionsStrategy
+WebRequestRedirectByRegExAction::GetHostPermissionsStrategy() const {
+  return WebRequestAction::STRATEGY_ALLOW_SAME_DOMAIN;
+}
+
 LinkedPtrEventResponseDelta WebRequestRedirectByRegExAction::CreateDelta(
     const WebRequestRule::RequestData& request_data,
     const std::string& extension_id,
@@ -654,29 +718,17 @@ LinkedPtrEventResponseDelta WebRequestRedirectByRegExAction::CreateDelta(
   CHECK(request_data.stage & GetStages());
   CHECK(from_pattern_.get());
 
-  UErrorCode status = U_ZERO_ERROR;
   const std::string& old_url = request_data.request->url().spec();
-  icu::UnicodeString old_url_unicode(old_url.data(), old_url.size());
-
-  scoped_ptr<icu::RegexMatcher> matcher(
-      from_pattern_->matcher(old_url_unicode, status));
-  if (U_FAILURE(status) || !matcher.get())
+  std::string new_url = old_url;
+  if (!RE2::Replace(&new_url, *from_pattern_, to_pattern_) ||
+      new_url == old_url) {
     return LinkedPtrEventResponseDelta(NULL);
-
-  icu::UnicodeString new_url = matcher->replaceAll(to_pattern_, status);
-  if (U_FAILURE(status))
-    return LinkedPtrEventResponseDelta(NULL);
-
-  std::string new_url_utf8;
-  UTF16ToUTF8(new_url.getBuffer(), new_url.length(), &new_url_utf8);
-
-  if (new_url_utf8 == request_data.request->url().spec())
-    return LinkedPtrEventResponseDelta(NULL);
+  }
 
   LinkedPtrEventResponseDelta result(
       new extension_web_request_api_helpers::EventResponseDelta(
           extension_id, extension_install_time));
-  result->new_url = GURL(new_url_utf8);
+  result->new_url = GURL(new_url);
   return result;
 }
 
@@ -774,7 +826,7 @@ WebRequestAddResponseHeaderAction::CreateDelta(
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
   CHECK(request_data.stage & GetStages());
-  net::HttpResponseHeaders* headers =
+  const net::HttpResponseHeaders* headers =
       request_data.original_response_headers;
   if (!headers)
     return LinkedPtrEventResponseDelta(NULL);
@@ -819,7 +871,7 @@ WebRequestRemoveResponseHeaderAction::CreateDelta(
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
   CHECK(request_data.stage & GetStages());
-  net::HttpResponseHeaders* headers =
+  const net::HttpResponseHeaders* headers =
       request_data.original_response_headers;
   if (!headers)
     return LinkedPtrEventResponseDelta(NULL);
@@ -865,8 +917,9 @@ int WebRequestIgnoreRulesAction::GetMinimumPriority() const {
   return minimum_priority_;
 }
 
-bool WebRequestIgnoreRulesAction::ShouldEnforceHostPermissions() const {
-  return false;
+WebRequestAction::HostPermissionsStrategy
+WebRequestIgnoreRulesAction::GetHostPermissionsStrategy() const {
+  return WebRequestAction::STRATEGY_NONE;
 }
 
 LinkedPtrEventResponseDelta WebRequestIgnoreRulesAction::CreateDelta(

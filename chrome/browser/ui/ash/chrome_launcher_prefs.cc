@@ -35,7 +35,6 @@ namespace ash {
 const char kPinnedAppsPrefAppIDPath[] = "id";
 
 const char kShelfAutoHideBehaviorAlways[] = "Always";
-const char kShelfAutoHideBehaviorDefault[] = "Default";
 const char kShelfAutoHideBehaviorNever[] = "Never";
 
 extern const char kShelfAlignmentBottom[] = "Bottom";
@@ -45,18 +44,26 @@ extern const char kShelfAlignmentRight[] = "Right";
 void RegisterChromeLauncherUserPrefs(PrefService* user_prefs) {
   // TODO: If we want to support multiple profiles this will likely need to be
   // pushed to local state and we'll need to track profile per item.
-  user_prefs->RegisterBooleanPref(prefs::kUseDefaultPinnedApps,
-                                  true,
-                                  PrefService::SYNCABLE_PREF);
   user_prefs->RegisterListPref(prefs::kPinnedLauncherApps,
                                CreateDefaultPinnedAppsList(),
                                PrefService::SYNCABLE_PREF);
   user_prefs->RegisterStringPref(prefs::kShelfAutoHideBehavior,
-                                 kShelfAutoHideBehaviorDefault,
+                                 kShelfAutoHideBehaviorNever,
                                  PrefService::SYNCABLE_PREF);
+  user_prefs->RegisterStringPref(prefs::kShelfAutoHideBehaviorLocal,
+                                 std::string(),
+                                 PrefService::UNSYNCABLE_PREF);
   user_prefs->RegisterStringPref(prefs::kShelfAlignment,
                                  kShelfAlignmentBottom,
                                  PrefService::SYNCABLE_PREF);
+  user_prefs->RegisterStringPref(prefs::kShelfAlignmentLocal,
+                                 std::string(),
+                                 PrefService::UNSYNCABLE_PREF);
+  user_prefs->RegisterBooleanPref(prefs::kShowLogoutButtonInTray,
+                                  false,
+                                  PrefService::UNSYNCABLE_PREF);
+  user_prefs->RegisterDictionaryPref(prefs::kShelfPreferences,
+                                     PrefService::UNSYNCABLE_PREF);
 }
 
 base::DictionaryValue* CreateAppDict(const std::string& app_id) {

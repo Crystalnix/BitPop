@@ -5,7 +5,10 @@
 #ifndef CONTENT_PUBLIC_BROWSER_BROWSER_ACCESSIBILITY_STATE_H_
 #define CONTENT_PUBLIC_BROWSER_BROWSER_ACCESSIBILITY_STATE_H_
 
+#include "base/callback_forward.h"
 #include "content/common/content_export.h"
+
+namespace content {
 
 // The BrowserAccessibilityState class is used to determine if the browser
 // should be customized for users with assistive technology, such as screen
@@ -25,6 +28,14 @@ class CONTENT_EXPORT BrowserAccessibilityState {
 
   // Returns true if the browser should be customized for accessibility.
   virtual bool IsAccessibleBrowser() = 0;
+
+  // Add a callback method that will be called once, a small while after the
+  // browser starts up, when accessibility state histograms are updated.
+  // Use this to register a method to update additional accessibility
+  // histograms.
+  virtual void AddHistogramCallback(base::Closure callback) = 0;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_PUBLIC_BROWSER_BROWSER_ACCESSIBILITY_STATE_H_

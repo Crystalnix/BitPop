@@ -28,7 +28,9 @@ SyncPrefs::SyncPrefs(PrefService* pref_service)
     RegisterPreferences();
     // Watch the preference that indicates sync is managed so we can take
     // appropriate action.
-    pref_sync_managed_.Init(prefs::kSyncManaged, pref_service_, this);
+    pref_sync_managed_.Init(prefs::kSyncManaged, pref_service_,
+                            base::Bind(&SyncPrefs::OnSyncManagedPrefChanged,
+                                       base::Unretained(this)));
   }
 }
 
@@ -119,6 +121,10 @@ void SyncPrefs::SetKeepEverythingSynced(bool keep_everything_synced) {
   pref_service_->SetBoolean(prefs::kSyncKeepEverythingSynced,
                             keep_everything_synced);
 }
+
+// TODO(akalin): If encryption is turned on for all data types,
+// history delete directives are useless and so we shouldn't bother
+// enabling them.
 
 syncer::ModelTypeSet SyncPrefs::GetPreferredDataTypes(
     syncer::ModelTypeSet registered_types) const {
@@ -222,6 +228,8 @@ const char* SyncPrefs::GetPrefNameForDataType(syncer::ModelType data_type) {
       return prefs::kSyncSessions;
     case syncer::APP_NOTIFICATIONS:
       return prefs::kSyncAppNotifications;
+    case syncer::HISTORY_DELETE_DIRECTIVES:
+      return prefs::kSyncHistoryDeleteDirectives;
     default:
       break;
   }
@@ -257,25 +265,10 @@ void SyncPrefs::AcknowledgeSyncedTypes(syncer::ModelTypeSet types) {
   pref_service_->Set(prefs::kSyncAcknowledgedSyncTypes, *value);
 }
 
-void SyncPrefs::Observe(int type,
-                        const content::NotificationSource& source,
-                        const content::NotificationDetails& details) {
+void SyncPrefs::OnSyncManagedPrefChanged() {
   DCHECK(CalledOnValidThread());
-  DCHECK(content::Source<PrefService>(pref_service_) == source);
-  switch (type) {
-    case chrome::NOTIFICATION_PREF_CHANGED: {
-      const std::string* pref_name =
-          content::Details<const std::string>(details).ptr();
-      if (*pref_name == prefs::kSyncManaged) {
-        FOR_EACH_OBSERVER(SyncPrefObserver, sync_pref_observers_,
-                          OnSyncManagedPrefChange(*pref_sync_managed_));
-      }
-      break;
-    }
-    default:
-      NOTREACHED();
-      break;
-  }
+  FOR_EACH_OBSERVER(SyncPrefObserver, sync_pref_observers_,
+                    OnSyncManagedPrefChange(*pref_sync_managed_));
 }
 
 void SyncPrefs::SetManagedForTest(bool is_managed) {
@@ -302,6 +295,9 @@ void SyncPrefs::RegisterPrefGroups() {
   pref_groups_[syncer::EXTENSIONS].Put(syncer::EXTENSION_SETTINGS);
 
   pref_groups_[syncer::PREFERENCES].Put(syncer::SEARCH_ENGINES);
+
+  // TODO(akalin): Revisit this once UI lands.
+  pref_groups_[syncer::SESSIONS].Put(syncer::HISTORY_DELETE_DIRECTIVES);
 }
 
 void SyncPrefs::RegisterPreferences() {
@@ -321,11 +317,11 @@ void SyncPrefs::RegisterPreferences() {
                                    0,
                                    PrefService::UNSYNCABLE_PREF);
 
-  // If you've never synced before, or if you're using Chrome OS, all datatypes
-  // are on by default.
+  // If you've never synced before, or if you're using Chrome OS or Android,
+  // all datatypes are on by default.
   // TODO(nick): Perhaps a better model would be to always default to false,
   // and explicitly call SetDataTypes() when the user shows the wizard.
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
   bool enable_by_default = true;
 #else
   bool enable_by_default =
@@ -336,15 +332,15 @@ void SyncPrefs::RegisterPreferences() {
                                      enable_by_default,
                                      PrefService::UNSYNCABLE_PREF);
 
+  syncer::ModelTypeSet user_types = syncer::UserTypes();
+
   // Treat bookmarks specially.
   RegisterDataTypePreferredPref(syncer::BOOKMARKS, true);
-  for (int i = syncer::PREFERENCES; i < syncer::MODEL_TYPE_COUNT; ++i) {
-    const syncer::ModelType type = syncer::ModelTypeFromInt(i);
-    // Also treat nigori specially.
-    if (type == syncer::NIGORI) {
-      continue;
-    }
-    RegisterDataTypePreferredPref(type, enable_by_default);
+  user_types.Remove(syncer::BOOKMARKS);
+
+  for (syncer::ModelTypeSet::Iterator it = user_types.First();
+       it.Good(); it.Inc()) {
+    RegisterDataTypePreferredPref(it.Get(), enable_by_default);
   }
 
   pref_service_->RegisterBooleanPref(prefs::kSyncManaged,

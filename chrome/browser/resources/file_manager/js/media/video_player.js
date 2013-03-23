@@ -11,6 +11,10 @@ function onError(opt_message) {
   errorBanner.textContent =
       loadTimeData.getString(opt_message || 'GALLERY_VIDEO_ERROR');
   errorBanner.setAttribute('visible', 'true');
+  if (util.platform.v2()) {
+    // The window is hidden if the video has not loaded yet.
+    chrome.app.window.current().show();
+  }
 }
 
 /**
@@ -23,111 +27,159 @@ function FullWindowVideoControls(
     playerContainer, videoContainer, controlsContainer) {
   VideoControls.call(this,
       controlsContainer,
-      onError,
+      onError.bind(null, null),
       function() { chrome.fileBrowserPrivate.toggleFullscreen() },
       videoContainer);
-
-  window.addEventListener('unload', this.savePosition.bind(this));
 
   this.updateStyle();
   window.addEventListener('resize', this.updateStyle.bind(this));
 
-  playerContainer.addEventListener('keydown', function(e) {
-    if (e.keyIdentifier == 'U+0020')
+  document.addEventListener('keydown', function(e) {
+    if (e.keyIdentifier == 'U+0020') {
       this.togglePlayStateWithFeedback();
+      e.preventDefault();
+    }
   }.bind(this));
 
   videoContainer.addEventListener('click',
       this.togglePlayStateWithFeedback.bind(this));
 
   var inactivityWatcher = new MouseInactivityWatcher(playerContainer);
-  inactivityWatcher.stopActivity();
+  inactivityWatcher.check();
 }
 
 FullWindowVideoControls.prototype = { __proto__: VideoControls.prototype };
 
 /**
- * Save the current play state in the location hash so that it survives
- * the page reload.
+ * Save the current state so that it survives page/app reload.
  */
 FullWindowVideoControls.prototype.onPlayStateChanged = function() {
-  if (!this.getMedia().duration)
-    return;
-
-  var playState = (this.isPlaying() ? 'play' : 'pause') + '=' +
-      this.getMedia().currentTime.toFixed(2);
-
-  var newLocation = document.location.origin + document.location.pathname +
-      document.location.search + '#' + playState;
-
-  history.replaceState(undefined, playState, newLocation);
+  this.encodeState();
 };
 
 /**
- * Resume the play state after the video is loaded.
+ * Restore the state after the video is loaded.
  */
-FullWindowVideoControls.prototype.resumePosition = function() {
-  var video = this.getMedia();
-
-  var playState = document.location.hash.substring(1);
-  if (playState) {
-    var parts = playState.split('=');
-    video.currentTime = parseFloat(parts[1]);
-    if (parts[0] != 'pause')
-      video.play();
-  } else {
-    VideoControls.prototype.resumePosition.apply(this, arguments);
-    video.play();
+FullWindowVideoControls.prototype.restorePlayState = function() {
+  if (!this.decodeState()) {
+    VideoControls.prototype.restorePlayState.apply(this, arguments);
+    this.play();
   }
 };
+
+var controls;
+
+var metadataCache;
 
 /**
  * Initialize the video player window.
  */
 function loadVideoPlayer() {
-  document.oncontextmenu = function(e) { e.preventDefault(); };
   document.ondragstart = function(e) { e.preventDefault() };
 
   chrome.fileBrowserPrivate.getStrings(function(strings) {
     loadTimeData.data = strings;
 
-    var src = document.location.search.substr(1);
-    if (!src) {
-      onError();
-      return;
-    }
-
-    document.title = decodeURIComponent(src.split('/').pop());
-
-    var controls = new FullWindowVideoControls(
+    controls = new FullWindowVideoControls(
        document.querySelector('#video-player'),
        document.querySelector('#video-container'),
        document.querySelector('#controls'));
 
-    var metadataCache = MetadataCache.createFull();
-    metadataCache.get(src, 'streaming', function(streaming) {
-      if (streaming && streaming.url) {
-        if (!navigator.onLine) {
-          onError('GALLERY_VIDEO_OFFLINE');
-          return;
-        }
-        src = streaming.url;
-        console.log('Streaming: ' + src);
-      } else {
-        console.log('Playing local file: ' + src);
-      }
+    var video = document.querySelector('video');
+    controls.attachMedia(video);
 
-      // If the video player is starting before the first instance of the File
-      // Manager then it does not have access to filesystem URLs.
-      // Request it now.
-      chrome.fileBrowserPrivate.requestLocalFileSystem(function() {
-        var video = document.querySelector('video');
-        video.src = src;
-        video.load();
-        controls.attachMedia(video);
-      });
-    });
+    if (!util.platform.v2())
+      window.addEventListener('unload', unload);
+
+    metadataCache = MetadataCache.createFull();
+
+    // If the video player is starting before the first instance of the File
+    // Manager then it does not have access to filesystem URLs. Request it now.
+    chrome.fileBrowserPrivate.requestLocalFileSystem(reload);
   });
 }
 
-document.addEventListener('DOMContentLoaded', loadVideoPlayer);
+/**
+ * Unload the player.
+ */
+function unload() {
+  controls.savePosition(true /* exiting */);
+  controls.cleanup();
+}
+
+/**
+ * Reload the player.
+ */
+function reload() {
+  var src;
+  if (window.appState) {
+    util.saveAppState();
+    src = window.appState.url;
+  } else {
+    src = document.location.search.substr(1);
+  }
+  if (!src) {
+    onError();
+    return;
+  }
+
+  document.title = decodeURIComponent(src.split('/').pop());
+
+  metadataCache.get(src, 'streaming', function(streaming) {
+    if (streaming && streaming.url) {
+      if (!navigator.onLine) {
+        onError('GALLERY_VIDEO_OFFLINE');
+        return;
+      }
+      src = streaming.url;
+      console.log('Streaming: ' + src);
+    } else {
+      console.log('Playing local file: ' + src);
+    }
+
+    var video = document.querySelector('video');
+    video.src = src;
+    video.load();
+    if (util.platform.v2()) {
+      video.addEventListener('loadedmetadata', function() {
+        // TODO: chrome.app.window soon will be able to resize the content area.
+        // Until then use approximate title bar height.
+        var TITLE_HEIGHT = 28;
+
+        var aspect = video.videoWidth / video.videoHeight;
+        var newWidth = video.videoWidth;
+        var newHeight = video.videoHeight + TITLE_HEIGHT;
+
+        var shrinkX = newWidth / window.screen.availWidth;
+        var shrinkY = newHeight / window.screen.availHeight;
+        if (shrinkX > 1 || shrinkY > 1) {
+          if (shrinkY > shrinkX) {
+            newHeight = newHeight / shrinkY;
+            newWidth = (newHeight - TITLE_HEIGHT) * aspect;
+          } else {
+            newWidth = newWidth / shrinkX;
+            newHeight = newWidth / aspect + TITLE_HEIGHT;
+          }
+        }
+
+        var oldLeft = window.screenX;
+        var oldTop = window.screenY;
+        var oldWidth = window.outerWidth;
+        var oldHeight = window.outerHeight;
+
+        if (!oldWidth && !oldHeight) {
+          oldLeft = window.screen.availWidth / 2;
+          oldTop = window.screen.availHeight / 2;
+        }
+
+        var appWindow = chrome.app.window.current();
+        appWindow.resizeTo(newWidth, newHeight);
+        appWindow.moveTo(oldLeft - (newWidth - oldWidth) / 2,
+                         oldTop - (newHeight - oldHeight) / 2);
+        appWindow.show();
+      });
+    }
+  });
+}
+
+util.addPageLoadHandler(loadVideoPlayer);

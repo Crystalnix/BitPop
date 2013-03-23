@@ -6,9 +6,12 @@
 
 #include "base/test/test_timeouts.h"
 #include "build/build_config.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/test/base/javascript_test_observer.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
@@ -135,12 +138,82 @@ TEST_PPAPI_IN_PROCESS(Broker)
 // Flaky, http://crbug.com/111355
 TEST_PPAPI_OUT_OF_PROCESS(DISABLED_Broker)
 
+IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Accept) {
+  // Accepting the infobar should grant permission to access the PPAPI broker.
+  InfoBarObserver observer;
+  observer.ExpectInfoBarAndAccept(true);
+
+  // PPB_Broker_Trusted::IsAllowed should return false before the infobar is
+  // popped and true after the infobar is popped.
+  RunTest("Broker_IsAllowedPermissionDenied");
+  RunTest("Broker_ConnectPermissionGranted");
+  RunTest("Broker_IsAllowedPermissionGranted");
+
+  // It should also set a content settings exception for the site.
+  GURL url = GetTestFileUrl("Broker_ConnectPermissionGranted");
+  HostContentSettingsMap* content_settings =
+      browser()->profile()->GetHostContentSettingsMap();
+  EXPECT_EQ(CONTENT_SETTING_ALLOW,
+            content_settings->GetContentSetting(
+                url, url, CONTENT_SETTINGS_TYPE_PPAPI_BROKER, std::string()));
+}
+
+IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Deny) {
+  // Canceling the infobar should deny permission to access the PPAPI broker.
+  InfoBarObserver observer;
+  observer.ExpectInfoBarAndAccept(false);
+
+  // PPB_Broker_Trusted::IsAllowed should return false before and after the
+  // infobar is popped.
+  RunTest("Broker_IsAllowedPermissionDenied");
+  RunTest("Broker_ConnectPermissionDenied");
+  RunTest("Broker_IsAllowedPermissionDenied");
+
+  // It should also set a content settings exception for the site.
+  GURL url = GetTestFileUrl("Broker_ConnectPermissionDenied");
+  HostContentSettingsMap* content_settings =
+      browser()->profile()->GetHostContentSettingsMap();
+  EXPECT_EQ(CONTENT_SETTING_BLOCK,
+            content_settings->GetContentSetting(
+                url, url, CONTENT_SETTINGS_TYPE_PPAPI_BROKER, std::string()));
+}
+
+IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Blocked) {
+  // Block access to the PPAPI broker.
+  browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
+      CONTENT_SETTINGS_TYPE_PPAPI_BROKER, CONTENT_SETTING_BLOCK);
+
+  // We shouldn't see an infobar.
+  InfoBarObserver observer;
+
+  RunTest("Broker_ConnectPermissionDenied");
+  RunTest("Broker_IsAllowedPermissionDenied");
+}
+
+IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Allowed) {
+  // Always allow access to the PPAPI broker.
+  browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
+      CONTENT_SETTINGS_TYPE_PPAPI_BROKER, CONTENT_SETTING_ALLOW);
+
+  // We shouldn't see an infobar.
+  InfoBarObserver observer;
+
+  RunTest("Broker_ConnectPermissionGranted");
+  RunTest("Broker_IsAllowedPermissionGranted");
+}
+
+TEST_PPAPI_IN_PROCESS(Console)
+TEST_PPAPI_OUT_OF_PROCESS(Console)
+TEST_PPAPI_NACL_VIA_HTTP(Console)
+
 TEST_PPAPI_IN_PROCESS(Core)
 TEST_PPAPI_OUT_OF_PROCESS(Core)
 TEST_PPAPI_NACL_VIA_HTTP(Core)
 
+#if defined(OS_CHROMEOS)
+#define MAYBE_InputEvent InputEvent
+#elif defined(OS_LINUX)
 // Times out on Linux. http://crbug.com/108859
-#if defined(OS_LINUX)
 #define MAYBE_InputEvent DISABLED_InputEvent
 #elif defined(OS_MACOSX)
 // Flaky on Mac. http://crbug.com/109258
@@ -154,6 +227,14 @@ TEST_PPAPI_NACL_VIA_HTTP(Core)
 #define MAYBE_ImeInputEvent DISABLED_ImeInputEvent
 #else
 #define MAYBE_ImeInputEvent ImeInputEvent
+#endif
+
+#if defined(OS_WIN) && defined(USE_AURA)
+#define MAYBE_WebSocket_AbortReceiveMessageCall \
+        DISABLED_WebSocket_AbortReceiveMessageCall
+#else
+#define MAYBE_WebSocket_AbortReceiveMessageCall \
+        WebSocket_AbortReceiveMessageCall
 #endif
 
 TEST_PPAPI_IN_PROCESS(MAYBE_InputEvent)
@@ -199,17 +280,21 @@ TEST_PPAPI_NACL_VIA_HTTP(Graphics2D_Paint)
 TEST_PPAPI_NACL_VIA_HTTP(Graphics2D_Scroll)
 TEST_PPAPI_NACL_VIA_HTTP(Graphics2D_Replace)
 TEST_PPAPI_NACL_VIA_HTTP(Graphics2D_Flush)
+TEST_PPAPI_NACL_VIA_HTTP(Graphics2D_FlushOffscreenUpdate)
+TEST_PPAPI_NACL_VIA_HTTP(Graphics2D_BindNull)
 
+#if defined(OS_WIN) && !defined(USE_AURA)
+// These tests fail with the test compositor which is what's used by default for
+// browser tests on Windows Aura. Renable when the software compositor is
+// available.
 TEST_PPAPI_IN_PROCESS(Graphics3D)
 TEST_PPAPI_OUT_OF_PROCESS(Graphics3D)
 TEST_PPAPI_NACL_VIA_HTTP(Graphics3D)
+#endif
 
 TEST_PPAPI_IN_PROCESS(ImageData)
 TEST_PPAPI_OUT_OF_PROCESS(ImageData)
-
-// PPAPINaClTest.ImageData times out consistently on all platforms.
-// http://crbug.com/130377
-TEST_PPAPI_NACL_VIA_HTTP(DISABLED_ImageData)
+TEST_PPAPI_NACL_VIA_HTTP(ImageData)
 
 TEST_PPAPI_IN_PROCESS(BrowserFont)
 TEST_PPAPI_OUT_OF_PROCESS(BrowserFont)
@@ -224,9 +309,27 @@ TEST_PPAPI_NACL_WITH_SSL_SERVER(TCPSocketPrivate)
 TEST_PPAPI_OUT_OF_PROCESS_WITH_SSL_SERVER(TCPSocketPrivateTrusted)
 TEST_PPAPI_IN_PROCESS_WITH_SSL_SERVER(TCPSocketPrivateTrusted)
 
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(UDPSocketPrivate)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(UDPSocketPrivate)
-TEST_PPAPI_NACL_VIA_HTTP(UDPSocketPrivate)
+// UDPSocketPrivate tests.
+// UDPSocketPrivate_Broadcast is disabled for OSX because it requires
+// root permissions on OSX 10.7+.
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(UDPSocketPrivate_Connect)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(UDPSocketPrivate_ConnectFailure)
+#if !defined(OS_MACOSX)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(UDPSocketPrivate_Broadcast)
+#endif  // !defined(OS_MACOSX)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(UDPSocketPrivate_SetSocketFeatureErrors)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(UDPSocketPrivate_Connect)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(UDPSocketPrivate_ConnectFailure)
+#if !defined(OS_MACOSX)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(UDPSocketPrivate_Broadcast)
+#endif  // !defined(OS_MACOSX)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(UDPSocketPrivate_SetSocketFeatureErrors)
+TEST_PPAPI_NACL_VIA_HTTP(UDPSocketPrivate_Connect)
+TEST_PPAPI_NACL_VIA_HTTP(UDPSocketPrivate_ConnectFailure)
+#if !defined(OS_MACOSX)
+TEST_PPAPI_NACL_VIA_HTTP(UDPSocketPrivate_Broadcast)
+#endif  // !defined(OS_MACOSX)
+TEST_PPAPI_NACL_VIA_HTTP(UDPSocketPrivate_SetSocketFeatureErrors)
 
 TEST_PPAPI_NACL_VIA_HTTP_DISALLOWED_SOCKETS(TCPServerSocketPrivateDisallowed)
 TEST_PPAPI_NACL_VIA_HTTP_DISALLOWED_SOCKETS(TCPSocketPrivateDisallowed)
@@ -422,39 +525,29 @@ TEST_PPAPI_NACL_VIA_HTTP(Memory)
 TEST_PPAPI_IN_PROCESS(VideoDecoder)
 TEST_PPAPI_OUT_OF_PROCESS(VideoDecoder)
 
-// Touch and SetLength fail on Mac and Linux due to sandbox restrictions.
-// http://crbug.com/101128
-#if defined(OS_MACOSX) || defined(OS_LINUX)
-#define MAYBE_FileIO_ReadWriteSetLength DISABLED_FileIO_ReadWriteSetLength
-#define MAYBE_FileIO_TouchQuery DISABLED_FileIO_TouchQuery
-#define MAYBE_FileIO_WillWriteWillSetLength \
-    DISABLED_FileIO_WillWriteWillSetLength
-#else
-#define MAYBE_FileIO_ReadWriteSetLength FileIO_ReadWriteSetLength
-#define MAYBE_FileIO_TouchQuery FileIO_TouchQuery
-#define MAYBE_FileIO_WillWriteWillSetLength FileIO_WillWriteWillSetLength
-#endif
-
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_Open)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_AbortCalls)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_ParallelReads)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_ParallelWrites)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_NotAllowMixedReadWrite)
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(MAYBE_FileIO_ReadWriteSetLength)
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(MAYBE_FileIO_TouchQuery)
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(MAYBE_FileIO_WillWriteWillSetLength)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_ReadWriteSetLength)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_ReadToArrayWriteSetLength)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_TouchQuery)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileIO_WillWriteWillSetLength)
 
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_Open)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_AbortCalls)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_ParallelReads)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_ParallelWrites)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_NotAllowMixedReadWrite)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_FileIO_ReadWriteSetLength)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_FileIO_TouchQuery)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_FileIO_WillWriteWillSetLength)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_ReadWriteSetLength)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_ReadToArrayWriteSetLength)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_TouchQuery)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileIO_WillWriteWillSetLength)
 
-// PPAPINaclTest.FileIO_ParallelReads is flaky on Mac. http://crbug.com/121104
-#if defined(OS_MACOSX)
+// PPAPINaclTest.FileIO_ParallelReads is flaky on Mac and Windows.
+// http://crbug.com/121104
+#if defined(OS_MACOSX) || defined(OS_WIN)
 #define MAYBE_FileIO_ParallelReads DISABLED_FileIO_ParallelReads
 #else
 #define MAYBE_FileIO_ParallelReads FileIO_ParallelReads
@@ -464,16 +557,25 @@ TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_FileIO_WillWriteWillSetLength)
 #if defined(OS_WIN)
 #define MAYBE_NACL_FileIO_TouchQuery DISABLED_FileIO_TouchQuery
 #else
-#define MAYBE_NACL_FileIO_TouchQuery MAYBE_FileIO_TouchQuery
+#define MAYBE_NACL_FileIO_TouchQuery FileIO_TouchQuery
+#endif
+
+// PPAPINaclTest.FileIO_AbortCalls is often flaky on Windows.
+// http://crbug.com/160034
+#if defined(OS_WIN)
+#define MAYBE_FileIO_AbortCalls DISABLED_FileIO_AbortCalls
+#else
+#define MAYBE_FileIO_AbortCalls FileIO_AbortCalls
 #endif
 
 TEST_PPAPI_NACL_VIA_HTTP(FileIO_Open)
-TEST_PPAPI_NACL_VIA_HTTP(FileIO_AbortCalls)
+TEST_PPAPI_NACL_VIA_HTTP(MAYBE_FileIO_AbortCalls)
 TEST_PPAPI_NACL_VIA_HTTP(MAYBE_FileIO_ParallelReads)
 TEST_PPAPI_NACL_VIA_HTTP(FileIO_ParallelWrites)
 TEST_PPAPI_NACL_VIA_HTTP(FileIO_NotAllowMixedReadWrite)
 TEST_PPAPI_NACL_VIA_HTTP(MAYBE_NACL_FileIO_TouchQuery)
-TEST_PPAPI_NACL_VIA_HTTP(MAYBE_FileIO_ReadWriteSetLength)
+TEST_PPAPI_NACL_VIA_HTTP(FileIO_ReadWriteSetLength)
+TEST_PPAPI_NACL_VIA_HTTP(FileIO_ReadToArrayWriteSetLength)
 // The following test requires PPB_FileIO_Trusted, not available in NaCl.
 TEST_PPAPI_NACL_VIA_HTTP(DISABLED_FileIO_WillWriteWillSetLength)
 
@@ -494,33 +596,19 @@ TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileSystem)
 
 TEST_PPAPI_NACL_VIA_HTTP(MAYBE_FileSystem)
 
-// Mac/Aura reach NOTIMPLEMENTED/time out.
-// Other systems work in-process, but flake out-of-process because of the
-// asyncronous nature of the proxy.
-// mac: http://crbug.com/96767
-// aura: http://crbug.com/104384
-// async flakiness:  http://crbug.com/108471
-#if defined(OS_MACOSX) || defined(USE_AURA)
-#define MAYBE_FlashFullscreen DISABLED_FlashFullscreen
-#define MAYBE_OutOfProcessFlashFullscreen DISABLED_FlashFullscreen
+#if defined(OS_MACOSX)
+// http://crbug.com/103912
+#define MAYBE_Fullscreen DISABLED_Fullscreen
+#elif defined(OS_LINUX)
+// http://crbug.com/146008
+#define MAYBE_Fullscreen DISABLED_Fullscreen
 #else
-#define MAYBE_FlashFullscreen FlashFullscreen
-#define MAYBE_OutOfProcessFlashFullscreen FlashFullscreen
+#define MAYBE_Fullscreen Fullscreen
 #endif
 
-IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_FlashFullscreen) {
-  RunTestViaHTTP("FlashFullscreen");
-}
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_OutOfProcessFlashFullscreen) {
-  RunTestViaHTTP("FlashFullscreen");
-}
-
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(Fullscreen)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(Fullscreen)
-TEST_PPAPI_NACL_VIA_HTTP(Fullscreen)
-
-TEST_PPAPI_IN_PROCESS(FlashClipboard)
-TEST_PPAPI_OUT_OF_PROCESS(FlashClipboard)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(MAYBE_Fullscreen)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_Fullscreen)
+TEST_PPAPI_NACL_VIA_HTTP(MAYBE_Fullscreen)
 
 TEST_PPAPI_IN_PROCESS(X509CertificatePrivate)
 TEST_PPAPI_OUT_OF_PROCESS(X509CertificatePrivate)
@@ -563,68 +651,36 @@ TEST_PPAPI_OUT_OF_PROCESS(NetAddressPrivate_GetPort)
 TEST_PPAPI_OUT_OF_PROCESS(NetAddressPrivate_GetAddress)
 TEST_PPAPI_OUT_OF_PROCESS(NetAddressPrivate_GetScopeID)
 
-// Frequently timing out on Windows. http://crbug.com/115440
-#if defined(OS_WIN)
-#define MAYBE_NetAddressPrivateUntrusted_Describe \
-  DISABLED_NetAddressPrivateUntrusted_Describe
-#define MAYBE_NetAddressPrivateUntrusted_ReplacePort \
-  DISABLED_NetAddressPrivateUntrusted_ReplacePort
-#define MAYBE_NetAddressPrivateUntrusted_GetPort \
-  DISABLED_NetAddressPrivateUntrusted_GetPort
-#else
-#define MAYBE_NetAddressPrivateUntrusted_Describe \
-  NetAddressPrivateUntrusted_Describe
-#define MAYBE_NetAddressPrivateUntrusted_ReplacePort \
-  NetAddressPrivateUntrusted_ReplacePort
-#define MAYBE_NetAddressPrivateUntrusted_GetPort \
-  NetAddressPrivateUntrusted_GetPort
-#endif
-
-// PPAPINaClTest.NetAddressPrivateUntrusted_GetFamily timing out frequently on
-// Windows and Mac. http://crbug.com/130380
-#if defined(OS_WIN) || defined(OS_MACOSX)
-#define MAYBE_NetAddressPrivateUntrusted_GetFamily DISABLED_NetAddressPrivateUntrusted_GetFamily
-#else
-#define MAYBE_NetAddressPrivateUntrusted_GetFamily NetAddressPrivateUntrusted_GetFamily
-#endif
-
 TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_AreEqual)
 TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_AreHostsEqual)
-TEST_PPAPI_NACL_VIA_HTTP(MAYBE_NetAddressPrivateUntrusted_Describe)
-TEST_PPAPI_NACL_VIA_HTTP(MAYBE_NetAddressPrivateUntrusted_ReplacePort)
+TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_Describe)
+TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_ReplacePort)
 TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_GetAnyAddress)
-TEST_PPAPI_NACL_VIA_HTTP(MAYBE_NetAddressPrivateUntrusted_GetFamily)
-TEST_PPAPI_NACL_VIA_HTTP(MAYBE_NetAddressPrivateUntrusted_GetPort)
+TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_GetFamily)
+TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_GetPort)
 TEST_PPAPI_NACL_VIA_HTTP(NetAddressPrivateUntrusted_GetAddress)
 
 TEST_PPAPI_IN_PROCESS(NetworkMonitorPrivate_Basic)
-TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_Basic)
 TEST_PPAPI_IN_PROCESS(NetworkMonitorPrivate_2Monitors)
-TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_2Monitors)
 TEST_PPAPI_IN_PROCESS(NetworkMonitorPrivate_DeleteInCallback)
-TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_DeleteInCallback)
 TEST_PPAPI_IN_PROCESS(NetworkMonitorPrivate_ListObserver)
+TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_Basic)
+TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_2Monitors)
+TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_DeleteInCallback)
 TEST_PPAPI_OUT_OF_PROCESS(NetworkMonitorPrivate_ListObserver)
+TEST_PPAPI_NACL_VIA_HTTP(NetworkMonitorPrivate_Basic)
+TEST_PPAPI_NACL_VIA_HTTP(NetworkMonitorPrivate_2Monitors)
+TEST_PPAPI_NACL_VIA_HTTP(NetworkMonitorPrivate_DeleteInCallback)
+TEST_PPAPI_NACL_VIA_HTTP(NetworkMonitorPrivate_ListObserver)
 
 TEST_PPAPI_IN_PROCESS(Flash_SetInstanceAlwaysOnTop)
-TEST_PPAPI_IN_PROCESS(Flash_GetProxyForURL)
-TEST_PPAPI_IN_PROCESS(Flash_MessageLoop)
-TEST_PPAPI_IN_PROCESS(Flash_GetLocalTimeZoneOffset)
 TEST_PPAPI_IN_PROCESS(Flash_GetCommandLineArgs)
-TEST_PPAPI_IN_PROCESS(Flash_GetDeviceID)
-TEST_PPAPI_IN_PROCESS(Flash_GetSettingInt)
 TEST_PPAPI_IN_PROCESS(Flash_GetSetting)
 TEST_PPAPI_OUT_OF_PROCESS(Flash_SetInstanceAlwaysOnTop)
-TEST_PPAPI_OUT_OF_PROCESS(Flash_GetProxyForURL)
-TEST_PPAPI_OUT_OF_PROCESS(Flash_MessageLoop)
-TEST_PPAPI_OUT_OF_PROCESS(Flash_GetLocalTimeZoneOffset)
 TEST_PPAPI_OUT_OF_PROCESS(Flash_GetCommandLineArgs)
-TEST_PPAPI_OUT_OF_PROCESS(Flash_GetDeviceID)
-TEST_PPAPI_OUT_OF_PROCESS(Flash_GetSettingInt)
 TEST_PPAPI_OUT_OF_PROCESS(Flash_GetSetting)
-// No in-process test for SetCrashData.
-TEST_PPAPI_OUT_OF_PROCESS(Flash_SetCrashData)
 
+// NaCl based PPAPI tests with WebSocket server
 TEST_PPAPI_IN_PROCESS(WebSocket_IsWebSocket)
 TEST_PPAPI_IN_PROCESS(WebSocket_UninitializedPropertiesAccess)
 TEST_PPAPI_IN_PROCESS(WebSocket_InvalidConnect)
@@ -638,7 +694,10 @@ TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_TextSendReceive)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_BinarySendReceive)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_StressedSendReceive)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_BufferedAmount)
-TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_AbortCalls)
+TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_AbortCallsWithCallback)
+TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_AbortSendMessageCall)
+TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_AbortCloseCall)
+TEST_PPAPI_IN_PROCESS_WITH_WS(MAYBE_WebSocket_AbortReceiveMessageCall)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_CcInterfaces)
 TEST_PPAPI_IN_PROCESS(WebSocket_UtilityInvalidConnect)
 TEST_PPAPI_IN_PROCESS(WebSocket_UtilityProtocols)
@@ -650,6 +709,34 @@ TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_UtilityGetProtocol)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_UtilityTextSendReceive)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_UtilityBinarySendReceive)
 TEST_PPAPI_IN_PROCESS_WITH_WS(WebSocket_UtilityBufferedAmount)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_IsWebSocket)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_UninitializedPropertiesAccess)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_InvalidConnect)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_Protocols)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_GetURL)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_ValidConnect)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_InvalidClose)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_ValidClose)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_GetProtocol)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_TextSendReceive)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_BinarySendReceive)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_StressedSendReceive)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_BufferedAmount)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_AbortCallsWithCallback)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_AbortSendMessageCall)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_AbortCloseCall)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(MAYBE_WebSocket_AbortReceiveMessageCall)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_CcInterfaces)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_UtilityInvalidConnect)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_UtilityProtocols)
+TEST_PPAPI_OUT_OF_PROCESS(WebSocket_UtilityGetURL)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityValidConnect)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityInvalidClose)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityValidClose)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityGetProtocol)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityTextSendReceive)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityBinarySendReceive)
+TEST_PPAPI_OUT_OF_PROCESS_WITH_WS(WebSocket_UtilityBufferedAmount)
 TEST_PPAPI_NACL_VIA_HTTP(WebSocket_IsWebSocket)
 TEST_PPAPI_NACL_VIA_HTTP(WebSocket_UninitializedPropertiesAccess)
 TEST_PPAPI_NACL_VIA_HTTP(WebSocket_InvalidConnect)
@@ -663,7 +750,10 @@ TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_TextSendReceive)
 TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_BinarySendReceive)
 TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_StressedSendReceive)
 TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_BufferedAmount)
-TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_AbortCalls)
+TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_AbortCallsWithCallback)
+TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_AbortSendMessageCall)
+TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_AbortCloseCall)
+TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(MAYBE_WebSocket_AbortReceiveMessageCall)
 TEST_PPAPI_NACL_VIA_HTTP_WITH_WS(WebSocket_CcInterfaces)
 TEST_PPAPI_NACL_VIA_HTTP(WebSocket_UtilityInvalidConnect)
 TEST_PPAPI_NACL_VIA_HTTP(WebSocket_UtilityProtocols)
@@ -723,15 +813,16 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_CreateInvisible) {
 // This test messes with tab visibility so is custom.
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
   // The plugin will be loaded in the foreground tab and will send us a message.
-  TestFinishObserver observer(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-      TestTimeouts::action_max_timeout());
+  PPAPITestMessageHandler handler;
+  JavascriptTestObserver observer(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
+      &handler);
 
   GURL url = GetTestFileUrl("View_PageHideShow");
   ui_test_utils::NavigateToURL(browser(), url);
 
-  ASSERT_TRUE(observer.WaitForFinish()) << "Test timed out.";
-  EXPECT_STREQ("TestPageHideShow:Created", observer.result().c_str());
+  ASSERT_TRUE(observer.Run()) << handler.error_message();
+  EXPECT_STREQ("TestPageHideShow:Created", handler.message().c_str());
   observer.Reset();
 
   // Make a new tab to cause the original one to hide, this should trigger the
@@ -742,40 +833,31 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
   ui_test_utils::NavigateToURL(&params);
 
   // Wait until the test acks that it got hidden.
-  ASSERT_TRUE(observer.WaitForFinish()) << "Test timed out.";
-  EXPECT_STREQ("TestPageHideShow:Hidden", observer.result().c_str());
-
-  // Wait for the test completion event.
+  ASSERT_TRUE(observer.Run()) << handler.error_message();
+  EXPECT_STREQ("TestPageHideShow:Hidden", handler.message().c_str());
   observer.Reset();
 
   // Switch back to the test tab.
-  chrome::ActivateTabAt(browser(), 0, true);
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
 
-  ASSERT_TRUE(observer.WaitForFinish()) << "Test timed out.";
-  EXPECT_STREQ("PASS", observer.result().c_str());
+  ASSERT_TRUE(observer.Run()) << handler.error_message();
+  EXPECT_STREQ("PASS", handler.message().c_str());
 }
 
 // Tests that if a plugin accepts touch events, the browser knows to send touch
 // events to the renderer.
 IN_PROC_BROWSER_TEST_F(PPAPITest, InputEvent_AcceptTouchEvent) {
   std::string positive_tests[] = { "InputEvent_AcceptTouchEvent_1",
+                                   "InputEvent_AcceptTouchEvent_2",
                                    "InputEvent_AcceptTouchEvent_3",
                                    "InputEvent_AcceptTouchEvent_4"
                                  };
 
   for (size_t i = 0; i < arraysize(positive_tests); ++i) {
-    RenderViewHost* host = chrome::GetActiveWebContents(browser())->
-        GetRenderViewHost();
+    RenderViewHost* host = browser()->tab_strip_model()->
+        GetActiveWebContents()->GetRenderViewHost();
     RunTest(positive_tests[i]);
     EXPECT_TRUE(content::RenderViewHostTester::HasTouchEventHandler(host));
-  }
-
-  std::string negative_tests[] = { "InputEvent_AcceptTouchEvent_2" };
-  for (size_t i = 0; i < arraysize(negative_tests); ++i) {
-    RenderViewHost* host = chrome::GetActiveWebContents(browser())->
-        GetRenderViewHost();
-    RunTest(negative_tests[i]);
-    EXPECT_FALSE(content::RenderViewHostTester::HasTouchEventHandler(host));
   }
 }
 
@@ -804,7 +886,39 @@ TEST_PPAPI_IN_PROCESS(MouseCursor)
 TEST_PPAPI_OUT_OF_PROCESS(MouseCursor)
 TEST_PPAPI_NACL_VIA_HTTP(MouseCursor)
 
-// Only enabled in out-of-process mode.
-TEST_PPAPI_OUT_OF_PROCESS(FlashFile_CreateTemporaryFile)
+// PPB_Printing only implemented for out of process.
+TEST_PPAPI_OUT_OF_PROCESS(Printing)
+
+// PPB_MessageLoop is only supported out-of-process.
+// TODO(dmichael): Enable for NaCl with the IPC proxy. crbug.com/116317
+TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Basics)
+// Note to sheriffs: MessageLoop_Post starts a thread, which has a history of
+// slowness, particularly on Windows XP. If this test times out, please try
+// marking it SLOW_ before disabling.
+//    - dmichael
+// MessageLoop_Post starts a thread so only run it if pepper threads are
+// enabled.
+#ifdef ENABLE_PEPPER_THREADING
+TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Post)
+#endif
+
+// Going forward, Flash APIs will only work out-of-process.
+TEST_PPAPI_OUT_OF_PROCESS(Flash_GetLocalTimeZoneOffset)
+TEST_PPAPI_OUT_OF_PROCESS(Flash_GetProxyForURL)
+TEST_PPAPI_OUT_OF_PROCESS(Flash_SetCrashData)
+TEST_PPAPI_OUT_OF_PROCESS(FlashClipboard)
+TEST_PPAPI_OUT_OF_PROCESS(FlashFile)
+// Mac/Aura reach NOTIMPLEMENTED/time out.
+// mac: http://crbug.com/96767
+// aura: http://crbug.com/104384
+#if defined(OS_MACOSX) || defined(USE_AURA)
+#define MAYBE_FlashFullscreen DISABLED_FlashFullscreen
+#else
+#define MAYBE_FlashFullscreen FlashFullscreen
+#endif
+TEST_PPAPI_OUT_OF_PROCESS(MAYBE_FlashFullscreen)
+
+TEST_PPAPI_IN_PROCESS(TalkPrivate)
+TEST_PPAPI_OUT_OF_PROCESS(TalkPrivate)
 
 #endif // ADDRESS_SANITIZER

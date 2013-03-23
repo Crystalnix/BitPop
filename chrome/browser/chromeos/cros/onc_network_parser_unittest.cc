@@ -9,6 +9,7 @@
 #include <pk11pub.h>
 
 #include "base/file_util.h"
+#include "base/json/json_reader.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
@@ -26,11 +27,13 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/network/onc/onc_constants.h"
+#include "chromeos/network/onc/onc_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "crypto/nss_util.h"
-#include "net/base/cert_database.h"
 #include "net/base/cert_type.h"
 #include "net/base/crypto_module.h"
+#include "net/base/nss_cert_database.h"
 #include "net/base/x509_certificate.h"
 #include "net/proxy/proxy_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -54,20 +57,10 @@ net::CertType GetCertType(const net::X509Certificate* cert) {
 
 class OncNetworkParserTest : public testing::Test {
  public:
-  static void SetUpTestCase() {
-    // Ideally, we'd open a test DB for each test case, and close it
-    // again, removing the temp dir, but unfortunately, there's a
-    // bug in NSS that prevents this from working, so we just open
-    // it once, and empty it for each test case.  Here's the bug:
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=588269
-    ASSERT_TRUE(crypto::OpenTestNSSDB());
-    // There is no matching TearDownTestCase call to close the test NSS DB
-    // because that would leave NSS in a potentially broken state for further
-    // tests, due to https://bugzilla.mozilla.org/show_bug.cgi?id=588269
-  }
-
   virtual void SetUp() {
-    slot_ = cert_db_.GetPublicModule();
+    ASSERT_TRUE(test_nssdb_.is_open());
+
+    slot_ = net::NSSCertDatabase::GetInstance()->GetPublicModule();
 
     // Don't run the test if the setup failed.
     ASSERT_TRUE(slot_->os_module_handle());
@@ -81,16 +74,25 @@ class OncNetworkParserTest : public testing::Test {
     EXPECT_EQ(0U, ListCertsInSlot(slot_->os_module_handle()).size());
   }
 
-  virtual void GetTestData(const std::string& filename, std::string* contents) {
+  virtual scoped_ptr<base::ListValue> ReadNetworkConfigs(
+      const std::string& filename) {
       FilePath path;
-      std::string error;
       PathService::Get(chrome::DIR_TEST_DATA, &path);
       path = path.AppendASCII("chromeos").AppendASCII("cros").Append(filename);
-      ASSERT_TRUE(contents != NULL);
-      ASSERT_TRUE(file_util::PathExists(path))
+      CHECK(file_util::PathExists(path))
         << "Couldn't find test data file " << path.value();
-      ASSERT_TRUE(file_util::ReadFileToString(path, contents))
+      std::string contents;
+      CHECK(file_util::ReadFileToString(path, &contents))
         << "Unable to read test data file " << path.value();
+
+      scoped_ptr<base::DictionaryValue> root =
+          onc::ReadDictionaryFromJson(contents);
+      CHECK(root.get() != NULL) << "ONC is not a valid JSON dictionary.";
+
+      base::ListValue* network_configs;
+      CHECK(root->GetListWithoutPathExpansion(onc::kNetworkConfigurations,
+                                              &network_configs));
+      return make_scoped_ptr(network_configs->DeepCopy());
   }
 
   const base::Value* GetExpectedProperty(const Network* network,
@@ -108,7 +110,6 @@ class OncNetworkParserTest : public testing::Test {
 
  protected:
   scoped_refptr<net::CryptoModule> slot_;
-  net::CertDatabase cert_db_;
 
  private:
   net::CertificateList ListCertsInSlot(PK11SlotInfo* slot) {
@@ -131,13 +132,14 @@ class OncNetworkParserTest : public testing::Test {
     bool ok = true;
     net::CertificateList certs = ListCertsInSlot(slot);
     for (size_t i = 0; i < certs.size(); ++i) {
-      if (!cert_db_.DeleteCertAndKey(certs[i]))
+      if (!net::NSSCertDatabase::GetInstance()->DeleteCertAndKey(certs[i]))
         ok = false;
     }
     return ok;
   }
 
   ScopedStubCrosEnabler stub_cros_enabler_;
+  crypto::ScopedTestNSSDB test_nssdb_;
 };
 
 const base::Value* OncNetworkParserTest::GetExpectedProperty(
@@ -182,10 +184,13 @@ void OncNetworkParserTest::CheckBooleanProperty(const Network* network,
   EXPECT_EQ(expected, bool_value);
 }
 
-void OncNetworkParserTest::TestProxySettings(const std::string test_blob,
+void OncNetworkParserTest::TestProxySettings(const std::string filename,
                                              net::ProxyConfig* net_config) {
   // Parse Network Configuration including ProxySettings dictionary.
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs = ReadNetworkConfigs(filename);
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
+
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
   EXPECT_FALSE(network->proxy_config().empty());
@@ -202,36 +207,13 @@ void OncNetworkParserTest::TestProxySettings(const std::string test_blob,
                                                                 net_config));
 }
 
-TEST_F(OncNetworkParserTest, TestLoadingBrokenEncryption) {
-  {
-    std::string test_blob;
-    GetTestData("broken-encrypted-iterations.onc", &test_blob);
-    OncNetworkParser parser(test_blob,
-                            "test0000",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    EXPECT_FALSE(parser.parse_error().empty());
-    EXPECT_EQ(0, parser.GetNetworkConfigsSize());
-    EXPECT_EQ(0, parser.GetCertificatesSize());
-  }
-  {
-    std::string test_blob;
-    GetTestData("broken-encrypted-zero-iterations.onc", &test_blob);
-    OncNetworkParser parser(test_blob,
-                            "test0000",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    EXPECT_FALSE(parser.parse_error().empty());
-    EXPECT_EQ(0, parser.GetNetworkConfigsSize());
-    EXPECT_EQ(0, parser.GetCertificatesSize());
-  }
-}
-
 TEST_F(OncNetworkParserTest, TestCreateNetworkWifi) {
-  std::string test_blob;
-  GetTestData("network-wifi.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-wifi.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(0, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
@@ -247,9 +229,10 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkWifi) {
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkEthernet) {
-  std::string test_blob;
-  GetTestData("network-ethernet.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-ethernet.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_GE(parser.GetNetworkConfigsSize(), 1);
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
@@ -260,33 +243,13 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkEthernet) {
   EXPECT_EQ(ethernet->unique_id(), "{485d6076-dd44-6b6d-69787465725f5045}");
 }
 
-TEST_F(OncNetworkParserTest, TestLoadEncryptedOnc) {
-  std::string test_blob;
-  GetTestData("encrypted.onc", &test_blob);
-  OncNetworkParser parser(test_blob,
-                          "test0000",
-                          NetworkUIData::ONC_SOURCE_USER_IMPORT);
-  ASSERT_TRUE(parser.parse_error().empty());
-  EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(0, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
-  ASSERT_TRUE(network.get());
-
-  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
-  WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
-  EXPECT_EQ(chromeos::SECURITY_NONE, wifi->encryption());
-  EXPECT_EQ("WirelessNetwork", wifi->name());
-  EXPECT_FALSE(wifi->auto_connect());
-  EXPECT_EQ("", wifi->passphrase());
-}
-
 TEST_F(OncNetworkParserTest, TestLoadWifiCertificatePattern) {
-  std::string test_blob;
-  GetTestData("cert-pattern.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("cert-pattern.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
   ASSERT_TRUE(parser.parse_error().empty());
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(2, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
@@ -309,12 +272,12 @@ TEST_F(OncNetworkParserTest, TestLoadWifiCertificatePattern) {
 
 
 TEST_F(OncNetworkParserTest, TestLoadVPNCertificatePattern) {
-  std::string test_blob;
-  GetTestData("cert-pattern-vpn.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("cert-pattern-vpn.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
   ASSERT_TRUE(parser.parse_error().empty());
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(2, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
@@ -332,13 +295,38 @@ TEST_F(OncNetworkParserTest, TestLoadVPNCertificatePattern) {
             vpn->client_cert_pattern().enrollment_uri_list()[1]);
 }
 
+TEST_F(OncNetworkParserTest, TestNoCertificatePatternForDevicePolicy) {
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("cert-pattern.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_DEVICE_POLICY);
+
+  // Make sure we fail when parsing a certificate pattern from a device policy
+  // ONC file.
+  ASSERT_TRUE(parser.parse_error().empty());
+  EXPECT_EQ(1, parser.GetNetworkConfigsSize());
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
+  ASSERT_TRUE(network.get());
+
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
+  WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
+  EXPECT_EQ(chromeos::SECURITY_8021X, wifi->encryption());
+  EXPECT_EQ("WirelessNetwork", wifi->name());
+  EXPECT_FALSE(wifi->auto_connect());
+  EXPECT_EQ("", wifi->passphrase());
+  EXPECT_EQ(chromeos::EAP_METHOD_TLS, wifi->eap_method());
+  EXPECT_EQ(chromeos::CLIENT_CERT_TYPE_PATTERN, wifi->client_cert_type());
+  EXPECT_EQ("", wifi->client_cert_pattern().issuer().organization());
+  ASSERT_EQ(0ul, wifi->client_cert_pattern().enrollment_uri_list().size());
+}
+
 TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP1) {
-  std::string test_blob;
-  GetTestData("network-wifi-eap1.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-wifi-eap1.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(0, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
@@ -356,13 +344,12 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP1) {
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP2) {
-  std::string test_blob;
-  GetTestData("network-wifi-eap2.onc", &test_blob);
-
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-wifi-eap2.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(0, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
@@ -382,10 +369,10 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP2) {
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkUnknownFields) {
-  std::string test_blob;
-  GetTestData("network-unknown-fields.onc", &test_blob);
-
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-unknown-fields.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
@@ -397,13 +384,12 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkUnknownFields) {
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkOpenVPN) {
-  std::string test_blob;
-  GetTestData("network-openvpn.onc", &test_blob);
-
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-openvpn.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(1, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get() != NULL);
 
@@ -456,13 +442,12 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkOpenVPN) {
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkL2TPIPsec) {
-  std::string test_blob;
-  GetTestData("network-l2tp-ipsec.onc", &test_blob);
-
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-l2tp-ipsec.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(0, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network != NULL);
 
@@ -482,355 +467,17 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkL2TPIPsec) {
   EXPECT_FALSE(vpn->save_credentials());
 }
 
-TEST_F(OncNetworkParserTest, TestAddClientCertificate) {
-  std::string certificate_json;
-  GetTestData("certificate-client.onc", &certificate_json);
-
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697ac}");
-  OncNetworkParser parser(certificate_json, "",
-                          NetworkUIData::ONC_SOURCE_USER_IMPORT);
-  ASSERT_EQ(1, parser.GetCertificatesSize());
-
-  scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-  EXPECT_TRUE(cert.get() != NULL);
-  EXPECT_EQ(net::USER_CERT, GetCertType(cert.get()));
-
-  EXPECT_STREQ(test_guid.c_str(),
-               cert->GetDefaultNickname(net::USER_CERT).c_str());
-  net::CertificateList result_list;
-  OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-  ASSERT_EQ(1ul, result_list.size());
-  EXPECT_EQ(net::USER_CERT, GetCertType(result_list[0].get()));
-
-  SECKEYPrivateKeyList* privkey_list =
-      PK11_ListPrivKeysInSlot(slot_->os_module_handle(), NULL, NULL);
-  EXPECT_TRUE(privkey_list);
-  if (privkey_list) {
-    SECKEYPrivateKeyListNode* node = PRIVKEY_LIST_HEAD(privkey_list);
-    int count = 0;
-    while (!PRIVKEY_LIST_END(node, privkey_list)) {
-      char* name = PK11_GetPrivateKeyNickname(node->key);
-      EXPECT_STREQ(test_guid.c_str(), name);
-      PORT_Free(name);
-      count++;
-      node = PRIVKEY_LIST_NEXT(node);
-    }
-    EXPECT_EQ(1, count);
-    SECKEY_DestroyPrivateKeyList(privkey_list);
-  }
-
-  SECKEYPublicKeyList* pubkey_list =
-      PK11_ListPublicKeysInSlot(slot_->os_module_handle(), NULL);
-  EXPECT_TRUE(pubkey_list);
-  if (pubkey_list) {
-    SECKEYPublicKeyListNode* node = PUBKEY_LIST_HEAD(pubkey_list);
-    int count = 0;
-    while (!PUBKEY_LIST_END(node, pubkey_list)) {
-      count++;
-      node = PUBKEY_LIST_NEXT(node);
-    }
-    EXPECT_EQ(1, count);
-    SECKEY_DestroyPublicKeyList(pubkey_list);
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestUpdateClientCertificate) {
-  std::string certificate_json;
-  GetTestData("certificate-client.onc", &certificate_json);
-  std::string certificate_update_json;
-  GetTestData("certificate-client-update.onc", &certificate_update_json);
-
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697ac}");
-  std::string updated_guid("{f998f760-272b-6939-4c2beffe428697ad}");
-  {
-    // First we import a certificate.
-    OncNetworkParser parser(certificate_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-    EXPECT_EQ(net::USER_CERT, GetCertType(cert.get()));
-
-    EXPECT_STREQ(test_guid.c_str(),
-                 cert->GetDefaultNickname(net::USER_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::USER_CERT, GetCertType(result_list[0].get()));
-  }
-
-  {
-    // Now we import the same certificate with a different GUID. The cert should
-    // be retrievable via the new GUID.
-    OncNetworkParser parser(certificate_update_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-
-    EXPECT_STREQ(updated_guid.c_str(),
-                 cert->GetDefaultNickname(net::USER_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(updated_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::USER_CERT, GetCertType(result_list[0].get()));
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestReimportClientCertificate) {
-  std::string certificate_json;
-  GetTestData("certificate-client.onc", &certificate_json);
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697ac}");
-
-  // Verify that reimporting a client certificate works.
-  for (int i = 0; i < 2; ++i) {
-    OncNetworkParser parser(certificate_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-    EXPECT_EQ(net::USER_CERT, GetCertType(cert.get()));
-
-    EXPECT_STREQ(test_guid.c_str(),
-                 cert->GetDefaultNickname(net::USER_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::USER_CERT, GetCertType(result_list[0].get()));
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestAddServerCertificate) {
-  std::string test_blob;
-  GetTestData("certificate-server.onc", &test_blob);
-
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697aa}");
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
-  ASSERT_EQ(1, parser.GetCertificatesSize());
-
-  scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-  EXPECT_TRUE(cert.get() != NULL);
-  EXPECT_EQ(net::SERVER_CERT, GetCertType(cert.get()));
-
-  EXPECT_STREQ(test_guid.c_str(),
-               cert->GetDefaultNickname(net::SERVER_CERT).c_str());
-  net::CertificateList result_list;
-  OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-  ASSERT_EQ(1ul, result_list.size());
-  EXPECT_EQ(net::SERVER_CERT, GetCertType(result_list[0].get()));
-
-  SECKEYPrivateKeyList* privkey_list =
-      PK11_ListPrivKeysInSlot(slot_->os_module_handle(), NULL, NULL);
-  EXPECT_FALSE(privkey_list);
-
-  SECKEYPublicKeyList* pubkey_list =
-      PK11_ListPublicKeysInSlot(slot_->os_module_handle(), NULL);
-  EXPECT_FALSE(pubkey_list);
-
-}
-
-TEST_F(OncNetworkParserTest, TestUpdateServerCertificate) {
-  std::string certificate_json;
-  GetTestData("certificate-server.onc", &certificate_json);
-  std::string certificate_update_json;
-  GetTestData("certificate-server-update.onc", &certificate_update_json);
-
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697aa}");
-  std::string updated_guid("{f998f760-272b-6939-4c2beffe428697ab}");
-  {
-    // First we import a certificate.
-    OncNetworkParser parser(certificate_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-    EXPECT_EQ(net::SERVER_CERT, GetCertType(cert.get()));
-
-    EXPECT_STREQ(test_guid.c_str(),
-                 cert->GetDefaultNickname(net::SERVER_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::SERVER_CERT, GetCertType(result_list[0].get()));
-  }
-
-  {
-    // Reimport the same certificate with a different GUID. The cert should
-    // be returned if we ask for the updated GUID.
-    OncNetworkParser parser(certificate_update_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-
-    EXPECT_STREQ(updated_guid.c_str(),
-                 cert->GetDefaultNickname(net::SERVER_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(updated_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::SERVER_CERT, GetCertType(result_list[0].get()));
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestReimportServerCertificate) {
-  std::string certificate_json;
-  GetTestData("certificate-server.onc", &certificate_json);
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697aa}");
-
-  // Verify that importing the certificate twice works.
-  for (int i = 0; i < 2; i++) {
-    OncNetworkParser parser(certificate_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-    EXPECT_EQ(net::SERVER_CERT, GetCertType(cert.get()));
-
-    EXPECT_STREQ(test_guid.c_str(),
-                 cert->GetDefaultNickname(net::SERVER_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::SERVER_CERT, GetCertType(result_list[0].get()));
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestAddWebAuthorityCertificate) {
-  std::string test_blob;
-  GetTestData("certificate-web-authority.onc", &test_blob);
-
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697ab}");
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
-  ASSERT_EQ(1, parser.GetCertificatesSize());
-
-  scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-  EXPECT_TRUE(cert.get() != NULL);
-  EXPECT_EQ(net::CA_CERT, GetCertType(cert.get()));
-
-  EXPECT_STREQ(test_guid.c_str(),
-               cert->GetDefaultNickname(net::CA_CERT).c_str());
-  net::CertificateList result_list;
-  OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-  ASSERT_EQ(1ul, result_list.size());
-  EXPECT_EQ(net::CA_CERT, GetCertType(result_list[0].get()));
-
-  SECKEYPrivateKeyList* privkey_list =
-      PK11_ListPrivKeysInSlot(slot_->os_module_handle(), NULL, NULL);
-  EXPECT_FALSE(privkey_list);
-
-  SECKEYPublicKeyList* pubkey_list =
-      PK11_ListPublicKeysInSlot(slot_->os_module_handle(), NULL);
-  EXPECT_FALSE(pubkey_list);
-}
-
-TEST_F(OncNetworkParserTest, TestUpdateWebAuthorityCertificate) {
-  std::string authority_json;
-  GetTestData("certificate-web-authority.onc", &authority_json);
-  std::string authority_update_json;
-  GetTestData("certificate-web-authority-update.onc",
-              &authority_update_json);
-
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697ab}");
-  std::string updated_guid("{f998f760-272b-6939-4c2beffe428697ac}");
-  {
-    // First we import an authority certificate.
-    OncNetworkParser parser(authority_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-    EXPECT_EQ(net::CA_CERT, GetCertType(cert.get()));
-
-    EXPECT_STREQ(test_guid.c_str(),
-                 cert->GetDefaultNickname(net::CA_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::CA_CERT, GetCertType(result_list[0].get()));
-  }
-
-  {
-    // Reimport the same cert with a different GUID and check that the cert
-    // shows up under the new GUID.
-    OncNetworkParser parser(authority_update_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-
-    EXPECT_STREQ(updated_guid.c_str(),
-                 cert->GetDefaultNickname(net::CA_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(updated_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::CA_CERT, GetCertType(result_list[0].get()));
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestReimportWebAuthorityCertificate) {
-  std::string authority_json;
-  GetTestData("certificate-web-authority.onc", &authority_json);
-  std::string test_guid("{f998f760-272b-6939-4c2beffe428697ab}");
-
-  // Verify that importing the certificate twice works.
-  for (int i = 0; i < 2; i++) {
-    OncNetworkParser parser(authority_json, "",
-                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
-    ASSERT_EQ(1, parser.GetCertificatesSize());
-
-    scoped_refptr<net::X509Certificate> cert = parser.ParseCertificate(0).get();
-    ASSERT_TRUE(cert.get() != NULL);
-    EXPECT_EQ(net::CA_CERT, GetCertType(cert.get()));
-
-    EXPECT_STREQ(test_guid.c_str(),
-                 cert->GetDefaultNickname(net::CA_CERT).c_str());
-    net::CertificateList result_list;
-    OncNetworkParser::ListCertsWithNickname(test_guid, &result_list);
-    ASSERT_EQ(1ul, result_list.size());
-    EXPECT_EQ(net::CA_CERT, GetCertType(result_list[0].get()));
-  }
-}
-
-TEST_F(OncNetworkParserTest, TestNetworkAndCertificate) {
-  std::string test_blob;
-  GetTestData("network-openvpn.onc", &test_blob);
-
-  OncNetworkParser parser(test_blob, "",
-                          NetworkUIData::ONC_SOURCE_USER_IMPORT);
-
-  EXPECT_EQ(1, parser.GetCertificatesSize());
-  EXPECT_TRUE(parser.ParseCertificate(0));
-
-  EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
-  ASSERT_TRUE(network.get() != NULL);
-  EXPECT_EQ(chromeos::TYPE_VPN, network->type());
-  VirtualNetwork* vpn = static_cast<VirtualNetwork*>(network.get());
-  EXPECT_EQ(PROVIDER_TYPE_OPEN_VPN, vpn->provider_type());
-}
-
 TEST_F(OncNetworkParserTest, TestProxySettingsDirect) {
-  std::string proxy_settings_blob;
-  GetTestData("network-wifi-proxy-direct.onc", &proxy_settings_blob);
-
   net::ProxyConfig net_config;
-  TestProxySettings(proxy_settings_blob, &net_config);
+  TestProxySettings("network-wifi-proxy-direct.onc", &net_config);
   EXPECT_EQ(net::ProxyConfig::ProxyRules::TYPE_NO_RULES,
             net_config.proxy_rules().type);
   EXPECT_FALSE(net_config.HasAutomaticSettings());
 }
 
 TEST_F(OncNetworkParserTest, TestProxySettingsWpad) {
-  std::string proxy_settings_blob;
-  GetTestData("network-wifi-proxy-wpad.onc", &proxy_settings_blob);
-
   net::ProxyConfig net_config;
-  TestProxySettings(proxy_settings_blob, &net_config);
+  TestProxySettings("network-wifi-proxy-wpad.onc", &net_config);
   EXPECT_EQ(net::ProxyConfig::ProxyRules::TYPE_NO_RULES,
             net_config.proxy_rules().type);
   EXPECT_TRUE(net_config.HasAutomaticSettings());
@@ -840,11 +487,8 @@ TEST_F(OncNetworkParserTest, TestProxySettingsWpad) {
 
 TEST_F(OncNetworkParserTest, TestProxySettingsPac) {
   const std::string kPacUrl("http://proxyconfig.corp.google.com/wpad.dat");
-  std::string proxy_settings_blob;
-  GetTestData("network-wifi-proxy-pac.onc", &proxy_settings_blob);
-
   net::ProxyConfig net_config;
-  TestProxySettings(proxy_settings_blob, &net_config);
+  TestProxySettings("network-wifi-proxy-pac.onc", &net_config);
   EXPECT_EQ(net::ProxyConfig::ProxyRules::TYPE_NO_RULES,
             net_config.proxy_rules().type);
   EXPECT_TRUE(net_config.HasAutomaticSettings());
@@ -862,14 +506,9 @@ TEST_F(OncNetworkParserTest, TestProxySettingsManual) {
   const uint16 kHttpsPort = 3456;
   const uint16 kFtpPort = 5678;
   const uint16 kSocksPort = 7890;
-  std::string proxy_settings_blob;
-  GetTestData("network-wifi-proxy-manual.onc", &proxy_settings_blob);
 
   net::ProxyConfig net_config;
-  TestProxySettings(
-      base::StringPrintf(proxy_settings_blob.data(),
-                         kHttpPort, kHttpsPort, kFtpPort, kSocksPort),
-      &net_config);
+  TestProxySettings("network-wifi-proxy-manual.onc", &net_config);
   const net::ProxyConfig::ProxyRules& rules = net_config.proxy_rules();
   EXPECT_EQ(net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME, rules.type);
   // Verify http proxy server.
@@ -907,7 +546,7 @@ TEST(OncNetworkParserUserExpansionTest, GetUserExpandedValue) {
       .Times(2)
       .WillRepeatedly(Return(false));
 
-  NetworkUIData::ONCSource source = NetworkUIData::ONC_SOURCE_USER_IMPORT;
+  onc::ONCSource source = onc::ONC_SOURCE_USER_IMPORT;
 
   // Setup environment needed by UserManager.
   MessageLoop loop;
@@ -941,12 +580,11 @@ TEST(OncNetworkParserUserExpansionTest, GetUserExpandedValue) {
 }
 
 TEST_F(OncNetworkParserTest, TestRemoveNetworkWifi) {
-  std::string test_blob;
-  GetTestData("network-wifi-remove.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "",
-                                 NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs =
+      ReadNetworkConfigs("network-wifi-remove.onc");
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(0, parser.GetCertificatesSize());
   bool marked_for_removal = false;
   scoped_ptr<Network> network(parser.ParseNetwork(0, &marked_for_removal));
 

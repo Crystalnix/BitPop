@@ -20,6 +20,7 @@
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
+#include "webkit/plugins/ppapi/plugin_module.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_handle.h"
@@ -27,11 +28,14 @@
 
 class CommandLine;
 class FilePath;
-class PpapiWebKitPlatformSupportImpl;
 
 namespace IPC {
 struct ChannelHandle;
 }
+
+namespace content {
+
+class PpapiWebKitPlatformSupportImpl;
 
 class PpapiThread : public ChildThread,
                     public ppapi::proxy::PluginDispatcher::PluginDelegate,
@@ -42,6 +46,7 @@ class PpapiThread : public ChildThread,
 
  private:
   // ChildThread overrides.
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
@@ -51,7 +56,7 @@ class PpapiThread : public ChildThread,
   virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
   virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
-      const IPC::SyncChannel& channel,
+      base::ProcessId peer_pid,
       bool should_close_source) OVERRIDE;
   virtual uint32 Register(
       ppapi::proxy::PluginDispatcher* plugin_dispatcher) OVERRIDE;
@@ -60,21 +65,27 @@ class PpapiThread : public ChildThread,
   // PluginProxyDelegate.
   // SendToBrowser() is intended to be safe to use on another thread so
   // long as the main PpapiThread outlives it.
-  virtual bool SendToBrowser(IPC::Message* msg) OVERRIDE;
+  virtual IPC::Sender* GetBrowserSender() OVERRIDE;
   virtual std::string GetUILanguage() OVERRIDE;
   virtual void PreCacheFont(const void* logfontw) OVERRIDE;
   virtual void SetActiveURL(const std::string& url) OVERRIDE;
 
   // Message handlers.
-  void OnMsgLoadPlugin(const FilePath& path);
-  void OnMsgCreateChannel(int renderer_id,
+  void OnMsgLoadPlugin(const FilePath& path,
+                       const ppapi::PpapiPermissions& permissions);
+  void OnMsgCreateChannel(base::ProcessId renderer_pid,
+                          int renderer_child_id,
                           bool incognito);
+  void OnMsgResourceReply(
+      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
+      const IPC::Message& nested_msg);
   void OnMsgSetNetworkState(bool online);
   void OnPluginDispatcherMessageReceived(const IPC::Message& msg);
 
   // Sets up the channel to the given renderer. On success, returns true and
   // fills the given ChannelHandle with the information from the new channel.
-  bool SetupRendererChannel(int renderer_id,
+  bool SetupRendererChannel(base::ProcessId renderer_pid,
+                            int renderer_child_id,
                             bool incognito,
                             IPC::ChannelHandle* handle);
 
@@ -86,10 +97,13 @@ class PpapiThread : public ChildThread,
 
   base::ScopedNativeLibrary library_;
 
+  ppapi::PpapiPermissions permissions_;
+
   // Global state tracking for the proxy.
   ppapi::proxy::PluginGlobals plugin_globals_;
 
-  PP_GetInterface_Func get_plugin_interface_;
+  // Storage for plugin entry points.
+  webkit::ppapi::PluginModule::EntryPoints plugin_entry_points_;
 
   // Callback to call when a new instance connects to the broker.
   // Used only when is_broker_.
@@ -120,5 +134,7 @@ class PpapiThread : public ChildThread,
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PpapiThread);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_PPAPI_PLUGIN_PPAPI_THREAD_H_

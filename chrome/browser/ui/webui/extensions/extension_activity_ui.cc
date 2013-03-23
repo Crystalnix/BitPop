@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/ui/webui/shared_resources_data_source.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/browser_resources.h"
@@ -32,6 +33,8 @@ ExtensionActivityUI::ExtensionActivityUI(content::WebUI* web_ui)
                              IDS_EXTENSION_ACTIVITY_API_CALL);
   source->AddLocalizedString("extensionActivityApiBlock",
                              IDS_EXTENSION_ACTIVITY_API_BLOCK);
+  source->AddLocalizedString("extensionActivityContentScript",
+                             IDS_EXTENSION_ACTIVITY_CONTENT_SCRIPT);
   source->set_use_json_js_format_v2();
   source->set_json_path("strings.js");
 
@@ -51,7 +54,7 @@ ExtensionActivityUI::ExtensionActivityUI(content::WebUI* web_ui)
 
 ExtensionActivityUI::~ExtensionActivityUI() {
   if (extension_)
-    ExtensionActivityLog::GetInstance()->RemoveObserver(extension_, this);
+    extensions::ActivityLog::GetInstance()->RemoveObserver(extension_, this);
 }
 
 void ExtensionActivityUI::HandleRequestExtensionData(
@@ -70,7 +73,7 @@ void ExtensionActivityUI::HandleRequestExtensionData(
 
   GURL icon =
       ExtensionIconSource::GetIconURL(extension_,
-                                      ExtensionIconSet::EXTENSION_ICON_MEDIUM,
+                                      extension_misc::EXTENSION_ICON_MEDIUM,
                                       ExtensionIconSet::MATCH_BIGGER,
                                       false, NULL);
 
@@ -87,16 +90,20 @@ void ExtensionActivityUI::HandleRequestExtensionData(
   web_ui()->CallJavascriptFunction("extension_activity.handleExtensionData",
                                    result);
 
-  ExtensionActivityLog::GetInstance()->AddObserver(extension_, this);
+  extensions::ActivityLog::GetInstance()->AddObserver(extension_, this);
 }
 
 void ExtensionActivityUI::OnExtensionActivity(
       const extensions::Extension* extension,
-      ExtensionActivityLog::Activity activity,
-      const std::string& msg) {
+      extensions::ActivityLog::Activity activity,
+      const std::vector<std::string>& messages) {
+  scoped_ptr<ListValue> messages_list(new ListValue());
+  messages_list->AppendStrings(messages);
+
   DictionaryValue result;
   result.SetInteger("activity", activity);
-  result.SetString("message", msg);
+  result.Set("messages", messages_list.release());
+
   web_ui()->CallJavascriptFunction("extension_activity.handleExtensionActivity",
                                    result);
 }

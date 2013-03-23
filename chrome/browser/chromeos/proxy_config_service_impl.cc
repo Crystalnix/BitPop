@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/onc_constants.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
@@ -22,6 +21,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/network/onc/onc_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -387,12 +387,16 @@ ProxyConfigServiceImpl::ProxyConfigServiceImpl(PrefService* pref_service)
       pointer_factory_(this) {
 
   // Register for notifications of UseSharedProxies user preference.
-  if (pref_service->FindPreference(prefs::kUseSharedProxies))
-    use_shared_proxies_.Init(prefs::kUseSharedProxies, pref_service, this);
+  if (pref_service->FindPreference(prefs::kUseSharedProxies)) {
+    use_shared_proxies_.Init(
+        prefs::kUseSharedProxies, pref_service,
+        base::Bind(&ProxyConfigServiceImpl::OnUseSharedProxiesChanged,
+                   base::Unretained(this)));
+  }
 
   FetchProxyPolicy();
 
-  // Register for flimflam network notifications.
+  // Register for shill network notifications.
   NetworkLibrary* network_lib = CrosLibrary::Get()->GetNetworkLibrary();
   OnActiveNetworkChanged(network_lib, network_lib->active_network());
   network_lib->AddNetworkManagerObserver(this);
@@ -562,6 +566,20 @@ void ProxyConfigServiceImpl::OnNetworkChanged(NetworkLibrary* network_lib,
 }
 
 // static
+bool ProxyConfigServiceImpl::ParseProxyConfig(const Network* network,
+                                              net::ProxyConfig* proxy_config) {
+  if (!network || !proxy_config)
+    return false;
+  JSONStringValueSerializer serializer(network->proxy_config());
+  scoped_ptr<Value> value(serializer.Deserialize(NULL, NULL));
+  if (!value.get() || value->GetType() != Value::TYPE_DICTIONARY)
+    return false;
+  ProxyConfigDictionary proxy_dict(static_cast<DictionaryValue*>(value.get()));
+  return PrefProxyConfigTrackerImpl::PrefConfigToNetConfig(proxy_dict,
+                                                           proxy_config);
+}
+
+// static
 void ProxyConfigServiceImpl::RegisterPrefs(PrefService* pref_service) {
   // Use shared proxies default to off.  GetUseSharedProxies will return the
   // correct value based on pre-login and login.
@@ -572,35 +590,25 @@ void ProxyConfigServiceImpl::RegisterPrefs(PrefService* pref_service) {
 
 //------------------ ProxyConfigServiceImpl: private methods -------------------
 
-void ProxyConfigServiceImpl::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_PREF_CHANGED &&
-      *(content::Details<std::string>(details).ptr()) ==
-          prefs::kUseSharedProxies) {
-    if (content::Source<PrefService>(source).ptr() == prefs()) {
-      VLOG(1) << "New use-shared-proxies = " << GetUseSharedProxies();
-      // Determine new proxy config which may have changed because of new
-      // use-shared-proxies. If necessary, activate it.
-      Network* network = NULL;
-      if (!active_network_.empty()) {
-        network = CrosLibrary::Get()->GetNetworkLibrary()->FindNetworkByPath(
-            active_network_);
-        if (!network)
-          LOG(WARNING) << "Can't find requested network " << active_network_;
-      }
-      DetermineEffectiveConfig(network, true);
-    }
-    return;
+void ProxyConfigServiceImpl::OnUseSharedProxiesChanged() {
+  VLOG(1) << "New use-shared-proxies = " << GetUseSharedProxies();
+
+  // Determine new proxy config which may have changed because of new
+  // use-shared-proxies. If necessary, activate it.
+  Network* network = NULL;
+  if (!active_network_.empty()) {
+    network = CrosLibrary::Get()->GetNetworkLibrary()->FindNetworkByPath(
+        active_network_);
+    if (!network)
+      LOG(WARNING) << "Can't find requested network " << active_network_;
   }
-  PrefProxyConfigTrackerImpl::Observe(type, source, details);
+  DetermineEffectiveConfig(network, true);
 }
 
 void ProxyConfigServiceImpl::OnUISetProxyConfig() {
   if (current_ui_network_.empty())
     return;
-  // Update config to flimflam.
+  // Update config to shill.
   std::string value;
   if (current_ui_config_.SerializeForNetwork(&value)) {
     VLOG(1) << "Set proxy (mode=" << current_ui_config_.mode
@@ -655,7 +663,7 @@ void ProxyConfigServiceImpl::OnActiveNetworkChanged(NetworkLibrary* network_lib,
   // Register observer for new network.
   network_lib->AddNetworkObserver(active_network_, this);
 
-  // If necessary, migrate config to flimflam.
+  // If necessary, migrate config to shill.
   if (active_network->proxy_config().empty() && !device_config_.empty()) {
     VLOG(1) << "Try migrating device config to " << active_network_;
     SetProxyConfigForNetwork(active_network_, device_config_, true);
@@ -715,16 +723,10 @@ void ProxyConfigServiceImpl::DetermineEffectiveConfig(const Network* network,
       network_availability = net::ProxyConfigService::CONFIG_VALID;
     } else if (!network->proxy_config().empty()) {
       // Network is private or shared with user using shared proxies.
-      JSONStringValueSerializer serializer(network->proxy_config());
-      scoped_ptr<Value> value(serializer.Deserialize(NULL, NULL));
-      if (value.get() && value->GetType() == Value::TYPE_DICTIONARY) {
-        DictionaryValue* dict = static_cast<DictionaryValue*>(value.get());
-        ProxyConfigDictionary proxy_dict(dict);
-        if (PrefConfigToNetConfig(proxy_dict, &network_config)) {
-          VLOG(1) << this << ": using network proxy: "
-                           << network->proxy_config();
-          network_availability = net::ProxyConfigService::CONFIG_VALID;
-        }
+      if (ParseProxyConfig(network, &network_config)) {
+        VLOG(1) << this << ": using network proxy: "
+                << network->proxy_config();
+        network_availability = net::ProxyConfigService::CONFIG_VALID;
       }
     }
   }

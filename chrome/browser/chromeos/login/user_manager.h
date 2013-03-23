@@ -7,20 +7,15 @@
 
 #include <string>
 
-#include "ash/desktop_background/desktop_background_resources.h"
 #include "base/memory/singleton.h"
-#include "base/time.h"
 #include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/ui/webui/options2/chromeos/set_wallpaper_options_handler.h"
 
-class SkBitmap;
-class FilePath;
 class PrefService;
 
 namespace chromeos {
 
 class RemoveUserDelegate;
-class UserImage;
+class UserImageManager;
 
 // Base class for UserManagerImpl - provides a mechanism for discovering users
 // who have logged into this Chrome OS device before and updating that list.
@@ -37,30 +32,8 @@ class UserManager {
     virtual ~Observer() {}
   };
 
-  // A vector pref of the users who have logged into the device.
-  static const char kLoggedInUsers[];
-
   // Username for stub login when not running on ChromeOS.
   static const char kStubUser[];
-
-  // A dictionary that maps usernames to file paths to their wallpapers.
-  // Deprecated. Will remove this const char after done migration.
-  static const char kUserWallpapers[];
-
-  // A dictionary that maps usernames to wallpaper properties.
-  static const char kUserWallpapersProperties[];
-
-  // A dictionary that maps usernames to file paths to their images.
-  static const char kUserImages[];
-
-  // A dictionary that maps usernames to the displayed name.
-  static const char kUserDisplayName[];
-
-  // A dictionary that maps usernames to the displayed (non-canonical) emails.
-  static const char kUserDisplayEmail[];
-
-  // A dictionary that maps usernames to OAuth token presence flag.
-  static const char kUserOAuthTokenStatus[];
 
   // Returns a shared instance of a UserManager. Not thread-safe, should only be
   // called from the main UI thread.
@@ -89,7 +62,13 @@ class UserManager {
   // Registers user manager preferences.
   static void RegisterPrefs(PrefService* local_state);
 
+  // Indicates imminent shutdown, allowing the UserManager to remove any
+  // observers it has registered.
+  virtual void Shutdown() = 0;
+
   virtual ~UserManager();
+
+  virtual UserImageManager* GetUserImageManager() = 0;
 
   // Returns a list of users who have logged into this device previously. This
   // is sorted by last login date with the most recent user at the beginning.
@@ -101,14 +80,21 @@ class UserManager {
   // from normal sign in flow.
   virtual void UserLoggedIn(const std::string& email, bool browser_restart) = 0;
 
-  // Indicates that user just logged on as the demo user.
-  virtual void DemoUserLoggedIn() = 0;
+  // Indicates that user just logged on as the retail mode user.
+  virtual void RetailModeUserLoggedIn() = 0;
 
   // Indicates that user just started incognito session.
   virtual void GuestUserLoggedIn() = 0;
 
-  // Indicates that a user just logged in as ephemeral.
-  virtual void EphemeralUserLoggedIn(const std::string& email) = 0;
+  // Indicates that a user just logged into a public account.
+  virtual void PublicAccountUserLoggedIn(User* user) = 0;
+
+  // Indicates that a regular user just logged in.
+  virtual void RegularUserLoggedIn(const std::string& email,
+                                   bool browser_restart) = 0;
+
+  // Indicates that a regular user just logged in as ephemeral.
+  virtual void RegularUserLoggedInAsEphemeral(const std::string& email) = 0;
 
   // Called when browser session is started i.e. after
   // browser_creator.LaunchBrowser(...) was called after user sign in.
@@ -136,8 +122,8 @@ class UserManager {
   virtual const User* FindUser(const std::string& email) const = 0;
 
   // Returns the logged-in user.
-  virtual const User& GetLoggedInUser() const = 0;
-  virtual User& GetLoggedInUser() = 0;
+  virtual const User* GetLoggedInUser() const = 0;
+  virtual User* GetLoggedInUser() = 0;
 
   // Saves user's oauth token status in local state preferences.
   virtual void SaveUserOAuthStatus(
@@ -166,58 +152,32 @@ class UserManager {
   virtual std::string GetUserDisplayEmail(
       const std::string& username) const = 0;
 
-  // Saves |type| and |index| chose by logged in user to Local State.
-  virtual void SaveLoggedInUserWallpaperProperties(User::WallpaperType type,
-                                                   int index) = 0;
-
-  // Sets user image to the default image with index |image_index|, sends
-  // LOGIN_USER_IMAGE_CHANGED notification and updates Local State.
-  virtual void SaveUserDefaultImageIndex(const std::string& username,
-                                         int image_index) = 0;
-
-  // Saves image to file, sends LOGIN_USER_IMAGE_CHANGED notification and
-  // updates Local State.
-  virtual void SaveUserImage(const std::string& username,
-                             const UserImage& user_image) = 0;
-
-  // Updates custom wallpaper to selected layout and saves layout to Local
-  // State.
-  virtual void SetLoggedInUserCustomWallpaperLayout(
-      ash::WallpaperLayout layout) = 0;
-
-  // Tries to load user image from disk; if successful, sets it for the user,
-  // sends LOGIN_USER_IMAGE_CHANGED notification and updates Local State.
-  virtual void SaveUserImageFromFile(const std::string& username,
-                                     const FilePath& path) = 0;
-
-  // Sets profile image as user image for |username|, sends
-  // LOGIN_USER_IMAGE_CHANGED notification and updates Local State. If the user
-  // is not logged-in or the last |DownloadProfileImage| call has failed, a
-  // default grey avatar will be used until the user logs in and profile image
-  // is downloaded successfully.
-  virtual void SaveUserImageFromProfileImage(const std::string& username) = 0;
-
-  // Starts downloading the profile image for the logged-in user.
-  // If user's image index is |kProfileImageIndex|, newly downloaded image
-  // is immediately set as user's current picture.
-  // |reason| is an arbitrary string (used to report UMA histograms with
-  // download times).
-  virtual void DownloadProfileImage(const std::string& reason) = 0;
-
   // Returns true if current user is an owner.
   virtual bool IsCurrentUserOwner() const = 0;
 
   // Returns true if current user is not existing one (hasn't signed in before).
   virtual bool IsCurrentUserNew() const = 0;
 
-  // Returns true if the current user is ephemeral.
-  virtual bool IsCurrentUserEphemeral() const = 0;
+  // Returns true if data stored or cached for the current user outside that
+  // user's cryptohome (wallpaper, avatar, OAuth token status, display name,
+  // display email) is ephemeral.
+  virtual bool IsCurrentUserNonCryptohomeDataEphemeral() const = 0;
+
+  // Returns true if the current user's session can be locked (i.e. the user has
+  // a password with which to unlock the session).
+  virtual bool CanCurrentUserLock() const = 0;
 
   // Returns true if user is signed in.
   virtual bool IsUserLoggedIn() const = 0;
 
+  // Returns true if we're logged in as a regular user.
+  virtual bool IsLoggedInAsRegularUser() const = 0;
+
   // Returns true if we're logged in as a demo user.
   virtual bool IsLoggedInAsDemoUser() const = 0;
+
+  // Returns true if we're logged in as a public account.
+  virtual bool IsLoggedInAsPublicAccount() const = 0;
 
   // Returns true if we're logged in as a Guest.
   virtual bool IsLoggedInAsGuest() const = 0;
@@ -230,14 +190,20 @@ class UserManager {
   // or restart after crash.
   virtual bool IsSessionStarted() const = 0;
 
+  // Returns true when the browser has crashed and restarted during the current
+  // user's session.
+  virtual bool HasBrowserRestarted() const = 0;
+
+  // Returns true if data stored or cached for the user with the given email
+  // address outside that user's cryptohome (wallpaper, avatar, OAuth token
+  // status, display name, display email) is to be treated as ephemeral.
+  virtual bool IsUserNonCryptohomeDataEphemeral(
+      const std::string& email) const = 0;
+
   virtual void AddObserver(Observer* obs) = 0;
   virtual void RemoveObserver(Observer* obs) = 0;
 
   virtual void NotifyLocalStateChanged() = 0;
-
-  // Returns the result of the last successful profile image download, if any.
-  // Otherwise, returns an empty bitmap.
-  virtual const SkBitmap& DownloadedProfileImage() const = 0;
 };
 
 }  // namespace chromeos

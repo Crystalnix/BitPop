@@ -4,27 +4,50 @@
 
 #include "content/public/common/media_stream_request.h"
 
+#include "base/logging.h"
+
 namespace content {
 
+bool IsAudioMediaType(MediaStreamType type) {
+  return (type == content::MEDIA_DEVICE_AUDIO_CAPTURE ||
+          type == content::MEDIA_TAB_AUDIO_CAPTURE);
+}
+
+bool IsVideoMediaType(MediaStreamType type) {
+  return (type == content::MEDIA_DEVICE_VIDEO_CAPTURE ||
+          type == content::MEDIA_TAB_VIDEO_CAPTURE);
+}
+
+MediaStreamDevice::MediaStreamDevice() : type(MEDIA_NO_SERVICE) {}
+
 MediaStreamDevice::MediaStreamDevice(
-    MediaStreamDeviceType type,
-    const std::string& device_id,
+    MediaStreamType type,
+    const std::string& id,
     const std::string& name)
     : type(type),
-      device_id(device_id),
+      id(id),
       name(name) {
 }
+
+MediaStreamDevice::~MediaStreamDevice() {}
 
 MediaStreamRequest::MediaStreamRequest(
     int render_process_id,
     int render_view_id,
-    const GURL& security_origin)
+    const GURL& security_origin,
+    MediaStreamRequestType request_type,
+    const std::string& requested_device_id,
+    MediaStreamType audio_type,
+    MediaStreamType video_type)
     : render_process_id(render_process_id),
       render_view_id(render_view_id),
-      security_origin(security_origin) {
+      security_origin(security_origin),
+      request_type(request_type),
+      requested_device_id(requested_device_id),
+      audio_type(audio_type),
+      video_type(video_type) {
 }
 
-MediaStreamRequest::~MediaStreamRequest() {
-}
+MediaStreamRequest::~MediaStreamRequest() {}
 
 }  // namespace content

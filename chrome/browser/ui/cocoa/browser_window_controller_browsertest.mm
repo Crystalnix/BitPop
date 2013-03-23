@@ -39,9 +39,10 @@ void CreateProfileCallback(const base::Closure& quit_closure,
 
 // Tests that adding the first profile moves the Lion fullscreen button over
 // correctly.
+// DISABLED_ because it regularly times out: http://crbug.com/159002.
 IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
-                       ProfileAvatarFullscreenButton) {
-  if (base::mac::IsOSSnowLeopardOrEarlier())
+                       DISABLED_ProfileAvatarFullscreenButton) {
+  if (base::mac::IsOSSnowLeopard())
     return;
 
   // Initialize the locals.

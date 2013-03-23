@@ -18,6 +18,7 @@
 #endif  // OS_WIN
 
 using media::VideoDecodeAccelerator;
+namespace content {
 
 GpuVideoDecodeAcceleratorHost::GpuVideoDecodeAcceleratorHost(
     GpuChannelHost* channel,
@@ -67,12 +68,15 @@ bool GpuVideoDecodeAcceleratorHost::Initialize(
 void GpuVideoDecodeAcceleratorHost::Decode(
     const media::BitstreamBuffer& bitstream_buffer) {
   DCHECK(CalledOnValidThread());
+  // Can happen if a decode task was posted before an error was delivered.
+  if (!channel_)
+    return;
   base::SharedMemoryHandle buffer_handle = bitstream_buffer.handle();
 #if defined(OS_WIN)
-  if (!content::BrokerDuplicateHandle(bitstream_buffer.handle(),
-                                      channel_->gpu_pid(),
-                                      &buffer_handle, 0,
-                                      DUPLICATE_SAME_ACCESS)) {
+  if (!BrokerDuplicateHandle(bitstream_buffer.handle(),
+                             channel_->gpu_pid(),
+                             &buffer_handle, 0,
+                             DUPLICATE_SAME_ACCESS)) {
     NOTREACHED() << "Failed to duplicate buffer handler";
     return;
   }
@@ -203,3 +207,5 @@ void GpuVideoDecodeAcceleratorHost::OnErrorNotification(uint32 error) {
       static_cast<media::VideoDecodeAccelerator::Error>(error));
   client_ = NULL;
 }
+
+}  // namespace content

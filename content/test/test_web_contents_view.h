@@ -18,7 +18,8 @@ class TestWebContentsView : public WebContentsView,
   virtual ~TestWebContentsView();
 
   // RenderViewHostDelegateView:
-  virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
+  virtual void ShowContextMenu(const ContextMenuParams& params,
+                               ContextMenuSourceType type) OVERRIDE;
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
@@ -29,13 +30,15 @@ class TestWebContentsView : public WebContentsView,
   virtual void StartDragging(const WebDropData& drop_data,
                              WebKit::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
-                             const gfx::Point& image_offset) OVERRIDE;
+                             const gfx::Vector2d& image_offset,
+                             const DragEventSourceInfo& event_info) OVERRIDE;
   virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
 
   // WebContentsView:
-  virtual void CreateView(const gfx::Size& initial_size) OVERRIDE;
+  virtual void CreateView(const gfx::Size& initial_size,
+                          gfx::NativeView context) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
@@ -51,12 +54,13 @@ class TestWebContentsView : public WebContentsView,
   virtual void SetInitialFocus() OVERRIDE;
   virtual void StoreFocus() OVERRIDE;
   virtual void RestoreFocus() OVERRIDE;
-  virtual bool IsDoingDrag() const OVERRIDE;
-  virtual void CancelDragAndCloseTab() OVERRIDE;
   virtual WebDropData* GetDropData() const OVERRIDE;
   virtual bool IsEventTracking() const OVERRIDE;
   virtual void CloseTabAfterEventTracking() OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
+#if defined(OS_MACOSX)
+  virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestWebContentsView);

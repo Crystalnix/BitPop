@@ -31,9 +31,12 @@
 #include <gdk/gdkx.h>  // NOLINT
 #endif
 
-using content::BrowserThread;
-using content::RenderWidgetHostImpl;
-using content::RenderWidgetHostViewPort;
+// From gl2/gl2ext.h.
+#ifndef GL_MAILBOX_SIZE_CHROMIUM
+#define GL_MAILBOX_SIZE_CHROMIUM 64
+#endif
+
+namespace content {
 
 namespace {
 
@@ -87,13 +90,11 @@ RenderWidgetHostViewPort* GetRenderWidgetHostViewFromSurfaceID(
         surface_id, &render_process_id, &render_widget_id))
     return NULL;
 
-  content::RenderProcessHost* process =
-      content::RenderProcessHost::FromID(render_process_id);
+  RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);
   if (!process)
     return NULL;
 
-  content::RenderWidgetHost* host = process->GetRenderWidgetHostByID(
-      render_widget_id);
+  RenderWidgetHost* host = process->GetRenderWidgetHostByID(render_widget_id);
   return host ? RenderWidgetHostViewPort::FromRWHV(host->GetView()) : NULL;
 }
 
@@ -180,11 +181,9 @@ GpuProcessHostUIShim::~GpuProcessHostUIShim() {
   DCHECK(CalledOnValidThread());
   g_hosts_by_id.Pointer()->Remove(host_id_);
 
-  DictionaryValue* dict = new DictionaryValue();
-  dict->SetInteger("level", logging::LOG_ERROR);
-  dict->SetString("header", "GpuProcessHostUIShim");
-  dict->SetString("message", "GPU Process Crashed.");
-  GpuDataManagerImpl::GetInstance()->AddLogMessage(dict);
+  GpuDataManagerImpl::GetInstance()->AddLogMessage(
+      logging::LOG_ERROR, "GpuProcessHostUIShim",
+      "GPU process crashed or exited.");
 }
 
 bool GpuProcessHostUIShim::OnControlMessageReceived(
@@ -207,6 +206,10 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
                         OnAcceleratedSurfaceNew)
     IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceRelease,
                         OnAcceleratedSurfaceRelease)
+    IPC_MESSAGE_HANDLER(GpuHostMsg_VideoMemoryUsageStats,
+                        OnVideoMemoryUsageStatsReceived);
+    IPC_MESSAGE_HANDLER(GpuHostMsg_UpdateVSyncParameters,
+                        OnUpdateVSyncParameters)
 
 #if defined(TOOLKIT_GTK) || defined(OS_WIN)
     IPC_MESSAGE_HANDLER(GpuHostMsg_ResizeView, OnResizeView)
@@ -218,19 +221,34 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
   return true;
 }
 
+void GpuProcessHostUIShim::OnUpdateVSyncParameters(int surface_id,
+                                             base::TimeTicks timebase,
+                                             base::TimeDelta interval) {
+
+  int render_process_id = 0;
+  int render_widget_id = 0;
+  if (!GpuSurfaceTracker::Get()->GetRenderWidgetIDForSurface(
+      surface_id, &render_process_id, &render_widget_id)) {
+    return;
+  }
+  RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
+  if (!host)
+    return;
+  RenderWidgetHost* rwh = host->GetRenderWidgetHostByID(render_widget_id);
+  if (!rwh)
+    return;
+  RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
+}
+
 void GpuProcessHostUIShim::OnLogMessage(
     int level,
     const std::string& header,
     const std::string& message) {
-  DictionaryValue* dict = new DictionaryValue();
-  dict->SetInteger("level", level);
-  dict->SetString("header", header);
-  dict->SetString("message", message);
-  GpuDataManagerImpl::GetInstance()->AddLogMessage(dict);
+  GpuDataManagerImpl::GetInstance()->AddLogMessage(
+      level, header, message);
 }
 
-void GpuProcessHostUIShim::OnGraphicsInfoCollected(
-    const content::GPUInfo& gpu_info) {
+void GpuProcessHostUIShim::OnGraphicsInfoCollected(const GPUInfo& gpu_info) {
   // OnGraphicsInfoCollected is sent back after the GPU process successfully
   // initializes GL.
   TRACE_EVENT0("test_gpu", "OnGraphicsInfoCollected");
@@ -289,8 +307,12 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceNew(
       params.surface_id);
   if (!view)
     return;
-  view->AcceleratedSurfaceNew(
-      params.width, params.height, params.surface_handle);
+
+  if (params.mailbox_name.length() &&
+      params.mailbox_name.length() != GL_MAILBOX_SIZE_CHROMIUM)
+    return;
+
+  view->AcceleratedSurfaceNew(params.surface_handle, params.mailbox_name);
 }
 
 static base::TimeDelta GetSwapDelay() {
@@ -307,10 +329,13 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("renderer",
       "GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped");
-
+  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+  ack_params.surface_handle = params.surface_handle;
+  ack_params.sync_point = 0;
   ScopedSendOnIOThread delayed_send(
       host_id_,
-      new AcceleratedSurfaceMsg_BufferPresented(params.route_id, 0));
+      new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
+                                                ack_params));
 
   RenderWidgetHostViewPort* view = GetRenderWidgetHostViewFromSurfaceID(
       params.surface_id);
@@ -332,9 +357,13 @@ void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(
   TRACE_EVENT0("renderer",
       "GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer");
 
-  ScopedSendOnIOThread delayed_send(
+  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+  ack_params.surface_handle = params.surface_handle;
+  ack_params.sync_point = 0;
+   ScopedSendOnIOThread delayed_send(
       host_id_,
-      new AcceleratedSurfaceMsg_BufferPresented(params.route_id, 0));
+      new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
+                                                ack_params));
 
   RenderWidgetHostViewPort* view =
       GetRenderWidgetHostViewFromSurfaceID(params.surface_id);
@@ -365,5 +394,13 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceRelease(
       params.surface_id);
   if (!view)
     return;
-  view->AcceleratedSurfaceRelease(params.identifier);
+  view->AcceleratedSurfaceRelease();
 }
+
+void GpuProcessHostUIShim::OnVideoMemoryUsageStatsReceived(
+    const GPUVideoMemoryUsageStats& video_memory_usage_stats) {
+  GpuDataManagerImpl::GetInstance()->UpdateVideoMemoryUsageStats(
+      video_memory_usage_stats);
+}
+
+}  // namespace content

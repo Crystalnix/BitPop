@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 #include <windows.h>
+#include <wincrypt.h>
 #include <string>
 #include <vector>
-#include <wincrypt.h>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time.h"
@@ -32,7 +32,7 @@ using content::BrowserThread;
 using testing::_;
 using testing::DoAll;
 using testing::WithArg;
-using webkit::forms::PasswordForm;
+using content::PasswordForm;
 
 namespace {
 
@@ -40,7 +40,9 @@ class MockPasswordStoreConsumer : public PasswordStoreConsumer {
  public:
   MOCK_METHOD2(OnPasswordStoreRequestDone,
                void(CancelableRequestProvider::Handle,
-                    const std::vector<webkit::forms::PasswordForm*>&));
+                    const std::vector<content::PasswordForm*>&));
+  MOCK_METHOD1(OnGetPasswordStoreResults,
+               void(const std::vector<content::PasswordForm*>&));
 };
 
 class MockWebDataServiceConsumer : public WebDataServiceConsumer {
@@ -140,7 +142,7 @@ class PasswordStoreWinTest : public testing::Test {
   scoped_ptr<TestingProfile> profile_;
   scoped_refptr<WebDataService> wds_;
   scoped_refptr<PasswordStore> store_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 };
 
 ACTION(STLDeleteElements0) {
@@ -184,7 +186,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_ConvertIE7Login) {
   MockPasswordStoreConsumer consumer;
 
   // Make sure we quit the MessageLoop even if the test fails.
-  ON_CALL(consumer, OnPasswordStoreRequestDone(_, _))
+  ON_CALL(consumer, OnGetPasswordStoreResults(_))
       .WillByDefault(QuitUIMessageLoop());
 
   PasswordFormData form_data = {
@@ -218,8 +220,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_ConvertIE7Login) {
 
   // The IE7 password should be returned.
   EXPECT_CALL(consumer,
-      OnPasswordStoreRequestDone(_,
-          ContainsAllPasswordForms(forms)))
+              OnGetPasswordStoreResults(ContainsAllPasswordForms(forms)))
       .WillOnce(QuitUIMessageLoop());
 
   store_->GetLogins(*form, &consumer);
@@ -256,7 +257,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_OutstandingWDSQueries) {
   store_ = NULL;
   wds_ = NULL;
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 // Hangs flakily, see http://crbug.com/43836.
@@ -280,7 +281,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_MultipleWDSQueriesOnDifferentThreads) {
 
   MockPasswordStoreConsumer password_consumer;
   // Make sure we quit the MessageLoop even if the test fails.
-  ON_CALL(password_consumer, OnPasswordStoreRequestDone(_, _))
+  ON_CALL(password_consumer, OnGetPasswordStoreResults(_))
       .WillByDefault(QuitUIMessageLoop());
 
   PasswordFormData form_data = {
@@ -314,8 +315,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_MultipleWDSQueriesOnDifferentThreads) {
 
   // The IE7 password should be returned.
   EXPECT_CALL(password_consumer,
-      OnPasswordStoreRequestDone(_,
-          ContainsAllPasswordForms(forms)))
+              OnGetPasswordStoreResults(ContainsAllPasswordForms(forms)))
       .WillOnce(QuitUIMessageLoop());
 
   store_->GetLogins(*form, &password_consumer);
@@ -323,8 +323,8 @@ TEST_F(PasswordStoreWinTest, DISABLED_MultipleWDSQueriesOnDifferentThreads) {
   MockWebDataServiceConsumer wds_consumer;
 
   EXPECT_CALL(wds_consumer,
-    OnWebDataServiceRequestDone(_, _))
-    .WillOnce(QuitUIMessageLoop());
+              OnWebDataServiceRequestDone(_, _))
+      .WillOnce(QuitUIMessageLoop());
 
   wds_->GetIE7Login(password_info, &wds_consumer);
 
@@ -359,14 +359,14 @@ TEST_F(PasswordStoreWinTest, EmptyLogins) {
   MockPasswordStoreConsumer consumer;
 
   // Make sure we quit the MessageLoop even if the test fails.
-  ON_CALL(consumer, OnPasswordStoreRequestDone(_, _))
+  ON_CALL(consumer, OnGetPasswordStoreResults(_))
       .WillByDefault(QuitUIMessageLoop());
 
   VectorOfForms expect_none;
   // expect that we get no results;
-  EXPECT_CALL(consumer, OnPasswordStoreRequestDone(
-      _, ContainsAllPasswordForms(expect_none)))
-      .WillOnce(DoAll(WithArg<1>(STLDeleteElements0()), QuitUIMessageLoop()));
+  EXPECT_CALL(consumer,
+              OnGetPasswordStoreResults(ContainsAllPasswordForms(expect_none)))
+      .WillOnce(DoAll(WithArg<0>(STLDeleteElements0()), QuitUIMessageLoop()));
 
   store_->GetLogins(*form, &consumer);
   MessageLoop::current()->Run();
@@ -385,8 +385,9 @@ TEST_F(PasswordStoreWinTest, EmptyBlacklistLogins) {
 
   VectorOfForms expect_none;
   // expect that we get no results;
-  EXPECT_CALL(consumer, OnPasswordStoreRequestDone(
-      _, ContainsAllPasswordForms(expect_none)))
+  EXPECT_CALL(
+      consumer,
+      OnPasswordStoreRequestDone(_, ContainsAllPasswordForms(expect_none)))
       .WillOnce(DoAll(WithArg<1>(STLDeleteElements0()), QuitUIMessageLoop()));
 
   store_->GetBlacklistLogins(&consumer);
@@ -406,8 +407,9 @@ TEST_F(PasswordStoreWinTest, EmptyAutofillableLogins) {
 
   VectorOfForms expect_none;
   // expect that we get no results;
-  EXPECT_CALL(consumer, OnPasswordStoreRequestDone(
-      _, ContainsAllPasswordForms(expect_none)))
+  EXPECT_CALL(
+      consumer,
+      OnPasswordStoreRequestDone(_, ContainsAllPasswordForms(expect_none)))
       .WillOnce(DoAll(WithArg<1>(STLDeleteElements0()), QuitUIMessageLoop()));
 
   store_->GetAutofillableLogins(&consumer);

@@ -5,6 +5,8 @@
 #include "chrome/browser/ui/views/infobars/translate_infobar_base.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/after_translate_infobar.h"
 #include "chrome/browser/ui/views/infobars/before_translate_infobar.h"
@@ -18,24 +20,13 @@
 
 // TranslateInfoBarDelegate ---------------------------------------------------
 
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
-  TranslateInfoBarBase* infobar = NULL;
-  switch (type_) {
-    case BEFORE_TRANSLATE:
-      infobar = new BeforeTranslateInfoBar(owner, this);
-      break;
-    case AFTER_TRANSLATE:
-      infobar = new AfterTranslateInfoBar(owner, this);
-      break;
-    case TRANSLATING:
-    case TRANSLATION_ERROR:
-      infobar = new TranslateMessageInfoBar(owner, this);
-      break;
-    default:
-      NOTREACHED();
-  }
-  infobar_view_ = infobar;
-  return infobar;
+InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
+  InfoBarTabHelper* helper = static_cast<InfoBarTabHelper*>(owner);
+  if (type_ == BEFORE_TRANSLATE)
+    return new BeforeTranslateInfoBar(helper, this);
+  if (type_ == AFTER_TRANSLATE)
+    return new AfterTranslateInfoBar(helper, this);
+  return new TranslateMessageInfoBar(helper, this);
 }
 
 // TranslateInfoBarBase -------------------------------------------------------
@@ -46,10 +37,20 @@ const int TranslateInfoBarBase::kButtonInLabelSpacing = 5;
 TranslateInfoBarBase::TranslateInfoBarBase(InfoBarTabHelper* owner,
                                            TranslateInfoBarDelegate* delegate)
     : InfoBarView(owner, delegate),
-      error_background_(InfoBarDelegate::WARNING_TYPE) {
+      error_background_(GetInfoBarTopColor(InfoBarDelegate::WARNING_TYPE),
+                        GetInfoBarBottomColor(InfoBarDelegate::WARNING_TYPE)) {
 }
 
 TranslateInfoBarBase::~TranslateInfoBarBase() {
+}
+
+void TranslateInfoBarBase::UpdateLanguageButtonText(views::MenuButton* button,
+                                                    const string16& text) {
+  DCHECK(button);
+  button->SetText(text);
+  // The button may have to grow to show the new text.
+  Layout();
+  SchedulePaint();
 }
 
 void TranslateInfoBarBase::ViewHierarchyChanged(bool is_add,
@@ -73,20 +74,6 @@ void TranslateInfoBarBase::ViewHierarchyChanged(bool is_add,
   // This must happen after adding all other children so InfoBarView can ensure
   // the close button is the last child.
   InfoBarView::ViewHierarchyChanged(is_add, parent, child);
-}
-
-void TranslateInfoBarBase::UpdateLanguageButtonText(
-    views::MenuButton* button,
-    LanguagesMenuModel::LanguageType language_type) {
-  DCHECK(button);
-  TranslateInfoBarDelegate* delegate = GetDelegate();
-  bool is_original = language_type == LanguagesMenuModel::ORIGINAL;
-  int index = is_original ? delegate->original_language_index()
-                          : delegate->target_language_index();
-  button->SetText(delegate->GetLanguageDisplayableNameAt(index));
-  // The button may have to grow to show the new text.
-  Layout();
-  SchedulePaint();
 }
 
 TranslateInfoBarDelegate* TranslateInfoBarBase::GetDelegate() {
@@ -129,7 +116,6 @@ void TranslateInfoBarBase::FadeBackground(gfx::Canvas* canvas,
   // Draw the background into an offscreen buffer with alpha value per animation
   // value, then blend it back into the current canvas.
   canvas->SaveLayerAlpha(static_cast<int>(animation_value * 255));
-  canvas->sk_canvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
   background.Paint(canvas, this);
   canvas->Restore();
 }

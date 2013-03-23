@@ -10,6 +10,7 @@
 #include "build/build_config.h"
 #include "content/common/child_process.h"
 #include "content/common/media/audio_messages.h"
+#include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "media/audio/audio_manager_base.h"
@@ -29,7 +30,8 @@ PepperPlatformAudioInputImpl* PepperPlatformAudioInputImpl::Create(
                               frames_per_buffer, client)) {
     // Balanced by Release invoked in
     // PepperPlatformAudioInputImpl::ShutDownOnIOThread().
-    return audio_input.release();
+    audio_input->AddRef();
+    return audio_input.get();
   }
   return NULL;
 }
@@ -138,6 +140,7 @@ PepperPlatformAudioInputImpl::~PepperPlatformAudioInputImpl() {
 PepperPlatformAudioInputImpl::PepperPlatformAudioInputImpl()
     : client_(NULL),
       stream_id_(0),
+      render_view_id_(MSG_ROUTING_NONE),
       main_message_loop_proxy_(base::MessageLoopProxy::current()),
       shutdown_called_(false) {
   ipc_ = RenderThreadImpl::current()->audio_input_message_filter();
@@ -155,10 +158,11 @@ bool PepperPlatformAudioInputImpl::Initialize(
     return false;
 
   plugin_delegate_ = plugin_delegate;
+  render_view_id_ = plugin_delegate_->GetRoutingID();
   client_ = client;
 
-  params_.Reset(media::AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_MONO,
-                sample_rate, 16, frames_per_buffer);
+  params_.Reset(media::AudioParameters::AUDIO_PCM_LINEAR,
+                media::CHANNEL_LAYOUT_MONO, sample_rate, 16, frames_per_buffer);
 
   if (device_id.empty()) {
     // Use the default device.
@@ -202,8 +206,10 @@ void PepperPlatformAudioInputImpl::StartCaptureOnIOThread() {
   DCHECK(ChildProcess::current()->io_message_loop_proxy()->
       BelongsToCurrentThread());
 
-  if (stream_id_)
+  if (stream_id_) {
+    ipc_->AssociateStreamWithConsumer(stream_id_, render_view_id_);
     ipc_->RecordStream(stream_id_);
+  }
 }
 
 void PepperPlatformAudioInputImpl::StopCaptureOnIOThread() {

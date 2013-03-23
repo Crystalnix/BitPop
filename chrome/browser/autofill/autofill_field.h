@@ -10,9 +10,9 @@
 #include "base/basictypes.h"
 #include "base/string16.h"
 #include "chrome/browser/autofill/field_types.h"
-#include "webkit/forms/form_field.h"
+#include "chrome/common/form_field_data.h"
 
-class AutofillField : public webkit::forms::FormField {
+class AutofillField : public FormFieldData {
  public:
   enum PhonePart {
     IGNORED = 0,
@@ -21,20 +21,19 @@ class AutofillField : public webkit::forms::FormField {
   };
 
   AutofillField();
-  AutofillField(const webkit::forms::FormField& field,
-                const string16& unique_name);
+  AutofillField(const FormFieldData& field, const string16& unique_name);
   virtual ~AutofillField();
 
   const string16& unique_name() const { return unique_name_; }
 
-  const string16& section() const { return section_; }
+  const std::string& section() const { return section_; }
   AutofillFieldType heuristic_type() const { return heuristic_type_; }
   AutofillFieldType server_type() const { return server_type_; }
   const FieldTypeSet& possible_types() const { return possible_types_; }
   PhonePart phone_part() const { return phone_part_; }
 
   // Sets the heuristic type of this field, validating the input.
-  void set_section(const string16& section) { section_ = section; }
+  void set_section(const std::string& section) { section_ = section; }
   void set_heuristic_type(AutofillFieldType type);
   void set_server_type(AutofillFieldType type);
   void set_possible_types(const FieldTypeSet& possible_types) {
@@ -63,7 +62,7 @@ class AutofillField : public webkit::forms::FormField {
 
   // The unique identifier for the section (e.g. billing vs. shipping address)
   // that this field belongs to.
-  string16 section_;
+  std::string section_;
 
   // The type of the field, as determined by the Autofill server.
   AutofillFieldType server_type_;

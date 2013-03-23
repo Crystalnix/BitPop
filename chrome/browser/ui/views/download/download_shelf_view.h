@@ -16,10 +16,10 @@
 #include "ui/views/controls/link_listener.h"
 #include "ui/views/mouse_watcher.h"
 
-class BaseDownloadItemModel;
 class Browser;
 class BrowserView;
 class DownloadItemView;
+class DownloadItemModel;
 
 namespace content {
 class PageNavigator;
@@ -76,7 +76,7 @@ class DownloadShelfView : public views::AccessiblePaneView,
   // Invoked when the user clicks the close button. Asks the browser to
   // hide the download shelf.
   virtual void ButtonPressed(views::Button* button,
-                             const views::Event& event) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
   // Implementation of DownloadShelf.
   virtual bool IsShowing() const OVERRIDE;
@@ -98,7 +98,7 @@ class DownloadShelfView : public views::AccessiblePaneView,
 
  protected:
   // Implementation of DownloadShelf.
-  virtual void DoAddDownload(BaseDownloadItemModel* download_model) OVERRIDE;
+  virtual void DoAddDownload(DownloadItemModel* download_model) OVERRIDE;
   virtual void DoShow() OVERRIDE;
   virtual void DoClose() OVERRIDE;
 
@@ -118,7 +118,7 @@ class DownloadShelfView : public views::AccessiblePaneView,
   bool CanFitFirstDownloadItem();
 
   // Called on theme change.
-  void UpdateButtonColors();
+  void UpdateColorsFromTheme();
 
   // Overridden from views::View.
   virtual void OnThemeChanged() OVERRIDE;

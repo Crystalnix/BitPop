@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/autocomplete/history_url_provider.h"
+#include "chrome/browser/autocomplete/history_provider.h"
 
 #include <string>
 
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/history/history.h"
@@ -19,12 +20,10 @@
 
 HistoryProvider::HistoryProvider(AutocompleteProviderListener* listener,
                                  Profile* profile,
-                                 const char* name)
-    : AutocompleteProvider(listener, profile, name),
+                                 AutocompleteProvider::Type type)
+    : AutocompleteProvider(listener, profile, type),
       always_prevent_inline_autocomplete_(false) {
 }
-
-HistoryProvider::~HistoryProvider() {}
 
 void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   DCHECK(done_);
@@ -38,8 +37,12 @@ void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   DCHECK(history_service);
   DCHECK(match.destination_url.is_valid());
   history_service->DeleteURL(match.destination_url);
+  DeleteMatchFromMatches(match);
+}
 
-  // Delete the match from the current set of matches.
+HistoryProvider::~HistoryProvider() {}
+
+void HistoryProvider::DeleteMatchFromMatches(const AutocompleteMatch& match) {
   bool found = false;
   for (ACMatches::iterator i(matches_.begin()); i != matches_.end(); ++i) {
     if (i->destination_url == match.destination_url && i->type == match.type) {
@@ -131,7 +134,13 @@ bool HistoryProvider::FixupUserInput(AutocompleteInput* input) {
 
   url_parse::Parsed parts;
   URLFixerUpper::SegmentURL(output, &parts);
-  input->UpdateText(output, parts);
+  // TODO: This function does not take into account the cursor position while
+  // running various normalizations, including a call to FixupURL(). In order
+  // to make it work properly, we need to ensure that all logic above is
+  // cursor-aware and offsets the input cursor accordingly.
+  // For now we simply pretend that the cursor was not set at all.
+  // See http://crbug/163932 for more details.
+  input->UpdateText(output, string16::npos, parts);
   return !output.empty();
 }
 

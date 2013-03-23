@@ -72,7 +72,7 @@ std::string ContentBrowserClient::GetCanonicalEncodingNameByAliasName(
 }
 
 std::string ContentBrowserClient::GetApplicationLocale() {
-  return std::string();
+  return "en-US";
 }
 
 std::string ContentBrowserClient::GetAcceptLangs(BrowserContext* context) {
@@ -160,10 +160,30 @@ net::URLRequestContext* ContentBrowserClient::OverrideRequestContextForURL(
   return NULL;
 }
 
-std::string ContentBrowserClient::GetStoragePartitionIdForChildProcess(
-    content::BrowserContext* browser_context,
-    int child_process_id) {
+std::string ContentBrowserClient::GetStoragePartitionIdForSite(
+    BrowserContext* browser_context,
+    const GURL& site) {
   return std::string();
+}
+
+bool ContentBrowserClient::IsValidStoragePartitionId(
+    BrowserContext* browser_context,
+    const std::string& partition_id) {
+  // Since the GetStoragePartitionIdForChildProcess() only generates empty
+  // strings, we should only ever see empty strings coming back.
+  return partition_id.empty();
+}
+
+void ContentBrowserClient::GetStoragePartitionConfigForSite(
+    BrowserContext* browser_context,
+    const GURL& site,
+    bool can_be_default,
+    std::string* partition_domain,
+    std::string* partition_name,
+    bool* in_memory) {
+  partition_domain->clear();
+  partition_name->clear();
+  *in_memory = false;
 }
 
 MediaObserver* ContentBrowserClient::GetMediaObserver() {
@@ -218,13 +238,20 @@ std::string ContentBrowserClient::GetDefaultDownloadName() {
   return std::string();
 }
 
+BrowserPpapiHost*
+    ContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
+  return NULL;
+}
+
 bool ContentBrowserClient::AllowPepperSocketAPI(
-    BrowserContext* browser_context, const GURL& url) {
+    BrowserContext* browser_context,
+    const GURL& url,
+    const SocketPermissionRequest& params) {
   return false;
 }
 
-bool ContentBrowserClient::AllowPepperPrivateFileAPI() {
-  return false;
+FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
+  return FilePath();
 }
 
 #if defined(OS_WIN)

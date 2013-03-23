@@ -24,6 +24,10 @@ namespace content {
 class WebContents;
 }
 
+namespace gfx {
+class Rect;
+}
+
 // Assists launching the application and appending the initial tabs for a
 // browser window.
 class StartupBrowserCreatorImpl {
@@ -68,10 +72,13 @@ class StartupBrowserCreatorImpl {
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, RestorePinnedTabs);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, AppIdSwitch);
 
+  // Extracts optional application window size passed in command line.
+  void ExtractOptionalAppWindowSize(gfx::Rect* bounds);
+
   // If the process was launched with the web application command line flags,
   // e.g. --app=http://www.google.com/ or --app_id=... return true.
   // In this case |app_url| or |app_id| are populated if they're non-null.
-  bool IsAppLaunch(std::string* app_url, std::string* app_id);
+  bool IsAppLaunch(Profile* profile, std::string* app_url, std::string* app_id);
 
   // If IsAppLaunch is true, tries to open an application window.
   // If the app is specified to start in a tab, or IsAppLaunch is false,
@@ -130,6 +137,12 @@ class StartupBrowserCreatorImpl {
   // Checks whether the Preferences backup is invalid and notifies user in
   // that case.
   void CheckPreferencesBackup(Profile* profile);
+
+  // Function to open startup urls in an existing Browser instance for the
+  // profile passed in. Returns true on success.
+  static bool OpenStartupURLsInExistingBrowser(
+      Profile* profile,
+      const std::vector<GURL>& startup_urls);
 
   const FilePath cur_dir_;
   const CommandLine& command_line_;

@@ -6,8 +6,8 @@
 
 #include "build/build_config.h"
 #include "content/common/content_export.h"
+#include "content/common/content_param_traits.h"
 #include "content/public/common/common_param_traits.h"
-#include "content/public/common/webkit_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/native_widget_types.h"
@@ -24,7 +24,6 @@
 #define IPC_MESSAGE_START PluginMsgStart
 
 IPC_STRUCT_BEGIN(PluginMsg_Init_Params)
-  IPC_STRUCT_MEMBER(gfx::NativeViewId, containing_window)
   IPC_STRUCT_MEMBER(GURL,  url)
   IPC_STRUCT_MEMBER(GURL,  page_url)
   IPC_STRUCT_MEMBER(std::vector<std::string>, arg_names)
@@ -55,11 +54,9 @@ IPC_STRUCT_END()
 IPC_STRUCT_BEGIN(PluginMsg_UpdateGeometry_Param)
   IPC_STRUCT_MEMBER(gfx::Rect, window_rect)
   IPC_STRUCT_MEMBER(gfx::Rect, clip_rect)
-  IPC_STRUCT_MEMBER(bool, transparent)
   IPC_STRUCT_MEMBER(TransportDIB::Handle, windowless_buffer0)
   IPC_STRUCT_MEMBER(TransportDIB::Handle, windowless_buffer1)
   IPC_STRUCT_MEMBER(int, windowless_buffer_index)
-  IPC_STRUCT_MEMBER(TransportDIB::Handle, background_buffer)
 IPC_STRUCT_END()
 
 //-----------------------------------------------------------------------------
@@ -92,13 +89,6 @@ IPC_MESSAGE_CONTROL1(PluginProcessHostMsg_ChannelCreated,
 IPC_MESSAGE_CONTROL2(PluginProcessHostMsg_PluginWindowDestroyed,
                      HWND /* window */,
                      HWND /* parent */)
-
-IPC_MESSAGE_CONTROL2(PluginProcessHostMsg_ReparentPluginWindow,
-                     HWND /* window */,
-                     HWND /* parent */)
-
-IPC_MESSAGE_CONTROL1(PluginProcessHostMsg_ReportExecutableMemory,
-                     uint32_t /* size */)
 #endif
 
 #if defined(USE_X11)
@@ -282,10 +272,10 @@ IPC_MESSAGE_ROUTED2(PluginMsg_HTTPRangeRequestReply,
                     int /* range_request_id */)
 
 IPC_MESSAGE_CONTROL1(PluginMsg_SignalModalDialogEvent,
-                     gfx::NativeViewId /* containing_window */)
+                     int /* render_view_id */)
 
 IPC_MESSAGE_CONTROL1(PluginMsg_ResetModalDialogEvent,
-                     gfx::NativeViewId /* containing_window */)
+                     int /* render_view_id */)
 
 #if defined(OS_MACOSX)
 // This message, used only on 10.6 and later, transmits the "fake"
@@ -315,8 +305,9 @@ IPC_SYNC_MESSAGE_ROUTED1_0(PluginHostMsg_SetWindow,
 // passed in for windowless plugins and is used to indicate if messages
 // are to be pumped in sync calls to the plugin process. Currently used
 // in HandleEvent calls.
-IPC_SYNC_MESSAGE_ROUTED1_0(PluginHostMsg_SetWindowlessPumpEvent,
-                           HANDLE /* modal_loop_pump_messages_event */)
+IPC_SYNC_MESSAGE_ROUTED2_0(PluginHostMsg_SetWindowlessData,
+                           HANDLE /* modal_loop_pump_messages_event */,
+                           gfx::NativeViewId /* dummy_activation_window*/)
 
 // Send the IME status retrieved from a windowless plug-in. A windowless plug-in
 // uses the IME attached to a browser process as a renderer does. A plug-in
@@ -335,9 +326,8 @@ IPC_MESSAGE_ROUTED1(PluginHostMsg_URLRequest,
 IPC_MESSAGE_ROUTED1(PluginHostMsg_CancelResource,
                     int /* id */)
 
-IPC_MESSAGE_ROUTED2(PluginHostMsg_InvalidateRect,
-                    gfx::Rect /* rect */,
-                    bool /* allow_buffer_flipping */)
+IPC_MESSAGE_ROUTED1(PluginHostMsg_InvalidateRect,
+                    gfx::Rect /* rect */)
 
 IPC_SYNC_MESSAGE_ROUTED1_1(PluginHostMsg_GetWindowScriptNPObject,
                            int /* route id */,
@@ -480,47 +470,47 @@ IPC_MESSAGE_ROUTED2(PluginHostMsg_URLRedirectResponse,
 IPC_SYNC_MESSAGE_ROUTED0_0(NPObjectMsg_Release)
 
 IPC_SYNC_MESSAGE_ROUTED1_1(NPObjectMsg_HasMethod,
-                           NPIdentifier_Param /* name */,
+                           content::NPIdentifier_Param /* name */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED3_2(NPObjectMsg_Invoke,
                            bool /* is_default */,
-                           NPIdentifier_Param /* method */,
-                           std::vector<NPVariant_Param> /* args */,
-                           NPVariant_Param /* result_param */,
+                           content::NPIdentifier_Param /* method */,
+                           std::vector<content::NPVariant_Param> /* args */,
+                           content::NPVariant_Param /* result_param */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED1_1(NPObjectMsg_HasProperty,
-                           NPIdentifier_Param /* name */,
+                           content::NPIdentifier_Param /* name */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED1_2(NPObjectMsg_GetProperty,
-                           NPIdentifier_Param /* name */,
-                           NPVariant_Param /* property */,
+                           content::NPIdentifier_Param /* name */,
+                           content::NPVariant_Param /* property */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED2_1(NPObjectMsg_SetProperty,
-                           NPIdentifier_Param /* name */,
-                           NPVariant_Param /* property */,
+                           content::NPIdentifier_Param /* name */,
+                           content::NPVariant_Param /* property */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED1_1(NPObjectMsg_RemoveProperty,
-                           NPIdentifier_Param /* name */,
+                           content::NPIdentifier_Param /* name */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED0_0(NPObjectMsg_Invalidate)
 
 IPC_SYNC_MESSAGE_ROUTED0_2(NPObjectMsg_Enumeration,
-                           std::vector<NPIdentifier_Param> /* value */,
+                           std::vector<content::NPIdentifier_Param> /* value */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED1_2(NPObjectMsg_Construct,
-                           std::vector<NPVariant_Param> /* args */,
-                           NPVariant_Param /* result_param */,
+                           std::vector<content::NPVariant_Param> /* args */,
+                           content::NPVariant_Param /* result_param */,
                            bool /* result */)
 
 IPC_SYNC_MESSAGE_ROUTED2_2(NPObjectMsg_Evaluate,
                            std::string /* script */,
                            bool /* popups_allowed */,
-                           NPVariant_Param /* result_param */,
+                           content::NPVariant_Param /* result_param */,
                            bool /* result */)

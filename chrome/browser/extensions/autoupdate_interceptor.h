@@ -11,6 +11,8 @@
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request.h"
 
+namespace extensions {
+
 // This url request interceptor lets us respond to localhost http request urls
 // with the contents of files on disk for use in tests.
 class AutoUpdateInterceptor
@@ -21,7 +23,9 @@ class AutoUpdateInterceptor
 
   // When computing matches, this ignores query parameters (since the autoupdate
   // fetch code appends a bunch of them to manifest fetches).
-  virtual net::URLRequestJob* MaybeIntercept(net::URLRequest* request) OVERRIDE;
+  virtual net::URLRequestJob* MaybeIntercept(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) OVERRIDE;
 
   // When requests for |url| arrive, respond with the contents of |path|. The
   // hostname of |url| must be "localhost" to avoid DNS lookups, and the scheme
@@ -41,5 +45,7 @@ class AutoUpdateInterceptor
 
   DISALLOW_COPY_AND_ASSIGN(AutoUpdateInterceptor);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_AUTOUPDATE_INTERCEPTOR_H_

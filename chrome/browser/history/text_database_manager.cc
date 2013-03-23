@@ -4,6 +4,9 @@
 
 #include "chrome/browser/history/text_database_manager.h"
 
+#include <algorithm>
+#include <functional>
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
@@ -372,6 +375,30 @@ void TextDatabaseManager::DeleteFromUncommitted(
   }
 }
 
+void TextDatabaseManager::DeleteFromUncommittedForTimes(
+    const std::vector<base::Time>& times) {
+  // |times| must be in reverse chronological order, i.e. each member
+  // must be earlier than or the same as the one before it.
+  DCHECK(
+      std::adjacent_find(
+          times.begin(), times.end(), std::less<base::Time>()) ==
+      times.end());
+
+  // Both |recent_changes_| and |times| are in reverse chronological order.
+  RecentChangeList::iterator it = recent_changes_.begin();
+  std::vector<base::Time>::const_iterator time_it = times.begin();
+  while (it != recent_changes_.end() && time_it != times.end()) {
+    base::Time visit_time = it->second.visit_time();
+    if (visit_time == *time_it) {
+      it = recent_changes_.Erase(it);
+    } else if (visit_time < *time_it) {
+      ++time_it;
+    } else /* if (visit_time > *time_it) */ {
+      ++it;
+    }
+  }
+}
+
 void TextDatabaseManager::DeleteAll() {
   DCHECK_EQ(0, transaction_nesting_) << "Calling deleteAll in a transaction.";
 
@@ -417,12 +444,11 @@ void TextDatabaseManager::GetTextMatches(
     Time* first_time_searched) {
   results->clear();
 
+  *first_time_searched = options.begin_time;
+
   InitDBList();
-  if (present_databases_.empty()) {
-    // Nothing to search.
-    *first_time_searched = options.begin_time;
-    return;
-  }
+  if (present_databases_.empty())
+    return;  // Nothing to search.
 
   // Get the query into the proper format for the individual DBs.
   string16 fts_query16;
@@ -443,7 +469,6 @@ void TextDatabaseManager::GetTextMatches(
       TimeToID(options.end_time);
 
   // Iterate over the databases from the most recent backwards.
-  bool checked_one = false;
   TextDatabase::URLSet found_urls;
   for (DBIdentSet::reverse_iterator i = present_databases_.rbegin();
        i != present_databases_.rend();
@@ -470,23 +495,23 @@ void TextDatabaseManager::GetTextMatches(
           static_cast<int>(results->size());
     }
 
-    // Since we are going backwards in time, it is always OK to pass the
-    // current first_time_searched, since it will always be smaller than
-    // any previous set.
-    cur_db->GetTextMatches(fts_query, cur_options,
-                           results, &found_urls, first_time_searched);
-    checked_one = true;
+    bool has_more_results = cur_db->GetTextMatches(
+        fts_query, cur_options, results, &found_urls);
 
-    DCHECK(options.max_count == 0 ||
-           static_cast<int>(results->size()) <= options.max_count);
-    if (options.max_count &&
-        static_cast<int>(results->size()) >= options.max_count)
-      break;  // Got the max number of results.
+    DCHECK(static_cast<int>(results->size()) <= options.EffectiveMaxCount());
+
+    if (has_more_results ||
+        static_cast<int>(results->size()) == options.EffectiveMaxCount()) {
+      // Since the search proceeds backwards in time, the last result we have
+      // gives the first time searched.
+      *first_time_searched = results->back().time;
+      break;
+    }
   }
+}
 
-  // When there were no databases in the range, we need to fix up the min time.
-  if (!checked_one)
-    *first_time_searched = options.begin_time;
+size_t TextDatabaseManager::GetUncommittedEntryCountForTest() const {
+  return recent_changes_.size();
 }
 
 TextDatabase* TextDatabaseManager::GetDB(TextDatabase::DBIdent id,

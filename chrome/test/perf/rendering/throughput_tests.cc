@@ -17,7 +17,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/window_snapshot/window_snapshot.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -341,8 +340,8 @@ class ThroughputTest : public BrowserPerfTest {
 
     // Check if GPU is rendering:
     analyzer.reset(TraceAnalyzer::Create(json_events));
-    bool ran_on_gpu = (analyzer->FindEvents(Query::EventName() ==
-        Query::String("SwapBuffers"), &events_gpu) > 0u);
+    bool ran_on_gpu = (analyzer->FindEvents(
+        Query::EventNameIs("SwapBuffers"), &events_gpu) > 0u);
     LOG(INFO) << "Mode: " << (ran_on_gpu ? "GPU" : "Software");
     EXPECT_EQ(use_gpu_, ran_on_gpu);
 
@@ -355,8 +354,8 @@ class ThroughputTest : public BrowserPerfTest {
     // Search for frame ticks. We look for both SW and GPU frame ticks so that
     // the test can verify that only one or the other are found.
     analyzer.reset(TraceAnalyzer::Create(json_events));
-    Query query_sw = Query::EventName() == Query::String("TestFrameTickSW");
-    Query query_gpu = Query::EventName() == Query::String("TestFrameTickGPU");
+    Query query_sw = Query::EventNameIs("TestFrameTickSW");
+    Query query_gpu = Query::EventNameIs("TestFrameTickGPU");
     analyzer->FindEvents(query_sw, &events_sw);
     analyzer->FindEvents(query_gpu, &events_gpu);
     TraceEventVector* frames = NULL;

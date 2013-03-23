@@ -9,14 +9,7 @@
 
 using WebKit::WebWidget;
 
-// static
-RenderWidgetFullscreen* RenderWidgetFullscreen::Create(int32 opener_id) {
-  DCHECK_NE(MSG_ROUTING_NONE, opener_id);
-  scoped_refptr<RenderWidgetFullscreen> widget(
-      new RenderWidgetFullscreen(WebKit::WebScreenInfo()));
-  widget->Init(opener_id);
-  return widget.release();
-}
+namespace content {
 
 void RenderWidgetFullscreen::show(WebKit::WebNavigationPolicy) {
   DCHECK(!did_show_) << "received extraneous Show call";
@@ -42,12 +35,14 @@ WebWidget* RenderWidgetFullscreen::CreateWebWidget() {
   return RenderWidget::CreateWebWidget(this);
 }
 
-void RenderWidgetFullscreen::Init(int32 opener_id) {
+bool RenderWidgetFullscreen::Init(int32 opener_id) {
   DCHECK(!webwidget_);
 
-  RenderWidget::DoInit(
+  return RenderWidget::DoInit(
       opener_id,
       CreateWebWidget(),
       new ViewHostMsg_CreateFullscreenWidget(
           opener_id, &routing_id_, &surface_id_));
 }
+
+}  // namespace content

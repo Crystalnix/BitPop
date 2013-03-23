@@ -15,7 +15,8 @@
 namespace content {
 
 HistogramInternalsRequestJob::HistogramInternalsRequestJob(
-    net::URLRequest* request) : net::URLRequestSimpleJob(request) {
+    net::URLRequest* request, net::NetworkDelegate* network_delegate)
+    : net::URLRequestSimpleJob(request, network_delegate) {
   const std::string& spec = request->url().possibly_invalid_spec();
   const url_parse::Parsed& parsed =
       request->url().parsed_for_possibly_invalid_spec();
@@ -33,7 +34,7 @@ void AboutHistogram(std::string* data, const std::string& path) {
   // (in official builds).
   base::StatisticsRecorder::CollectHistogramStats("Browser");
 #endif
-  content::HistogramSynchronizer::FetchHistograms();
+  HistogramSynchronizer::FetchHistograms();
 
   std::string unescaped_query;
   std::string unescaped_title("About Histograms");
@@ -45,8 +46,8 @@ void AboutHistogram(std::string* data, const std::string& path) {
 
   data->append("<!DOCTYPE html>\n<html>\n<head>\n");
   data->append(
-      "<meta http-equiv=\"X-WebKit-CSP\" content=\"object-src 'none'; "
-      "script-src 'none' 'unsafe-eval'\">");
+      "<meta http-equiv=\"Content-Security-Policy\" "
+      "content=\"object-src 'none'; script-src 'none' 'unsafe-eval'\">");
   data->append("<title>");
   data->append(net::EscapeForHTML(unescaped_title));
   data->append("</title>\n");

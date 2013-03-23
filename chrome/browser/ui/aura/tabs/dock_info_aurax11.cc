@@ -4,12 +4,16 @@
 
 #include "chrome/browser/ui/tabs/dock_info.h"
 
+#include "chrome/browser/ui/host_desktop.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/x/x11_util.h"
-#include "ui/views/widget/desktop_native_widget_helper_aura.h"
 
-#if !defined(USE_ASH)
+#if !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_root_window_host_linux.h"
+#endif
+
+#if !defined(OS_CHROMEOS)
 
 namespace {
 
@@ -79,16 +83,11 @@ class TopMostFinder : public BaseWindowFinder {
       return false;
     }
 
-    gfx::Rect rect;
-    if (ui::GetWindowRect(window, &rect) && rect.Contains(screen_loc_)) {
-      // At this point we haven't found our target window, so this window is
-      // higher in the z-order than the target window.  If this window contains
-      // the point, then we can stop the search now because this window is
-      // obscuring the target window at this point.
-      return true;
-    }
-
-    return false;
+    // At this point we haven't found our target window, so this window is
+    // higher in the z-order than the target window.  If this window contains
+    // the point, then we can stop the search now because this window is
+    // obscuring the target window at this point.
+    return ui::WindowContainsPoint(window, screen_loc_);
   }
 
  private:
@@ -147,8 +146,7 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
     if (!ui::IsWindowVisible(window))
       return false;
 
-    gfx::Rect rect;
-    if (ui::GetWindowRect(window, &rect) && rect.Contains(screen_loc_)) {
+    if (ui::WindowContainsPoint(window, screen_loc_)) {
       result_ = window;
       return true;
     }
@@ -178,7 +176,8 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
 }  // namespace
 
 // static
-DockInfo DockInfo::GetDockInfoAtPoint(const gfx::Point& screen_point,
+DockInfo DockInfo::GetDockInfoAtPoint(chrome::HostDesktopType host_desktop_type,
+                                      const gfx::Point& screen_point,
                                       const std::set<gfx::NativeView>& ignore) {
   // TODO(beng):
   NOTIMPLEMENTED();
@@ -187,23 +186,14 @@ DockInfo DockInfo::GetDockInfoAtPoint(const gfx::Point& screen_point,
 
 // static
 gfx::NativeView DockInfo::GetLocalProcessWindowAtPoint(
+    chrome::HostDesktopType host_desktop_type,
     const gfx::Point& screen_point,
     const std::set<gfx::NativeView>& ignore) {
   // The X11 server is the canonical state of what the window stacking order
   // is.
   XID xid =
       LocalProcessWindowFinder::GetProcessWindowAtPoint(screen_point, ignore);
-  aura::RootWindow* root_window =
-      aura::RootWindow::GetForAcceleratedWidget(xid);
-
-  if (!root_window)
-    return NULL;
-
-  // We now have the aura::RootWindow, but most of views isn't interested in
-  // that; instead it wants the aura::Window that is contained by the
-  // RootWindow.
-  return views::DesktopNativeWidgetHelperAura::GetViewsWindowForRootWindow(
-      root_window);
+  return views::DesktopRootWindowHostLinux::GetContentWindowForXID(xid);
 }
 
 bool DockInfo::GetWindowBounds(gfx::Rect* bounds) const {

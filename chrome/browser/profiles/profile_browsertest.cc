@@ -5,14 +5,16 @@
 #include "chrome/browser/profiles/profile.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/platform_file.h"
-#include "base/scoped_temp_dir.h"
 #include "base/version.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -56,8 +58,11 @@ typedef InProcessBrowserTest ProfileBrowserTest;
 
 // Test OnProfileCreate is called with is_new_profile set to true when
 // creating a new profile synchronously.
-IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateNewProfileSynchronous) {
-  ScopedTempDir temp_dir;
+//
+// Flaky (sometimes timeout): http://crbug.com/141141
+IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
+                       DISABLED_CreateNewProfileSynchronous) {
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   MockProfileDelegate delegate;
@@ -71,8 +76,10 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateNewProfileSynchronous) {
 
 // Test OnProfileCreate is called with is_new_profile set to false when
 // creating a profile synchronously with an existing prefs file.
-IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateOldProfileSynchronous) {
-  ScopedTempDir temp_dir;
+// Flaky: http://crbug.com/141517
+IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
+                       DISABLED_CreateOldProfileSynchronous) {
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   CreatePrefsFileInDirectory(temp_dir.path());
 
@@ -87,8 +94,10 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateOldProfileSynchronous) {
 
 // Test OnProfileCreate is called with is_new_profile set to true when
 // creating a new profile asynchronously.
-IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateNewProfileAsynchronous) {
-  ScopedTempDir temp_dir;
+// This test is flaky on Linux, Win and Mac.  See crbug.com/142787
+IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
+                       DISABLED_CreateNewProfileAsynchronous) {
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   MockProfileDelegate delegate;
@@ -108,8 +117,10 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateNewProfileAsynchronous) {
 
 // Test OnProfileCreate is called with is_new_profile set to false when
 // creating a profile asynchronously with an existing prefs file.
-IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateOldProfileAsynchronous) {
-  ScopedTempDir temp_dir;
+// Flaky: http://crbug.com/141517
+IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
+                       DISABLED_CreateOldProfileAsynchronous) {
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   CreatePrefsFileInDirectory(temp_dir.path());
 
@@ -130,7 +141,7 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, CreateOldProfileAsynchronous) {
 // Test that a README file is created for profiles that didn't have it.
 // Flaky: http://crbug.com/140882
 IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, DISABLED_ProfileReadmeCreated) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   MockProfileDelegate delegate;
@@ -158,7 +169,7 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, DISABLED_ProfileReadmeCreated) {
 
 // Test that Profile can be deleted before README file is created.
 IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, ProfileDeletedBeforeReadmeCreated) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   MockProfileDelegate delegate;
@@ -176,4 +187,42 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, ProfileDeletedBeforeReadmeCreated) {
   profile.reset();
   content::RunAllPendingInMessageLoop();
   content::RunAllPendingInMessageLoop(content::BrowserThread::FILE);
+}
+
+// Test that repeated setting of exit type is handled correctly.
+#if defined(OS_WIN)
+// Flaky on Windows: http://crbug.com/163713
+#define MAYBE_ExitType DISABLED_ExitType
+#else
+#define MAYBE_ExitType ExitType
+#endif
+IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, MAYBE_ExitType) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  MockProfileDelegate delegate;
+  EXPECT_CALL(delegate, OnProfileCreated(testing::NotNull(), true, true));
+
+  scoped_ptr<Profile> profile(Profile::CreateProfile(
+      temp_dir.path(), &delegate, Profile::CREATE_MODE_SYNCHRONOUS));
+  ASSERT_TRUE(profile.get());
+
+  PrefService* prefs = profile->GetPrefs();
+  // The initial state is crashed; store for later reference.
+  std::string crash_value(prefs->GetString(prefs::kSessionExitType));
+
+  // The first call to a type other than crashed should change the value.
+  profile->SetExitType(Profile::EXIT_SESSION_ENDED);
+  std::string first_call_value(prefs->GetString(prefs::kSessionExitType));
+  EXPECT_NE(crash_value, first_call_value);
+
+  // Subsequent calls to a non-crash value should be ignored.
+  profile->SetExitType(Profile::EXIT_NORMAL);
+  std::string second_call_value(prefs->GetString(prefs::kSessionExitType));
+  EXPECT_EQ(first_call_value, second_call_value);
+
+  // Setting back to a crashed value should work.
+  profile->SetExitType(Profile::EXIT_CRASHED);
+  std::string final_value(prefs->GetString(prefs::kSessionExitType));
+  EXPECT_EQ(crash_value, final_value);
 }

@@ -9,12 +9,14 @@
 #import <QuartzCore/CVDisplayLink.h>
 #include <QuartzCore/QuartzCore.h>
 
+#include "base/callback.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 class IOSurfaceSupport;
@@ -30,12 +32,22 @@ namespace content {
 // RenderWidgetHostViewCocoa for blitting the IOSurface.
 class CompositingIOSurfaceMac {
  public:
-  // Returns NULL if IOSurface support is missing or GL APIs fail.
-  static CompositingIOSurfaceMac* Create();
+  // Passed to Create() to specify the ordering of the surface relative to the
+  // containing window.
+  enum SurfaceOrder {
+    SURFACE_ORDER_ABOVE_WINDOW,
+    SURFACE_ORDER_BELOW_WINDOW
+  };
+
+  // Returns NULL if IOSurface support is missing or GL APIs fail. Specify in
+  // |order| the desired ordering relationship of the surface to the containing
+  // window.
+  static CompositingIOSurfaceMac* Create(SurfaceOrder order);
   ~CompositingIOSurfaceMac();
 
   // Set IOSurface that will be drawn on the next NSView drawRect.
-  void SetIOSurface(uint64 io_surface_handle);
+  void SetIOSurface(uint64 io_surface_handle,
+                    const gfx::Size& size);
 
   // Blit the IOSurface at the upper-left corner of the |view|. If |view| window
   // size is larger than the IOSurface, the remaining right and bottom edges
@@ -48,9 +60,12 @@ class CompositingIOSurfaceMac {
   // |src_pixel_subrect| and |dst_pixel_size| are not in DIP but in pixel.
   // Caller must ensure that |out| is allocated with the size no less than
   // |4 * dst_pixel_size.width() * dst_pixel_size.height()| bytes.
-  bool CopyTo(const gfx::Rect& src_pixel_subrect,
+  // |callback| is invoked when the operation is completed or failed.
+  // Do no call this method again before |callback| is invoked.
+  void CopyTo(const gfx::Rect& src_pixel_subrect,
               const gfx::Size& dst_pixel_size,
-              void* out);
+              void* out,
+              const base::Callback<void(bool)>& callback);
 
   // Unref the IOSurface and delete the associated GL texture. If the GPU
   // process is no longer referencing it, this will delete the IOSurface.
@@ -74,6 +89,8 @@ class CompositingIOSurfaceMac {
   bool is_vsync_disabled() const { return is_vsync_disabled_; }
 
   // Get vsync scheduling parameters.
+  // |interval_numerator/interval_denominator| equates to fractional number of
+  // seconds between vsyncs.
   void GetVSyncParameters(base::TimeTicks* timebase,
                           uint32* interval_numerator,
                           uint32* interval_denominator);
@@ -140,6 +157,36 @@ class CompositingIOSurfaceMac {
     SurfaceVertex verts_[4];
   };
 
+  // Keeps track of states and buffers for asynchronous readback of IOSurface.
+  struct CopyContext {
+    CopyContext();
+    ~CopyContext();
+
+    void Reset() {
+      started = false;
+      cycles_elapsed = 0;
+      frame_buffer = 0;
+      frame_buffer_texture = 0;
+      pixel_buffer = 0;
+      use_fence = false;
+      fence = 0;
+      out_buf = NULL;
+      callback.Reset();
+    }
+
+    bool started;
+    int cycles_elapsed;
+    GLuint frame_buffer;
+    GLuint frame_buffer_texture;
+    GLuint pixel_buffer;
+    bool use_fence;
+    GLuint fence;
+    gfx::Rect src_rect;
+    gfx::Size dest_size;
+    void* out_buf;
+    base::Callback<void(bool)> callback;
+  };
+
   CompositingIOSurfaceMac(IOSurfaceSupport* io_surface_support,
                           NSOpenGLContext* glContext,
                           CGLContextObj cglContext,
@@ -158,7 +205,7 @@ class CompositingIOSurfaceMac {
 
   // Called on display-link thread.
   void DisplayLinkTick(CVDisplayLinkRef display_link,
-                       const CVTimeStamp* output_time);
+                       const CVTimeStamp* time);
 
   void CalculateVsyncParametersLockHeld(const CVTimeStamp* time);
 
@@ -168,6 +215,17 @@ class CompositingIOSurfaceMac {
 
   void StartOrContinueDisplayLink();
   void StopDisplayLink();
+
+  // Two implementations of CopyTo() in synchronous and asynchronous mode.
+  bool SynchronousCopyTo(const gfx::Rect& src_pixel_subrect,
+                         const gfx::Size& dst_pixel_size,
+                         void* out);
+  bool AsynchronousCopyTo(const gfx::Rect& src_pixel_subrect,
+                          const gfx::Size& dst_pixel_size,
+                          void* out,
+                          const base::Callback<void(bool)>& callback);
+  void FinishCopy();
+  void CleanupResourcesForCopy();
 
   // Cached pointer to IOSurfaceSupport Singleton.
   IOSurfaceSupport* io_surface_support_;
@@ -190,6 +248,11 @@ class CompositingIOSurfaceMac {
   // need to do is ensure it is re-bound before attempting to draw
   // with it.
   GLuint texture_;
+
+  CopyContext copy_context_;
+
+  // Timer for finishing a copy operation.
+  base::RepeatingTimer<CompositingIOSurfaceMac> copy_timer_;
 
   // Shader parameters.
   GLuint shader_program_blit_rgb_;

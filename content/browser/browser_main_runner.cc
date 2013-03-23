@@ -14,19 +14,21 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/notification_service_impl.h"
 #include "content/common/child_process.h"
-#include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 
 #if defined(OS_WIN)
-#include "base/win/scoped_com_initializer.h"
+#include "base/win/metro.h"
+#include "base/win/windows_version.h"
+#include "ui/base/win/scoped_ole_initializer.h"
+#include "ui/base/ime/win/tsf_bridge.h"
 #endif
 
 bool g_exited_main_message_loop = false;
 
-namespace {
+namespace content {
 
-class BrowserMainRunnerImpl : public content::BrowserMainRunner {
+class BrowserMainRunnerImpl : public BrowserMainRunner {
  public:
   BrowserMainRunnerImpl()
       : is_initialized_(false),
@@ -39,24 +41,40 @@ class BrowserMainRunnerImpl : public content::BrowserMainRunner {
       Shutdown();
   }
 
-  virtual int Initialize(const content::MainFunctionParams& parameters)
+  virtual int Initialize(const MainFunctionParams& parameters)
       OVERRIDE {
     is_initialized_ = true;
 
+#if !defined(OS_IOS)
     // ChildProcess:: is a misnomer unless you consider context.  Use
     // of --wait-for-debugger only makes sense when Chrome itself is a
     // child process (e.g. when launched by PyAuto).
     if (parameters.command_line.HasSwitch(switches::kWaitForDebugger))
       ChildProcess::WaitForDebugger("Browser");
+#endif  // !defined(OS_IOS)
 
-    if (parameters.command_line.HasSwitch(switches::kSingleProcess))
-      content::RenderProcessHost::set_run_renderer_in_process(true);
+#if defined(OS_WIN)
+    if (parameters.command_line.HasSwitch(
+            switches::kEnableTextServicesFramework)) {
+      base::win::SetForceToUseTSF();
+    } else if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+      // When "Extend support of advanced text services to all programs"
+      // (a.k.a. Cicero Unaware Application Support; CUAS) is enabled on
+      // Windows XP and handwriting modules shipped with Office 2003 are
+      // installed, "penjpn.dll" and "skchui.dll" will be loaded and then crash
+      // unless a user installs Office 2003 SP3. To prevent these modules from
+      // being loaded, disable TSF entirely. crbug/160914.
+      // TODO(yukawa): Add a high-level wrapper for this instead of calling
+      // Win32 API here directly.
+      ImmDisableTextFrameService(static_cast<DWORD>(-1));
+    }
+#endif  // OS_WIN
 
     base::StatisticsRecorder::Initialize();
 
     notification_service_.reset(new NotificationServiceImpl);
 
-    main_loop_.reset(new content::BrowserMainLoop(parameters));
+    main_loop_.reset(new BrowserMainLoop(parameters));
 
     main_loop_->Init();
 
@@ -79,8 +97,9 @@ class BrowserMainRunnerImpl : public content::BrowserMainRunner {
     // Make this call before going multithreaded, or spawning any subprocesses.
     base::allocator::SetupSubprocessAllocator();
 #endif
-
-    com_initializer_.reset(new base::win::ScopedCOMInitializer);
+    ole_initializer_.reset(new ui::ScopedOleInitializer);
+    if (base::win::IsTSFAwareRequired())
+      ui::TSFBridge::Initialize();
 #endif  // OS_WIN
 
     main_loop_->CreateThreads();
@@ -109,7 +128,9 @@ class BrowserMainRunnerImpl : public content::BrowserMainRunner {
       main_loop_->ShutdownThreadsAndCleanUp();
 
 #if defined(OS_WIN)
-    com_initializer_.reset(NULL);
+    if (base::win::IsTSFAwareRequired())
+      ui::TSFBridge::GetInstance()->Shutdown();
+    ole_initializer_.reset(NULL);
 #endif
 
     main_loop_.reset(NULL);
@@ -130,17 +151,13 @@ class BrowserMainRunnerImpl : public content::BrowserMainRunner {
   bool created_threads_;
 
   scoped_ptr<NotificationServiceImpl> notification_service_;
-  scoped_ptr<content::BrowserMainLoop> main_loop_;
+  scoped_ptr<BrowserMainLoop> main_loop_;
 #if defined(OS_WIN)
-  scoped_ptr<base::win::ScopedCOMInitializer> com_initializer_;
+  scoped_ptr<ui::ScopedOleInitializer> ole_initializer_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMainRunnerImpl);
 };
-
-}  // namespace
-
-namespace content {
 
 // static
 BrowserMainRunner* BrowserMainRunner::Create() {

@@ -15,6 +15,10 @@ namespace extensions {
 class Extension;
 }
 
+namespace base {
+class DictionaryValue;
+}
+
 // Functions and types related to installing default apps.
 namespace default_apps {
 
@@ -22,14 +26,15 @@ namespace default_apps {
 // be changed.
 enum InstallState {
   kUnknown,
-  kAlwaysProvideDefaultApps,
-  kNeverProvideDefaultApps
+  // Now unused, left for backward compatibility.
+  kProvideLegacyDefaultApps,
+  kNeverInstallDefaultApps,
+  kAlreadyInstalledDefaultApps
 };
 
 // Register preference properties used by default apps to maintain
 // install state.
 void RegisterUserPrefs(PrefService* prefs);
-
 
 // A specialization of the ExternalProviderImpl that conditionally installs apps
 // from the chrome::DIR_DEFAULT_APPS location based on a preference in the
@@ -43,11 +48,15 @@ class Provider : public extensions::ExternalProviderImpl {
            extensions::Extension::Location download_location,
            int creation_flags);
 
+  bool ShouldInstallInProfile();
+
   // ExternalProviderImpl overrides:
   virtual void VisitRegisteredExtension() OVERRIDE;
+  virtual void SetPrefs(base::DictionaryValue* prefs) OVERRIDE;
 
  private:
   Profile* profile_;
+  bool is_migration_;
 
   DISALLOW_COPY_AND_ASSIGN(Provider);
 };

@@ -7,8 +7,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "content/public/common/url_constants.h"
-#include "net/url_request/url_request.h"
 #include "webkit/blob/view_blob_internals_job.h"
+
+namespace content {
 
 // static.
 bool ViewBlobInternalsJobFactory::IsSupportedURL(const GURL& url) {
@@ -19,7 +20,10 @@ bool ViewBlobInternalsJobFactory::IsSupportedURL(const GURL& url) {
 // static.
 net::URLRequestJob* ViewBlobInternalsJobFactory::CreateJobForRequest(
     net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
     webkit_blob::BlobStorageController* blob_storage_controller) {
   return new webkit_blob::ViewBlobInternalsJob(
-      request, blob_storage_controller);
+      request, network_delegate, blob_storage_controller);
 }
+
+}  // namespace content

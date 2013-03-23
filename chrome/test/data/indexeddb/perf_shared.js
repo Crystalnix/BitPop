@@ -20,7 +20,7 @@ automation.addResult = function(name, result) {
   this.results[name] = result;
   var elt = document.getElementById('results');
   var div = document.createElement('div');
-  div.innerText = name + ": " + result;
+  div.textContent = name + ": " + result;
   elt.appendChild(div);
 };
 
@@ -29,7 +29,7 @@ automation.getResults = function() {
 };
 
 automation.setStatus = function(s) {
-  document.getElementById('status').innerText = s;
+  document.getElementById('status').textContent = s;
 };
 
 function assert(t) {
@@ -44,6 +44,8 @@ function onError(e) {
   var s = "Caught error.";
   if (e.target && e.target.webkitErrorMessage)
     s += "\n" + e.target.webkitErrorMessage;
+  else if (e.target && e.target.error)
+    s += "\n" + e.target.error.name;
   console.log(s);
   automation.setStatus(s);
   e.stopPropagation();
@@ -63,6 +65,7 @@ function createDatabase(
     name, objectStoreNames, handler, errorHandler, optionSets) {
   var openRequest = indexedDB.open(name, baseVersion);
   openRequest.onblocked = errorHandler;
+  openRequest.onerror = errorHandler;
   function createObjectStores(db) {
     for (var store in objectStoreNames) {
       var name = objectStoreNames[store];
@@ -81,25 +84,27 @@ function createDatabase(
     }
   }
   openRequest.onupgradeneeded = function(ev) {
-    // TODO(ericu): This is the spec-compliant path, which doesn't yet work in
-    // Chrome, and isn't yet tested, as this function won't currently be called.
+    // This is the spec-compliant path, which doesn't yet run in Chrome, but
+    // works in Firefox.
     assert(openRequest == ev.target);
-    createObjectStores(openRequest.result);
+    var db = openRequest.result;
+    db.onerror = errorHandler;
+    createObjectStores(db);
     // onsuccess will get called after this exits.
   };
   openRequest.onsuccess = function(ev) {
     assert(openRequest == ev.target);
     var db = openRequest.result;
+    curVersion = db.version;
     db.onerror = function(ev) {
       console.log("db error", arguments, openRequest.webkitErrorMessage);
-      errorHandler();
+      errorHandler(ev);
     }
-    if (db.version != baseVersion) {
-      // This is the current Chrome path.
+    if (curVersion != baseVersion) {
+      // This is the legacy path, which runs only in Chrome.
       var setVersionRequest = db.setVersion(baseVersion);
       setVersionRequest.onerror = errorHandler;
       setVersionRequest.onsuccess = function(e) {
-        curVersion = db.version;
         assert(setVersionRequest == e.target);
         createObjectStores(db);
         var versionTransaction = setVersionRequest.result;
@@ -118,7 +123,12 @@ function alterObjectStores(
   var version = curVersion + 1;
   var openRequest = indexedDB.open(name, version);
   openRequest.onblocked = errorHandler;
-  // TODO(ericu): This won't work in Firefox yet; see above in createDatabase.
+  openRequest.onupgradeneeded = function(ev) {
+    // This is the spec-compliant path, which doesn't yet run in Chrome, but
+    // works in Firefox.
+    doAlteration(ev.target.transaction);
+    // onsuccess will get called after this exits.
+  };
   openRequest.onsuccess = function(ev) {
     assert(openRequest == ev.target);
     var db = openRequest.result;
@@ -128,6 +138,7 @@ function alterObjectStores(
       errorHandler();
     }
     if (db.version != version) {
+      // This is the legacy path, which runs only in Chrome.
       var setVersionRequest = db.setVersion(version);
       setVersionRequest.onerror = errorHandler;
       setVersionRequest.onsuccess =
@@ -137,12 +148,15 @@ function alterObjectStores(
             var versionTransaction = setVersionRequest.result;
             versionTransaction.oncomplete = function() { handler(db); };
             versionTransaction.onerror = onError;
-            for (var store in objectStoreNames) {
-              func(versionTransaction.objectStore(objectStoreNames[store]));
-            }
+            doAlteration(versionTransaction);
           }
     } else {
-      errorHandler();
+      handler(db);
+    }
+  }
+  function doAlteration(target) {
+    for (var store in objectStoreNames) {
+      func(target.objectStore(objectStoreNames[store]));
     }
   }
 }
@@ -184,7 +198,7 @@ function getCompletionFunc(db, testName, startTime, onTestComplete) {
 function getDisplayName(args) {
   // The last arg is the completion callback the test runner tacks on.
   // TODO(ericu): Make test errors delete the database automatically.
-  return getDisplayName.caller.name + "_" +
+  return getDisplayName.caller.name + (args.length > 1 ? "_" : "") +
       Array.prototype.slice.call(args, 0, args.length - 1).join("_");
 }
 
@@ -264,6 +278,10 @@ function putLinearValues(
   }
 }
 
+function verifyResultNonNull(result) {
+  assert(result != null);
+}
+
 function getRandomValues(
     transaction, objectStoreNames, numReads, numKeys, indexName, getKey) {
   if (!getKey)
@@ -277,6 +295,7 @@ function getRandomValues(
       var rand = Math.floor(Math.random() * numKeys);
       var request = source.get(getKey(rand));
       request.onerror = onError;
+      request.onsuccess = verifyResultNonNull;
     }
   }
 }
@@ -293,6 +312,20 @@ function putRandomValues(
       var rand = Math.floor(Math.random() * numKeys);
       var request = os.put(getValue(rand), getKey(rand));
       request.onerror = onError;
+    }
+  }
+}
+
+function getSpecificValues(transaction, objectStoreNames, indexName, keys) {
+  for (var i in objectStoreNames) {
+    var os = transaction.objectStore(objectStoreNames[i]);
+    var source = os;
+    if (indexName)
+      source = source.index(indexName);
+    for (var j = 0; j < keys.length; ++j) {
+      var request = source.get(keys[j]);
+      request.onerror = onError;
+      request.onsuccess = verifyResultNonNull;
     }
   }
 }
@@ -346,3 +379,30 @@ function getValuesFromCursor(
   }
   request.onerror = onError;
 }
+
+function runTransactionBatch(db, count, batchFunc, objectStoreNames, mode,
+    onComplete) {
+  var numTransactionsRunning = 0;
+
+  runOneBatch(db);
+
+  function runOneBatch(db) {
+    if (count <= 0) {
+      return;
+    }
+    --count;
+    ++numTransactionsRunning;
+    var transaction = getTransaction(db, objectStoreNames, mode,
+        function() {
+          assert(!--numTransactionsRunning);
+          if (count <= 0) {
+            onComplete();
+          } else {
+            runOneBatch(db);
+          }
+        });
+
+    batchFunc(transaction);
+  }
+}
+

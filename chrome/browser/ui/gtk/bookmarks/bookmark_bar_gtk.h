@@ -13,11 +13,11 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/bookmarks/bookmark_context_menu_controller.h"
+#include "base/prefs/public/pref_member.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
+#include "chrome/browser/ui/bookmarks/bookmark_context_menu_controller.h"
 #include "chrome/browser/ui/gtk/menu_bar_helper.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
 #include "content/public/browser/notification_observer.h"
@@ -49,9 +49,6 @@ class BookmarkBarGtk : public ui::AnimationDelegate,
                        public chrome::BookmarkBarInstructionsDelegate,
                        public BookmarkContextMenuControllerDelegate {
  public:
-  // The NTP needs to have access to this.
-  static const int kBookmarkBarNTPHeight;
-
   BookmarkBarGtk(BrowserWindowGtk* window,
                  Browser* browser,
                  TabstripOriginProvider* tabstrip_origin_provider);
@@ -168,10 +165,10 @@ class BookmarkBarGtk : public ui::AnimationDelegate,
   // Queue a paint on the event box.
   void PaintEventBox();
 
-  // Finds the size of the current tab contents, if it exists and sets |size|
+  // Finds the size of the current web contents, if it exists and sets |size|
   // to the correct value. Returns false if there isn't a WebContents, a
   // condition that can happen during testing.
-  bool GetTabContentsSize(gfx::Size* size);
+  bool GetWebContentsSize(gfx::Size* size);
 
   // Connects to the "size-allocate" signal on the given widget, and causes it
   // to throb after allocation. This is called when a new item is added to the
@@ -387,9 +384,9 @@ class BookmarkBarGtk : public ui::AnimationDelegate,
 
   content::NotificationRegistrar registrar_;
 
-  // The size of the tab contents last time we forced a paint. We keep track
+  // The size of the web contents last time we forced a paint. We keep track
   // of this so we don't force too many paints.
-  gfx::Size last_tab_contents_size_;
+  gfx::Size last_web_contents_size_;
 
   // The last coordinates recorded by OnButtonPress; used to line up the
   // drag icon during bookmark drags.

@@ -21,6 +21,8 @@ namespace cricket {
 class VideoFrame;
 }  // namespace cricket
 
+namespace content {
+
 // RTCVideoDecoder is a media::VideoDecoder designed for rendering
 // Video MediaStreamTracks,
 // http://dev.w3.org/2011/webrtc/editor/getusermedia.html#mediastreamtrack
@@ -44,7 +46,6 @@ class CONTENT_EXPORT RTCVideoDecoder
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
-  virtual void PrepareForShutdownHack() OVERRIDE;
 
   // webrtc::VideoRendererInterface implementation
   virtual void SetSize(int width, int height) OVERRIDE;
@@ -59,7 +60,6 @@ class CONTENT_EXPORT RTCVideoDecoder
   FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, DoReset);
   FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, DoRenderFrame);
   FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, DoSetSize);
-  FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, ReadAndShutdown);
 
   enum DecoderState {
     kUnInitialized,
@@ -82,7 +82,6 @@ class CONTENT_EXPORT RTCVideoDecoder
   DecoderState state_;
   ReadCB read_cb_;
   bool got_first_frame_;
-  bool shutting_down_;
   base::TimeDelta last_frame_timestamp_;
   base::TimeDelta start_time_;
   // The video track the renderer is connected to.
@@ -93,5 +92,7 @@ class CONTENT_EXPORT RTCVideoDecoder
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoDecoder);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_RTC_VIDEO_DECODER_H_

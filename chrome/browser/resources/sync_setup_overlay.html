@@ -76,6 +76,10 @@
                 <a i18n-values="href:invalidPasswordHelpURL" class="help-link"
                     target="_blank">?</a>
               </div>
+              <div id="errormsg-different-email" class="errormsg reset-hidden"
+                  hidden>
+                <span id="different-email"></span>
+              </div>
               <div id="errormsg-fatal" class="errormsg reset-hidden" hidden>
                 <span i18n-content="unrecoverableError"></span>
                 <a i18n-values="href:unrecoverableErrorHelpURL"
@@ -265,32 +269,60 @@
                 </label>
               </div>
             </div>
+            <hr>
+            <h4 i18n-content="passphraseSectionTitle"></h4>
           </div>
-          <hr>
-          <h4 i18n-content="passphraseSectionTitle"></h4>
+          <div id="customize-sync-encryption-new">
+            <hr>
+            <h4 i18n-content="encryptionSectionTitle"></h4>
+            <div id="encryption-section-message"
+                i18n-content="encryptionSectionMessage"></div>
+            <div id="sync-new-encryption-section-container">
+              <div class="radio">
+                <label>
+                  <input id="basic-encryption-option" name="encrypt-new"
+                      type="radio" value="full">
+                  <span i18n-content="basicEncryptionOption"></span>
+                </label>
+              </div>
+              <div class="radio">
+                <label>
+                  <input id="full-encryption-option" name="encrypt-new"
+                      type="radio" value="full">
+                  <span id="full-encryption-body"
+                      i18n-content="fullEncryptionOption"></span>
+                </label>
+                <a i18n-values="href:encryptionHelpURL" target="_blank"
+                    i18n-content="learnMore"></a>
+              </div>
+            </div>
+          </div>
           <div id="sync-custom-passphrase-container"
               class="sync-customize-section-container">
-            <div class="radio">
-              <label>
-                <input id="google-option" name="option" type="radio"
-                    value="google">
-                <span i18n-content="googleOption"></span>
-              </label>
-            </div>
-            <div class="radio">
-              <label>
-                <input id="explicit-option" name="option" type="radio"
-                    value="explicit">
-                <span i18n-content="explicitOption"></span>
-              </label>
-              <a i18n-values="href:encryptionHelpURL" target="_blank"
-                  i18n-content="learnMore"></a>
+            <div id="sync-custom-passphrase-options">
+              <div class="radio">
+                <label>
+                  <input id="google-option" name="option" type="radio"
+                      value="google">
+                  <span i18n-content="googleOption"></span>
+                </label>
+              </div>
+              <div class="radio">
+                <label>
+                  <input id="explicit-option" name="option" type="radio"
+                      value="explicit">
+                  <span i18n-content="explicitOption"></span>
+                </label>
+                <a i18n-values="href:encryptionHelpURL" target="_blank"
+                    i18n-content="learnMore"></a>
+              </div>
             </div>
             <div id="sync-custom-passphrase"
                 class="reset-hidden" hidden>
               <div id="sync-passphrase-message">
                 <span i18n-content="sectionExplicitMessagePrefix"></span>
-                <a href="http://google.com/dashboard" target="_blank"
+                <a href="https://www.google.com/settings/chrome/sync/"
+                    target="_blank"
                     i18n-content="sectionExplicitMessagePostfix"></a>
                 <span>.</span>
               </div>
@@ -353,17 +385,16 @@
     </div>
   </div>
   <div id="sync-setup-spinner" hidden>
-    <h1 i18n-content="syncSetupConfigureTitle"></h1>
-    <div class="content-area">
-      <div id="spinner-throbber" class="throbber"></div>
-    </div>
+    <h1 i18n-content="syncSetupSpinnerTitle"></h1>
     <div class="action-area button-strip">
       <input id="sync-spinner-cancel" type="button" i18n-values="value:cancel">
     </div>
   </div>
   <div id="sync-setup-timeout" hidden>
     <h1 i18n-content="syncSetupTimeoutTitle"></h1>
-    <span i18n-content="syncSetupTimeoutContent" class="content-area"></span>
+    <div class="content-area">
+      <span i18n-content="syncSetupTimeoutContent"></span>
+    </div>
     <div class="action-area button-strip">
       <button id="timeout-ok" i18n-content="ok"></button>
     </div>

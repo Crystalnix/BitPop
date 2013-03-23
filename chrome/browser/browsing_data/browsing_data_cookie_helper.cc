@@ -15,11 +15,16 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
 using content::BrowserThread;
+
+namespace {
+const char kGlobalCookieListURL[] = "chrome://cookielist";
+}
 
 BrowsingDataCookieHelper::BrowsingDataCookieHelper(
     net::URLRequestContextGetter* request_context_getter)
@@ -133,17 +138,8 @@ void CannedBrowsingDataCookieHelper::AddChangedCookie(
     const GURL& url,
     const std::string& cookie_line,
     const net::CookieOptions& options) {
-  net::ParsedCookie parsed_cookie(cookie_line);
-  if (options.exclude_httponly() && parsed_cookie.IsHttpOnly()) {
-    // Return if a Javascript cookie illegally specified the HTTP only flag.
-    return;
-  }
-
-  // This fails to create a canonical cookie, if the normalized cookie domain
-  // form cookie line and the url don't have the same domain+registry, or url
-  // host isn't cookie domain or one of its subdomains.
-  scoped_ptr<net::CanonicalCookie> cookie(
-      net::CanonicalCookie::Create(url, parsed_cookie));
+  scoped_ptr<net::CanonicalCookie> cookie(net::CanonicalCookie::Create(
+      url, cookie_line, base::Time::Now(), options));
   if (cookie.get())
     AddCookie(frame_url, *cookie);
 }
@@ -223,8 +219,23 @@ net::CookieList* CannedBrowsingDataCookieHelper::GetCookiesFor(
 void CannedBrowsingDataCookieHelper::AddCookie(
     const GURL& frame_url,
     const net::CanonicalCookie& cookie) {
+  // Storing cookies in separate cookie lists per frame origin makes the
+  // GetCookieCount method count a cookie multiple times if it is stored in
+  // multiple lists.
+  // E.g. let "example.com" be redirected to "www.example.com". A cookie set
+  // with the cookie string "A=B; Domain=.example.com" would be sent to both
+  // hosts. This means it would be stored in the separate cookie lists for both
+  // hosts ("example.com", "www.example.com"). The method GetCookieCount would
+  // count this cookie twice. To prevent this, we us a single global cookie
+  // list as a work-around to store all added cookies. Per frame URL cookie
+  // lists are currently not used. In the future they will be used for
+  // collecting cookies per origin in redirect chains.
+  // TODO(markusheintz): A) Change the GetCookiesCount method to prevent
+  // counting cookies multiple times if they are stored in multiple cookie
+  // lists.  B) Replace the GetCookieFor method call below with:
+  // "GetCookiesFor(frame_url.GetOrigin());"
   net::CookieList* cookie_list =
-      GetCookiesFor(frame_url.GetOrigin());
+      GetCookiesFor(GURL(kGlobalCookieListURL));
   DeleteMatchingCookie(cookie, cookie_list);
   cookie_list->push_back(cookie);
 }

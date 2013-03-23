@@ -9,25 +9,38 @@
 #include <string>
 #include <vector>
 
-#include "base/observer_list.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/input_method/browser_state_monitor.h"
-#include "chrome/browser/chromeos/input_method/candidate_window.h"
+#include "base/observer_list.h"
+#include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
 #include "chrome/browser/chromeos/input_method/ibus_controller.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_whitelist.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
 
 namespace chromeos {
+class InputMethodEngineIBus;
 namespace input_method {
+class InputMethodDelegate;
+class XKeyboard;
 
 // The implementation of InputMethodManager.
 class InputMethodManagerImpl : public InputMethodManager,
                                public CandidateWindowController::Observer,
                                public IBusController::Observer {
  public:
+  // Constructs an InputMethodManager instance. The client is responsible for
+  // calling |SetState| in response to relevant changes in browser state.
+  explicit InputMethodManagerImpl(scoped_ptr<InputMethodDelegate> delegate);
   virtual ~InputMethodManagerImpl();
+
+  // Attach IBusController, CandidateWindowController, and XKeyboard objects
+  // to the InputMethodManagerImpl object. You don't have to call this function
+  // if you attach them yourself (e.g. in unit tests) using the protected
+  // setters.
+  void Init();
+
+  // Receives notification of an InputMethodManager::State transition.
+  void SetState(State new_state);
 
   // InputMethodManager override:
   virtual void AddObserver(InputMethodManager::Observer* observer) OVERRIDE;
@@ -36,9 +49,10 @@ class InputMethodManagerImpl : public InputMethodManager,
   virtual void RemoveObserver(InputMethodManager::Observer* observer) OVERRIDE;
   virtual void RemoveCandidateWindowObserver(
       InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;
-  virtual void SetState(State new_state) OVERRIDE;
-  virtual InputMethodDescriptors* GetSupportedInputMethods() const OVERRIDE;
-  virtual InputMethodDescriptors* GetActiveInputMethods() const OVERRIDE;
+  virtual scoped_ptr<InputMethodDescriptors>
+      GetSupportedInputMethods() const OVERRIDE;
+  virtual scoped_ptr<InputMethodDescriptors>
+      GetActiveInputMethods() const OVERRIDE;
   virtual size_t GetNumActiveInputMethods() const OVERRIDE;
   virtual void EnableLayouts(const std::string& language_code,
                              const std::string& initial_layout) OVERRIDE;
@@ -54,8 +68,12 @@ class InputMethodManagerImpl : public InputMethodManager,
       const std::string& id,
       const std::string& name,
       const std::vector<std::string>& layouts,
-      const std::string& language) OVERRIDE;
+      const std::string& language,
+      InputMethodEngine* instance) OVERRIDE;
   virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
+  virtual void GetInputMethodExtensions(
+      InputMethodDescriptors* result) OVERRIDE;
+  virtual void SetFilteredExtensionImes(std::vector<std::string>* ids) OVERRIDE;
   virtual bool SwitchToNextInputMethod() OVERRIDE;
   virtual bool SwitchToPreviousInputMethod() OVERRIDE;
   virtual bool SwitchInputMethod(const ui::Accelerator& accelerator) OVERRIDE;
@@ -73,26 +91,16 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Sets |xkeyboard_|.
   void SetXKeyboardForTesting(XKeyboard* xkeyboard);
 
-  // Creates a new instance of this class. The caller has to delete the returned
-  // object. The caller also have to set a mock CandidateWindowController,
-  // IBusController, and XKeyboard. See the setters above.
-  static InputMethodManagerImpl* GetInstanceForTesting();
-
  private:
-  friend class InputMethodManager;
-  InputMethodManagerImpl();
-
   // IBusController overrides:
   virtual void PropertyChanged() OVERRIDE;
+  virtual void OnConnected() OVERRIDE;
+  virtual void OnDisconnected() OVERRIDE;
+
 
   // CandidateWindowController::Observer overrides:
   virtual void CandidateWindowOpened() OVERRIDE;
   virtual void CandidateWindowClosed() OVERRIDE;
-
-  // Attach IBusController, CandidateWindowController, and XKeyboard objects
-  // to the InputMethodManagerImpl object. You don't have to call this function
-  // if you attach them yourself (e.g. in unit tests) using the setters above.
-  void Init();
 
   // Temporarily deactivates all input methods (e.g. Chinese, Japanese, Arabic)
   // since they are not necessary to input a login password. Users are still
@@ -125,6 +133,8 @@ class InputMethodManagerImpl : public InputMethodManager,
   void ChangeInputMethodInternal(const std::string& input_method_id,
                                  bool show_message);
 
+  scoped_ptr<InputMethodDelegate> delegate_;
+
   // The current browser status.
   State state_;
 
@@ -138,6 +148,9 @@ class InputMethodManagerImpl : public InputMethodManager,
   // The active input method ids cache.
   std::vector<std::string> active_input_method_ids_;
 
+  // The list of IMEs that are filtered from the IME list.
+  std::vector<std::string> filtered_extension_imes_;
+
   // For screen locker. When the screen is locked, |previous_input_method_|,
   // |current_input_method_|, and |active_input_method_ids_| above are copied
   // to these "saved" variables.
@@ -148,10 +161,7 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Extra input methods that have been explicitly added to the menu, such as
   // those created by extension.
   std::map<std::string, InputMethodDescriptor> extra_input_methods_;
-
-  // The browser state monitor is used to receive notifications from the browser
-  // and call SetState() method of |this| class.
-  scoped_ptr<BrowserStateMonitor> browser_state_monitor_;
+  std::map<std::string, InputMethodEngineIBus*> extra_input_method_instances_;
 
   // The IBus controller is used to control the input method status and
   // allow callbacks when the input method status changes.

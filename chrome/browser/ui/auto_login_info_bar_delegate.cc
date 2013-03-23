@@ -9,30 +9,29 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/ubertoken_fetcher.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
-#include "chrome/common/net/gaia/gaia_urls.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/referrer.h"
+#include "google_apis/gaia/gaia_constants.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -176,7 +175,7 @@ AutoLoginInfoBarDelegate::AutoLoginInfoBarDelegate(
   registrar_.Add(this,
                  chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
                  content::Source<Profile>(Profile::FromBrowserContext(
-                     owner->web_contents()->GetBrowserContext())));
+                     owner->GetWebContents()->GetBrowserContext())));
 }
 
 AutoLoginInfoBarDelegate::~AutoLoginInfoBarDelegate() {
@@ -215,7 +214,7 @@ string16 AutoLoginInfoBarDelegate::GetButtonLabel(
 
 bool AutoLoginInfoBarDelegate::Accept() {
   // AutoLoginRedirector deletes itself.
-  new AutoLoginRedirector(&owner()->web_contents()->GetController(),
+  new AutoLoginRedirector(&owner()->GetWebContents()->GetController(),
                           params_.args);
   RecordHistogramAction(HISTOGRAM_ACCEPTED);
   button_pressed_ = true;
@@ -223,8 +222,9 @@ bool AutoLoginInfoBarDelegate::Accept() {
 }
 
 bool AutoLoginInfoBarDelegate::Cancel() {
-  PrefService* pref_service = TabContents::FromWebContents(
-      owner()->web_contents())->profile()->GetPrefs();
+  Profile* profile = Profile::FromBrowserContext(
+      owner()->GetWebContents()->GetBrowserContext());
+  PrefService* pref_service = profile->GetPrefs();
   pref_service->SetBoolean(prefs::kAutologinEnabled, false);
   RecordHistogramAction(HISTOGRAM_REJECTED);
   button_pressed_ = true;

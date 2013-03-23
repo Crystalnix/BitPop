@@ -26,7 +26,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/child_process_logging.h"
-#include "chrome/service/cloud_print/cloud_print_consts.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
@@ -45,6 +45,12 @@ const char kCUPSPrinterStateOpt[] = "printer-state";
 const char kCUPSPrintServerURLs[] = "print_server_urls";
 const char kCUPSUpdateTimeoutMs[] = "update_timeout_ms";
 const char kCUPSNotifyDelete[] = "notify_delete";
+const char kCUPSSupportedMimeTipes[] = "supported_mime_types";
+
+// Default mime types supported by CUPS
+// http://www.cups.org/articles.php?L205+TFAQ+Q
+const char kCUPSDefaultSupportedTypes[] =
+    "application/pdf,application/postscript,image/jpeg,image/png,image/gif";
 
 // Default port for IPP print servers.
 const int kDefaultIPPServerPort = 631;
@@ -169,6 +175,7 @@ class PrintSystemCUPS : public PrintSystem {
   bool printer_enum_succeeded_;
   bool notify_delete_;
   http_encryption_t cups_encryption_;
+  std::string supported_mime_types_;
 };
 
 class PrintServerWatcherCUPS
@@ -413,7 +420,8 @@ PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
       initialized_(false),
       printer_enum_succeeded_(false),
       notify_delete_(true),
-      cups_encryption_(HTTP_ENCRYPT_NEVER) {
+      cups_encryption_(HTTP_ENCRYPT_NEVER),
+      supported_mime_types_(kCUPSDefaultSupportedTypes) {
   if (print_system_settings) {
     int timeout;
     if (print_system_settings->GetInteger(kCUPSUpdateTimeoutMs, &timeout))
@@ -427,6 +435,10 @@ PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
     bool notify_delete = true;
     if (print_system_settings->GetBoolean(kCUPSNotifyDelete, &notify_delete))
       notify_delete_ = notify_delete;
+
+    std::string types;
+    if (print_system_settings->GetString(kCUPSSupportedMimeTipes, &types))
+      supported_mime_types_ = types;
   }
 
   InitPrintBackends(print_system_settings);
@@ -712,20 +724,7 @@ PrintSystem::JobSpooler* PrintSystemCUPS::CreateJobSpooler() {
 }
 
 std::string PrintSystemCUPS::GetSupportedMimeTypes() {
-  // Since we hand off the document to the CUPS server directly, list some types
-  // that we know CUPS supports (http://www.cups.org/articles.php?L205+TFAQ+Q)
-  // TODO(sanjeevr): Determine this dynamically (http://crbug.com/73240).
-  return
-      "application/pdf,application/postscript,image/jpeg,image/png,image/gif";
-}
-
-std::string PrintSystem::GenerateProxyId() {
-  // TODO(gene): This code should generate a unique id for proxy. ID should be
-  // unique for this user. Rand may return the same number. We'll need to change
-  // this in the future.
-  std::string id("CP_PROXY_");
-  id += base::Uint64ToString(base::RandUint64());
-  return id;
+  return supported_mime_types_;
 }
 
 scoped_refptr<PrintSystem> PrintSystem::CreateInstance(
@@ -787,7 +786,7 @@ PlatformJobId PrintSystemCUPS::SpoolPrintJob(
   DCHECK(res);  // If print ticket is invalid we still print using defaults.
 
   // Check if this is a dry run (test) job.
-  *dry_run = CloudPrintHelpers::IsDryRunJob(tags);
+  *dry_run = IsDryRunJob(tags);
   if (*dry_run) {
     VLOG(1) << "CP_CUPS: Dry run job spooled";
     return kDryRunJobId;

@@ -18,6 +18,10 @@ class TabRestoreServiceFactory : public ProfileKeyedServiceFactory {
  public:
   static TabRestoreService* GetForProfile(Profile* profile);
 
+  // Variant of GetForProfile() that returns NULL if TabRestoreService does not
+  // exist.
+  static TabRestoreService* GetForProfileIfExisting(Profile* profile);
+
   static void ResetForProfile(Profile* profile);
 
   static TabRestoreServiceFactory* GetInstance();
@@ -31,7 +35,7 @@ class TabRestoreServiceFactory : public ProfileKeyedServiceFactory {
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
       Profile* profile) const OVERRIDE;
-  virtual bool ServiceIsNULLWhileTesting() OVERRIDE;
+  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_SESSIONS_TAB_RESTORE_SERVICE_FACTORY_H_

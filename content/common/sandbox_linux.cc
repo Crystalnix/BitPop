@@ -3,14 +3,18 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 
+#include <limits>
+
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/time.h"
 #include "content/common/sandbox_linux.h"
 #include "content/common/seccomp_sandbox.h"
@@ -37,15 +41,17 @@ void LogSandboxStarted(const std::string& sandbox_name) {
 
 // Implement the command line enabling logic for seccomp-legacy.
 bool IsSeccompLegacyDesired() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kNoSandbox)) {
+    return false;
+  }
 #if defined(SECCOMP_SANDBOX)
 #if defined(NDEBUG)
-  // Off by default; allow turning on with a switch.
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableSeccompSandbox);
+  // Off by default. Allow turning on with a switch.
+  return command_line->HasSwitch(switches::kEnableSeccompSandbox);
 #else
-  // On by default; allow turning off with a switch.
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableSeccompSandbox);
+  // On by default. Allow turning off with a switch.
+  return !command_line->HasSwitch(switches::kDisableSeccompSandbox);
 #endif  // NDEBUG
 #endif  // SECCOMP_SANDBOX
   return false;
@@ -62,12 +68,26 @@ bool ShouldEnableSeccompLegacy(const std::string& process_type) {
   }
 }
 
+bool AddResourceLimit(int resource, rlim_t limit) {
+  struct rlimit old_rlimit;
+  if (getrlimit(resource, &old_rlimit))
+    return false;
+  // Make sure we don't raise the existing limit.
+  const struct rlimit new_rlimit = {
+      std::min(old_rlimit.rlim_cur, limit),
+      std::min(old_rlimit.rlim_max, limit)
+      };
+  int rc = setrlimit(resource, &new_rlimit);
+  return rc == 0;
+}
+
 }  // namespace
 
 namespace content {
 
 LinuxSandbox::LinuxSandbox()
     : proc_fd_(-1),
+      seccomp_bpf_started_(false),
       pre_initialized_(false),
       seccomp_legacy_supported_(false),
       seccomp_bpf_supported_(false),
@@ -156,16 +176,21 @@ int LinuxSandbox::GetStatus() const {
     if (setuid_sandbox_client_->IsInNewNETNamespace())
       sandbox_flags |= kSandboxLinuxNetNS;
   }
-  if (seccomp_legacy_supported() &&
-      ShouldEnableSeccompLegacy(switches::kRendererProcess)) {
-    // We report whether the sandbox will be activated when renderers go
-    // through sandbox initialization.
-    sandbox_flags |= kSandboxLinuxSeccompLegacy;
-  }
+
   if (seccomp_bpf_supported() &&
       SandboxSeccompBpf::ShouldEnableSeccompBpf(switches::kRendererProcess)) {
-    // Same here, what we report is what we will do for the renderer.
+    // We report whether the sandbox will be activated when renderers go
+    // through sandbox initialization.
     sandbox_flags |= kSandboxLinuxSeccompBpf;
+  }
+
+  // We only try to enable seccomp-legacy when seccomp-bpf is not supported
+  // or not enabled.
+  if (!(sandbox_flags & kSandboxLinuxSeccompBpf) &&
+      seccomp_legacy_supported() &&
+      ShouldEnableSeccompLegacy(switches::kRendererProcess)) {
+    // Same here, what we report is what we will do for the renderer.
+    sandbox_flags |= kSandboxLinuxSeccompLegacy;
   }
   return sandbox_flags;
 }
@@ -181,6 +206,10 @@ bool LinuxSandbox::IsSingleThreaded() const {
   // We pass the test if we don't know ( == 0), because the setuid sandbox
   // will prevent /proc access in some contexts.
   return num_threads == 1 || num_threads == 0;
+}
+
+bool LinuxSandbox::seccomp_bpf_started() const {
+  return seccomp_bpf_started_;
 }
 
 sandbox::SetuidSandboxClient*
@@ -209,16 +238,16 @@ bool LinuxSandbox::StartSeccompLegacy(const std::string& process_type) {
 
 // For seccomp-bpf, we use the SandboxSeccompBpf class.
 bool LinuxSandbox::StartSeccompBpf(const std::string& process_type) {
+  CHECK(!seccomp_bpf_started_);
   if (!pre_initialized_)
     PreinitializeSandbox(process_type);
-  bool started_bpf_sandbox = false;
   if (seccomp_bpf_supported())
-    started_bpf_sandbox = SandboxSeccompBpf::StartSandbox(process_type);
+    seccomp_bpf_started_ = SandboxSeccompBpf::StartSandbox(process_type);
 
-  if (started_bpf_sandbox)
+  if (seccomp_bpf_started_)
     LogSandboxStarted("seccomp-bpf");
 
-  return started_bpf_sandbox;
+  return seccomp_bpf_started_;
 }
 
 bool LinuxSandbox::seccomp_legacy_supported() const {
@@ -229,6 +258,39 @@ bool LinuxSandbox::seccomp_legacy_supported() const {
 bool LinuxSandbox::seccomp_bpf_supported() const {
   CHECK(pre_initialized_);
   return seccomp_bpf_supported_;
+}
+
+bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
+  (void) process_type;
+#if !defined(ADDRESS_SANITIZER)
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kNoSandbox)) {
+    return false;
+  }
+#if defined(__LP64__)
+  // On 64 bits, limit the address space to 16GB. This is in the hope of making
+  // some kernel exploits more complex and less reliable.  This limit has to be
+  // very high because V8 and possibly others will reserve memory ranges and
+  // rely on on-demand paging for allocation.  Unfortunately, even
+  // MADV_DONTNEED ranges  count towards RLIMIT_AS so this is not an option.
+  // See crbug.com/169327 for a discussion.
+  const rlim_t kNewAddressSpaceMaxSize = 1L << 34;
+#else
+  // On 32 bits, enforce the 4GB limit. On a 64 bits kernel, this could
+  // prevent far calling to 64 bits and abuse the memory allocator to exploit
+  // a kernel vulnerability.
+  const rlim_t kNewAddressSpaceMaxSize = std::numeric_limits<uint32_t>::max();
+#endif  // defined(__LP64__)
+  // On all platforms, add a limit to the brk() heap that would prevent
+  // allocations that can't be index by an int.
+  const rlim_t kNewDataSegmentMaxSize = std::numeric_limits<int>::max();
+
+  bool limited_as = AddResourceLimit(RLIMIT_AS, kNewAddressSpaceMaxSize);
+  bool limited_data = AddResourceLimit(RLIMIT_DATA, kNewDataSegmentMaxSize);
+  return limited_as && limited_data;
+#else
+  return false;
+#endif  // !defined(ADDRESS_SANITIZER)
 }
 
 }  // namespace content

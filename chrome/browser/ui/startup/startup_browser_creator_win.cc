@@ -9,43 +9,23 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
+#include "chrome/common/url_constants.h"
+#include "win8/util/win8_util.h"
 
 namespace chrome {
 
-// Metro driver exports for getting the launch type, initial url, initial
-// search term, etc.
-extern "C" {
-typedef const wchar_t* (*GetInitialUrl)();
-typedef const wchar_t* (*GetInitialSearchString)();
-typedef base::win::MetroLaunchType (*GetLaunchType)(
-    base::win::MetroPreviousExecutionState* previous_state);
-}
-
 GURL GetURLToOpen(Profile* profile) {
-  HMODULE metro = base::win::GetMetroModule();
-  if (!metro)
-    return GURL();
+  string16 params;
+  base::win::MetroLaunchType launch_type =
+      base::win::GetMetroLaunchParams(&params);
 
-  GetLaunchType get_launch_type = reinterpret_cast<GetLaunchType>(
-      ::GetProcAddress(metro, "GetLaunchType"));
-  DCHECK(get_launch_type);
-
-  base::win::MetroLaunchType launch_type = get_launch_type(NULL);
-
-  if (launch_type == base::win::PROTOCOL || launch_type == base::win::LAUNCH) {
-    GetInitialUrl initial_metro_url = reinterpret_cast<GetInitialUrl>(
-        ::GetProcAddress(metro, "GetInitialUrl"));
-    DCHECK(initial_metro_url);
-    const wchar_t* initial_url = initial_metro_url();
-    if (initial_url)
-      return GURL(initial_url);
-  } else if (launch_type == base::win::SEARCH) {
-    GetInitialSearchString initial_search_string =
-        reinterpret_cast<GetInitialSearchString>(
-            ::GetProcAddress(metro, "GetInitialSearchString"));
-    DCHECK(initial_search_string);
-    string16 search_string = initial_search_string();
-
+  if ((launch_type == base::win::METRO_PROTOCOL) ||
+      (launch_type == base::win::METRO_LAUNCH)) {
+    return GURL(params);
+  } else if (launch_type == base::win::METRO_SEARCH) {
     const TemplateURL* default_provider =
         TemplateURLServiceFactory::GetForProfile(profile)->
         GetDefaultSearchProvider();
@@ -53,10 +33,37 @@ GURL GetURLToOpen(Profile* profile) {
       const TemplateURLRef& search_url = default_provider->url_ref();
       DCHECK(search_url.SupportsReplacement());
       return GURL(search_url.ReplaceSearchTerms(
-          TemplateURLRef::SearchTermsArgs(search_string)));
+          TemplateURLRef::SearchTermsArgs(params)));
     }
   }
   return GURL();
 }
 
 }  // namespace chrome
+
+#if !defined(USE_AURA)
+// static
+bool StartupBrowserCreatorImpl::OpenStartupURLsInExistingBrowser(
+    Profile* profile,
+    const std::vector<GURL>& startup_urls) {
+  if (!win8::IsSingleWindowMetroMode())
+    return false;
+
+  // We activate an existing browser window if we are opening just the new tab
+  // page in metro mode.
+  if (startup_urls.size() > 1)
+    return false;
+
+  if (startup_urls[0] != GURL(chrome::kChromeUINewTabURL))
+    return false;
+
+  Browser* browser = chrome::FindBrowserWithProfile(
+      profile, chrome::HOST_DESKTOP_TYPE_NATIVE);
+
+  if (!browser)
+    return false;
+
+  browser->window()->Show();
+  return true;
+}
+#endif

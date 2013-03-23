@@ -250,6 +250,25 @@ bool VisitDatabase::GetIndexedVisitsForURL(URLID url_id, VisitVector* visits) {
   return FillVisitVector(statement, visits);
 }
 
+
+bool VisitDatabase::GetVisitsForTimes(const std::vector<base::Time>& times,
+                                      VisitVector* visits) {
+  visits->clear();
+
+  for (std::vector<base::Time>::const_iterator it = times.begin();
+       it != times.end(); ++it) {
+    sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+        "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
+        "WHERE visit_time == ?"));
+
+    statement.BindInt64(0, it->ToInternalValue());
+
+    if (!FillVisitVector(statement, visits))
+      return false;
+  }
+  return true;
+}
+
 bool VisitDatabase::GetAllVisitsInRange(base::Time begin_time,
                                         base::Time end_time,
                                         int max_results,
@@ -298,46 +317,70 @@ bool VisitDatabase::GetVisitsInRangeForTransition(
   return FillVisitVector(statement, visits);
 }
 
-void VisitDatabase::GetVisibleVisitsInRange(base::Time begin_time,
-                                            base::Time end_time,
-                                            int max_count,
+bool VisitDatabase::GetVisibleVisitsInRange(const QueryOptions& options,
                                             VisitVector* visits) {
   visits->clear();
+  std::string sql = "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
+                    "WHERE visit_time >= ? AND (visit_time < ? ";
+  if (!options.cursor.empty())
+    sql += " OR (visit_time = ? and id < ?)";
+
   // The visit_time values can be duplicated in a redirect chain, so we sort
   // by id too, to ensure a consistent ordering just in case.
-  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
-      "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
-      "WHERE visit_time >= ? AND visit_time < ? "
-      "AND (transition & ?) != 0 "  // CHAIN_END
+  sql += ") AND (transition & ?) != 0 "  // CHAIN_END
       "AND (transition & ?) NOT IN (?, ?, ?) "  // NO SUBFRAME or
                                                 // KEYWORD_GENERATED
-      "ORDER BY visit_time DESC, id DESC"));
+      "ORDER BY visit_time DESC, id DESC";
 
-  // Note that we use min/max values for querying unlimited ranges of time using
-  // the same statement. Since the time has an index, this will be about the
-  // same amount of work as just doing a query for everything with no qualifier.
-  int64 end = end_time.ToInternalValue();
-  statement.BindInt64(0, begin_time.ToInternalValue());
-  statement.BindInt64(1, end ? end : std::numeric_limits<int64>::max());
-  statement.BindInt(2, content::PAGE_TRANSITION_CHAIN_END);
-  statement.BindInt(3, content::PAGE_TRANSITION_CORE_MASK);
-  statement.BindInt(4, content::PAGE_TRANSITION_AUTO_SUBFRAME);
-  statement.BindInt(5, content::PAGE_TRANSITION_MANUAL_SUBFRAME);
-  statement.BindInt(6, content::PAGE_TRANSITION_KEYWORD_GENERATED);
+  // Generate unique IDs for the different variations of the statement,
+  // so they don't share the same cached prepared statement.
+  sql::StatementID id_with_cursor = SQL_FROM_HERE;
+  sql::StatementID id_without_cursor = SQL_FROM_HERE;
+
+  sql::Statement statement(GetDB().GetCachedStatement(
+      options.cursor.empty() ? id_without_cursor : id_with_cursor,
+      sql.c_str()));
+
+  int i = 0;
+  statement.BindInt64(i++, options.EffectiveBeginTime());
+  statement.BindInt64(i++, options.EffectiveEndTime());
+  if (!options.cursor.empty()) {
+    statement.BindInt64(i++, options.EffectiveEndTime());
+    statement.BindInt64(i++, options.cursor.rowid_);
+  }
+  statement.BindInt(i++, content::PAGE_TRANSITION_CHAIN_END);
+  statement.BindInt(i++, content::PAGE_TRANSITION_CORE_MASK);
+  statement.BindInt(i++, content::PAGE_TRANSITION_AUTO_SUBFRAME);
+  statement.BindInt(i++, content::PAGE_TRANSITION_MANUAL_SUBFRAME);
+  statement.BindInt(i++, content::PAGE_TRANSITION_KEYWORD_GENERATED);
 
   std::set<URLID> found_urls;
+
+  // Keeps track of the day that |found_urls| is holding the URLs for, in order
+  // to handle removing per-day duplicates.
+  base::Time found_urls_midnight;
+
   while (statement.Step()) {
     VisitRow visit;
     FillVisitRow(statement, &visit);
-    // Make sure the URL this visit corresponds to is unique.
-    if (found_urls.find(visit.url_id) != found_urls.end())
-      continue;
-    found_urls.insert(visit.url_id);
-    visits->push_back(visit);
 
-    if (max_count > 0 && static_cast<int>(visits->size()) >= max_count)
-      break;
+    if (options.duplicate_policy == QueryOptions::REMOVE_DUPLICATES_PER_DAY &&
+        found_urls_midnight != visit.visit_time.LocalMidnight()) {
+      found_urls.clear();
+      found_urls_midnight = visit.visit_time.LocalMidnight();
+    }
+
+    // Make sure the URL this visit corresponds to is unique.
+    if (found_urls.find(visit.url_id) == found_urls.end()) {
+      found_urls.insert(visit.url_id);
+
+      if (static_cast<int>(visits->size()) >= options.EffectiveMaxCount())
+        return true;
+
+      visits->push_back(visit);
+    }
   }
+  return false;
 }
 
 void VisitDatabase::GetDirectVisitsDuringTimes(const VisitFilter& time_filter,

@@ -11,11 +11,11 @@
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/content_settings/content_settings_custom_extension_provider.h"
 #include "chrome/browser/content_settings/content_settings_default_provider.h"
 #include "chrome/browser/content_settings/content_settings_details.h"
-#include "chrome/browser/content_settings/content_settings_extension_provider.h"
+#include "chrome/browser/content_settings/content_settings_internal_extension_provider.h"
 #include "chrome/browser/content_settings/content_settings_observable_provider.h"
-#include "chrome/browser/content_settings/content_settings_platform_app_provider.h"
 #include "chrome/browser/content_settings/content_settings_policy_provider.h"
 #include "chrome/browser/content_settings/content_settings_pref_provider.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
@@ -34,6 +34,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/static_cookie_policy.h"
@@ -100,29 +101,33 @@ HostContentSettingsMap::HostContentSettingsMap(
   }
 }
 
+#if defined(ENABLE_EXTENSIONS)
 void HostContentSettingsMap::RegisterExtensionService(
     ExtensionService* extension_service) {
   DCHECK(extension_service);
-  DCHECK(!content_settings_providers_[PLATFORM_APP_PROVIDER]);
-  DCHECK(!content_settings_providers_[EXTENSION_PROVIDER]);
+  DCHECK(!content_settings_providers_[INTERNAL_EXTENSION_PROVIDER]);
+  DCHECK(!content_settings_providers_[CUSTOM_EXTENSION_PROVIDER]);
 
-  content_settings::PlatformAppProvider* platform_app_provider =
-      new content_settings::PlatformAppProvider(extension_service);
-  platform_app_provider->AddObserver(this);
-  content_settings_providers_[PLATFORM_APP_PROVIDER] = platform_app_provider;
+  content_settings::InternalExtensionProvider* internal_extension_provider =
+      new content_settings::InternalExtensionProvider(extension_service);
+  internal_extension_provider->AddObserver(this);
+  content_settings_providers_[INTERNAL_EXTENSION_PROVIDER] =
+      internal_extension_provider;
 
-  content_settings::ObservableProvider* extension_provider =
-      new content_settings::ExtensionProvider(
+  content_settings::ObservableProvider* custom_extension_provider =
+      new content_settings::CustomExtensionProvider(
           extension_service->GetContentSettingsStore(),
           is_off_the_record_);
-  extension_provider->AddObserver(this);
-  content_settings_providers_[EXTENSION_PROVIDER] = extension_provider;
+  custom_extension_provider->AddObserver(this);
+  content_settings_providers_[CUSTOM_EXTENSION_PROVIDER] =
+      custom_extension_provider;
 
   OnContentSettingChanged(ContentSettingsPattern(),
                           ContentSettingsPattern(),
                           CONTENT_SETTINGS_TYPE_DEFAULT,
                           "");
 }
+#endif
 
 // static
 void HostContentSettingsMap::RegisterUserPrefs(PrefService* prefs) {
@@ -343,6 +348,12 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     return false;
   }
 
+  // We don't support ALLOW for media default setting.
+  if (content_type == CONTENT_SETTINGS_TYPE_MEDIASTREAM &&
+      setting == CONTENT_SETTING_ALLOW) {
+    return false;
+  }
+
   // DEFAULT, ALLOW and BLOCK are always allowed.
   if (setting == CONTENT_SETTING_DEFAULT ||
       setting == CONTENT_SETTING_ALLOW ||
@@ -358,6 +369,9 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     case CONTENT_SETTINGS_TYPE_INTENTS:
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
+    case CONTENT_SETTINGS_TYPE_PPAPI_BROKER:
       return setting == CONTENT_SETTING_ASK;
     default:
       return false;
@@ -367,9 +381,9 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
 // static
 bool HostContentSettingsMap::ContentTypeHasCompoundValue(
     ContentSettingsType type) {
-  // Values for content type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE are
-  // of type dictionary/map. Compound types like dictionaries can't be mapped to
-  // the type |ContentSetting|.
+  // Values for content type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE and
+  // CONTENT_SETTINGS_TYPE_MEDIASTREAM are of type dictionary/map. Compound
+  // types like dictionaries can't be mapped to the type |ContentSetting|.
   return (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
           type == CONTENT_SETTINGS_TYPE_MEDIASTREAM);
 }
@@ -455,7 +469,6 @@ void HostContentSettingsMap::MigrateObsoleteClearOnExitPref() {
   prefs_->SetBoolean(prefs::kContentSettingsClearOnExitMigrated, true);
 }
 
-
 void HostContentSettingsMap::AddSettingsForOneType(
     const content_settings::ProviderInterface* provider,
     ProviderType provider_type,
@@ -502,10 +515,10 @@ bool HostContentSettingsMap::ShouldAllowAllContent(
       primary_url.SchemeIsSecure()) {
     return true;
   }
-  if (primary_url.SchemeIs(chrome::kExtensionScheme)) {
+  if (primary_url.SchemeIs(extensions::kExtensionScheme)) {
     return content_type != CONTENT_SETTINGS_TYPE_PLUGINS &&
         (content_type != CONTENT_SETTINGS_TYPE_COOKIES ||
-            secondary_url.SchemeIs(chrome::kExtensionScheme));
+            secondary_url.SchemeIs(extensions::kExtensionScheme));
   }
   return primary_url.SchemeIs(chrome::kChromeDevToolsScheme) ||
          primary_url.SchemeIs(chrome::kChromeInternalScheme) ||
@@ -560,4 +573,17 @@ base::Value* HostContentSettingsMap::GetWebsiteSetting(
     info->secondary_pattern = ContentSettingsPattern();
   }
   return NULL;
+}
+
+// static
+HostContentSettingsMap::ProviderType
+    HostContentSettingsMap::GetProviderTypeFromSource(
+        const std::string& source) {
+  for (size_t i = 0; i < arraysize(kProviderNames); ++i) {
+    if (source == kProviderNames[i])
+      return static_cast<ProviderType>(i);
+  }
+
+  NOTREACHED();
+  return DEFAULT_PROVIDER;
 }

@@ -21,6 +21,7 @@
 #include "content/common/content_export.h"
 #include "content/port/browser/render_widget_host_view_port.h"
 #include "ui/base/range/range.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
 namespace content {
@@ -58,17 +59,41 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual WebKit::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const OVERRIDE;
+  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
+                                      InputEventAckState ack_result) OVERRIDE;
   virtual SmoothScrollGesture* CreateSmoothScrollGesture(
-      bool scroll_down, bool scroll_far) OVERRIDE;
+      bool scroll_down, int pixels_to_scroll, int mouse_event_x,
+      int mouse_event_y) OVERRIDE;
 
   void SetBrowserAccessibilityManager(BrowserAccessibilityManager* manager);
 
   // Notification that a resize or move session ended on the native widget.
-  void UpdateScreenInfo();
+  void UpdateScreenInfo(gfx::NativeView view);
+
+#if defined(OS_WIN)
+  // The callback that DetachPluginsHelper calls for each child window. Call
+  // this directly if you want to do custom filtering on plugin windows first.
+  static void DetachPluginWindowsCallback(HWND window);
+#endif
 
  protected:
   // Interface class only, do not construct.
   RenderWidgetHostViewBase();
+
+#if defined(OS_WIN)
+  // Shared implementation of MovePluginWindows for use by win and aura/wina.
+  static void MovePluginWindowsHelper(
+      HWND parent,
+      const std::vector<webkit::npapi::WebPluginGeometry>& moves);
+
+  static void PaintPluginWindowsHelper(
+      HWND parent,
+      const gfx::Rect& damaged_screen_rect);
+
+  // Needs to be called before the HWND backing the view goes away to avoid
+  // crashes in Windowed plugins.
+  static void DetachPluginsHelper(HWND parent);
+#endif
 
   // Whether this view is a popup and what kind of popup it is (select,
   // autofill...).

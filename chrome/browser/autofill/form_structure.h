@@ -15,6 +15,8 @@
 #include "chrome/browser/autofill/field_types.h"
 #include "googleurl/src/gurl.h"
 
+struct FormData;
+struct FormDataPredictions;
 
 enum RequestMethod {
   GET,
@@ -37,23 +39,16 @@ namespace buzz {
 class XmlElement;
 }
 
-namespace webkit {
-namespace forms {
-struct FormData;
-struct FormDataPredictions;
-}
-}
-
 // FormStructure stores a single HTML form together with the values entered
 // in the fields along with additional information needed by Autofill.
 class FormStructure {
  public:
-  explicit FormStructure(const webkit::forms::FormData& form);
+  explicit FormStructure(const FormData& form);
   virtual ~FormStructure();
 
   // Runs several heuristics against the form fields to determine their possible
   // types.
-  void DetermineHeuristicTypes();
+  void DetermineHeuristicTypes(const AutofillMetrics& metric_logger);
 
   // Encodes the XML upload request from this FormStructure.
   bool EncodeUploadRequest(const FieldTypeSet& available_field_types,
@@ -79,7 +74,7 @@ class FormStructure {
   // fields' predicted types.
   static void GetFieldTypePredictions(
       const std::vector<FormStructure*>& form_structures,
-      std::vector<webkit::forms::FormDataPredictions>* forms);
+      std::vector<FormDataPredictions>* forms);
 
   // The unique signature for this form, composed of the target url domain,
   // the form name, and the form field names in a 64-bit hash.
@@ -119,6 +114,16 @@ class FormStructure {
                          const base::TimeTicks& interaction_time,
                          const base::TimeTicks& submission_time) const;
 
+  // Classifies each field in |fields_| based upon its |autocomplete| attribute,
+  // if the attribute is available.  The association is stored into the field's
+  // |heuristic_type|.
+  // Fills |found_types| with |true| if the attribute is available and neither
+  // empty nor set to the special values "on" or "off" for at least one field.
+  // Fills |found_sections| with |true| if the attribute specifies a section for
+  // at least one field.
+  void ParseFieldTypesFromAutocompleteAttributes(bool* found_types,
+                                                 bool* found_sections);
+
   const AutofillField* field(size_t index) const;
   AutofillField* field(size_t index);
   size_t field_count() const;
@@ -140,8 +145,12 @@ class FormStructure {
 
   virtual std::string server_experiment_id() const;
 
-  bool operator==(const webkit::forms::FormData& form) const;
-  bool operator!=(const webkit::forms::FormData& form) const;
+  // Returns a FormData containing the data this form structure knows about.
+  // |user_submitted| is currently always false.
+  FormData ToFormData() const;
+
+  bool operator==(const FormData& form) const;
+  bool operator!=(const FormData& form) const;
 
  private:
   friend class FormStructureTest;
@@ -158,14 +167,6 @@ class FormStructure {
   // it is a query or upload.
   bool EncodeFormRequest(EncodeRequestType request_type,
                          buzz::XmlElement* encompassing_xml_element) const;
-
-  // Classifies each field in |fields_| based upon its |autocompletetype|
-  // attribute, if the attribute is available.  The association is stored into
-  // |map|.  Fills |found_attribute| with |true| if the attribute is available
-  // (and non-empty) for at least one field.  Fills |found_sections| with |true|
-  // if the attribute specifies a section for at least one field.
-  void ParseAutocompletetypeAttributes(bool* found_attribute,
-                                       bool* found_sections);
 
   // Classifies each field in |fields_| into a logical section.
   // Sections are identified by the heuristic that a logical section should not

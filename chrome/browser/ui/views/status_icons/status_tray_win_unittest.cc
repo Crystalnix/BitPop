@@ -8,7 +8,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
-#include "grit/theme_resources.h"
+#include "grit/chrome_unscaled_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -31,16 +31,17 @@ TEST(StatusTrayWinTest, CreateIconAndMenu) {
   // down.
   StatusTrayWin tray;
   StatusIcon* icon = tray.CreateStatusIcon();
-  SkBitmap* bitmap = ui::ResourceBundle::GetSharedInstance().GetBitmapNamed(
-      IDR_STATUS_TRAY_ICON);
-  icon->SetImage(*bitmap);
-  icon->SetPressedImage(*bitmap);
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  gfx::ImageSkia* image = rb.GetImageSkiaNamed(IDR_STATUS_TRAY_ICON);
+  icon->SetImage(*image);
+  icon->SetPressedImage(*image);
   icon->SetToolTip(ASCIIToUTF16("tool tip"));
   ui::SimpleMenuModel* menu = new ui::SimpleMenuModel(NULL);
   menu->AddItem(0, L"foo");
   icon->SetContextMenu(menu);
 }
 
+#if !defined(USE_AURA)  // http://crbug.com/156370
 TEST(StatusTrayWinTest, ClickOnIcon) {
   // Create an icon, send a fake click event, make sure observer is called.
   StatusTrayWin tray;
@@ -54,3 +55,4 @@ TEST(StatusTrayWinTest, ClickOnIcon) {
   tray.WndProc(NULL, icon->message_id(), icon->icon_id(), WM_RBUTTONDOWN);
   icon->RemoveObserver(&observer);
 }
+#endif  // !defined(USE_AURA)

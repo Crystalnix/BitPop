@@ -5,6 +5,7 @@
 #ifndef CONTENT_COMMON_GPU_GPU_CHANNEL_MANAGER_H_
 #define CONTENT_COMMON_GPU_GPU_CHANNEL_MANAGER_H_
 
+#include <deque>
 #include <vector>
 
 #include "base/hash_tables.h"
@@ -17,6 +18,7 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gl/gl_surface.h"
 
 namespace base {
 class WaitableEvent;
@@ -37,10 +39,12 @@ namespace IPC {
 struct ChannelHandle;
 }
 
+struct GPUCreateCommandBufferConfig;
+
+namespace content {
 class ChildThread;
 class GpuChannel;
 class GpuWatchdog;
-struct GPUCreateCommandBufferConfig;
 class SyncPointManager;
 
 // A GpuChannelManager is a thread responsible for issuing rendering commands
@@ -54,8 +58,7 @@ class SyncPointManager;
 // IPC messages to the browser process IO thread on the GpuChannelManager's
 // behalf.
 class GpuChannelManager : public IPC::Listener,
-                          public IPC::Sender,
-                          public GpuMemoryManagerClient {
+                          public IPC::Sender {
  public:
   GpuChannelManager(ChildThread* gpu_child_thread,
                     GpuWatchdog* watchdog,
@@ -71,10 +74,6 @@ class GpuChannelManager : public IPC::Listener,
 
   // Sender overrides.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
-
-  // GpuMemoryManagerClient overrides.
-  virtual void AppendAllCommandBufferStubs(
-      std::vector<GpuCommandBufferStubBase*>& stubs) OVERRIDE;
 
   void LoseAllContexts();
 
@@ -92,7 +91,19 @@ class GpuChannelManager : public IPC::Listener,
 
   SyncPointManager* sync_point_manager() { return sync_point_manager_; }
 
+  gfx::GLSurface* GetDefaultOffscreenSurface();
+
  private:
+  struct ImageOperation {
+    ImageOperation(int32 sync_point, base::Closure callback);
+    ~ImageOperation();
+
+    int32 sync_point;
+    base::Closure callback;
+  };
+  typedef base::hash_map<int, scoped_refptr<GpuChannel> > GpuChannelMap;
+  typedef std::deque<ImageOperation*> ImageOperationQueue;
+
   // Message handlers.
   void OnEstablishChannel(int client_id, bool share_context);
   void OnCloseChannel(const IPC::ChannelHandle& channel_handle);
@@ -103,6 +114,13 @@ class GpuChannelManager : public IPC::Listener,
       int32 render_view_id,
       int32 client_id,
       const GPUCreateCommandBufferConfig& init_params);
+  void CreateImage(
+      gfx::PluginWindowHandle window, int32 client_id, int32 image_id);
+  void OnCreateImage(
+      gfx::PluginWindowHandle window, int32 client_id, int32 image_id);
+  void DeleteImage(int32 client_id, int32 image_id);
+  void OnDeleteImage(int32 client_id, int32 image_id, int32 sync_point);
+  void OnDeleteImageSyncPointRetired(ImageOperation*);
 
   void OnLoseAllContexts();
 
@@ -115,7 +133,6 @@ class GpuChannelManager : public IPC::Listener,
   // These objects manage channels to individual renderer processes there is
   // one channel for each renderer process that has connected to this GPU
   // process.
-  typedef base::hash_map<int, scoped_refptr<GpuChannel> > GpuChannelMap;
   GpuChannelMap gpu_channels_;
   scoped_refptr<gfx::GLShareGroup> share_group_;
   scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
@@ -123,8 +140,12 @@ class GpuChannelManager : public IPC::Listener,
   GpuWatchdog* watchdog_;
   scoped_refptr<SyncPointManager> sync_point_manager_;
   scoped_ptr<gpu::gles2::ProgramCache> program_cache_;
+  scoped_refptr<gfx::GLSurface> default_offscreen_surface_;
+  ImageOperationQueue image_operations_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannelManager);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_GPU_CHANNEL_MANAGER_H_

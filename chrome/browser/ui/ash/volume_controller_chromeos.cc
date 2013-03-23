@@ -17,7 +17,7 @@ const double kStepPercentage = 4.0;
 }  // namespace
 
 bool VolumeController::HandleVolumeMute(const ui::Accelerator& accelerator) {
-  if (accelerator.key_code() == ui::VKEY_F8)
+  if (accelerator.key_code() == ui::VKEY_VOLUME_MUTE)
     content::RecordAction(content::UserMetricsAction("Accel_VolumeMute_F8"));
 
   chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
@@ -32,7 +32,7 @@ bool VolumeController::HandleVolumeMute(const ui::Accelerator& accelerator) {
 }
 
 bool VolumeController::HandleVolumeDown(const ui::Accelerator& accelerator) {
-  if (accelerator.key_code() == ui::VKEY_F9)
+  if (accelerator.key_code() == ui::VKEY_VOLUME_DOWN)
     content::RecordAction(content::UserMetricsAction("Accel_VolumeDown_F9"));
 
   chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
@@ -47,17 +47,12 @@ bool VolumeController::HandleVolumeDown(const ui::Accelerator& accelerator) {
 }
 
 bool VolumeController::HandleVolumeUp(const ui::Accelerator& accelerator) {
-  if (accelerator.key_code() == ui::VKEY_F10)
+  if (accelerator.key_code() == ui::VKEY_VOLUME_UP)
     content::RecordAction(content::UserMetricsAction("Accel_VolumeUp_F10"));
 
   chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
   if (audio_handler->IsMuted()) {
     audio_handler->SetMuted(false);
-   // If volume percent is still 0.0 after reset the mute status, it means that
-    // the mute status was done by VolumeDown, so we need to increase
-    // the volume as usual.
-    if (audio_handler->GetVolumePercent() == 0.0)
-      audio_handler->AdjustVolumeByPercent(kStepPercentage);
   } else {
     audio_handler->AdjustVolumeByPercent(kStepPercentage);
   }
@@ -65,6 +60,24 @@ bool VolumeController::HandleVolumeUp(const ui::Accelerator& accelerator) {
   extensions::DispatchVolumeChangedEvent(audio_handler->GetVolumePercent(),
                                          audio_handler->IsMuted());
   return true;
+}
+
+bool VolumeController::IsAudioMuted() const {
+  return chromeos::AudioHandler::GetInstance()->IsMuted();
+}
+
+void VolumeController::SetAudioMuted(bool muted) {
+  chromeos::AudioHandler::GetInstance()->SetMuted(muted);
+}
+
+// Gets the volume level. The range is [0, 1.0].
+float VolumeController::GetVolumeLevel() const {
+  return chromeos::AudioHandler::GetInstance()->GetVolumePercent() / 100.f;
+}
+
+// Sets the volume level. The range is [0, 1.0].
+void VolumeController::SetVolumeLevel(float level) {
+  SetVolumePercent(level * 100.f);
 }
 
 void VolumeController::SetVolumePercent(double percent) {

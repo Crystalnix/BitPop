@@ -9,7 +9,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_test_observer.h"
+#include "chrome/browser/download/download_test_file_chooser_observer.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,12 +26,14 @@
 #include "content/public/browser/download_item.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/download_test_observer.h"
 #include "content/test/net/url_request_slow_download_job.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadItem;
 using content::DownloadManager;
+using content::URLRequestSlowDownloadJob;
 
 class BrowserCloseTest : public InProcessBrowserTest {
  public:
@@ -117,9 +119,9 @@ class BrowserCloseTest : public InProcessBrowserTest {
     // to get to IN_PROGRESS.
     DownloadManager* download_manager =
         BrowserContext::GetDownloadManager(browser->profile());
-    scoped_ptr<DownloadTestObserver> observer(
-        new DownloadTestObserverInProgress(download_manager,
-                                           num_downloads));
+    scoped_ptr<content::DownloadTestObserver> observer(
+        new content::DownloadTestObserverInProgress(download_manager,
+                                                    num_downloads));
 
     // Set of that number of downloads.
     size_t count_downloads = num_downloads;
@@ -150,8 +152,8 @@ class BrowserCloseTest : public InProcessBrowserTest {
           DownloadServiceFactory::GetForProfile(*pit);
       if (download_service->HasCreatedDownloadManager()) {
         DownloadManager *mgr = BrowserContext::GetDownloadManager(*pit);
-        scoped_refptr<DownloadTestFlushObserver> observer(
-            new DownloadTestFlushObserver(mgr));
+        scoped_refptr<content::DownloadTestFlushObserver> observer(
+            new content::DownloadTestFlushObserver(mgr));
         observer->WaitForFlush();
       }
       if ((*pit)->HasOffTheRecordProfile()) {
@@ -161,8 +163,8 @@ class BrowserCloseTest : public InProcessBrowserTest {
         if (incognito_download_service->HasCreatedDownloadManager()) {
           DownloadManager *mgr = BrowserContext::GetDownloadManager(
               (*pit)->GetOffTheRecordProfile());
-          scoped_refptr<DownloadTestFlushObserver> observer(
-              new DownloadTestFlushObserver(mgr));
+          scoped_refptr<content::DownloadTestFlushObserver> observer(
+              new content::DownloadTestFlushObserver(mgr));
           observer->WaitForFlush();
         }
       }
@@ -173,7 +175,7 @@ class BrowserCloseTest : public InProcessBrowserTest {
   Browser* CreateBrowserOnProfile(Profile* profile) {
     Browser* new_browser = new Browser(Browser::CreateParams(profile));
     chrome::AddSelectedTabWithURL(new_browser, GURL(chrome::kAboutBlankURL),
-                                  content::PAGE_TRANSITION_START_PAGE);
+                                  content::PAGE_TRANSITION_AUTO_TOPLEVEL);
     content::WaitForLoadStop(chrome::GetActiveWebContents(new_browser));
     new_browser->window()->Show();
     return new_browser;
@@ -376,9 +378,9 @@ class BrowserCloseTest : public InProcessBrowserTest {
   Profile* first_profile_;
   Profile* second_profile_;
 
-  ScopedTempDir first_profile_downloads_dir_;
-  ScopedTempDir second_profile_data_dir_;
-  ScopedTempDir second_profile_downloads_dir_;
+  base::ScopedTempDir first_profile_downloads_dir_;
+  base::ScopedTempDir second_profile_data_dir_;
+  base::ScopedTempDir second_profile_downloads_dir_;
 };
 
 const BrowserCloseTest::DownloadsCloseCheckCase
@@ -503,7 +505,9 @@ std::string BrowserCloseTest::DownloadsCloseCheckCase::DebugString() const {
 
 // This test is timing out very often under AddressSanitizer.
 // http://crbug.com/111914 and http://crbug.com/103371.
-#if defined(ADDRESS_SANITIZER)
+// Crashing on Linux. http://crbug.com/100566
+// Timing out on XP debug. http://crbug.com/111914
+// Timing out, http://crbug.com/159449 .
 
 #define MAYBE_DownloadsCloseCheck_0 DISABLED_DownloadsCloseCheck_0
 #define MAYBE_DownloadsCloseCheck_1 DISABLED_DownloadsCloseCheck_1
@@ -512,29 +516,6 @@ std::string BrowserCloseTest::DownloadsCloseCheckCase::DebugString() const {
 #define MAYBE_DownloadsCloseCheck_4 DISABLED_DownloadsCloseCheck_4
 #define MAYBE_DownloadsCloseCheck_5 DISABLED_DownloadsCloseCheck_5
 
-#else
-
-// Crashing on Linux. http://crbug.com/100566
-#if defined(OS_LINUX)
-#define MAYBE_DownloadsCloseCheck_0 DISABLED_DownloadsCloseCheck_0
-#define MAYBE_DownloadsCloseCheck_1 DISABLED_DownloadsCloseCheck_1
-#else
-#define MAYBE_DownloadsCloseCheck_0 DownloadsCloseCheck_0
-#define MAYBE_DownloadsCloseCheck_1 DownloadsCloseCheck_1
-#endif
-
-#define MAYBE_DownloadsCloseCheck_3 DownloadsCloseCheck_3
-#define MAYBE_DownloadsCloseCheck_4 DownloadsCloseCheck_4
-// Timing out on XP debug. http://crbug.com/111914
-#if defined(OS_WIN)
-# define MAYBE_DownloadsCloseCheck_2 DISABLED_DownloadsCloseCheck_2
-# define MAYBE_DownloadsCloseCheck_5 DISABLED_DownloadsCloseCheck_5
-#else
-# define MAYBE_DownloadsCloseCheck_2 DownloadsCloseCheck_2
-# define MAYBE_DownloadsCloseCheck_5 DownloadsCloseCheck_5
-#endif  // defined(OS_WIN)
-
-#endif  // defined(ADDRESS_SANITIZER)
 IN_PROC_BROWSER_TEST_F(BrowserCloseTest, MAYBE_DownloadsCloseCheck_0) {
   ASSERT_TRUE(SetupForDownloadCloseCheck());
   for (size_t i = 0; i < arraysize(download_close_check_cases) / 6; ++i) {

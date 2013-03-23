@@ -8,9 +8,13 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "chrome/browser/chrome_page_zoom.h"
+#include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/panels/panel.h"
+#include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/view_type_utils.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -26,7 +30,7 @@
 #include "ui/gfx/image/image.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
 using content::UserMetricsAction;
@@ -45,28 +49,66 @@ void PanelHost::Init(const GURL& url) {
   if (url.is_empty())
     return;
 
-  web_contents_.reset(content::WebContents::Create(
-      profile_, content::SiteInstance::CreateForURL(profile_, url),
-      MSG_ROUTING_NONE, NULL, NULL));
+  content::WebContents::CreateParams create_params(
+      profile_, content::SiteInstance::CreateForURL(profile_, url));
+  web_contents_.reset(content::WebContents::Create(create_params));
   chrome::SetViewType(web_contents_.get(), chrome::VIEW_TYPE_PANEL);
   web_contents_->SetDelegate(this);
   content::WebContentsObserver::Observe(web_contents_.get());
 
-  favicon_tab_helper_.reset(new FaviconTabHelper(web_contents_.get()));
+  // Needed to give the web contents a Tab ID. Extension APIs
+  // expect web contents to have a Tab ID.
+  SessionTabHelper::CreateForWebContents(web_contents_.get());
+  SessionTabHelper::FromWebContents(web_contents_.get())->SetWindowID(
+      panel_->session_id());
+
+  FaviconTabHelper::CreateForWebContents(web_contents_.get());
+  PrefsTabHelper::CreateForWebContents(web_contents_.get());
 
   web_contents_->GetController().LoadURL(
       url, content::Referrer(), content::PAGE_TRANSITION_LINK, std::string());
 }
 
 void PanelHost::DestroyWebContents() {
-  web_contents_.reset();
-  favicon_tab_helper_.reset();
+  // Cannot do a web_contents_.reset() because web_contents_.get() will
+  // still return the pointer when we CHECK in WebContentsDestroyed (or if
+  // we get called back in the middle of web contents destruction, which
+  // WebView might do when it detects the web contents is destroyed).
+  content::WebContents* contents = web_contents_.release();
+  delete contents;
 }
 
-SkBitmap PanelHost::GetPageIcon() const {
-  // TODO: Make this function return gfx::Image.
-  return favicon_tab_helper_.get() ?
-      favicon_tab_helper_->GetFavicon().AsBitmap() : SkBitmap();
+gfx::Image PanelHost::GetPageIcon() const {
+  if (!web_contents_.get())
+    return gfx::Image();
+
+  FaviconTabHelper* favicon_tab_helper =
+      FaviconTabHelper::FromWebContents(web_contents_.get());
+  CHECK(favicon_tab_helper);
+  return favicon_tab_helper->GetFavicon();
+}
+
+content::WebContents* PanelHost::OpenURLFromTab(
+    content::WebContents* source,
+    const content::OpenURLParams& params) {
+  // These dispositions aren't really navigations.
+  if (params.disposition == SUPPRESS_OPEN ||
+      params.disposition == SAVE_TO_DISK ||
+      params.disposition == IGNORE_ACTION)
+    return NULL;
+
+  // Only allow clicks on links.
+  if (params.transition != content::PAGE_TRANSITION_LINK)
+    return NULL;
+
+  // Force all links to open in a new tab.
+  chrome::NavigateParams navigate_params(profile_,
+                                         params.url,
+                                         params.transition);
+  navigate_params.disposition = params.disposition == NEW_BACKGROUND_TAB ?
+      params.disposition : NEW_FOREGROUND_TAB;
+  chrome::Navigate(&navigate_params);
+  return navigate_params.target_contents;
 }
 
 void PanelHost::NavigationStateChanged(const content::WebContents* source,
@@ -77,6 +119,27 @@ void PanelHost::NavigationStateChanged(const content::WebContents* source,
       ((changed_flags & content::INVALIDATE_TYPE_TITLE) &&
        !source->IsLoading()))
     panel_->UpdateTitleBar();
+}
+
+void PanelHost::AddNewContents(content::WebContents* source,
+                               content::WebContents* new_contents,
+                               WindowOpenDisposition disposition,
+                               const gfx::Rect& initial_pos,
+                               bool user_gesture,
+                               bool* was_blocked) {
+  chrome::NavigateParams navigate_params(profile_, new_contents->GetURL(),
+                                         content::PAGE_TRANSITION_LINK);
+  navigate_params.target_contents = new_contents;
+
+  // Force all links to open in a new tab, even if they were trying to open a
+  // window.
+  navigate_params.disposition =
+      disposition == NEW_BACKGROUND_TAB ? disposition : NEW_FOREGROUND_TAB;
+
+  navigate_params.window_bounds = initial_pos;
+  navigate_params.user_gesture = user_gesture;
+  navigate_params.extension_app_id = panel_->extension_id();
+  chrome::Navigate(&navigate_params);
 }
 
 void PanelHost::ActivateContents(content::WebContents* contents) {
@@ -109,15 +172,8 @@ void PanelHost::ContentsZoomChange(bool zoom_in) {
   Zoom(zoom_in ? content::PAGE_ZOOM_IN : content::PAGE_ZOOM_OUT);
 }
 
-bool PanelHost::IsApplication() const {
-  return true;
-}
-
-bool PanelHost::HandleContextMenu(const content::ContextMenuParams& params) {
-  return true;  // Disallow context menu.
-}
-
 void PanelHost::HandleKeyboardEvent(
+    content::WebContents* source,
     const content::NativeWebKeyboardEvent& event) {
   return panel_->HandleKeyboardEvent(event);
 }
@@ -131,11 +187,20 @@ void PanelHost::ResizeDueToAutoResize(content::WebContents* web_contents,
   panel_->OnContentsAutoResized(new_size);
 }
 
+void PanelHost::RenderViewCreated(content::RenderViewHost* render_view_host) {
+  extensions::WindowController* window = GetExtensionWindowController();
+  render_view_host->Send(new ExtensionMsg_UpdateBrowserWindowId(
+      render_view_host->GetRoutingID(), window->GetWindowId()));
+}
+
 void PanelHost::RenderViewGone(base::TerminationStatus status) {
   CloseContents(web_contents_.get());
 }
 
 void PanelHost::WebContentsDestroyed(content::WebContents* web_contents) {
+  // Web contents should only be destroyed by us.
+  CHECK(!web_contents_.get());
+
   // Close the panel after we return to the message loop (not immediately,
   // otherwise, it may destroy this object before the stack has a chance
   // to cleanly unwind.)

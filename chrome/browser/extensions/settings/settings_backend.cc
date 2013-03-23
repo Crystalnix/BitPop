@@ -4,19 +4,11 @@
 
 #include "chrome/browser/extensions/settings/settings_backend.h"
 
-#include "base/compiler_specific.h"
 #include "base/file_util.h"
-#include "base/json/json_reader.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/memory/linked_ptr.h"
-#include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/settings/settings_storage_factory.h"
-#include "chrome/browser/extensions/settings/settings_storage_quota_enforcer.h"
 #include "chrome/browser/extensions/settings/settings_sync_processor.h"
 #include "chrome/browser/extensions/settings/settings_sync_util.h"
-#include "chrome/browser/value_store/failing_value_store.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/extensions/settings/syncable_settings_storage.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error_factory.h"
 
@@ -58,13 +50,11 @@ SyncableSettingsStorage* SettingsBackend::GetOrCreateStorageWithSyncData(
   }
 
   ValueStore* storage = storage_factory_->Create(base_path_, extension_id);
-  if (storage) {
-    // It's fine to create the quota enforcer underneath the sync layer, since
-    // sync will only go ahead if each underlying storage operation succeeds.
-    storage = new SettingsStorageQuotaEnforcer(quota_, storage);
-  } else {
-    storage = new FailingValueStore();
-  }
+  CHECK(storage);
+
+  // It's fine to create the quota enforcer underneath the sync layer, since
+  // sync will only go ahead if each underlying storage operation succeeds.
+  storage = new SettingsStorageQuotaEnforcer(quota_, storage);
 
   linked_ptr<SyncableSettingsStorage> syncable_storage(
       new SyncableSettingsStorage(
@@ -171,7 +161,7 @@ syncer::SyncDataList SettingsBackend::GetAllSyncData(
   return all_sync_data;
 }
 
-syncer::SyncError SettingsBackend::MergeDataAndStartSyncing(
+syncer::SyncMergeResult SettingsBackend::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
     scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
@@ -234,7 +224,7 @@ syncer::SyncError SettingsBackend::MergeDataAndStartSyncing(
     GetOrCreateStorageWithSyncData(it->first, *it->second);
   }
 
-  return syncer::SyncError();
+  return syncer::SyncMergeResult(type);
 }
 
 syncer::SyncError SettingsBackend::ProcessSyncChanges(

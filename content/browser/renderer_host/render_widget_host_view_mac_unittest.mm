@@ -7,8 +7,14 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_utils.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/test/cocoa_test_event_utils.h"
 #import "ui/base/test/ui_cocoa_test_helper.h"
@@ -17,6 +23,24 @@
 namespace content {
 
 namespace {
+
+class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
+ public:
+  MockRenderWidgetHostDelegate() {}
+  virtual ~MockRenderWidgetHostDelegate() {}
+};
+
+class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
+ public:
+  MockRenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
+                           RenderProcessHost* process,
+                           int routing_id)
+      : RenderWidgetHostImpl(delegate, process, routing_id) {
+  }
+
+  MOCK_METHOD0(Focus, void());
+  MOCK_METHOD0(Blur, void());
+};
 
 // Generates the |length| of composition rectangle vector and save them to
 // |output|. It starts from |origin| and each rectangle contains |unit_size|.
@@ -79,14 +103,14 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     rwhv_cocoa_.reset([rwhv_mac_->cocoa_view() retain]);
   }
   virtual void TearDown() {
-    // See comment in SetUp().
-    test_rvh()->SetView(old_rwhv_);
-
     // Make sure the rwhv_mac_ is gone once the superclass's |TearDown()| runs.
     rwhv_cocoa_.reset();
     pool_.Recycle();
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     pool_.Recycle();
+
+    // See comment in SetUp().
+    test_rvh()->SetView(old_rwhv_);
 
     RenderViewHostImplTestHarness::TearDown();
   }
@@ -115,6 +139,7 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     geom.visible = true;
     geom.rects_valid = true;
     rwhv_mac_->MovePluginWindows(
+        gfx::Vector2d(),
         std::vector<webkit::npapi::WebPluginGeometry>(1, geom));
 
     return accelerated_handle;
@@ -251,7 +276,70 @@ TEST_F(RenderWidgetHostViewMacTest, Fullscreen) {
   EXPECT_TRUE(rwhv_mac_->pepper_fullscreen_window());
 }
 
-TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharaacterRangeCaretCase) {
+// Verify that escape key down in fullscreen mode suppressed the keyup event on
+// the parent.
+TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape) {
+  // Use our own RWH since we need to destroy it.
+  MockRenderWidgetHostDelegate delegate;
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  // Owned by its |cocoa_view()|.
+  RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(rwh));
+
+  view->InitAsFullscreen(rwhv_mac_);
+
+  WindowedNotificationObserver observer(
+      NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
+      Source<RenderWidgetHost>(rwh));
+  EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
+
+  // Escape key down. Should close window and set |suppressNextEscapeKeyUp| on
+  // the parent.
+  [view->cocoa_view() keyEvent:
+      cocoa_test_event_utils::KeyEventWithKeyCode(53, 27, NSKeyDown, 0)];
+  observer.Wait();
+  EXPECT_TRUE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
+
+  // Escape key up on the parent should clear |suppressNextEscapeKeyUp|.
+  [rwhv_mac_->cocoa_view() keyEvent:
+      cocoa_test_event_utils::KeyEventWithKeyCode(53, 27, NSKeyUp, 0)];
+  EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
+}
+
+// Test that command accelerators which destroy the fullscreen window
+// don't crash when forwarded via the window's responder machinery.
+TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
+  // Use our own RWH since we need to destroy it.
+  MockRenderWidgetHostDelegate delegate;
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  // Owned by its |cocoa_view()|.
+  RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(rwh));
+
+  view->InitAsFullscreen(rwhv_mac_);
+
+  WindowedNotificationObserver observer(
+      NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
+      Source<RenderWidgetHost>(rwh));
+
+  // Command-ESC will destroy the view, while the window is still in
+  // |-performKeyEquivalent:|.  There are other cases where this can
+  // happen, Command-ESC is the easiest to trigger.
+  [[view->cocoa_view() window] performKeyEquivalent:
+      cocoa_test_event_utils::KeyEventWithKeyCode(
+          53, 27, NSKeyDown, NSCommandKeyMask)];
+  observer.Wait();
+}
+
+TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
   const string16 kDummyString = UTF8ToUTF16("hogehoge");
   const size_t kDummyOffset = 0;
 
@@ -261,7 +349,9 @@ TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharaacterRangeCaretCase) {
   NSRect rect;
   NSRange actual_range;
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(caret_rect, caret_rect);
+  rwhv_mac_->SelectionBoundsChanged(
+       caret_rect, WebKit::WebTextDirectionLeftToRight,
+       caret_rect, WebKit::WebTextDirectionLeftToRight);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         caret_range.ToNSRange(),
         &rect,
@@ -286,7 +376,9 @@ TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharaacterRangeCaretCase) {
   caret_rect = gfx::Rect(20, 11, 0, 10);
   caret_range = ui::Range(1, 1);
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(caret_rect, caret_rect);
+  rwhv_mac_->SelectionBoundsChanged(
+       caret_rect, WebKit::WebTextDirectionLeftToRight,
+       caret_rect, WebKit::WebTextDirectionLeftToRight);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         caret_range.ToNSRange(),
         &rect,
@@ -310,7 +402,9 @@ TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharaacterRangeCaretCase) {
   // No caret.
   caret_range = ui::Range(1, 2);
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(caret_rect, gfx::Rect(30, 11, 0, 10));
+  rwhv_mac_->SelectionBoundsChanged(
+        caret_rect, WebKit::WebTextDirectionLeftToRight,
+        gfx::Rect(30, 11, 0, 10), WebKit::WebTextDirectionLeftToRight);
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         ui::Range(0, 0).ToNSRange(),
         &rect,
@@ -366,6 +460,15 @@ TEST_F(RenderWidgetHostViewMacTest, UpdateCompositionSinglelineCase) {
       ui::Range(1, 2).ToNSRange(),
       &rect,
       &actual_range));
+
+  // If the firstRectForCharacterRange is failed in renderer, empty rect vector
+  // is sent. Make sure this does not crash.
+  rwhv_mac_->ImeCompositionRangeChanged(ui::Range(10, 12),
+                                        std::vector<gfx::Rect>());
+  EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
+      ui::Range(10, 11).ToNSRange(),
+      &rect,
+      NULL));
 
   const int kCompositionLength = 10;
   std::vector<gfx::Rect> composition_bounds;
@@ -561,4 +664,49 @@ TEST_F(RenderWidgetHostViewMacTest, UpdateCompositionMultilineCase) {
       GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(0, 10), 1),
       gfx::Rect(NSRectToCGRect(rect)));
 }
+
+// Verify that |SetActive()| calls |RenderWidgetHostImpl::Blur()| and
+// |RenderWidgetHostImp::Focus()|.
+TEST_F(RenderWidgetHostViewMacTest, BlurAndFocusOnSetActive) {
+  MockRenderWidgetHostDelegate delegate;
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+
+  // Owned by its |cocoa_view()|.
+  MockRenderWidgetHostImpl* rwh = new MockRenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(rwh));
+
+  scoped_nsobject<CocoaTestHelperWindow>
+      window([[CocoaTestHelperWindow alloc] init]);
+  [[window contentView] addSubview:view->cocoa_view()];
+
+  EXPECT_CALL(*rwh, Focus());
+  [window makeFirstResponder:view->cocoa_view()];
+  testing::Mock::VerifyAndClearExpectations(rwh);
+
+  EXPECT_CALL(*rwh, Blur());
+  view->SetActive(false);
+  testing::Mock::VerifyAndClearExpectations(rwh);
+
+  EXPECT_CALL(*rwh, Focus());
+  view->SetActive(true);
+  testing::Mock::VerifyAndClearExpectations(rwh);
+
+  // Unsetting first responder should blur.
+  EXPECT_CALL(*rwh, Blur());
+  [window makeFirstResponder:nil];
+  testing::Mock::VerifyAndClearExpectations(rwh);
+
+  // |SetActive()| shoud not focus if view is not first responder.
+  EXPECT_CALL(*rwh, Focus()).Times(0);
+  view->SetActive(true);
+  testing::Mock::VerifyAndClearExpectations(rwh);
+
+  // Clean up.
+  rwh->Shutdown();
+}
+
 }  // namespace content

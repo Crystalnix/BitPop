@@ -15,6 +15,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 
 class FilePath;
 class InfoBarTabHelper;
@@ -31,10 +32,11 @@ class InfoBarTabHelper;
 //   terminating the plugin.
 // - Hide the infobar if the plugin starts responding again.
 // - Keep track of all of this for any number of plugins.
-class HungPluginTabHelper : public content::WebContentsObserver,
-                            public content::NotificationObserver {
+class HungPluginTabHelper
+    : public content::WebContentsObserver,
+      public content::NotificationObserver,
+      public content::WebContentsUserData<HungPluginTabHelper> {
  public:
-  explicit HungPluginTabHelper(content::WebContents* contents);
   virtual ~HungPluginTabHelper();
 
   // content::WebContentsObserver overrides:
@@ -49,6 +51,9 @@ class HungPluginTabHelper : public content::WebContentsObserver,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
+  explicit HungPluginTabHelper(content::WebContents* contents);
+  friend class content::WebContentsUserData<HungPluginTabHelper>;
+
   class InfoBarDelegate;
   friend class InfoBarDelegate;
 
@@ -94,9 +99,6 @@ class HungPluginTabHelper : public content::WebContentsObserver,
   // Closes the infobar associated with the given state. Note that this can
   // be called even if the bar is not opened, in which case it will do nothing.
   void CloseBar(PluginState* state);
-
-  // Possibly returns null.
-  InfoBarTabHelper* GetInfoBarHelper();
 
   content::NotificationRegistrar registrar_;
 

@@ -5,18 +5,19 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "base/bind.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/settings/leveldb_settings_storage_factory.h"
 #include "chrome/browser/extensions/settings/settings_frontend.h"
 #include "chrome/browser/extensions/settings/settings_storage_factory.h"
 #include "chrome/browser/extensions/settings/settings_sync_util.h"
 #include "chrome/browser/extensions/settings/settings_test_util.h"
 #include "chrome/browser/extensions/settings/syncable_settings_storage.h"
-#include "chrome/browser/value_store/failing_value_store.h"
+#include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/browser/value_store/testing_value_store.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sync/api/sync_change_processor.h"
@@ -177,8 +178,8 @@ class TestingValueStoreFactory : public SettingsStorageFactory {
   }
 
   // SettingsStorageFactory implementation.
-  virtual ValueStore* Create(
-      const FilePath& base_path, const std::string& extension_id) OVERRIDE {
+  virtual ValueStore* Create(const FilePath& base_path,
+                             const std::string& extension_id) OVERRIDE {
     TestingValueStore* new_storage = new TestingValueStore();
     DCHECK(!created_.count(extension_id));
     created_[extension_id] = new_storage;
@@ -193,12 +194,6 @@ class TestingValueStoreFactory : public SettingsStorageFactory {
   // taken when calling GetExisting.
   std::map<std::string, TestingValueStore*> created_;
 };
-
-void AssignSettingsService(syncer::SyncableService** dst,
-                           const SettingsFrontend* frontend,
-                           syncer::ModelType type) {
-  *dst = frontend->GetBackendForSync(type);
-}
 
 }  // namespace
 
@@ -224,7 +219,7 @@ class ExtensionSettingsSyncTest : public testing::Test {
     frontend_.reset();
     profile_.reset();
     // Execute any pending deletion tasks.
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
  protected:
@@ -232,13 +227,16 @@ class ExtensionSettingsSyncTest : public testing::Test {
   // its storage area.
   ValueStore* AddExtensionAndGetStorage(
       const std::string& id, Extension::Type type) {
-    profile_->GetMockExtensionService()->AddExtensionWithId(id, type);
+    ExtensionServiceInterface* esi =
+        extensions::ExtensionSystem::Get(profile_.get())->extension_service();
+    static_cast<extensions::settings_test_util::MockExtensionService*>(esi)->
+        AddExtensionWithId(id, type);
     return util::GetStorage(id, frontend_.get());
   }
 
   // Gets the syncer::SyncableService for the given sync type.
   syncer::SyncableService* GetSyncableService(syncer::ModelType model_type) {
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return frontend_->GetBackendForSync(model_type);
   }
 
@@ -262,7 +260,7 @@ class ExtensionSettingsSyncTest : public testing::Test {
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   scoped_ptr<util::MockProfile> profile_;
   scoped_ptr<SettingsFrontend> frontend_;
   scoped_refptr<util::ScopedSettingsStorageFactory> storage_factory_;
@@ -300,7 +298,7 @@ TEST_F(ExtensionSettingsSyncTest, NoDataDoesNotInvokeSync) {
 
 TEST_F(ExtensionSettingsSyncTest, InSyncDataDoesNotInvokeSync) {
   syncer::ModelType model_type = syncer::APP_SETTINGS;
-  Extension::Type type = Extension::TYPE_PACKAGED_APP;
+  Extension::Type type = Extension::TYPE_LEGACY_PACKAGED_APP;
 
   StringValue value1("fooValue");
   ListValue value2;
@@ -382,7 +380,7 @@ TEST_F(ExtensionSettingsSyncTest, LocalDataWithNoSyncDataIsPushedToSync) {
 
 TEST_F(ExtensionSettingsSyncTest, AnySyncDataOverwritesLocalData) {
   syncer::ModelType model_type = syncer::APP_SETTINGS;
-  Extension::Type type = Extension::TYPE_PACKAGED_APP;
+  Extension::Type type = Extension::TYPE_LEGACY_PACKAGED_APP;
 
   StringValue value1("fooValue");
   ListValue value2;
@@ -495,7 +493,7 @@ TEST_F(ExtensionSettingsSyncTest, ProcessSyncChanges) {
 
 TEST_F(ExtensionSettingsSyncTest, PushToSync) {
   syncer::ModelType model_type = syncer::APP_SETTINGS;
-  Extension::Type type = Extension::TYPE_PACKAGED_APP;
+  Extension::Type type = Extension::TYPE_LEGACY_PACKAGED_APP;
 
   StringValue value1("fooValue");
   ListValue value2;
@@ -644,7 +642,7 @@ TEST_F(ExtensionSettingsSyncTest, ExtensionAndAppSettingsSyncSeparately) {
   ValueStore* storage1 = AddExtensionAndGetStorage(
       "s1", Extension::TYPE_EXTENSION);
   ValueStore* storage2 = AddExtensionAndGetStorage(
-      "s2", Extension::TYPE_PACKAGED_APP);
+      "s2", Extension::TYPE_LEGACY_PACKAGED_APP);
 
   storage1->Set(DEFAULTS, "foo", value1);
   storage2->Set(DEFAULTS, "bar", value2);
@@ -893,7 +891,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingProcessChangesDisablesSync) {
   // The test above tests a failing ProcessSyncChanges too, but here test with
   // an initially passing MergeDataAndStartSyncing.
   syncer::ModelType model_type = syncer::APP_SETTINGS;
-  Extension::Type type = Extension::TYPE_PACKAGED_APP;
+  Extension::Type type = Extension::TYPE_LEGACY_PACKAGED_APP;
 
   StringValue fooValue("fooValue");
   StringValue barValue("barValue");
@@ -1046,7 +1044,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingGetAllSyncDataDoesntStopSync) {
 
 TEST_F(ExtensionSettingsSyncTest, FailureToReadChangesToPushDisablesSync) {
   syncer::ModelType model_type = syncer::APP_SETTINGS;
-  Extension::Type type = Extension::TYPE_PACKAGED_APP;
+  Extension::Type type = Extension::TYPE_LEGACY_PACKAGED_APP;
 
   StringValue fooValue("fooValue");
   StringValue barValue("barValue");
@@ -1339,7 +1337,7 @@ TEST_F(ExtensionSettingsSyncTest, FailureToPushLocalChangeDisablesSync) {
 TEST_F(ExtensionSettingsSyncTest,
        LargeOutgoingChangeRejectedButIncomingAccepted) {
   syncer::ModelType model_type = syncer::APP_SETTINGS;
-  Extension::Type type = Extension::TYPE_PACKAGED_APP;
+  Extension::Type type = Extension::TYPE_LEGACY_PACKAGED_APP;
 
   // This value should be larger than the limit in settings_backend.cc.
   std::string string_5k;

@@ -49,20 +49,18 @@ chrome.test.getConfig(function(config) {
                         document.body.appendChild(iframe);
                       };
 
-                      var blobBuilder = new WebKitBlobBuilder();
-                      blobBuilder.append('This frame should be displayed');
-                      fileWriter.write(blobBuilder.getBlob('text/html'));
+                      var blob = new Blob(['This frame should be displayed'],
+                                           {type: 'text/html'});
+                      fileWriter.write(blob);
                     });
                 });
           });
     },
 
     function blobUrlIframe() {
-      var blobBuilder = new WebKitBlobBuilder();
-      blobBuilder.append('This frame should be displayed');
-
-      var blobUrl = window.webkitURL.createObjectURL(
-          blobBuilder.getBlob('text/html'));
+      var blob = new Blob(['This frame should be displayed'],
+                          {type: 'text/html'});
+      var blobUrl = window.webkitURL.createObjectURL(blob);
       var iframe = document.createElement('iframe');
       iframe.onload = chrome.test.callbackPass(function() {
         console.log('blob: URL iframe loaded');
@@ -71,7 +69,7 @@ chrome.test.getConfig(function(config) {
       document.body.appendChild(iframe);
     },
 
-    function FAILS_remoteIframe() {
+    function remoteIframe() {
       var iframe = document.createElement('iframe');
       iframe.onload = function() {
         chrome.test.notifyFail('Remote iframe should not have loaded');

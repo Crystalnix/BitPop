@@ -7,7 +7,7 @@
 #include "base/basictypes.h"
 #include "chrome/browser/ui/views/accelerator_table.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events.h"
+#include "ui/base/events/event_constants.h"
 
 #if defined(USE_ASH)
 #include "ash/accelerators/accelerator_table.h"
@@ -41,7 +41,7 @@ TEST(AcceleratorTableTest, CheckDuplicatedAccelerators) {
   }
 }
 
-#if defined(USE_ASH)
+#if defined(USE_ASH) && !defined(OS_WIN)
 TEST(AcceleratorTableTest, CheckDuplicatedAcceleratorsAsh) {
   std::set<AcceleratorMapping, Cmp> acclerators;
   for (size_t i = 0; i < kAcceleratorMapLength; ++i) {

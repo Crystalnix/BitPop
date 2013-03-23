@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/dom_operation_notification_details.h"
@@ -295,7 +296,7 @@ class BrowserKeyEventsTest : public InProcessBrowserTest {
 #define MAYBE_NormalKeyEvents DISABLED_NormalKeyEvents
 #elif defined(OS_LINUX)
 // http://crbug.com/129235
-#define MAYBE_NormalKeyEvents FAILS_NormalKeyEvents
+#define MAYBE_NormalKeyEvents DISABLED_NormalKeyEvents
 #else
 #define MAYBE_NormalKeyEvents NormalKeyEvents
 #endif
@@ -399,7 +400,7 @@ IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, MAYBE_NormalKeyEvents) {
 
 #if defined(OS_LINUX)
 // http://crbug.com/129235
-#define MAYBE_CtrlKeyEvents FAILS_CtrlKeyEvents
+#define MAYBE_CtrlKeyEvents DISABLED_CtrlKeyEvents
 #else
 #define MAYBE_CtrlKeyEvents CtrlKeyEvents
 #endif
@@ -529,7 +530,7 @@ IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, DISABLED_CommandKeyEvents) {
 #define MAYBE_AccessKeys DISABLED_AccessKeys
 #elif defined(OS_LINUX)
 // http://crbug.com/129235
-#define MAYBE_AccessKeys FAILS_AccessKeys
+#define MAYBE_AccessKeys DISABLED_AccessKeys
 #else
 #define MAYBE_AccessKeys AccessKeys
 #endif
@@ -804,7 +805,8 @@ IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, EditorKeyBindings) {
 }
 #endif
 
-IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, PageUpDownKeys) {
+// See http://crbug.com/147579
+IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, FLAKY_PageUpDownKeys) {
   static const KeyEventTestData kTestPageUp = {
     ui::VKEY_PRIOR, false, false, false, false,
     false, false, false, false, 2,

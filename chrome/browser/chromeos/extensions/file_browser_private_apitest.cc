@@ -5,12 +5,14 @@
 #include <stdio.h>
 
 #include "base/stl_util.h"
-#include "chrome/browser/chromeos/disks/mock_disk_mount_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chromeos/disks/mock_disk_mount_manager.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/storage_partition.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 
@@ -29,6 +31,10 @@ struct TestDiskInfo {
   const char* file_path;
   const char* device_label;
   const char* drive_label;
+  const char* vendor_id;
+  const char* vendor_name;
+  const char* product_id;
+  const char* product_name;
   const char* fs_uuid;
   const char* system_path_prefix;
   chromeos::DeviceType device_type;
@@ -56,6 +62,10 @@ TestDiskInfo kTestDisks[] = {
     "file_path1",
     "device_label1",
     "drive_label1",
+    "0123",
+    "vendor1",
+    "abcd",
+    "product1",
     "FFFF-FFFF",
     "system_path_prefix1",
     chromeos::DEVICE_TYPE_USB,
@@ -71,6 +81,10 @@ TestDiskInfo kTestDisks[] = {
     "file_path2",
     "device_label2",
     "drive_label2",
+    "4567",
+    "vendor2",
+    "cdef",
+    "product2",
     "0FFF-FFFF",
     "system_path_prefix2",
     chromeos::DEVICE_TYPE_MOBILE,
@@ -86,6 +100,10 @@ TestDiskInfo kTestDisks[] = {
     "file_path3",
     "device_label3",
     "drive_label3",
+    "89ab",
+    "vendor3",
+    "ef01",
+    "product3",
     "00FF-FFFF",
     "system_path_prefix3",
     chromeos::DEVICE_TYPE_OPTICAL_DISC,
@@ -170,8 +188,8 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
 
   void AddTmpMountPoint() {
     fileapi::ExternalFileSystemMountPointProvider* provider =
-        BrowserContext::GetFileSystemContext(browser()->profile())->
-            external_provider();
+        BrowserContext::GetDefaultStoragePartition(browser()->profile())->
+            GetFileSystemContext()->external_provider();
     provider->AddLocalMountPoint(test_mount_point_);
   }
 
@@ -200,6 +218,10 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
                 kTestDisks[disk_info_index].file_path,
                 kTestDisks[disk_info_index].device_label,
                 kTestDisks[disk_info_index].drive_label,
+                kTestDisks[disk_info_index].vendor_id,
+                kTestDisks[disk_info_index].vendor_name,
+                kTestDisks[disk_info_index].product_id,
+                kTestDisks[disk_info_index].product_name,
                 kTestDisks[disk_info_index].fs_uuid,
                 kTestDisks[disk_info_index].system_path_prefix,
                 kTestDisks[disk_info_index].device_type,
@@ -236,10 +258,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionFileBrowserPrivateApiTest, FileBrowserMount) {
   // We will call fileBrowserPrivate.unmountVolume once. To test that method, we
   // check that UnmountPath is really called with the same value.
   AddTmpMountPoint();
-  EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_))
+  EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_, _))
       .Times(0);
   EXPECT_CALL(*disk_mount_manager_mock_,
-              UnmountPath(StrEq("/media/archive/archive_mount_path"))).Times(1);
+              UnmountPath(StrEq("/media/archive/archive_mount_path"),
+                          chromeos::UNMOUNT_OPTIONS_NONE))
+      .Times(1);
 
   EXPECT_CALL(*disk_mount_manager_mock_, disks())
       .WillRepeatedly(ReturnRef(volumes_));

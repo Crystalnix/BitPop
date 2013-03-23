@@ -7,7 +7,6 @@
 
 #include <list>
 #include <string>
-#include <utility>
 
 #include "chrome/browser/extensions/pending_extension_info.h"
 #include "chrome/common/extensions/extension.h"
@@ -55,6 +54,12 @@ class PendingExtensionManager {
 
   // Is |id| in the set of pending extensions?
   bool IsIdPending(const std::string& id) const;
+
+  // Returns true if there are any extensions pending.
+  bool HasPendingExtensions() const;
+
+  // Whether there is pending extension install from sync.
+  bool HasPendingExtensionFromSync() const;
 
   // Adds an extension in a pending state; the extension with the
   // given info will be installed on the next auto-update cycle.

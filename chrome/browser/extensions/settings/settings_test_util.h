@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/settings/settings_namespace.h"
 #include "chrome/browser/extensions/settings/settings_storage_factory.h"
 #include "chrome/browser/extensions/test_extension_service.h"
+#include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 
@@ -63,23 +64,28 @@ class MockExtensionService : public TestExtensionService {
   std::map<std::string, scoped_refptr<Extension> > extensions_;
 };
 
-// A Profile which returns ExtensionService and EventRouters with
-// enough functionality for the tests.
+// A mock ExtensionSystem to serve an EventRouter.
+class MockExtensionSystem : public TestExtensionSystem {
+ public:
+  explicit MockExtensionSystem(Profile* profile);
+  virtual ~MockExtensionSystem();
+
+  virtual EventRouter* event_router() OVERRIDE;
+  virtual ExtensionService* extension_service() OVERRIDE;
+
+ private:
+  scoped_ptr<EventRouter> event_router_;
+  MockExtensionService extension_service_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockExtensionSystem);
+};
+
+// A Profile which returns an ExtensionService with enough functionality for
+// the tests.
 class MockProfile : public TestingProfile {
  public:
   explicit MockProfile(const FilePath& file_path);
   virtual ~MockProfile();
-
-  // Returns the same object as GetExtensionService, but not coaxed into an
-  // ExtensionService; use this method from tests.
-  MockExtensionService* GetMockExtensionService();
-
-  virtual ExtensionService* GetExtensionService() OVERRIDE;
-  virtual EventRouter* GetExtensionEventRouter() OVERRIDE;
-
- private:
-  MockExtensionService extension_service_;
-  scoped_ptr<EventRouter> event_router_;
 };
 
 // SettingsStorageFactory which acts as a wrapper for other factories.
@@ -94,8 +100,8 @@ class ScopedSettingsStorageFactory : public SettingsStorageFactory {
   void Reset(const scoped_refptr<SettingsStorageFactory>& delegate);
 
   // SettingsStorageFactory implementation.
-  virtual ValueStore* Create(
-      const FilePath& base_path, const std::string& extension_id) OVERRIDE;
+  virtual ValueStore* Create(const FilePath& base_path,
+                             const std::string& extension_id) OVERRIDE;
 
  private:
   // SettingsStorageFactory is refcounted.

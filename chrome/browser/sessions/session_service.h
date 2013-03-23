@@ -10,24 +10,28 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/memory/scoped_vector.h"
 #include "base/time.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_list_observer.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
 
 class Profile;
 class SessionCommand;
-class TabContents;
 struct SessionTab;
 struct SessionWindow;
 
 namespace content {
 class NavigationEntry;
+class WebContents;
 }
 
 // SessionService ------------------------------------------------------------
@@ -51,8 +55,9 @@ class NavigationEntry;
 // SessionService rebuilds the contents of the file from the open state
 // of the browser.
 class SessionService : public BaseSessionService,
-                       public content::NotificationObserver {
-  friend class SessionRestoreTest;
+                       public ProfileKeyedService,
+                       public content::NotificationObserver,
+                       public chrome::BrowserListObserver {
   friend class SessionServiceTestHelper;
  public:
   // Used to distinguish an application window from a normal one.
@@ -124,6 +129,12 @@ class SessionService : public BaseSessionService,
   // Notification a window has finished closing.
   void WindowClosed(const SessionID& window_id);
 
+  // Called when a tab is inserted.
+  void TabInserted(content::WebContents* contents);
+
+  // Called when a tab is closing.
+  void TabClosing(content::WebContents* contents);
+
   // Sets the type of window. In order for the contents of a window to be
   // tracked SetWindowType must be invoked with a type we track
   // (should_track_changes_for_browser_type returns true).
@@ -150,12 +161,11 @@ class SessionService : public BaseSessionService,
   // Updates the navigation entry for the specified tab.
   void UpdateTabNavigation(const SessionID& window_id,
                            const SessionID& tab_id,
-                           int index,
-                           const content::NavigationEntry& entry);
+                           const TabNavigation& navigation);
 
   // Notification that a tab has restored its entries or a closed tab is being
   // reused.
-  void TabRestored(TabContents* tab, bool pinned);
+  void TabRestored(content::WebContents* tab, bool pinned);
 
   // Sets the index of the selected entry in the navigation controller for the
   // specified tab.
@@ -166,30 +176,32 @@ class SessionService : public BaseSessionService,
   // Sets the index of the selected tab in the specified window.
   void SetSelectedTabInWindow(const SessionID& window_id, int index);
 
-  // Callback from GetSavedSession of GetLastSession.
-  //
-  // The contents of the supplied vector are deleted after the callback is
-  // notified. To take ownership of the vector clear it before returning.
-  //
-  // The time gives the time the session was closed.
-  typedef base::Callback<void(Handle, std::vector<SessionWindow*>*)>
+  // Sets the user agent override of the specified tab.
+  void SetTabUserAgentOverride(const SessionID& window_id,
+                               const SessionID& tab_id,
+                               const std::string& user_agent_override);
+
+  // Callback from GetLastSession.
+  // The second parameter is the id of the window that was last active.
+  typedef base::Callback<void(ScopedVector<SessionWindow>, SessionID::id_type)>
       SessionCallback;
 
   // Fetches the contents of the last session, notifying the callback when
   // done. If the callback is supplied an empty vector of SessionWindows
   // it means the session could not be restored.
-  //
-  // The created request does NOT directly invoke the callback, rather the
-  // callback invokes OnGotSessionCommands from which we map the
-  // SessionCommands to browser state, then notify the callback.
-  Handle GetLastSession(CancelableRequestConsumerBase* consumer,
-                        const SessionCallback& callback);
+  CancelableTaskTracker::TaskId GetLastSession(const SessionCallback& callback,
+                                               CancelableTaskTracker* tracker);
 
   // Overridden from BaseSessionService because we want some UMA reporting on
   // session update activities.
   virtual void Save() OVERRIDE;
 
  private:
+  // Allow tests to access our innards for testing purposes.
+  FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, RestoreActivation1);
+  FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, RestoreActivation2);
+  FRIEND_TEST_ALL_PREFIXES(NoStartupWindowTest, DontInitSessionServiceForApps);
+
   typedef std::map<SessionID::id_type, std::pair<int, int> > IdToRange;
   typedef std::map<SessionID::id_type, SessionTab*> IdToSessionTab;
   typedef std::map<SessionID::id_type, SessionWindow*> IdToSessionWindow;
@@ -206,6 +218,10 @@ class SessionService : public BaseSessionService,
 
   void Init();
 
+  // Returns true if we have scheduled any commands, or any scheduled commands
+  // have been saved.
+  bool processed_any_commands();
+
   // Implementation of RestoreIfNecessary. If |browser| is non-null and we need
   // to restore, the tabs are added to it, otherwise a new browser is created.
   bool RestoreIfNecessary(const std::vector<GURL>& urls_to_open,
@@ -215,15 +231,15 @@ class SessionService : public BaseSessionService,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // chrome::BrowserListObserver
+  virtual void OnBrowserAdded(Browser* browser) OVERRIDE {}
+  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE {}
+  virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE;
+
   // Sets the application extension id of the specified tab.
   void SetTabExtensionAppID(const SessionID& window_id,
                             const SessionID& tab_id,
                             const std::string& extension_app_id);
-
-  // Sets the user agent override of the specified tab.
-  void SetTabUserAgentOverride(const SessionID& window_id,
-                               const SessionID& tab_id,
-                               const std::string& user_agent_override);
 
   // Methods to create the various commands. It is up to the caller to delete
   // the returned the SessionCommand* object.
@@ -258,20 +274,20 @@ class SessionService : public BaseSessionService,
       const SessionID& tab_id,
       const std::string& session_storage_persistent_id);
 
-  // Callback from the backend for getting the commands from the save file.
-  // Converts the commands in SessionWindows and notifies the real callback.
-  void OnGotSessionCommands(
-      Handle handle,
-      scoped_refptr<InternalGetCommandsRequest> request);
+  SessionCommand* CreateSetActiveWindowCommand(const SessionID& window_id);
+
+  // Converts |commands| to SessionWindows and notifies the callback.
+  void OnGotSessionCommands(const SessionCallback& callback,
+                            ScopedVector<SessionCommand> commands);
 
   // Converts the commands into SessionWindows. On return any valid
   // windows are added to valid_windows. It is up to the caller to delete
-  // the windows added to valid_windows.
-  //
-  // If ignore_recent_closes is true, any window/tab closes within in a certain
-  // time frame are ignored.
+  // the windows added to valid_windows. |active_window_id| will be set with the
+  // id of the last active window, but it's only valid when this id corresponds
+  // to the id of one of the windows in valid_windows.
   void RestoreSessionFromCommands(const std::vector<SessionCommand*>& commands,
-                                  std::vector<SessionWindow*>* valid_windows);
+                                  std::vector<SessionWindow*>* valid_windows,
+                                  SessionID::id_type* active_window_id);
 
   // Iterates through the vector updating the selected_tab_index of each
   // SessionWindow based on the actual tabs that were restored.
@@ -312,15 +328,17 @@ class SessionService : public BaseSessionService,
   void AddTabsToWindows(std::map<int, SessionTab*>* tabs,
                         std::map<int, SessionWindow*>* windows);
 
-  // Creates tabs and windows from the specified commands. The created tabs
-  // and windows are added to |tabs| and |windows| respectively. It is up to
-  // the caller to delete the tabs and windows added to |tabs| and |windows|.
+  // Creates tabs and windows from the commands specified in |data|. The created
+  // tabs and windows are added to |tabs| and |windows| respectively, with the
+  // id of the active window set in |active_window_id|. It is up to the caller
+  // to delete the tabs and windows added to |tabs| and |windows|.
   //
   // This does NOT add any created SessionTabs to SessionWindow.tabs, that is
   // done by AddTabsToWindows.
   bool CreateTabsAndWindows(const std::vector<SessionCommand*>& data,
                             std::map<int, SessionTab*>* tabs,
-                            std::map<int, SessionWindow*>* windows);
+                            std::map<int, SessionWindow*>* windows,
+                            SessionID::id_type* active_window_id);
 
   // Adds commands to commands that will recreate the state of the specified
   // tab. This adds at most kMaxNavigationCountToPersist navigations (in each
@@ -329,7 +347,7 @@ class SessionService : public BaseSessionService,
   // indices that were written.
   void BuildCommandsForTab(
       const SessionID& window_id,
-      TabContents* tab,
+      content::WebContents* tab,
       int index_in_window,
       bool is_pinned,
       std::vector<SessionCommand*>* commands,
@@ -371,16 +389,19 @@ class SessionService : public BaseSessionService,
 
   // Returns true if there is only one window open with a single tab that shares
   // our profile.
-  bool IsOnlyOneTabLeft();
+  bool IsOnlyOneTabLeft() const;
 
   // Returns true if there are open trackable browser windows whose ids do
   // match |window_id| with our profile. A trackable window is a window from
   // which |should_track_changes_for_browser_type| returns true. See
   // |should_track_changes_for_browser_type| for details.
-  bool HasOpenTrackableBrowsers(const SessionID& window_id);
+  bool HasOpenTrackableBrowsers(const SessionID& window_id) const;
 
   // Returns true if changes to tabs in the specified window should be tracked.
-  bool ShouldTrackChangesToWindow(const SessionID& window_id);
+  bool ShouldTrackChangesToWindow(const SessionID& window_id) const;
+
+  // Returns true if we track changes to the specified browser.
+  bool ShouldTrackBrowser(Browser* browser) const;
 
   // Returns true if we track changes to the specified browser type.
   static bool should_track_changes_for_browser_type(

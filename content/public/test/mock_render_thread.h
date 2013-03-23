@@ -59,11 +59,9 @@ class MockRenderThread : public RenderThread {
   virtual void WidgetRestored() OVERRIDE;
   virtual void EnsureWebKitInitialized() OVERRIDE;
   virtual void RecordUserMetrics(const std::string& action) OVERRIDE;
-  virtual base::SharedMemoryHandle HostAllocateSharedMemoryBuffer(
-      uint32 buffer_size) OVERRIDE;
+  virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
+      size_t buffer_size) OVERRIDE;
   virtual void RegisterExtension(v8::Extension* extension) OVERRIDE;
-  virtual bool IsRegisteredExtension(
-      const std::string& v8_extension_name) const OVERRIDE;
   virtual void ScheduleIdleHandler(int64 initial_delay_ms) OVERRIDE;
   virtual void IdleHandler() OVERRIDE;
   virtual int64 GetIdleNotificationDelayInMs() const OVERRIDE;
@@ -92,7 +90,7 @@ class MockRenderThread : public RenderThread {
   }
 
   bool has_widget() const {
-    return widget_ ? true : false;
+    return (widget_ != NULL);
   }
 
   void set_new_window_routing_id(int32 id) {
@@ -150,6 +148,9 @@ class MockRenderThread : public RenderThread {
 
   // The last known good deserializer for sync messages.
   scoped_ptr<IPC::MessageReplyDeserializer> reply_deserializer_;
+
+  // A list of message filters added to this thread.
+  std::vector<scoped_refptr<IPC::ChannelProxy::MessageFilter> > filters_;
 };
 
 }  // namespace content

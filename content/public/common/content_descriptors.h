@@ -8,10 +8,18 @@
 #include "ipc/ipc_descriptors.h"
 
 // This is a list of global descriptor keys to be used with the
-// base::GlobalDescriptors object (see base/global_descriptors_posix.h)
+// base::GlobalDescriptors object (see base/posix/global_descriptors.h)
 enum {
   kCrashDumpSignal = kPrimaryIPCChannel + 1,
-  kSandboxIPCChannel = kPrimaryIPCChannel + 2,  // http://code.google.com/p/chromium/LinuxSandboxIPC
+  kSandboxIPCChannel,  // http://code.google.com/p/chromium/LinuxSandboxIPC
+
+#if defined(OS_ANDROID)
+  kAndroidPropertyDescriptor,
+#endif
+
+  // The first key that embedders can use to register descriptors (see
+  // base/posix/global_descriptors.h).
+  kContentIPCDescriptorMax
 };
 
 #endif  // CONTENT_PUBLIC_COMMON_CONTENT_DESCRIPTORS_H_

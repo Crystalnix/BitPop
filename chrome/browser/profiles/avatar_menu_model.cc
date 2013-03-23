@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -18,9 +19,11 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -30,6 +33,7 @@ using content::BrowserThread;
 namespace {
 
 void OnProfileCreated(bool always_create,
+                      chrome::HostDesktopType desktop_type,
                       Profile* profile,
                       Profile::CreateStatus status) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -39,6 +43,7 @@ void OnProfileCreated(bool always_create,
         profile,
         chrome::startup::IS_NOT_PROCESS_STARTUP,
         chrome::startup::IS_NOT_FIRST_RUN,
+        desktop_type,
         always_create);
   }
 }
@@ -81,8 +86,17 @@ void AvatarMenuModel::SwitchToProfile(size_t index, bool always_create) {
          index == GetActiveProfileIndex());
   const Item& item = GetItemAt(index);
   FilePath path = profile_info_->GetPathOfProfileAtIndex(item.model_index);
+
+  chrome::HostDesktopType desktop_type = chrome::GetActiveDesktop();
+  if (browser_)
+    desktop_type = browser_->host_desktop_type();
+
   g_browser_process->profile_manager()->CreateProfileAsync(
-      path, base::Bind(&OnProfileCreated, always_create), string16(),
+      path,
+      base::Bind(&OnProfileCreated,
+                 always_create,
+                 desktop_type),
+      string16(),
       string16());
 
   ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_ICON);
@@ -93,7 +107,8 @@ void AvatarMenuModel::EditProfile(size_t index) {
   if (!browser) {
     Profile* profile = g_browser_process->profile_manager()->GetProfileByPath(
         profile_info_->GetPathOfProfileAtIndex(GetItemAt(index).model_index));
-    browser = new Browser(Browser::CreateParams(profile));
+    browser = new Browser(Browser::CreateParams(profile,
+                                                chrome::GetActiveDesktop()));
   }
   std::string page = chrome::kManageProfileSubPage;
   page += "#";
@@ -102,7 +117,12 @@ void AvatarMenuModel::EditProfile(size_t index) {
 }
 
 void AvatarMenuModel::AddNewProfile() {
-  ProfileManager::CreateMultiProfileAsync(string16(), string16());
+  chrome::HostDesktopType desktop_type = chrome::GetActiveDesktop();
+  if (browser_)
+    desktop_type = browser_->host_desktop_type();
+
+  ProfileManager::CreateMultiProfileAsync(
+      string16(), string16(), ProfileManager::CreateCallback(), desktop_type);
   ProfileMetrics::LogProfileAddNewUser(ProfileMetrics::ADD_NEW_USER_ICON);
 }
 
@@ -177,6 +197,5 @@ void AvatarMenuModel::RebuildMenu() {
 }
 
 void AvatarMenuModel::ClearMenu() {
-  STLDeleteContainerPointers(items_.begin(), items_.end());
-  items_.clear();
+  STLDeleteElements(&items_);
 }

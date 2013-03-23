@@ -11,13 +11,31 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/captive_portal/captive_portal_service_factory.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/extensions/api/bluetooth/bluetooth_api_factory.h"
+#include "chrome/browser/extensions/api/bookmarks/bookmark_api_factory.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
+#include "chrome/browser/extensions/api/cookies/cookies_api_factory.h"
+#include "chrome/browser/extensions/api/dial/dial_api_factory.h"
 #include "chrome/browser/extensions/api/discovery/suggested_links_registry_factory.h"
+#include "chrome/browser/extensions/api/font_settings/font_settings_api_factory.h"
+#include "chrome/browser/extensions/api/history/history_api_factory.h"
+#include "chrome/browser/extensions/api/idle/idle_manager_factory.h"
+#include "chrome/browser/extensions/api/managed_mode/managed_mode_api_factory.h"
+#include "chrome/browser/extensions/api/management/management_api_factory.h"
+#include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api_factory.h"
+#include "chrome/browser/extensions/api/omnibox/omnibox_api_factory.h"
+#include "chrome/browser/extensions/api/preference/preference_api_factory.h"
+#include "chrome/browser/extensions/api/processes/processes_api_factory.h"
+#include "chrome/browser/extensions/api/push_messaging/push_messaging_api_factory.h"
+#include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
+#include "chrome/browser/extensions/api/tabs/tabs_windows_api_factory.h"
+#include "chrome/browser/extensions/api/web_navigation/web_navigation_api_factory.h"
+#include "chrome/browser/extensions/app_restore_service_factory.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/shortcuts_backend_factory.h"
@@ -25,7 +43,7 @@
 #include "chrome/browser/media_gallery/media_galleries_preferences_factory.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/plugin_prefs_factory.h"
+#include "chrome/browser/plugins/plugin_prefs_factory.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor_factory.h"
@@ -35,7 +53,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
-#include "chrome/browser/protector/protector_service_factory.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -45,21 +62,28 @@
 #include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/speech/speech_input_extension_manager.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
-#if defined(OS_WIN)
-#include "chrome/browser/sync/credential_cache_service_factory_win.h"
-#endif  // OS_WIN
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/thumbnails/thumbnail_service_factory.h"
 #include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager_factory.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache_factory.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
+#include "chrome/browser/visitedlink/visitedlink_master_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+#include "chrome/browser/captive_portal/captive_portal_service_factory.h"
+#endif
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/managed_mode_policy_provider_factory.h"
+#include "chrome/browser/policy/user_policy_signin_service_factory.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/extensions/input_method_api_factory.h"
 #endif
 
 #if defined(USE_AURA)
@@ -182,7 +206,7 @@ ProfileDependencyManager::ProfileDependencyManager()
 ProfileDependencyManager::~ProfileDependencyManager() {}
 
 // This method gets the instance of each ServiceFactory. We do this so that
-// each ServiceFactory initializes iteslf and registers its dependencies with
+// each ServiceFactory initializes itself and registers its dependencies with
 // the global PreferenceDependencyManager. We need to have a complete
 // dependency graph when we create a profile so we can dispatch the profile
 // creation message to the services that want to create their services at
@@ -211,10 +235,32 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
 #endif
   DownloadServiceFactory::GetInstance();
 #if defined(ENABLE_EXTENSIONS)
+  extensions::AppRestoreServiceFactory::GetInstance();
+  extensions::BookmarkAPIFactory::GetInstance();
+  extensions::BluetoothAPIFactory::GetInstance();
   extensions::CommandServiceFactory::GetInstance();
-  extensions::SuggestedLinksRegistryFactory::GetInstance();
+  extensions::CookiesAPIFactory::GetInstance();
+  extensions::DialAPIFactory::GetInstance();
   extensions::ExtensionSystemFactory::GetInstance();
+  extensions::FontSettingsAPIFactory::GetInstance();
+  extensions::HistoryAPIFactory::GetInstance();
+  extensions::IdleManagerFactory::GetInstance();
+#if defined(OS_CHROMEOS)
+  extensions::InputMethodAPIFactory::GetInstance();
 #endif
+  extensions::ManagedModeAPIFactory::GetInstance();
+  extensions::MediaGalleriesPrivateAPIFactory::GetInstance();
+  extensions::OmniboxAPIFactory::GetInstance();
+  extensions::PreferenceAPIFactory::GetInstance();
+  extensions::ProcessesAPIFactory::GetInstance();
+  extensions::PushMessagingAPIFactory::GetInstance();
+  extensions::SuggestedLinksRegistryFactory::GetInstance();
+  extensions::TabCaptureRegistryFactory::GetInstance();
+  extensions::TabsWindowsAPIFactory::GetInstance();
+  extensions::WebNavigationAPIFactory::GetInstance();
+  ExtensionManagementAPIFactory::GetInstance();
+#endif
+  FaviconServiceFactory::GetInstance();
   FindBarStateFactory::GetInstance();
 #if defined(USE_AURA)
   GesturePrefsObserverFactoryAura::GetInstance();
@@ -222,9 +268,6 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   GlobalErrorServiceFactory::GetInstance();
   GoogleURLTrackerFactory::GetInstance();
   HistoryServiceFactory::GetInstance();
-#if defined(ENABLE_CONFIGURATION_POLICY)
-  ManagedModePolicyProviderFactory::GetInstance();
-#endif
   MediaGalleriesPreferencesFactory::GetInstance();
   NTPResourceCacheFactory::GetInstance();
   PasswordStoreFactory::GetInstance();
@@ -233,6 +276,10 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   PinnedTabServiceFactory::GetInstance();
 #endif
   PluginPrefsFactory::GetInstance();
+#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
+  // Not used on chromeos because signin happens before the profile is loaded.
+  policy::UserPolicySigninServiceFactory::GetInstance();
+#endif
   predictors::AutocompleteActionPredictorFactory::GetInstance();
   predictors::PredictorDatabaseFactory::GetInstance();
   predictors::ResourcePrefetchPredictorFactory::GetInstance();
@@ -240,22 +287,17 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   prerender::PrerenderLinkManagerFactory::GetInstance();
   ProfileSyncServiceFactory::GetInstance();
   ProtocolHandlerRegistryFactory::GetInstance();
-#if defined(ENABLE_PROTECTOR_SERVICE)
-  protector::ProtectorServiceFactory::GetInstance();
-#endif
 #if defined(ENABLE_SESSION_SERVICE)
   SessionServiceFactory::GetInstance();
 #endif
   ShortcutsBackendFactory::GetInstance();
+  ThumbnailServiceFactory::GetInstance();
   SigninManagerFactory::GetInstance();
 #if defined(ENABLE_INPUT_SPEECH)
   SpeechInputExtensionManager::InitializeFactory();
   ChromeSpeechRecognitionPreferences::InitializeFactory();
 #endif
-  SpellCheckFactory::GetInstance();
-#if defined(OS_WIN)
-  syncer::CredentialCacheServiceFactory::GetInstance();
-#endif  // OS_WIN
+  SpellcheckServiceFactory::GetInstance();
   TabRestoreServiceFactory::GetInstance();
   TemplateURLFetcherFactory::GetInstance();
   TemplateURLServiceFactory::GetInstance();
@@ -264,8 +306,11 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
 #endif
   TokenServiceFactory::GetInstance();
   UserStyleSheetWatcherFactory::GetInstance();
+  VisitedLinkMasterFactory::GetInstance();
   WebDataServiceFactory::GetInstance();
+#if defined(ENABLE_WEB_INTENTS)
   WebIntentsRegistryFactory::GetInstance();
+#endif
 
   built_factories_ = true;
 }

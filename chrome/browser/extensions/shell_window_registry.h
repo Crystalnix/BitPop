@@ -12,6 +12,8 @@
 #include "base/observer_list.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/native_widget_types.h"
 
 class Profile;
@@ -21,6 +23,8 @@ namespace content {
 class RenderViewHost;
 }
 
+namespace extensions {
+
 // The ShellWindowRegistry tracks the ShellWindows for all platform apps for a
 // particular profile.
 // This class is planned to evolve into tracking all PlatformApps for a
@@ -28,12 +32,15 @@ class RenderViewHost;
 // page, shell windows, tray view, panels etc.) and other app level behaviour
 // (e.g. notifications the app is interested in, lifetime of the background
 // page).
-class ShellWindowRegistry : public ProfileKeyedService {
+class ShellWindowRegistry : public ProfileKeyedService,
+                            public content::NotificationObserver {
  public:
   class Observer {
    public:
     // Called just after a shell window was added.
     virtual void OnShellWindowAdded(ShellWindow* shell_window) = 0;
+    // Called when the window icon changes.
+    virtual void OnShellWindowIconChanged(ShellWindow* shell_window) = 0;
     // Called just after a shell window was removed.
     virtual void OnShellWindowRemoved(ShellWindow* shell_window) = 0;
 
@@ -43,15 +50,17 @@ class ShellWindowRegistry : public ProfileKeyedService {
 
   typedef std::set<ShellWindow*> ShellWindowSet;
   typedef ShellWindowSet::const_iterator const_iterator;
+  typedef std::set<std::string> InspectedWindowSet;
 
-  ShellWindowRegistry();
+  explicit ShellWindowRegistry(Profile* profile);
   virtual ~ShellWindowRegistry();
 
   // Returns the instance for the given profile, or NULL if none. This is
-  // a convenience wrapper around ShellWindowRegistryFactory::GetForProfile.
+  // a convenience wrapper around ShellWindowRegistry::Factory::GetForProfile.
   static ShellWindowRegistry* Get(Profile* profile);
 
   void AddShellWindow(ShellWindow* shell_window);
+  void ShellWindowIconChanged(ShellWindow* shell_window);
   void RemoveShellWindow(ShellWindow* shell_window);
 
   void AddObserver(Observer* observer);
@@ -65,6 +74,27 @@ class ShellWindowRegistry : public ProfileKeyedService {
   ShellWindow* GetShellWindowForRenderViewHost(
       content::RenderViewHost* render_view_host) const;
   ShellWindow* GetShellWindowForNativeWindow(gfx::NativeWindow window) const;
+  // Returns an app window for the given app, or NULL if no shell windows are
+  // open. If there is a window for the given app that is active, that one will
+  // be returned, otherwise an arbitrary window will be returned.
+  ShellWindow* GetCurrentShellWindowForApp(const std::string& app_id) const;
+  // Returns an app window for the given app and window key, or NULL if no shell
+  // window with the key are open. If there is a window for the given app and
+  // key that is active, that one will be returned, otherwise an arbitrary
+  // window will be returned.
+  ShellWindow* GetShellWindowForAppAndKey(const std::string& app_id,
+                                          const std::string& window_key) const;
+
+  // Returns whether a ShellWindow's ID was last known to have a DevToolsAgent
+  // attached to it, which should be restored during a reload of a corresponding
+  // newly created |render_view_host|.
+  bool HadDevToolsAttached(content::RenderViewHost* render_view_host) const;
+
+ protected:
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   class Factory : public ProfileKeyedServiceFactory {
@@ -81,12 +111,16 @@ class ShellWindowRegistry : public ProfileKeyedService {
     // ProfileKeyedServiceFactory
     virtual ProfileKeyedService* BuildServiceInstanceFor(
         Profile* profile) const OVERRIDE;
-    virtual bool ServiceIsCreatedWithProfile() OVERRIDE;
-    virtual bool ServiceIsNULLWhileTesting() OVERRIDE;
+    virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+    virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
   };
 
   ShellWindowSet shell_windows_;
+  InspectedWindowSet inspected_windows_;
   ObserverList<Observer> observers_;
+  content::NotificationRegistrar registrar_;
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_SHELL_WINDOW_REGISTRY_H_

@@ -5,16 +5,28 @@
 
 import os
 import subprocess
+import time
 
-import pyauto_functional
-import pyauto
-import webrtc_test_base
-
-class MissingRequiredBinaryException(Exception):
+# This little construct ensures we can run even if we have a bad version of
+# psutil installed. If so, we'll just skip the test that needs it.
+_HAS_CORRECT_PSUTIL_VERSION = False
+try:
+  import psutil
+  if 'version_info' in dir(psutil):
+    # If psutil has any version info at all, it's recent enough.
+    _HAS_CORRECT_PSUTIL_VERSION = True
+except ImportError, e:
   pass
 
 
-class WebRTCCallTest(webrtc_test_base.WebrtcTestBase):
+# Note: pyauto_functional must come before pyauto.
+import pyauto_functional
+import pyauto
+import pyauto_utils
+import webrtc_test_base
+
+
+class WebrtcCallTest(webrtc_test_base.WebrtcTestBase):
   """Test we can set up a WebRTC call and disconnect it.
 
   Prerequisites: This test case must run on a machine with a webcam, either
@@ -28,34 +40,17 @@ class WebRTCCallTest(webrtc_test_base.WebrtcTestBase):
   trunk/talk/examples/peerconnection/server).
   """
 
-  def ExtraChromeFlags(self):
-    """Adds flags to the Chrome command line."""
-    extra_flags = ['--enable-media-stream', '--enable-peer-connection']
-    return pyauto.PyUITest.ExtraChromeFlags(self) + extra_flags
-
   def setUp(self):
     pyauto.PyUITest.setUp(self)
-
-    # Start the peerconnection_server. This must be built before running the
-    # test, and we assume the binary ends up next to the Chrome binary.
-    binary_path = os.path.join(self.BrowserPath(), 'peerconnection_server')
-    if self.IsWin():
-      binary_path += '.exe'
-    if not os.path.exists(binary_path):
-      raise MissingRequiredBinaryException(
-        'Could not locate peerconnection_server. Have you built the '
-        'peerconnection_server target? We expect to have a '
-        'peerconnection_server binary next to the chrome binary.')
-
-    self._server_process = subprocess.Popen(binary_path)
+    self.StartPeerConnectionServer()
 
   def tearDown(self):
-    self._server_process.kill()
+    self.StopPeerConnectionServer()
 
     pyauto.PyUITest.tearDown(self)
     self.assertEquals('', self.CheckErrorsAndCrashes())
 
-  def _SimpleWebRtcCall(self, test_page):
+  def _SimpleWebrtcCall(self, request_video, request_audio, duration_seconds=0):
     """Tests we can call and hang up with WebRTC.
 
     This test exercises pretty much the whole happy-case for the WebRTC
@@ -76,127 +71,188 @@ class WebRTCCallTest(webrtc_test_base.WebrtcTestBase):
     We make sure that the javascript tells us that the call succeeded, lets it
     run for a while and try to hang up the call after that. We verify video is
     playing by using the video detector.
+
+    Args:
+      request_video: Whether to request video.
+      request_audio: Whether to request audio.
+      duration_seconds: The number of seconds to keep the call up before
+        shutting it down.
     """
-    url = self.GetFileURLForDataPath('webrtc', test_page)
-    self.NavigateToURL(url)
-    self.AppendTab(pyauto.GURL(url))
+    self._SetupCall(request_video=request_video, request_audio=request_audio)
 
-    self.assertEquals('ok-got-stream', self._GetUserMedia(tab_index=0))
-    self.assertEquals('ok-got-stream', self._GetUserMedia(tab_index=1))
-    self._Connect('user_1', tab_index=0)
-    self._Connect('user_2', tab_index=1)
-
-    self._EstablishCall(from_tab_with_index=0)
-
-    self._StartDetectingVideo(tab_index=0, video_element='remote_view')
-
-    self._WaitForVideoToPlay()
+    if duration_seconds:
+      print 'Call up: sleeping %d seconds...' % duration_seconds
+      time.sleep(duration_seconds);
 
     # The hang-up will automatically propagate to the second tab.
-    self._HangUp(from_tab_with_index=0)
-    self._VerifyHungUp(tab_index=1)
+    self.HangUp(from_tab_with_index=0)
+    self.WaitUntilHangUpVerified(tab_index=1)
 
-    self._Disconnect(tab_index=0)
-    self._Disconnect(tab_index=1)
+    self.Disconnect(tab_index=0)
+    self.Disconnect(tab_index=1)
 
     # Ensure we didn't miss any errors.
-    self._AssertNoFailures(tab_index=0)
-    self._AssertNoFailures(tab_index=1)
+    self.AssertNoFailures(tab_index=0)
+    self.AssertNoFailures(tab_index=1)
 
-  def testSimpleWebRtcJsepCall(self):
-    self._SimpleWebRtcCall('webrtc_jsep_test.html')
+  def testWebrtcJsep01Call(self):
+    """Uses a draft of the PeerConnection API, using JSEP01."""
+    self._LoadPageInTwoTabs('webrtc_jsep01_test.html')
+    self._SimpleWebrtcCall(request_video=True, request_audio=True)
+
+  def testWebrtcVideoOnlyJsep01Call(self):
+    self._LoadPageInTwoTabs('webrtc_jsep01_test.html')
+    self._SimpleWebrtcCall(request_video=True, request_audio=False)
+
+  def testWebrtcAudioOnlyJsep01Call(self):
+    self._LoadPageInTwoTabs('webrtc_jsep01_test.html')
+    self._SimpleWebrtcCall(request_video=False, request_audio=True)
+
+  def testJsep01AndMeasureCpu20Seconds(self):
+    if not _HAS_CORRECT_PSUTIL_VERSION:
+      print ('WARNING: Can not run cpu/mem measurements with this version of '
+             'psutil. You must have at least psutil 0.4.1 installed for the '
+             'version of python you are running this test with.')
+      return
+
+    self._LoadPageInTwoTabs('webrtc_jsep01_test.html')
+
+    # Prepare CPU measurements.
+    renderer_process = self._GetChromeRendererProcess(tab_index=0)
+    renderer_process.get_cpu_percent()
+
+    self._SimpleWebrtcCall(request_video=True,
+                           request_audio=True,
+                           duration_seconds=20)
+
+    cpu_usage = renderer_process.get_cpu_percent(interval=0)
+    mem_usage_bytes = renderer_process.get_memory_info()[0]
+    mem_usage_kb = float(mem_usage_bytes) / 1024
+    pyauto_utils.PrintPerfResult('cpu', 'jsep01_call', cpu_usage, '%')
+    pyauto_utils.PrintPerfResult('memory', 'jsep01_call', mem_usage_kb, 'KiB')
 
   def testLocalPreview(self):
     """Brings up a local preview and ensures video is playing.
 
     This test will launch a window with a single tab and run a getUserMedia call
     which will give us access to the webcam and microphone. Then the javascript
-    code will hook up the webcam data to the local_view video tag. We will
+    code will hook up the webcam data to the local-view video tag. We will
     detect video in that tag using the video detector, and if we see video
     moving the test passes.
     """
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep_test.html')
+    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
     self.NavigateToURL(url)
-    self.assertEquals('ok-got-stream', self._GetUserMedia(tab_index=0))
-    self._StartDetectingVideo(tab_index=0, video_element='local_view')
+    self.assertEquals('ok-got-stream', self.GetUserMedia(tab_index=0))
+    self._StartDetectingVideo(tab_index=0, video_element='local-view')
 
-    self._WaitForVideoToPlay()
+    self._WaitForVideo(tab_index=0, expect_playing=True)
 
   def testHandlesNewGetUserMediaRequestSeparately(self):
     """Ensures WebRTC doesn't allow new requests to piggy-back on old ones."""
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep_test.html')
+    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
     self.NavigateToURL(url)
     self.AppendTab(pyauto.GURL(url))
 
-    self._GetUserMedia(tab_index=0)
-    self._GetUserMedia(tab_index=1)
-    self._Connect("user_1", tab_index=0)
-    self._Connect("user_2", tab_index=1)
+    self.GetUserMedia(tab_index=0)
+    self.GetUserMedia(tab_index=1)
+    self.Connect("user_1", tab_index=0)
+    self.Connect("user_2", tab_index=1)
 
-    self._EstablishCall(from_tab_with_index=0)
+    self.EstablishCall(from_tab_with_index=0, to_tab_with_index=1)
 
     self.assertEquals('failed-with-error-1',
-                      self._GetUserMedia(tab_index=0, action='deny'))
+                      self.GetUserMedia(tab_index=0, action='cancel'))
     self.assertEquals('failed-with-error-1',
-                      self._GetUserMedia(tab_index=0, action='dismiss'))
+                      self.GetUserMedia(tab_index=0, action='dismiss'))
 
-  def _GetUserMedia(self, tab_index, action='allow'):
-    """Acquires webcam or mic for one tab and returns the result."""
-    self.assertEquals('ok-requested', self.ExecuteJavascript(
-        'getUserMedia(true, true)', tab_index=tab_index))
+  def testMediaStreamTrackEnable(self):
+    """Tests MediaStreamTrack.enable on tracks connected to a PeerConnection.
 
-    self.WaitForInfobarCount(1, tab_index=tab_index)
-    self.PerformActionOnInfobar(action, infobar_index=0, tab_index=tab_index)
-    self.WaitForGetUserMediaResult(tab_index=0)
+    This test will check that if a local track is muted, the remote end don't
+    get video. Also test that if a remote track is disabled, the video is not
+    updated in the video tag."""
 
-    result = self.GetUserMediaResult(tab_index=0)
-    self._AssertNoFailures(tab_index)
-    return result
+    # TODO(perkj): Also verify that the local preview is muted when the
+    # feature is implemented.
+    # TODO(perkj): Verify that audio is muted.
 
-  def _Connect(self, user_name, tab_index):
-    self.assertEquals('ok-connected', self.ExecuteJavascript(
-        'connect("http://localhost:8888", "%s")' % user_name,
-        tab_index=tab_index))
-    self._AssertNoFailures(tab_index)
+    self._LoadPageInTwoTabs('webrtc_jsep01_test.html')
+    self._SetupCall(request_video=True, request_audio=True)
+    select_video_function = 'function(local) { return local.videoTracks[0]; }'
+    self.assertEquals('ok-video-toggled-to-false', self.ExecuteJavascript(
+        'toggleLocalStream(' + select_video_function + ', "video")',
+        tab_index=0))
+    self._WaitForVideo(tab_index=1, expect_playing=False)
 
-  def _EstablishCall(self, from_tab_with_index):
-    self.assertEquals('ok-call-established', self.ExecuteJavascript(
-        'call()', tab_index=from_tab_with_index))
-    self._AssertNoFailures(from_tab_with_index)
+    self.assertEquals('ok-video-toggled-to-true', self.ExecuteJavascript(
+        'toggleLocalStream(' + select_video_function + ', "video")',
+        tab_index=0))
+    self._WaitForVideo(tab_index=1, expect_playing=True)
 
-    # Double-check the call reached the other side.
-    self.assertEquals('yes', self.ExecuteJavascript(
-        'is_call_active()', tab_index=from_tab_with_index))
+    # Test disabling a remote stream. The remote video is not played."""
+    self.assertEquals('ok-video-toggled-to-false', self.ExecuteJavascript(
+        'toggleRemoteStream(' + select_video_function + ', "video")',
+        tab_index=1))
+    self._WaitForVideo(tab_index=1, expect_playing=False)
 
-  def _HangUp(self, from_tab_with_index):
-    self.assertEquals('ok-call-hung-up', self.ExecuteJavascript(
-        'hangUp()', tab_index=from_tab_with_index))
-    self._VerifyHungUp(from_tab_with_index)
-    self._AssertNoFailures(from_tab_with_index)
+    self.assertEquals('ok-video-toggled-to-true', self.ExecuteJavascript(
+        'toggleRemoteStream(' + select_video_function + ', "video")',
+        tab_index=1))
+    self._WaitForVideo(tab_index=1, expect_playing=True)
 
-  def _VerifyHungUp(self, tab_index):
-    self.assertEquals('no', self.ExecuteJavascript(
-        'is_call_active()', tab_index=tab_index))
+  def _LoadPageInTwoTabs(self, test_page):
+    url = self.GetFileURLForDataPath('webrtc', test_page)
+    self.NavigateToURL(url)
+    self.AppendTab(pyauto.GURL(url))
 
-  def _Disconnect(self, tab_index):
-    self.assertEquals('ok-disconnected', self.ExecuteJavascript(
-        'disconnect()', tab_index=tab_index))
+  def _SetupCall(self, request_video, request_audio):
+    """Gets user media and establishes a call.
+
+    Assumes that two tabs are already opened with a suitable test page.
+
+    Args:
+      request_video: Whether to request video.
+      request_audio: Whether to request audio.
+    """
+    self.assertEquals('ok-got-stream', self.GetUserMedia(
+        tab_index=0, request_video=request_video, request_audio=request_audio))
+    self.assertEquals('ok-got-stream', self.GetUserMedia(
+        tab_index=1, request_video=request_video, request_audio=request_audio))
+    self.Connect('user_1', tab_index=0)
+    self.Connect('user_2', tab_index=1)
+
+    self.EstablishCall(from_tab_with_index=0, to_tab_with_index=1)
+
+    if request_video:
+      self._StartDetectingVideo(tab_index=0, video_element='remote-view')
+      self._StartDetectingVideo(tab_index=1, video_element='remote-view')
+
+      self._WaitForVideo(tab_index=0, expect_playing=True)
+      self._WaitForVideo(tab_index=1, expect_playing=True)
 
   def _StartDetectingVideo(self, tab_index, video_element):
     self.assertEquals('ok-started', self.ExecuteJavascript(
-        'startDetection("%s", "frame_buffer", 320, 240)' % video_element,
+        'startDetection("%s", "frame-buffer", 320, 240)' % video_element,
         tab_index=tab_index));
 
-  def _WaitForVideoToPlay(self):
-    video_playing = self.WaitUntil(
-        function=lambda: self.ExecuteJavascript('isVideoPlaying()'),
-        expect_retval='video-playing')
-    self.assertTrue(video_playing,
-                    msg='Timed out while trying to detect video.')
+  def _WaitForVideo(self, tab_index, expect_playing):
+    expect_retval='video-playing' if expect_playing else 'video-not-playing'
 
-  def _AssertNoFailures(self, tab_index):
-    self.assertEquals('ok-no-errors', self.ExecuteJavascript(
-        'getAnyTestFailures()', tab_index=tab_index))
+    video_playing = self.WaitUntil(
+        function=lambda: self.ExecuteJavascript('isVideoPlaying()',
+                                                tab_index=tab_index),
+        expect_retval=expect_retval)
+    self.assertTrue(video_playing,
+                    msg= 'Timed out while waiting for isVideoPlaying to ' +
+                         'return ' + expect_retval + '.')
+
+  def _GetChromeRendererProcess(self, tab_index):
+    """Returns the Chrome renderer process as a psutil process wrapper."""
+    tab_info = self.GetBrowserInfo()['windows'][0]['tabs'][tab_index]
+    renderer_id = tab_info['renderer_pid']
+    if not renderer_id:
+      self.fail('Can not find the tab renderer process.')
+    return psutil.Process(renderer_id)
 
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
@@ -236,8 +237,9 @@ void HistoryURLProviderTest::RunTest(const string16 text,
                                      bool prevent_inline_autocomplete,
                                      const std::string* expected_urls,
                                      size_t num_results) {
-  AutocompleteInput input(text, desired_tld, prevent_inline_autocomplete,
-                          false, true, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(text, string16::npos, desired_tld,
+                          prevent_inline_autocomplete, false, true,
+                          AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
     MessageLoop::current()->Run();
@@ -245,7 +247,7 @@ void HistoryURLProviderTest::RunTest(const string16 text,
   matches_ = autocomplete_->matches();
   if (sort_matches_) {
     for (ACMatches::iterator i = matches_.begin(); i != matches_.end(); ++i)
-      i->ComputeStrippedDestinationURL();
+      i->ComputeStrippedDestinationURL(profile_.get());
     std::sort(matches_.begin(), matches_.end(),
               &AutocompleteMatch::DestinationSortFunc);
     matches_.erase(std::unique(matches_.begin(), matches_.end(),
@@ -262,7 +264,7 @@ void HistoryURLProviderTest::RunTest(const string16 text,
 
 void HistoryURLProviderTest::RunAdjustOffsetTest(const string16 text,
                                                  size_t expected_offset) {
-  AutocompleteInput input(text, string16(), false, false, true,
+  AutocompleteInput input(text, string16::npos, string16(), false, false, true,
                           AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
@@ -412,9 +414,9 @@ TEST_F(HistoryURLProviderTest, CullRedirects) {
   redirects_to_a.push_back(GURL(test_cases[1].url));
   redirects_to_a.push_back(GURL(test_cases[2].url));
   redirects_to_a.push_back(GURL(test_cases[0].url));
-  history_service_->AddPage(GURL(test_cases[0].url), NULL, 0, GURL(),
-      content::PAGE_TRANSITION_TYPED, redirects_to_a, history::SOURCE_BROWSED,
-      true);
+  history_service_->AddPage(GURL(test_cases[0].url), base::Time::Now(),
+      NULL, 0, GURL(), redirects_to_a, content::PAGE_TRANSITION_TYPED,
+      history::SOURCE_BROWSED, true);
 
   // Because all the results are part of a redirect chain with other results,
   // all but the first one (A) should be culled. We should get the default
@@ -537,8 +539,8 @@ TEST_F(HistoryURLProviderTest, EmptyVisits) {
   // Wait for history to create the in memory DB.
   profile_->BlockUntilHistoryProcessesPendingRequests();
 
-  AutocompleteInput input(ASCIIToUTF16("p"), string16(), false, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(ASCIIToUTF16("p"), string16::npos, string16(), false,
+                          false, true, AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   // HistoryURLProvider shouldn't be done (waiting on async results).
   EXPECT_FALSE(autocomplete_->done());
@@ -573,8 +575,8 @@ TEST_F(HistoryURLProviderTestNoDB, NavigateWithoutDB) {
 }
 
 TEST_F(HistoryURLProviderTest, DontAutocompleteOnTrailingWhitespace) {
-  AutocompleteInput input(ASCIIToUTF16("slash "), string16(), false,
-                          false, true, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(ASCIIToUTF16("slash "), string16::npos, string16(),
+                          false, false, true, AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
     MessageLoop::current()->Run();
@@ -702,8 +704,9 @@ TEST_F(HistoryURLProviderTest, CrashDueToFixup) {
     "\\@st"
   };
   for (size_t i = 0; i < arraysize(test_cases); ++i) {
-    AutocompleteInput input(ASCIIToUTF16(test_cases[i]), string16(), false,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(ASCIIToUTF16(test_cases[i]), string16::npos,
+                            string16(), false, false, true,
+                            AutocompleteInput::ALL_MATCHES);
     autocomplete_->Start(input, false);
     if (!autocomplete_->done())
       MessageLoop::current()->Run();

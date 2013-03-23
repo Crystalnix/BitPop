@@ -9,9 +9,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_path.h"
+#include "base/json/json_reader.h"
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/settings/leveldb_settings_storage_factory.h"
 #include "chrome/browser/extensions/settings/settings_backend.h"
 #include "chrome/browser/extensions/settings/sync_or_local_value_store_cache.h"
@@ -40,15 +42,16 @@ class DefaultObserver : public SettingsObserver {
       const std::string& extension_id,
       settings_namespace::Namespace settings_namespace,
       const std::string& change_json) OVERRIDE {
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id,
-        event_names::kOnSettingsChanged,
-        // This is the list of function arguments to pass to the onChanged
-        // handler of extensions, an array of [changes, settings_namespace].
-        std::string("[") + change_json + ",\"" +
-            settings_namespace::ToString(settings_namespace) + "\"]",
-        NULL,
-        GURL());
+    // TODO(gdk): This is a temporary hack while the refactoring for
+    // string-based event payloads is removed. http://crbug.com/136045
+    scoped_ptr<ListValue> args(new ListValue());
+    args->Append(base::JSONReader::Read(change_json));
+    args->Append(Value::CreateStringValue(settings_namespace::ToString(
+        settings_namespace)));
+    scoped_ptr<Event> event(new Event(
+        event_names::kOnSettingsChanged, args.Pass()));
+    ExtensionSystem::Get(profile_)->event_router()->
+        DispatchEventToExtension(extension_id, event.Pass());
   }
 
  private:
@@ -117,19 +120,22 @@ SettingsFrontend::SettingsFrontend(
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
   caches_[settings_namespace::MANAGED] =
-      new ManagedValueStoreCache(profile->GetPolicyService(), observers_);
+      new ManagedValueStoreCache(
+          profile->GetPolicyService(),
+          ExtensionSystem::Get(profile)->event_router(),
+          factory,
+          observers_,
+          profile_path);
 #endif
 }
 
 SettingsFrontend::~SettingsFrontend() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   observers_->RemoveObserver(profile_observer_.get());
-  // Destroy each cache in its preferred thread. The delete task will execute
-  // after any other task that might've been posted before.
   for (CacheMap::iterator it = caches_.begin(); it != caches_.end(); ++it) {
     ValueStoreCache* cache = it->second;
     cache->ShutdownOnUI();
-    cache->GetMessageLoop()->DeleteSoon(FROM_HERE, cache);
+    BrowserThread::DeleteSoon(BrowserThread::FILE, FROM_HERE, cache);
   }
 }
 
@@ -170,11 +176,12 @@ void SettingsFrontend::RunWithStorage(
   // TODO(kalman): change RunWithStorage() to take a
   // scoped_refptr<const Extension> instead.
   scoped_refptr<const Extension> extension =
-      profile_->GetExtensionService()->GetExtensionById(extension_id, true);
+      extensions::ExtensionSystem::Get(profile_)->extension_service()->
+          GetExtensionById(extension_id, true);
   CHECK(extension);
 
-  cache->GetMessageLoop()->PostTask(
-      FROM_HERE,
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
       base::Bind(&ValueStoreCache::RunWithValueStoreForExtension,
                  base::Unretained(cache), callback, extension));
 }
@@ -184,8 +191,8 @@ void SettingsFrontend::DeleteStorageSoon(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   for (CacheMap::iterator it = caches_.begin(); it != caches_.end(); ++it) {
     ValueStoreCache* cache = it->second;
-    cache->GetMessageLoop()->PostTask(
-        FROM_HERE,
+    BrowserThread::PostTask(
+        BrowserThread::FILE, FROM_HERE,
         base::Bind(&ValueStoreCache::DeleteStorageSoon,
                    base::Unretained(cache),
                    extension_id));
@@ -203,7 +210,7 @@ void SettingsFrontend::DisableStorageForTesting(
   if (it != caches_.end()) {
     ValueStoreCache* cache = it->second;
     cache->ShutdownOnUI();
-    cache->GetMessageLoop()->DeleteSoon(FROM_HERE, cache);
+    BrowserThread::DeleteSoon(BrowserThread::FILE, FROM_HERE, cache);
     caches_.erase(it);
   }
 }

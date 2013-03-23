@@ -79,6 +79,52 @@ static const MessageIDs kTimeRemainingMessageIDs = { {
   }
 } };
 
+static const MessageIDs kTimeRemainingLongMessageIDs = { {
+  {
+    IDS_TIME_REMAINING_SECS_DEFAULT, IDS_TIME_REMAINING_SEC_SINGULAR,
+    IDS_TIME_REMAINING_SECS_ZERO, IDS_TIME_REMAINING_SECS_TWO,
+    IDS_TIME_REMAINING_SECS_FEW, IDS_TIME_REMAINING_SECS_MANY
+  },
+  {
+    IDS_TIME_REMAINING_LONG_MINS_DEFAULT, IDS_TIME_REMAINING_LONG_MIN_SINGULAR,
+    IDS_TIME_REMAINING_LONG_MINS_ZERO, IDS_TIME_REMAINING_LONG_MINS_TWO,
+    IDS_TIME_REMAINING_LONG_MINS_FEW, IDS_TIME_REMAINING_LONG_MINS_MANY
+  },
+  {
+    IDS_TIME_REMAINING_HOURS_DEFAULT, IDS_TIME_REMAINING_HOUR_SINGULAR,
+    IDS_TIME_REMAINING_HOURS_ZERO, IDS_TIME_REMAINING_HOURS_TWO,
+    IDS_TIME_REMAINING_HOURS_FEW, IDS_TIME_REMAINING_HOURS_MANY
+  },
+  {
+    IDS_TIME_REMAINING_DAYS_DEFAULT, IDS_TIME_REMAINING_DAY_SINGULAR,
+    IDS_TIME_REMAINING_DAYS_ZERO, IDS_TIME_REMAINING_DAYS_TWO,
+    IDS_TIME_REMAINING_DAYS_FEW, IDS_TIME_REMAINING_DAYS_MANY
+  }
+} };
+
+static const MessageIDs kTimeDurationLongMessageIDs = { {
+  {
+    IDS_TIME_DURATION_LONG_SECS_DEFAULT, IDS_TIME_DURATION_LONG_SEC_SINGULAR,
+    IDS_TIME_DURATION_LONG_SECS_ZERO, IDS_TIME_DURATION_LONG_SECS_TWO,
+    IDS_TIME_DURATION_LONG_SECS_FEW, IDS_TIME_DURATION_LONG_SECS_MANY
+  },
+  {
+    IDS_TIME_DURATION_LONG_MINS_DEFAULT, IDS_TIME_DURATION_LONG_MIN_SINGULAR,
+    IDS_TIME_DURATION_LONG_MINS_ZERO, IDS_TIME_DURATION_LONG_MINS_TWO,
+    IDS_TIME_DURATION_LONG_MINS_FEW, IDS_TIME_DURATION_LONG_MINS_MANY
+  },
+  {
+    IDS_TIME_HOURS_DEFAULT, IDS_TIME_HOUR_SINGULAR,
+    IDS_TIME_HOURS_ZERO, IDS_TIME_HOURS_TWO,
+    IDS_TIME_HOURS_FEW, IDS_TIME_HOURS_MANY
+  },
+  {
+    IDS_TIME_DAYS_DEFAULT, IDS_TIME_DAY_SINGULAR,
+    IDS_TIME_DAYS_ZERO, IDS_TIME_DAYS_TWO,
+    IDS_TIME_DAYS_FEW, IDS_TIME_DAYS_MANY
+  }
+} };
+
 static const MessageIDs kTimeElapsedMessageIDs = { {
   {
     IDS_TIME_ELAPSED_SECS_DEFAULT, IDS_TIME_ELAPSED_SEC_SINGULAR,
@@ -106,6 +152,8 @@ static const MessageIDs kTimeElapsedMessageIDs = { {
 enum FormatType {
   FORMAT_SHORT,
   FORMAT_REMAINING,
+  FORMAT_REMAINING_LONG,
+  FORMAT_DURATION_LONG,
   FORMAT_ELAPSED,
 };
 
@@ -119,6 +167,10 @@ class TimeFormatter {
           return short_formatter_;
         case FORMAT_REMAINING:
           return time_left_formatter_;
+        case FORMAT_REMAINING_LONG:
+          return time_left_long_formatter_;
+        case FORMAT_DURATION_LONG:
+          return time_duration_long_formatter_;
         case FORMAT_ELAPSED:
           return time_elapsed_formatter_;
         default:
@@ -133,6 +185,10 @@ class TimeFormatter {
           return kTimeShortMessageIDs;
         case FORMAT_REMAINING:
           return kTimeRemainingMessageIDs;
+        case FORMAT_REMAINING_LONG:
+          return kTimeRemainingLongMessageIDs;
+        case FORMAT_DURATION_LONG:
+          return kTimeDurationLongMessageIDs;
         case FORMAT_ELAPSED:
           return kTimeElapsedMessageIDs;
         default:
@@ -146,6 +202,7 @@ class TimeFormatter {
         case FORMAT_SHORT:
           return kFallbackFormatSuffixShort;
         case FORMAT_REMAINING:
+        case FORMAT_REMAINING_LONG:
           return kFallbackFormatSuffixLeft;
         case FORMAT_ELAPSED:
           return kFallbackFormatSuffixAgo;
@@ -158,6 +215,8 @@ class TimeFormatter {
     TimeFormatter() {
       BuildFormats(FORMAT_SHORT, &short_formatter_);
       BuildFormats(FORMAT_REMAINING, &time_left_formatter_);
+      BuildFormats(FORMAT_REMAINING_LONG, &time_left_long_formatter_);
+      BuildFormats(FORMAT_DURATION_LONG, &time_duration_long_formatter_);
       BuildFormats(FORMAT_ELAPSED, &time_elapsed_formatter_);
     }
     ~TimeFormatter() {
@@ -165,6 +224,10 @@ class TimeFormatter {
                                  short_formatter_.end());
       STLDeleteContainerPointers(time_left_formatter_.begin(),
                                  time_left_formatter_.end());
+      STLDeleteContainerPointers(time_left_long_formatter_.begin(),
+                                 time_left_long_formatter_.end());
+      STLDeleteContainerPointers(time_duration_long_formatter_.begin(),
+                                 time_duration_long_formatter_.end());
       STLDeleteContainerPointers(time_elapsed_formatter_.begin(),
                                  time_elapsed_formatter_.end());
     }
@@ -172,6 +235,8 @@ class TimeFormatter {
 
     std::vector<icu::PluralFormat*> short_formatter_;
     std::vector<icu::PluralFormat*> time_left_formatter_;
+    std::vector<icu::PluralFormat*> time_left_long_formatter_;
+    std::vector<icu::PluralFormat*> time_duration_long_formatter_;
     std::vector<icu::PluralFormat*> time_elapsed_formatter_;
     static void BuildFormats(FormatType format_type,
                              std::vector<icu::PluralFormat*>* time_formats);
@@ -315,8 +380,18 @@ string16 TimeFormat::TimeRemaining(const TimeDelta& delta) {
 }
 
 // static
+string16 TimeFormat::TimeRemainingLong(const TimeDelta& delta) {
+  return FormatTimeImpl(delta, FORMAT_REMAINING_LONG);
+}
+
+// static
 string16 TimeFormat::TimeRemainingShort(const TimeDelta& delta) {
   return FormatTimeImpl(delta, FORMAT_SHORT);
+}
+
+// static
+string16 TimeFormat::TimeDurationLong(const TimeDelta& delta) {
+  return FormatTimeImpl(delta, FORMAT_DURATION_LONG);
 }
 
 // static
@@ -325,13 +400,14 @@ string16 TimeFormat::RelativeDate(
     const Time* optional_midnight_today) {
   Time midnight_today = optional_midnight_today ? *optional_midnight_today :
       Time::Now().LocalMidnight();
-
-  // Filter out "today" and "yesterday"
-  if (time >= midnight_today)
+  TimeDelta day = TimeDelta::FromMicroseconds(Time::kMicrosecondsPerDay);
+  Time tomorrow = midnight_today + day;
+  Time yesterday = midnight_today - day;
+  if (time >= tomorrow)
+    return string16();
+  else if (time >= midnight_today)
     return l10n_util::GetStringUTF16(IDS_PAST_TIME_TODAY);
-  else if (time >= midnight_today -
-                   TimeDelta::FromMicroseconds(Time::kMicrosecondsPerDay))
+  else if (time >= yesterday)
     return l10n_util::GetStringUTF16(IDS_PAST_TIME_YESTERDAY);
-
   return string16();
 }

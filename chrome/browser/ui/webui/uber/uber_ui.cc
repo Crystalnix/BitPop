@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/browser/ui/webui/extensions/extensions_ui.h"
-#include "chrome/browser/ui/webui/options2/options_ui.h"
+#include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -37,6 +37,7 @@ ChromeWebUIDataSource* CreateUberHTMLSource() {
   ChromeWebUIDataSource* source =
       new ChromeWebUIDataSource(chrome::kChromeUIUberHost);
 
+  source->set_use_json_js_format_v2();
   source->set_json_path("strings.js");
   source->add_resource_path("uber.js", IDR_UBER_JS);
   source->add_resource_path("uber_utils.js", IDR_UBER_UTILS_JS);
@@ -61,8 +62,6 @@ ChromeWebUIDataSource* CreateUberHTMLSource() {
                     ASCIIToUTF16(chrome::kChromeUISettingsFrameURL));
   source->AddString("settingsHost",
                     ASCIIToUTF16(chrome::kChromeUISettingsHost));
-
-  source->set_use_json_js_format_v2();
 
   return source;
 }
@@ -90,6 +89,7 @@ ChromeWebUIDataSource* CreateUberFrameHTMLSource(Profile* profile) {
   ChromeWebUIDataSource* source =
       new ChromeWebUIDataSource(chrome::kChromeUIUberFrameHost);
 
+  source->set_use_json_js_format_v2();
   source->set_json_path("strings.js");
   source->add_resource_path("uber_frame.js", IDR_UBER_FRAME_JS);
   source->set_default_resource(IDR_UBER_FRAME_HTML);
@@ -147,24 +147,11 @@ void UberUI::RegisterSubpage(const std::string& page_url) {
   sub_uis_[page_url] = webui;
 }
 
-void UberUI::ClearPendingVirtualURL() {
-  // A virtual (short) URL may be used to load an uber page. To avoid duplicate
-  // uber tabs, clear the virtual URL so that the omnibox will show the real
-  // URL. http://crbug.com/111878.
-  const NavigationController& controller =
-      web_ui()->GetWebContents()->GetController();
-  NavigationEntry* pending_entry = controller.GetPendingEntry();
-  if (pending_entry && !pending_entry->IsViewSourceMode())
-    pending_entry->SetVirtualURL(GURL());
-}
-
 void UberUI::RenderViewCreated(RenderViewHost* render_view_host) {
   for (SubpageMap::iterator iter = sub_uis_.begin(); iter != sub_uis_.end();
        ++iter) {
     iter->second->GetController()->RenderViewCreated(render_view_host);
   }
-
-  ClearPendingVirtualURL();
 }
 
 void UberUI::RenderViewReused(RenderViewHost* render_view_host) {
@@ -172,8 +159,6 @@ void UberUI::RenderViewReused(RenderViewHost* render_view_host) {
        ++iter) {
     iter->second->GetController()->RenderViewReused(render_view_host);
   }
-
-  ClearPendingVirtualURL();
 }
 
 bool UberUI::OverrideHandleWebUIMessage(const GURL& source_url,

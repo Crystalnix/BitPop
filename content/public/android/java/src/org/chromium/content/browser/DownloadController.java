@@ -5,7 +5,6 @@
 package org.chromium.content.browser;
 
 import android.content.Context;
-import android.webkit.DownloadListener;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
@@ -27,51 +26,34 @@ class DownloadController {
         return sInstance;
     }
 
-    private Context mContext;
-
     private DownloadController() {
         nativeInit();
-    }
-
-    private static DownloadListener listenerFromView(ContentViewCore view) {
-        return view.downloadListener();
     }
 
     private static ContentViewDownloadDelegate downloadDelegateFromView(ContentViewCore view) {
         return view.getDownloadDelegate();
     }
 
-    public void setContext(Context context) {
-        mContext = context;
-    }
-
     /**
-     * Notifies the DownloadListener of a new GET download and passes all the information
+     * Notifies the download delegate of a new GET download and passes all the information
      * needed to download the file.
      *
-     * The DownloadListener is expected to handle the download.
+     * The download delegate is expected to handle the download.
      */
     @CalledByNative
     public void newHttpGetDownload(ContentViewCore view, String url,
             String userAgent, String contentDisposition, String mimetype,
-            String cookie, long contentLength) {
+            String cookie, String referer, long contentLength) {
         ContentViewDownloadDelegate downloadDelagate = downloadDelegateFromView(view);
 
         if (downloadDelagate != null) {
-            downloadDelagate.requestHttpGetDownload(url, userAgent,
-                    contentDisposition, mimetype, cookie, contentLength);
-            return;
-        }
-
-        DownloadListener listener = listenerFromView(view);
-        if (listener != null) {
-            listener.onDownloadStart(url, userAgent, contentDisposition,
-                    mimetype, contentLength);
+            downloadDelagate.requestHttpGetDownload(url, userAgent, contentDisposition,
+                    mimetype, cookie, referer, contentLength);
         }
     }
 
     /**
-     * Notifies the DownloadListener that a new POST download has started.
+     * Notifies the download delegate that a new POST download has started.
      */
     @CalledByNative
     public void onHttpPostDownloadStarted(ContentViewCore view) {
@@ -83,7 +65,7 @@ class DownloadController {
     }
 
     /**
-     * Notifies the DownloadListener that a POST download completed and passes along info about the
+     * Notifies the download delegate that a POST download completed and passes along info about the
      * download.
      */
     @CalledByNative

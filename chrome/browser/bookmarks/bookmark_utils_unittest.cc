@@ -6,20 +6,29 @@
 
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
-
-#if !defined(OS_MACOSX)
-#include "chrome/browser/browser_process.h"
-#endif
 
 using std::string;
 
 namespace bookmark_utils {
 namespace {
 
-TEST(BookmarkUtilsTest, GetBookmarksContainingText) {
+class BookmarkUtilsTest : public ::testing::Test {
+ public:
+  virtual void TearDown() OVERRIDE {
+    ui::Clipboard::DestroyClipboardForCurrentThread();
+  }
+
+ private:
+  // Clipboard requires a message loop.
+  MessageLoopForUI loop;
+};
+
+TEST_F(BookmarkUtilsTest, GetBookmarksContainingText) {
   BookmarkModel model(NULL);
   const BookmarkNode* n1 = model.AddURL(model.other_node(),
                                         0,
@@ -55,7 +64,7 @@ TEST(BookmarkUtilsTest, GetBookmarksContainingText) {
   nodes.clear();
 }
 
-TEST(BookmarkUtilsTest, DoesBookmarkContainText) {
+TEST_F(BookmarkUtilsTest, DoesBookmarkContainText) {
   BookmarkModel model(NULL);
   const BookmarkNode* node = model.AddURL(model.other_node(),
                                           0,
@@ -122,10 +131,7 @@ TEST(BookmarkUtilsTest, DoesBookmarkContainText) {
 }
 
 #if !defined(OS_MACOSX)
-TEST(BookmarkUtilsTest, CopyPaste) {
-  // Clipboard requires a message loop.
-  MessageLoopForUI loop;
-
+TEST_F(BookmarkUtilsTest, CopyPaste) {
   BookmarkModel model(NULL);
   const BookmarkNode* node = model.AddURL(model.other_node(),
                                           0,
@@ -142,8 +148,9 @@ TEST(BookmarkUtilsTest, CopyPaste) {
 
   // Write some text to the clipboard.
   {
-    ui::ScopedClipboardWriter clipboard_writer(g_browser_process->clipboard(),
-                                               ui::Clipboard::BUFFER_STANDARD);
+    ui::ScopedClipboardWriter clipboard_writer(
+        ui::Clipboard::GetForCurrentThread(),
+        ui::Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteText(ASCIIToUTF16("foo"));
   }
 
@@ -151,6 +158,35 @@ TEST(BookmarkUtilsTest, CopyPaste) {
   EXPECT_FALSE(CanPasteFromClipboard(model.bookmark_bar_node()));
 }
 #endif
+
+TEST_F(BookmarkUtilsTest, ApplyEditsWithNoFolderChange) {
+  BookmarkModel model(NULL);
+  const BookmarkNode* bookmarkbar = model.bookmark_bar_node();
+  model.AddURL(bookmarkbar, 0, ASCIIToUTF16("url0"), GURL("chrome://newtab"));
+  model.AddURL(bookmarkbar, 1, ASCIIToUTF16("url1"), GURL("chrome://newtab"));
+
+  {
+    BookmarkEditor::EditDetails detail(
+        BookmarkEditor::EditDetails::AddFolder(bookmarkbar, 1));
+    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
+                                 ASCIIToUTF16("folder0"), GURL(""));
+    EXPECT_EQ(ASCIIToUTF16("folder0"), bookmarkbar->GetChild(1)->GetTitle());
+  }
+  {
+    BookmarkEditor::EditDetails detail(
+        BookmarkEditor::EditDetails::AddFolder(bookmarkbar, -1));
+    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
+                                 ASCIIToUTF16("folder1"), GURL(""));
+    EXPECT_EQ(ASCIIToUTF16("folder1"), bookmarkbar->GetChild(3)->GetTitle());
+  }
+  {
+    BookmarkEditor::EditDetails detail(
+        BookmarkEditor::EditDetails::AddFolder(bookmarkbar, 10));
+    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
+                                 ASCIIToUTF16("folder2"), GURL(""));
+    EXPECT_EQ(ASCIIToUTF16("folder2"), bookmarkbar->GetChild(4)->GetTitle());
+  }
+}
 
 }  // namespace
 }  // namespace bookmark_utils

@@ -18,9 +18,11 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/autofill_country.h"
+#include "chrome/browser/autofill/autofill_field.h"
 #include "chrome/browser/autofill/autofill_regexes.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/autofill/field_types.h"
+#include "chrome/common/form_field_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "unicode/dtfmtsym.h"
@@ -29,16 +31,6 @@
 namespace {
 
 const char16 kCreditCardObfuscationSymbol = '*';
-
-const AutofillFieldType kAutofillCreditCardTypes[] = {
-  CREDIT_CARD_NAME,
-  CREDIT_CARD_NUMBER,
-  CREDIT_CARD_TYPE,
-  CREDIT_CARD_EXP_MONTH,
-  CREDIT_CARD_EXP_4_DIGIT_YEAR,
-};
-
-const int kAutofillCreditCardLength = arraysize(kAutofillCreditCardTypes);
 
 // Returns a version of |number| that has any separator characters removed.
 const string16 StripSeparators(const string16& number) {
@@ -132,6 +124,34 @@ std::string GetCreditCardType(const string16& number) {
   return kGenericCard;
 }
 
+string16 GetCreditCardTypeDisplayName(const std::string& card_type) {
+  if (card_type == kAmericanExpressCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_AMEX);
+
+  if (card_type == kDinersCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_DINERS);
+
+  if (card_type == kDiscoverCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_DISCOVER);
+
+  if (card_type == kJCBCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_JCB);
+
+  if (card_type == kMasterCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_MASTERCARD);
+
+  if (card_type == kSoloCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_SOLO);
+
+  if (card_type == kVisaCard)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_VISA);
+
+  // If you hit this DCHECK, the above list of cases needs to be updated to
+  // include a new card.
+  DCHECK_EQ(kGenericCard, card_type);
+  return string16();
+}
+
 bool ConvertYear(const string16& year, int* num) {
   // If the |year| is empty, clear the stored value.
   if (year.empty()) {
@@ -214,17 +234,11 @@ CreditCard::CreditCard(const CreditCard& credit_card) : FormGroup() {
 
 CreditCard::~CreditCard() {}
 
-void CreditCard::GetSupportedTypes(FieldTypeSet* supported_types) const {
-  supported_types->insert(CREDIT_CARD_NAME);
-  supported_types->insert(CREDIT_CARD_NUMBER);
-  supported_types->insert(CREDIT_CARD_EXP_MONTH);
-  supported_types->insert(CREDIT_CARD_EXP_2_DIGIT_YEAR);
-  supported_types->insert(CREDIT_CARD_EXP_4_DIGIT_YEAR);
-  supported_types->insert(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR);
-  supported_types->insert(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR);
+std::string CreditCard::GetGUID() const {
+  return guid();
 }
 
-string16 CreditCard::GetInfo(AutofillFieldType type) const {
+string16 CreditCard::GetRawInfo(AutofillFieldType type) const {
   switch (type) {
     case CREDIT_CARD_NAME:
       return name_on_card_;
@@ -255,14 +269,13 @@ string16 CreditCard::GetInfo(AutofillFieldType type) const {
     }
 
     case CREDIT_CARD_TYPE:
-      // We don't handle this case.
-      return string16();
+      return GetCreditCardTypeDisplayName(type_);
 
     case CREDIT_CARD_NUMBER:
       return number_;
 
     case CREDIT_CARD_VERIFICATION_CODE:
-      NOTREACHED();
+      // Chrome doesn't store credit card verification codes.
       return string16();
 
     default:
@@ -271,7 +284,7 @@ string16 CreditCard::GetInfo(AutofillFieldType type) const {
   }
 }
 
-void CreditCard::SetInfo(AutofillFieldType type, const string16& value) {
+void CreditCard::SetRawInfo(AutofillFieldType type, const string16& value) {
   switch (type) {
     case CREDIT_CARD_NAME:
       name_on_card_ = value;
@@ -298,7 +311,7 @@ void CreditCard::SetInfo(AutofillFieldType type, const string16& value) {
       break;
 
     case CREDIT_CARD_TYPE:
-      // We determine the type based on the number.
+      // This is a read-only attribute, determined by the credit card number.
       break;
 
     case CREDIT_CARD_NUMBER: {
@@ -309,7 +322,7 @@ void CreditCard::SetInfo(AutofillFieldType type, const string16& value) {
     }
 
     case CREDIT_CARD_VERIFICATION_CODE:
-      NOTREACHED();
+      // Chrome doesn't store the credit card verification code.
       break;
 
     default:
@@ -318,28 +331,31 @@ void CreditCard::SetInfo(AutofillFieldType type, const string16& value) {
   }
 }
 
-string16 CreditCard::GetCanonicalizedInfo(AutofillFieldType type) const {
+string16 CreditCard::GetInfo(AutofillFieldType type,
+                             const std::string& app_locale) const {
   if (type == CREDIT_CARD_NUMBER)
     return StripSeparators(number_);
 
-  return GetInfo(type);
+  return GetRawInfo(type);
 }
 
-bool CreditCard::SetCanonicalizedInfo(AutofillFieldType type,
-                                      const string16& value) {
+bool CreditCard::SetInfo(AutofillFieldType type,
+                         const string16& value,
+                         const std::string& app_locale) {
   if (type == CREDIT_CARD_NUMBER)
-    SetInfo(type, StripSeparators(value));
+    SetRawInfo(type, StripSeparators(value));
   else
-    SetInfo(type, value);
+    SetRawInfo(type, value);
 
   return true;
 }
 
 void CreditCard::GetMatchingTypes(const string16& text,
+                                  const std::string& app_locale,
                                   FieldTypeSet* matching_types) const {
-  FormGroup::GetMatchingTypes(text, matching_types);
+  FormGroup::GetMatchingTypes(text, app_locale, matching_types);
 
-  string16 card_number = GetCanonicalizedInfo(CREDIT_CARD_NUMBER);
+  string16 card_number = GetInfo(CREDIT_CARD_NUMBER, app_locale);
   if (!card_number.empty() && StripSeparators(text) == card_number)
     matching_types->insert(CREDIT_CARD_NUMBER);
 
@@ -420,9 +436,10 @@ void CreditCard::operator=(const CreditCard& credit_card) {
   guid_ = credit_card.guid_;
 }
 
-bool CreditCard::UpdateFromImportedCard(const CreditCard& imported_card) {
-  if (this->GetCanonicalizedInfo(CREDIT_CARD_NUMBER) !=
-          imported_card.GetCanonicalizedInfo(CREDIT_CARD_NUMBER)) {
+bool CreditCard::UpdateFromImportedCard(const CreditCard& imported_card,
+                                        const std::string& app_locale) {
+  if (this->GetInfo(CREDIT_CARD_NUMBER, app_locale) !=
+          imported_card.GetInfo(CREDIT_CARD_NUMBER, app_locale)) {
     return false;
   }
 
@@ -440,6 +457,30 @@ bool CreditCard::UpdateFromImportedCard(const CreditCard& imported_card) {
   return true;
 }
 
+void CreditCard::FillFormField(const AutofillField& field,
+                               size_t /*variant*/,
+                               FormFieldData* field_data) const {
+  DCHECK_EQ(AutofillType::CREDIT_CARD, AutofillType(field.type()).group());
+  DCHECK(field_data);
+
+  const std::string app_locale = AutofillCountry::ApplicationLocale();
+
+  if (field_data->form_control_type == "select-one") {
+    FillSelectControl(field.type(), field_data);
+  } else if (field_data->form_control_type == "month") {
+    // HTML5 input="month" consists of year-month.
+    string16 year = GetInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR, app_locale);
+    string16 month = GetInfo(CREDIT_CARD_EXP_MONTH, app_locale);
+    if (!year.empty() && !month.empty()) {
+      // Fill the value only if |this| includes both year and month
+      // information.
+      field_data->value = year + ASCIIToUTF16("-") + month;
+    }
+  } else {
+    field_data->value = GetInfo(field.type(), app_locale);
+  }
+}
+
 int CreditCard::Compare(const CreditCard& credit_card) const {
   // The following CreditCard field types are the only types we store in the
   // WebDB so far, so we're only concerned with matching these types in the
@@ -449,8 +490,8 @@ int CreditCard::Compare(const CreditCard& credit_card) const {
                                       CREDIT_CARD_EXP_MONTH,
                                       CREDIT_CARD_EXP_4_DIGIT_YEAR };
   for (size_t index = 0; index < arraysize(types); ++index) {
-    int comparison = GetInfo(types[index]).compare(
-        credit_card.GetInfo(types[index]));
+    int comparison = GetRawInfo(types[index]).compare(
+        credit_card.GetRawInfo(types[index]));
     if (comparison != 0)
       return comparison;
   }
@@ -507,7 +548,7 @@ bool CreditCard::IsValidCreditCardNumber(const string16& text) {
 
 bool CreditCard::IsEmpty() const {
   FieldTypeSet types;
-  GetNonEmptyTypes(&types);
+  GetNonEmptyTypes(AutofillCountry::ApplicationLocale(), &types);
   return types.empty();
 }
 
@@ -516,6 +557,17 @@ bool CreditCard::IsComplete() const {
       IsValidCreditCardNumber(number_) &&
       expiration_month_ != 0 &&
       expiration_year_ != 0;
+}
+
+void CreditCard::GetSupportedTypes(FieldTypeSet* supported_types) const {
+  supported_types->insert(CREDIT_CARD_NAME);
+  supported_types->insert(CREDIT_CARD_NUMBER);
+  supported_types->insert(CREDIT_CARD_TYPE);
+  supported_types->insert(CREDIT_CARD_EXP_MONTH);
+  supported_types->insert(CREDIT_CARD_EXP_2_DIGIT_YEAR);
+  supported_types->insert(CREDIT_CARD_EXP_4_DIGIT_YEAR);
+  supported_types->insert(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR);
+  supported_types->insert(CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR);
 }
 
 string16 CreditCard::ExpirationMonthAsString() const {
@@ -589,15 +641,15 @@ std::ostream& operator<<(std::ostream& os, const CreditCard& credit_card) {
       << " "
       << credit_card.guid()
       << " "
-      << UTF16ToUTF8(credit_card.GetInfo(CREDIT_CARD_NAME))
+      << UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_NAME))
       << " "
-      << UTF16ToUTF8(credit_card.GetInfo(CREDIT_CARD_TYPE))
+      << UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_TYPE))
       << " "
-      << UTF16ToUTF8(credit_card.GetInfo(CREDIT_CARD_NUMBER))
+      << UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_NUMBER))
       << " "
-      << UTF16ToUTF8(credit_card.GetInfo(CREDIT_CARD_EXP_MONTH))
+      << UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_EXP_MONTH))
       << " "
-      << UTF16ToUTF8(credit_card.GetInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR));
+      << UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR));
 }
 
 // These values must match the values in WebKitPlatformSupportImpl in

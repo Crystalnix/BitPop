@@ -6,33 +6,273 @@
 
 #include <string>
 
+#include "base/base64.h"
 #include "base/string_number_conversions.h"
-#include "base/string_piece.h"
+#include "base/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/extension_action/extension_page_actions_api_constants.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
+#include "chrome/browser/extensions/state_store.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_action.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/error_utils.h"
 
 namespace {
+
+const char kBrowserActionStorageKey[] = "browser_action";
+const char kPopupUrlStorageKey[] = "poupup_url";
+const char kTitleStorageKey[] = "title";
+const char kIconStorageKey[] = "icon";
+const char kBadgeTextStorageKey[] = "badge_text";
+const char kBadgeBackgroundColorStorageKey[] = "badge_background_color";
+const char kBadgeTextColorStorageKey[] = "badge_text_color";
+const char kAppearanceStorageKey[] = "appearance";
 
 // Errors.
 const char kNoExtensionActionError[] =
     "This extension has no action specified.";
 const char kNoTabError[] = "No tab with id: *.";
-const char kIconIndexOutOfBounds[] = "Page action icon index out of bounds.";
 
+struct IconRepresentationInfo {
+  // Size as a string that will be used to retrieve representation value from
+  // SetIcon function arguments.
+  const char* size_string;
+  // Scale factor for which the represantion should be used.
+  ui::ScaleFactor scale;
+};
+
+
+const IconRepresentationInfo kIconSizes[] = {
+    { "19", ui::SCALE_FACTOR_100P },
+    { "38", ui::SCALE_FACTOR_200P }
+};
+
+// Conversion function for reading/writing to storage.
+SkColor RawStringToSkColor(const std::string& str) {
+  uint64 value = 0;
+  base::StringToUint64(str, &value);
+  SkColor color = static_cast<SkColor>(value);
+  DCHECK(value == color);  // ensure value fits into color's 32 bits
+  return color;
 }
+
+// Conversion function for reading/writing to storage.
+std::string SkColorToRawString(SkColor color) {
+  return base::Uint64ToString(color);
+}
+
+// Conversion function for reading/writing to storage.
+bool StringToSkBitmap(const std::string& str, SkBitmap* bitmap) {
+  // TODO(mpcomplete): Remove the base64 encode/decode step when
+  // http://crbug.com/140546 is fixed.
+  std::string raw_str;
+  if (!base::Base64Decode(str, &raw_str))
+    return false;
+  IPC::Message bitmap_pickle(raw_str.data(), raw_str.size());
+  PickleIterator iter(bitmap_pickle);
+  return IPC::ReadParam(&bitmap_pickle, &iter, bitmap);
+}
+
+// Conversion function for reading/writing to storage.
+std::string RepresentationToString(const gfx::ImageSkia& image,
+                                   ui::ScaleFactor scale) {
+  SkBitmap bitmap = image.GetRepresentation(scale).sk_bitmap();
+  IPC::Message bitmap_pickle;
+  // Clear the header values so they don't vary in serialization.
+  bitmap_pickle.SetHeaderValues(0, 0, 0);
+  IPC::WriteParam(&bitmap_pickle, bitmap);
+  std::string raw_str(static_cast<const char*>(bitmap_pickle.data()),
+                      bitmap_pickle.size());
+  std::string base64_str;
+  if (!base::Base64Encode(raw_str, &base64_str))
+    return std::string();
+  return base64_str;
+}
+
+// Set |action|'s default values to those specified in |dict|.
+void SetDefaultsFromValue(const base::DictionaryValue* dict,
+                          ExtensionAction* action) {
+  const int kTabId = ExtensionAction::kDefaultTabId;
+  std::string str_value;
+  int int_value;
+  SkBitmap bitmap;
+  gfx::ImageSkia icon;
+
+  if (dict->GetString(kPopupUrlStorageKey, &str_value))
+    action->SetPopupUrl(kTabId, GURL(str_value));
+  if (dict->GetString(kTitleStorageKey, &str_value))
+    action->SetTitle(kTabId, str_value);
+  if (dict->GetString(kBadgeTextStorageKey, &str_value))
+    action->SetBadgeText(kTabId, str_value);
+  if (dict->GetString(kBadgeBackgroundColorStorageKey, &str_value))
+    action->SetBadgeBackgroundColor(kTabId, RawStringToSkColor(str_value));
+  if (dict->GetString(kBadgeTextColorStorageKey, &str_value))
+    action->SetBadgeTextColor(kTabId, RawStringToSkColor(str_value));
+  if (dict->GetInteger(kAppearanceStorageKey, &int_value))
+    action->SetAppearance(kTabId,
+                          static_cast<ExtensionAction::Appearance>(int_value));
+
+  const base::DictionaryValue* icon_value = NULL;
+  if (dict->GetDictionary(kIconStorageKey, &icon_value)) {
+    for (size_t i = 0; i < arraysize(kIconSizes); i++) {
+      if (icon_value->GetString(kIconSizes[i].size_string, &str_value) &&
+          StringToSkBitmap(str_value, &bitmap)) {
+        CHECK(!bitmap.isNull());
+        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, kIconSizes[i].scale));
+      }
+    }
+    action->SetIcon(kTabId, gfx::Image(icon));
+  }
+}
+
+// Store |action|'s default values in a DictionaryValue for use in storing to
+// disk.
+scoped_ptr<base::DictionaryValue> DefaultsToValue(ExtensionAction* action) {
+  const int kTabId = ExtensionAction::kDefaultTabId;
+  scoped_ptr<base::DictionaryValue> dict(new DictionaryValue());
+
+  dict->SetString(kPopupUrlStorageKey, action->GetPopupUrl(kTabId).spec());
+  dict->SetString(kTitleStorageKey, action->GetTitle(kTabId));
+  dict->SetString(kBadgeTextStorageKey, action->GetBadgeText(kTabId));
+  dict->SetString(kBadgeBackgroundColorStorageKey,
+                  SkColorToRawString(action->GetBadgeBackgroundColor(kTabId)));
+  dict->SetString(kBadgeTextColorStorageKey,
+                  SkColorToRawString(action->GetBadgeTextColor(kTabId)));
+  dict->SetInteger(kAppearanceStorageKey,
+                   action->GetIsVisible(kTabId) ?
+                       ExtensionAction::ACTIVE : ExtensionAction::INVISIBLE);
+
+  gfx::ImageSkia icon = action->GetExplicitlySetIcon(kTabId);
+  if (!icon.isNull()) {
+    base::DictionaryValue* icon_value = new base::DictionaryValue();
+    for (size_t i = 0; i < arraysize(kIconSizes); i++) {
+      if (icon.HasRepresentation(kIconSizes[i].scale)) {
+        icon_value->SetString(
+            kIconSizes[i].size_string,
+            RepresentationToString(icon, kIconSizes[i].scale));
+      }
+    }
+    dict->Set(kIconStorageKey, icon_value);
+  }
+  return dict.Pass();
+}
+
+}  // namespace
+
+namespace extensions {
+
+//
+// ExtensionActionStorageManager
+//
+
+ExtensionActionStorageManager::ExtensionActionStorageManager(Profile* profile)
+    : profile_(profile) {
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+
+  StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
+  if (storage)
+    storage->RegisterKey(kBrowserActionStorageKey);
+}
+
+ExtensionActionStorageManager::~ExtensionActionStorageManager() {
+}
+
+void ExtensionActionStorageManager::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      if (!extensions::ExtensionActionManager::Get(profile_)->
+          GetBrowserAction(*extension)) {
+        break;
+      }
+
+      StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
+      if (storage) {
+        storage->GetExtensionValue(extension->id(), kBrowserActionStorageKey,
+            base::Bind(&ExtensionActionStorageManager::ReadFromStorage,
+                       AsWeakPtr(), extension->id()));
+      }
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED: {
+      ExtensionAction* extension_action =
+          content::Source<ExtensionAction>(source).ptr();
+      Profile* profile = content::Details<Profile>(details).ptr();
+      if (profile != profile_)
+        break;
+
+      extension_action->set_has_changed(true);
+      WriteToStorage(extension_action);
+      break;
+    }
+    default:
+      NOTREACHED();
+      break;
+  }
+}
+
+void ExtensionActionStorageManager::WriteToStorage(
+    ExtensionAction* extension_action) {
+  StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
+  if (!storage)
+    return;
+
+  scoped_ptr<base::DictionaryValue> defaults =
+      DefaultsToValue(extension_action);
+  storage->SetExtensionValue(extension_action->extension_id(),
+                             kBrowserActionStorageKey,
+                             defaults.PassAs<base::Value>());
+}
+
+void ExtensionActionStorageManager::ReadFromStorage(
+    const std::string& extension_id, scoped_ptr<base::Value> value) {
+  const Extension* extension =
+      ExtensionSystem::Get(profile_)->extension_service()->
+      extensions()->GetByID(extension_id);
+  if (!extension)
+    return;
+
+  ExtensionAction* browser_action =
+      ExtensionActionManager::Get(profile_)->GetBrowserAction(*extension);
+  CHECK(browser_action);
+
+  // Don't load values from storage if the extension has updated a value
+  // already. The extension may have only updated some of the values, but
+  // this is a good first approximation. If the extension is doing stuff
+  // to the browser action, we can assume it is ready to take over.
+  if (browser_action->has_changed())
+    return;
+
+  const base::DictionaryValue* dict = NULL;
+  if (!value.get() || !value->GetAsDictionary(&dict))
+    return;
+
+  SetDefaultsFromValue(dict, browser_action);
+}
+
+}  // namespace extensions
+
+
+//
+// ExtensionActionFunction
+//
 
 ExtensionActionFunction::ExtensionActionFunction()
     : details_(NULL),
@@ -45,12 +285,18 @@ ExtensionActionFunction::~ExtensionActionFunction() {
 }
 
 bool ExtensionActionFunction::RunImpl() {
-  if (base::StringPiece(name()).starts_with("scriptBadge.")) {
-    extension_action_ = GetExtension()->script_badge();
+  extensions::ExtensionActionManager* manager =
+      extensions::ExtensionActionManager::Get(profile_);
+  const extensions::Extension* extension = GetExtension();
+  if (StartsWithASCII(name(), "scriptBadge.", false)) {
+    extension_action_ = manager->GetScriptBadge(*extension);
+  } else if (StartsWithASCII(name(), "systemIndicator.", false)) {
+    extension_action_ = manager->GetSystemIndicator(*extension);
   } else {
-    extension_action_ = GetExtension()->browser_action();
-    if (!extension_action_)
-      extension_action_ = GetExtension()->page_action();
+    extension_action_ = manager->GetBrowserAction(*extension);
+    if (!extension_action_) {
+      extension_action_ = manager->GetPageAction(*extension);
+    }
   }
   if (!extension_action_) {
     // TODO(kalman): ideally the browserAction/pageAction APIs wouldn't event
@@ -60,74 +306,93 @@ bool ExtensionActionFunction::RunImpl() {
     return false;
   }
 
-  // There may or may not be details (depends on the function).
-  // The tabId might appear in details (if it exists) or as the first
-  // argument besides the action type (depends on the function).
-  {
-    base::Value* first_arg = NULL;
-    EXTENSION_FUNCTION_VALIDATE(args_->Get(0, &first_arg));
+  // Populates the tab_id_ and details_ members.
+  EXTENSION_FUNCTION_VALIDATE(ExtractDataFromArguments());
 
-    switch (first_arg->GetType()) {
-      case Value::TYPE_INTEGER:
-        CHECK(first_arg->GetAsInteger(&tab_id_));
-        break;
-
-      case Value::TYPE_DICTIONARY: {
-        details_ = static_cast<base::DictionaryValue*>(first_arg);
-        base::Value* tab_id_value = NULL;
-        if (details_->Get("tabId", &tab_id_value)) {
-          switch (tab_id_value->GetType()) {
-            case Value::TYPE_NULL:
-              // Fine, equivalent to it being not-there, and tabId is optional.
-              break;
-            case Value::TYPE_INTEGER:
-              CHECK(tab_id_value->GetAsInteger(&tab_id_));
-              break;
-            default:
-              // Boom.
-              EXTENSION_FUNCTION_VALIDATE(false);
-          }
-        }
-        break;
-      }
-
-      case Value::TYPE_NULL:
-        // The tabId might be an optional argument.
-        break;
-
-      default:
-        EXTENSION_FUNCTION_VALIDATE(false);
-    }
-  }
-
-  // Find the TabContents that contains this tab id if one is required.
-  if (tab_id_ == ExtensionAction::kDefaultTabId) {
-    EXTENSION_FUNCTION_VALIDATE(GetExtension()->browser_action());
-  } else {
+  // Find the WebContents that contains this tab id if one is required.
+  if (tab_id_ != ExtensionAction::kDefaultTabId) {
     ExtensionTabUtil::GetTabById(
         tab_id_, profile(), include_incognito(), NULL, NULL, &contents_, NULL);
     if (!contents_) {
-      error_ = ExtensionErrorUtils::FormatErrorMessage(
+      error_ = extensions::ErrorUtils::FormatErrorMessage(
           kNoTabError, base::IntToString(tab_id_));
       return false;
     }
+  } else {
+    // Only browser actions and system indicators have a default tabId.
+    typedef extensions::Extension::ActionInfo ActionInfo;
+    ActionInfo::Type action_type = extension_action_->action_type();
+    EXTENSION_FUNCTION_VALIDATE(
+        action_type == ActionInfo::TYPE_BROWSER ||
+        action_type == ActionInfo::TYPE_SYSTEM_INDICATOR);
+  }
+  return RunExtensionAction();
+}
+
+bool ExtensionActionFunction::ExtractDataFromArguments() {
+  // There may or may not be details (depends on the function).
+  // The tabId might appear in details (if it exists), as the first
+  // argument besides the action type (depends on the function), or be omitted
+  // entirely.
+  base::Value* first_arg = NULL;
+  if (!args_->Get(0, &first_arg))
+    return true;
+
+  switch (first_arg->GetType()) {
+    case Value::TYPE_INTEGER:
+      CHECK(first_arg->GetAsInteger(&tab_id_));
+      break;
+
+    case Value::TYPE_DICTIONARY: {
+      // Found the details argument.
+      details_ = static_cast<base::DictionaryValue*>(first_arg);
+      // Still need to check for the tabId within details.
+      base::Value* tab_id_value = NULL;
+      if (details_->Get("tabId", &tab_id_value)) {
+        switch (tab_id_value->GetType()) {
+          case Value::TYPE_NULL:
+            // OK; tabId is optional, leave it default.
+            return true;
+          case Value::TYPE_INTEGER:
+            CHECK(tab_id_value->GetAsInteger(&tab_id_));
+            return true;
+          default:
+            // Boom.
+            return false;
+        }
+      }
+      // Not found; tabId is optional, leave it default.
+      break;
+    }
+
+    case Value::TYPE_NULL:
+      // The tabId might be an optional argument.
+      break;
+
+    default:
+      return false;
   }
 
-  return RunExtensionAction();
+  return true;
 }
 
 void ExtensionActionFunction::NotifyChange() {
   switch (extension_action_->action_type()) {
-    case ExtensionAction::TYPE_BROWSER:
-    case ExtensionAction::TYPE_PAGE:
-      if (extension_->browser_action()) {
+    case extensions::Extension::ActionInfo::TYPE_BROWSER:
+    case extensions::Extension::ActionInfo::TYPE_PAGE:
+      if (extensions::ExtensionActionManager::Get(profile_)->
+          GetBrowserAction(*extension_)) {
         NotifyBrowserActionChange();
-      } else if (extension_->page_action()) {
+      } else if (extensions::ExtensionActionManager::Get(profile_)->
+                 GetPageAction(*extension_)) {
         NotifyLocationBarChange();
       }
       return;
-    case ExtensionAction::TYPE_SCRIPT_BADGE:
+    case extensions::Extension::ActionInfo::TYPE_SCRIPT_BADGE:
       NotifyLocationBarChange();
+      return;
+    case extensions::Extension::ActionInfo::TYPE_SYSTEM_INDICATOR:
+      NotifySystemIndicatorChange();
       return;
   }
   NOTREACHED();
@@ -137,11 +402,19 @@ void ExtensionActionFunction::NotifyBrowserActionChange() {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
       content::Source<ExtensionAction>(extension_action_),
-      content::NotificationService::NoDetails());
+      content::Details<Profile>(profile()));
 }
 
 void ExtensionActionFunction::NotifyLocationBarChange() {
-  contents_->extension_tab_helper()->location_bar_controller()->NotifyChange();
+  extensions::TabHelper::FromWebContents(contents_)->
+      location_bar_controller()->NotifyChange();
+}
+
+void ExtensionActionFunction::NotifySystemIndicatorChange() {
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
+      content::Source<Profile>(profile()),
+      content::Details<ExtensionAction>(extension_action_));
 }
 
 // static
@@ -182,6 +455,8 @@ bool ExtensionActionFunction::ParseCSSColorString(
 }
 
 bool ExtensionActionFunction::SetVisible(bool visible) {
+  if (extension_action_->GetIsVisible(tab_id_) == visible)
+    return true;
   extension_action_->SetAppearance(
       tab_id_, visible ? ExtensionAction::ACTIVE : ExtensionAction::INVISIBLE);
   NotifyChange();
@@ -190,7 +465,7 @@ bool ExtensionActionFunction::SetVisible(bool visible) {
 
 extensions::TabHelper& ExtensionActionFunction::tab_helper() const {
   CHECK(contents_);
-  return *contents_->extension_tab_helper();
+  return *extensions::TabHelper::FromWebContents(contents_);
 }
 
 bool ExtensionActionShowFunction::RunExtensionAction() {
@@ -202,31 +477,29 @@ bool ExtensionActionHideFunction::RunExtensionAction() {
 }
 
 bool ExtensionActionSetIconFunction::RunExtensionAction() {
-  // setIcon can take a variant argument: either a canvas ImageData, or an
-  // icon index.
-  base::BinaryValue* binary = NULL;
+  // setIcon can take a variant argument: either a dictionary of canvas
+  // ImageData, or an icon index.
+  base::DictionaryValue* canvas_set = NULL;
   int icon_index;
-  if (details_->GetBinary("imageData", &binary)) {
-    IPC::Message bitmap_pickle(binary->GetBuffer(), binary->GetSize());
-    PickleIterator iter(bitmap_pickle);
-    SkBitmap bitmap;
-    EXTENSION_FUNCTION_VALIDATE(
-        IPC::ReadParam(&bitmap_pickle, &iter, &bitmap));
-    CHECK(!bitmap.isNull());
-    extension_action_->SetIcon(tab_id_, gfx::Image(bitmap));
-  } else if (details_->GetInteger("iconIndex", &icon_index)) {
-    // If --enable-script-badges is on there might legitimately be an iconIndex
-    // set. Until we decide what to do with that, ignore.
-    if (!GetExtension()->page_action())
-      return true;
-    if (icon_index < 0 ||
-        static_cast<size_t>(icon_index) >=
-            extension_action_->icon_paths()->size()) {
-      error_ = kIconIndexOutOfBounds;
-      return false;
+  if (details_->GetDictionary("imageData", &canvas_set)) {
+    gfx::ImageSkia icon;
+    // Extract icon representations from the ImageDataSet dictionary.
+    for (size_t i = 0; i < arraysize(kIconSizes); i++) {
+      base::BinaryValue* binary;
+      if (canvas_set->GetBinary(kIconSizes[i].size_string, &binary)) {
+        IPC::Message pickle(binary->GetBuffer(), binary->GetSize());
+        PickleIterator iter(pickle);
+        SkBitmap bitmap;
+        EXTENSION_FUNCTION_VALIDATE(IPC::ReadParam(&pickle, &iter, &bitmap));
+        CHECK(!bitmap.isNull());
+        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, kIconSizes[i].scale));
+      }
     }
-    extension_action_->SetIcon(tab_id_, gfx::Image());
-    extension_action_->SetIconIndex(tab_id_, icon_index);
+
+    extension_action_->SetIcon(tab_id_, gfx::Image(icon));
+  } else if (details_->GetInteger("iconIndex", &icon_index)) {
+    // Obsolete argument: ignore it.
+    return true;
   } else {
     EXTENSION_FUNCTION_VALIDATE(false);
   }

@@ -11,11 +11,12 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/language_switch_menu.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/browser/ui/webui/options2/chromeos/cros_language_options_handler.h"
+#include "chrome/browser/ui/webui/options/chromeos/cros_language_options_handler.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -25,9 +26,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace {
-
-// Network screen id.
-const char kNetworkScreen[] = "connect";
 
 // JS API callbacks names.
 const char kJsApiNetworkOnExit[] = "networkOnExit";
@@ -66,7 +64,7 @@ void NetworkScreenHandler::Show() {
     return;
   }
 
-  ShowScreen(kNetworkScreen, NULL);
+  ShowScreen(OobeUI::kScreenOobeNetwork, NULL);
 }
 
 void NetworkScreenHandler::Hide() {
@@ -165,6 +163,10 @@ void NetworkScreenHandler::HandleOnLanguageChanged(const ListValue* args) {
   if (!args->GetString(0, &locale))
     NOTREACHED();
 
+  const std::string app_locale = g_browser_process->GetApplicationLocale();
+  if (app_locale == locale)
+    return;
+
   // TODO(altimofeev): make language change async.
   LanguageSwitchMenu::SwitchLanguageAndEnableKeyboardLayouts(locale);
 
@@ -182,18 +184,18 @@ void NetworkScreenHandler::HandleOnInputMethodChanged(const ListValue* args) {
   std::string id;
   if (!args->GetString(0, &id))
     NOTREACHED();
-  input_method::InputMethodManager::GetInstance()->ChangeInputMethod(id);
+  input_method::GetInputMethodManager()->ChangeInputMethod(id);
 }
 
 ListValue* NetworkScreenHandler::GetLanguageList() {
   const std::string app_locale = g_browser_process->GetApplicationLocale();
   input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
   // GetSupportedInputMethods() never returns NULL.
   scoped_ptr<input_method::InputMethodDescriptors> descriptors(
       manager->GetSupportedInputMethods());
   ListValue* languages_list =
-      options2::CrosLanguageOptionsHandler::GetLanguageList(*descriptors);
+      options::CrosLanguageOptionsHandler::GetLanguageList(*descriptors);
   for (size_t i = 0; i < languages_list->GetSize(); ++i) {
     DictionaryValue* language_info = NULL;
     if (!languages_list->GetDictionary(i, &language_info))
@@ -221,7 +223,7 @@ ListValue* NetworkScreenHandler::GetLanguageList() {
 ListValue* NetworkScreenHandler::GetInputMethods() {
   ListValue* input_methods_list = new ListValue;
   input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
   input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
   scoped_ptr<input_method::InputMethodDescriptors> input_methods(
       manager->GetActiveInputMethods());

@@ -8,8 +8,8 @@
 #include "chrome/browser/autofill/autofill_field.h"
 #include "chrome/browser/autofill/autofill_scanner.h"
 #include "chrome/browser/autofill/phone_field.h"
+#include "chrome/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/forms/form_field.h"
 
 class PhoneFieldTest : public testing::Test {
  public:
@@ -22,7 +22,7 @@ class PhoneFieldTest : public testing::Test {
 
   // Downcast for tests.
   static PhoneField* Parse(AutofillScanner* scanner) {
-    return static_cast<PhoneField*>(PhoneField::Parse(scanner));
+    return static_cast<PhoneField*>(PhoneField::Parse(scanner, false));
   }
 
  private:
@@ -43,8 +43,8 @@ TEST_F(PhoneFieldTest, NonParse) {
 }
 
 TEST_F(PhoneFieldTest, ParseOneLinePhone) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Phone");
   field.name = ASCIIToUTF16("phone");
@@ -60,8 +60,8 @@ TEST_F(PhoneFieldTest, ParseOneLinePhone) {
 }
 
 TEST_F(PhoneFieldTest, ParseTwoLinePhone) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Area Code");
   field.name = ASCIIToUTF16("area code");
@@ -89,8 +89,8 @@ TEST_F(PhoneFieldTest, ThreePartPhoneNumber) {
   // <country code> - <area code> - <phone>. The only distinguishing feature is
   // size: <prefix> is no bigger than 3 characters, and <suffix> is no bigger
   // than 4.
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Phone:");
   field.name = ASCIIToUTF16("dayphone1");
@@ -133,8 +133,8 @@ TEST_F(PhoneFieldTest, ThreePartPhoneNumber) {
 // encountered in http://crbug.com/40694 with page
 // https://www.wrapables.com/jsp/Signup.jsp.
 TEST_F(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Phone:");
   field.name = ASCIIToUTF16("area");
@@ -164,8 +164,8 @@ TEST_F(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix) {
 }
 
 TEST_F(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix2) {
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("(");
   field.name = ASCIIToUTF16("phone1");
@@ -200,8 +200,8 @@ TEST_F(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix2) {
 TEST_F(PhoneFieldTest, CountryAndCityAndPhoneNumber) {
   // Phone in format <country code>:3 - <city and number>:10
   // The |maxlength| is considered, otherwise it's too broad.
-  webkit::forms::FormField field;
-  field.form_control_type = ASCIIToUTF16("text");
+  FormFieldData field;
+  field.form_control_type = "text";
 
   field.label = ASCIIToUTF16("Phone Number");
   field.name = ASCIIToUTF16("CountryCode");

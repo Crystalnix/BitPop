@@ -6,6 +6,9 @@
 
 #include "base/file_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/bookmarks/bookmark_service.h"
+#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
@@ -42,10 +45,6 @@ void InitializeSchemeWhitelist(std::set<std::string>* whitelist) {
   whitelist->insert(std::string(chrome::kHttpsScheme));
   whitelist->insert(std::string(chrome::kMailToScheme));
 }
-
-// RefCountedBool --------------------------------------------------------------
-
-RefCountedBool::~RefCountedBool() {}
 
 // Restore/SaveCacheObserver ---------------------------------------------------
 
@@ -98,6 +97,7 @@ InMemoryURLIndex::InMemoryURLIndex(Profile* profile,
       restore_cache_observer_(NULL),
       save_cache_observer_(NULL),
       shutdown_(false),
+      restored_(false),
       needs_to_be_cached_(false) {
   InitializeSchemeWhitelist(&scheme_whitelist_);
   if (profile) {
@@ -117,6 +117,7 @@ InMemoryURLIndex::InMemoryURLIndex()
       restore_cache_observer_(NULL),
       save_cache_observer_(NULL),
       shutdown_(false),
+      restored_(false),
       needs_to_be_cached_(false) {
   InitializeSchemeWhitelist(&scheme_whitelist_);
 }
@@ -138,9 +139,7 @@ void InMemoryURLIndex::ShutDown() {
   FilePath path;
   if (!GetCacheFilePath(&path))
     return;
-  scoped_refptr<RefCountedBool> succeeded(new RefCountedBool(false));
-  URLIndexPrivateData::WritePrivateDataToCacheFileTask(
-      private_data_, path, succeeded);
+  URLIndexPrivateData::WritePrivateDataToCacheFileTask(private_data_, path);
   needs_to_be_cached_ = false;
 }
 
@@ -159,10 +158,15 @@ bool InMemoryURLIndex::GetCacheFilePath(FilePath* file_path) {
 
 ScoredHistoryMatches InMemoryURLIndex::HistoryItemsForTerms(
     const string16& term_string) {
-  return private_data_->HistoryItemsForTerms(term_string);
+  return private_data_->HistoryItemsForTerms(
+    term_string, BookmarkModelFactory::GetForProfile(profile_));
 }
 
 // Updating --------------------------------------------------------------------
+
+void InMemoryURLIndex::DeleteURL(const GURL& url) {
+  private_data_->DeleteURL(url);
+}
 
 void InMemoryURLIndex::Observe(int notification_type,
                                const content::NotificationSource& source,
@@ -217,9 +221,16 @@ void InMemoryURLIndex::OnURLsDeleted(const URLsDeletedDetails* details) {
 // Restoring from Cache --------------------------------------------------------
 
 void InMemoryURLIndex::PostRestoreFromCacheFileTask() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
   FilePath path;
-  if (!GetCacheFilePath(&path) || shutdown_)
+  if (!GetCacheFilePath(&path) || shutdown_) {
+    restored_ = true;
+    if (restore_cache_observer_)
+      restore_cache_observer_->OnCacheRestoreFinished(false);
     return;
+  }
+
   scoped_refptr<URLIndexPrivateData> restored_private_data =
       new URLIndexPrivateData;
   content::BrowserThread::PostTaskAndReply(
@@ -234,6 +245,7 @@ void InMemoryURLIndex::OnCacheLoadDone(
     scoped_refptr<URLIndexPrivateData> private_data) {
   if (private_data.get() && !private_data->Empty()) {
     private_data_ = private_data;
+    restored_ = true;
     if (restore_cache_observer_)
       restore_cache_observer_->OnCacheRestoreFinished(true);
   } else if (profile_) {
@@ -280,6 +292,7 @@ void InMemoryURLIndex::DoneRebuidingPrivateDataFromHistoryDB(
     // There is no need to do anything with the cache file as it was deleted
     // when the rebuild from the history operation was kicked off.
   }
+  restored_ = true;
   if (restore_cache_observer_)
     restore_cache_observer_->OnCacheRestoreFinished(succeeded);
 }
@@ -303,12 +316,11 @@ void InMemoryURLIndex::PostSaveToCacheFileTask() {
     // completion closure below.
     scoped_refptr<URLIndexPrivateData> private_data_copy =
         private_data_->Duplicate();
-    scoped_refptr<RefCountedBool> succeeded(new RefCountedBool(false));
-    content::BrowserThread::PostTaskAndReply(
+    content::BrowserThread::PostTaskAndReplyWithResult<bool>(
         content::BrowserThread::FILE, FROM_HERE,
         base::Bind(&URLIndexPrivateData::WritePrivateDataToCacheFileTask,
-                   private_data_copy, path, succeeded),
-        base::Bind(&InMemoryURLIndex::OnCacheSaveDone, AsWeakPtr(), succeeded));
+                   private_data_copy, path),
+        base::Bind(&InMemoryURLIndex::OnCacheSaveDone, AsWeakPtr()));
   } else {
     // If there is no data in our index then delete any existing cache file.
     content::BrowserThread::PostBlockingPoolTask(
@@ -317,10 +329,9 @@ void InMemoryURLIndex::PostSaveToCacheFileTask() {
   }
 }
 
-void InMemoryURLIndex::OnCacheSaveDone(
-    scoped_refptr<RefCountedBool> succeeded) {
+void InMemoryURLIndex::OnCacheSaveDone(bool succeeded) {
   if (save_cache_observer_)
-    save_cache_observer_->OnCacheSaveFinished(succeeded->value());
+    save_cache_observer_->OnCacheSaveFinished(succeeded);
 }
 
 }  // namespace history

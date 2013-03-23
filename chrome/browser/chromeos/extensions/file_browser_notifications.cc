@@ -4,15 +4,13 @@
 
 #include "chrome/browser/chromeos/extensions/file_browser_notifications.h"
 
-#include "ash/ash_switches.h"
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/notifications/system_notification.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
+#include "chrome/browser/notifications/notification_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -25,76 +23,121 @@
 
 namespace {
 
+struct NotificationTypeInfo {
+  FileBrowserNotifications::NotificationType type;
+  const char* notification_id_prefix;
+  int icon_id;
+  int title_id;
+  int message_id;
+};
+
+// Information about notification types.
+// The order of notification types in the array must match the order of types in
+// NotificationType enum (i.e. the following MUST be satisfied:
+// kNotificationTypes[type].type == type).
+const NotificationTypeInfo kNotificationTypes[] = {
+    {
+      FileBrowserNotifications::DEVICE,  // type
+      "Device_",  // notification_id_prefix
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_REMOVABLE_DEVICE_DETECTION_TITLE,  // title_id
+      IDS_REMOVABLE_DEVICE_SCANNING_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::DEVICE_FAIL,  // type
+      "DeviceFail_",  // notification_id_prefix
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_REMOVABLE_DEVICE_DETECTION_TITLE,  // title_id
+      IDS_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::DEVICE_HARD_UNPLUG,  // type
+      "HardUnplug_",  // notification_id_prefix
+      IDR_PAGEINFO_WARNING_MAJOR,  // icon_id
+      IDS_REMOVABLE_DEVICE_HARD_UNPLUG_TITLE,  // title_id
+      IDS_EXTERNAL_STORAGE_HARD_UNPLUG_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::DEVICE_EXTERNAL_STORAGE_DISABLED,  // type
+      "DeviceFail_",  // nottification_id_prefix; same as for DEVICE_FAIL.
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_REMOVABLE_DEVICE_DETECTION_TITLE,  // title_id
+      IDS_EXTERNAL_STORAGE_DISABLED_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::FORMAT_SUCCESS,  // type
+      "FormatComplete_",  // notification_id_prefix
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_REMOVABLE_DEVICE_DETECTION_TITLE,  // title_id
+      IDS_FORMATTING_FINISHED_SUCCESS_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::FORMAT_FAIL,  // type
+      "FormatComplete_",  // notifications_id_prefix
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_FORMATTING_OF_DEVICE_FINISHED_TITLE,  // title_id
+      IDS_FORMATTING_FINISHED_FAILURE_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::FORMAT_START,  // type
+      "FormatStart_",  // notification_id_prefix
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_FORMATTING_OF_DEVICE_FINISHED_TITLE,  // title_id
+      IDS_FORMATTING_OF_DEVICE_PENDING_MESSAGE  // message_id
+    },
+    {
+      FileBrowserNotifications::FORMAT_START_FAIL,  // type
+      "FormatComplete_",  // notification_id_prefix
+      IDR_FILES_APP_ICON,  // icon_id
+      IDS_FORMATTING_OF_DEVICE_FINISHED_TITLE,  // title_id
+      IDS_FORMATTING_STARTED_FAILURE_MESSAGE  // message_id
+    },
+};
+
 int GetIconId(FileBrowserNotifications::NotificationType type) {
-  switch (type) {
-    case FileBrowserNotifications::DEVICE:
-    case FileBrowserNotifications::FORMAT_SUCCESS:
-    case FileBrowserNotifications::FORMAT_START:
-        return IDR_PAGEINFO_INFO;
-    case FileBrowserNotifications::DEVICE_FAIL:
-    case FileBrowserNotifications::FORMAT_START_FAIL:
-    case FileBrowserNotifications::FORMAT_FAIL:
-        return IDR_PAGEINFO_WARNING_MAJOR;
-    default:
-      NOTREACHED();
-      return 0;
-  }
+  DCHECK_GE(type, 0);
+  DCHECK_LT(static_cast<size_t>(type), arraysize(kNotificationTypes));
+  DCHECK(kNotificationTypes[type].type == type);
+
+  return kNotificationTypes[type].icon_id;
 }
 
 string16 GetTitle(FileBrowserNotifications::NotificationType type) {
-  int id;
-  switch (type) {
-    case FileBrowserNotifications::DEVICE:
-    case FileBrowserNotifications::DEVICE_FAIL:
-      id = IDS_REMOVABLE_DEVICE_DETECTION_TITLE;
-      break;
-    case FileBrowserNotifications::FORMAT_START:
-      id = IDS_FORMATTING_OF_DEVICE_PENDING_TITLE;
-      break;
-    case FileBrowserNotifications::FORMAT_START_FAIL:
-    case FileBrowserNotifications::FORMAT_SUCCESS:
-    case FileBrowserNotifications::FORMAT_FAIL:
-      id = IDS_FORMATTING_OF_DEVICE_FINISHED_TITLE;
-      break;
-    default:
-      NOTREACHED();
-      id = 0;
-  }
+  DCHECK_GE(type, 0);
+  DCHECK_LT(static_cast<size_t>(type), arraysize(kNotificationTypes));
+  DCHECK(kNotificationTypes[type].type == type);
+
+  int id = kNotificationTypes[type].title_id;
+  if (id < 0)
+    return string16();
   return l10n_util::GetStringUTF16(id);
 }
 
 string16 GetMessage(FileBrowserNotifications::NotificationType type) {
-  int id;
-  switch (type) {
-    case FileBrowserNotifications::DEVICE:
-      id = IDS_REMOVABLE_DEVICE_SCANNING_MESSAGE;
-      break;
-    case FileBrowserNotifications::DEVICE_FAIL:
-      id = IDS_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE;
-      break;
-    case FileBrowserNotifications::FORMAT_FAIL:
-      id = IDS_FORMATTING_FINISHED_FAILURE_MESSAGE;
-      break;
-    case FileBrowserNotifications::FORMAT_SUCCESS:
-      id = IDS_FORMATTING_FINISHED_SUCCESS_MESSAGE;
-      break;
-    case FileBrowserNotifications::FORMAT_START:
-      id = IDS_FORMATTING_OF_DEVICE_PENDING_MESSAGE;
-      break;
-    case FileBrowserNotifications::FORMAT_START_FAIL:
-      id = IDS_FORMATTING_STARTED_FAILURE_MESSAGE;
-      break;
-    default:
-      NOTREACHED();
-      id = 0;
-  }
+  DCHECK_GE(type, 0);
+  DCHECK_LT(static_cast<size_t>(type), arraysize(kNotificationTypes));
+  DCHECK(kNotificationTypes[type].type == type);
+
+  int id = kNotificationTypes[type].message_id;
+  if (id < 0)
+    return string16();
   return l10n_util::GetStringUTF16(id);
+}
+
+std::string GetNotificationId(FileBrowserNotifications::NotificationType type,
+                               const std::string& path) {
+  DCHECK_GE(type, 0);
+  DCHECK_LT(static_cast<size_t>(type), arraysize(kNotificationTypes));
+  DCHECK(kNotificationTypes[type].type == type);
+
+  std::string id_prefix(kNotificationTypes[type].notification_id_prefix);
+  return id_prefix.append(path);
 }
 
 }  // namespace
 
-// Simple wrapper class to support ether old chromeos SystemNotifications or
-// new ash notifications.
+// Manages file browser notifications. Generates a desktop notification on
+// construction and removes it from the host when closed. Owned by the host.
 class FileBrowserNotifications::NotificationMessage {
  public:
   class Delegate : public NotificationDelegate {
@@ -107,7 +150,7 @@ class FileBrowserNotifications::NotificationMessage {
     virtual void Error() OVERRIDE {}
     virtual void Close(bool by_user) OVERRIDE {
       if (host_)
-        host_->HideNotificationById(id_);
+        host_->RemoveNotificationById(id_);
     }
     virtual void Click() OVERRIDE {
       // TODO(tbarzic): Show more info page once we have one.
@@ -131,50 +174,23 @@ class FileBrowserNotifications::NotificationMessage {
                       NotificationType type,
                       const std::string& notification_id,
                       const string16& message)
-      : profile_(profile),
-        type_(type),
-        notification_id_(notification_id),
-        message_(message) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            ash::switches::kAshNotify)) {
-      const gfx::ImageSkia& icon =
-          *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-              IDR_FILES_APP_ICON);
-      notification_id_ = DesktopNotificationService::AddIconNotification(
-          GURL(), GetTitle(type_), message, icon,
-          new Delegate(host->AsWeakPtr(), notification_id_), profile_);
-    } else {
-      system_notification_.reset(
-          new chromeos::SystemNotification(profile_,
-                                           notification_id_,
-                                           GetIconId(type_),
-                                           GetTitle(type_)));
-    }
+      : message_(message) {
+    const gfx::ImageSkia& icon =
+        *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            GetIconId(type));
+    const string16 replace_id = UTF8ToUTF16(notification_id);
+    DesktopNotificationService::AddIconNotification(
+        GURL(), GetTitle(type), message, icon, replace_id,
+        new Delegate(host->AsWeakPtr(), notification_id), profile);
   }
 
-  ~NotificationMessage() {
-  }
+  ~NotificationMessage() {}
 
-  void Show() {
-    if (system_notification_.get())
-      system_notification_->Show(message_, false, false);
-    // Ash notifications are shown automatically (only) when created.
-  }
-
-  void Hide() {
-    if (system_notification_.get() && system_notification_->visible())
-      system_notification_->Hide();
-    // Ash notifications are hidden automatically.
-  }
-
-  void set_message(const string16& message) { message_ = message; }
+  // Used in test.
+  string16 message() { return message_; }
 
  private:
-  Profile* profile_;
-  NotificationType type_;
-  std::string notification_id_;
   string16 message_;
-  scoped_ptr<chromeos::SystemNotification> system_notification_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationMessage);
 };
@@ -185,14 +201,12 @@ struct FileBrowserNotifications::MountRequestsInfo {
   bool fail_notification_shown;
   bool non_parent_device_failed;
   bool device_notification_hidden;
-  int fail_notifications_count;
 
   MountRequestsInfo() : mount_success_exists(false),
                         fail_message_finalized(false),
                         fail_notification_shown(false),
                         non_parent_device_failed(false),
-                        device_notification_hidden(false),
-                        fail_notifications_count(0) {
+                        device_notification_hidden(false) {
   }
 };
 
@@ -235,7 +249,7 @@ void FileBrowserNotifications::ManageNotificationsOnMountCompleted(
     it->second.fail_notification_shown = false;
   }
 
-  // If notificaiton can't change any more, no need to continue.
+  // If notification can't change any more, no need to continue.
   if (it->second.fail_message_finalized)
     return;
 
@@ -280,8 +294,6 @@ void FileBrowserNotifications::ManageNotificationsOnMountCompleted(
     it->second.fail_notification_shown = true;
   }
 
-  it->second.fail_notifications_count++;
-
   if (!label.empty()) {
     ShowNotificationWithMessage(DEVICE_FAIL, system_path,
         l10n_util::GetStringFUTF16(notification_message_id,
@@ -301,7 +313,7 @@ void FileBrowserNotifications::ShowNotificationWithMessage(
     NotificationType type,
     const std::string& path,
     const string16& message) {
-  std::string notification_id = CreateNotificationId(type, path);
+  std::string notification_id = GetNotificationId(type, path);
   hidden_notifications_.erase(notification_id);
   ShowNotificationById(type, notification_id, message);
 }
@@ -310,7 +322,7 @@ void FileBrowserNotifications::ShowNotificationDelayed(
     NotificationType type,
     const std::string& path,
     base::TimeDelta delay) {
-  std::string notification_id = CreateNotificationId(type, path);
+  std::string notification_id = GetNotificationId(type, path);
   hidden_notifications_.erase(notification_id);
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
@@ -321,7 +333,7 @@ void FileBrowserNotifications::ShowNotificationDelayed(
 
 void FileBrowserNotifications::HideNotification(NotificationType type,
                                                 const std::string& path) {
-  std::string notification_id = CreateNotificationId(type, path);
+  std::string notification_id = GetNotificationId(type, path);
   HideNotificationById(notification_id);
 }
 
@@ -334,49 +346,6 @@ void FileBrowserNotifications::HideNotificationDelayed(
       delay);
 }
 
-std::string FileBrowserNotifications::CreateNotificationId(
-    NotificationType type,
-    const std::string& path) {
-  std::string id;
-  switch (type) {
-    case DEVICE:
-      id = "D";
-      break;
-    case DEVICE_FAIL:
-      id = "DF";
-      break;
-    case FORMAT_START:
-      id = "FS";
-      break;
-    default:
-      id = "FF";
-  }
-
-  if (type == DEVICE_FAIL) {
-    MountRequestsMap::const_iterator it = mount_requests_.find(path);
-    if (it != mount_requests_.end())
-      id.append(base::IntToString(it->second.fail_notifications_count));
-  }
-
-  id.append(path);
-  return id;
-}
-
-FileBrowserNotifications::NotificationMessage*
-FileBrowserNotifications::GetNotification(NotificationType type,
-                                          const std::string& notification_id,
-                                          const string16& message) {
-  NotificationMap::iterator iter = notification_map_.find(notification_id);
-  if (iter != notification_map_.end()) {
-    iter->second->set_message(message);
-    return iter->second;
-  }
-  NotificationMessage* new_message =
-      new NotificationMessage(this, profile_, type, notification_id, message);
-  notification_map_[notification_id] = new_message;
-  return new_message;
-}
-
 void FileBrowserNotifications::ShowNotificationById(
     NotificationType type,
     const std::string& notification_id,
@@ -387,19 +356,45 @@ void FileBrowserNotifications::ShowNotificationById(
     hidden_notifications_.erase(notification_id);
     return;
   }
-  NotificationMessage* notification =
-      GetNotification(type, notification_id, message);
-  notification->Show();
+  if (notification_map_.find(notification_id) != notification_map_.end()) {
+    // Remove any existing notification with |notification_id|.
+    // Will trigger Delegate::Close which will call RemoveNotificationById.
+    DesktopNotificationService::RemoveNotification(notification_id);
+    DCHECK(notification_map_.find(notification_id) == notification_map_.end());
+  }
+  // Create a new notification with |notification_id|.
+  NotificationMessage* new_message =
+      new NotificationMessage(this, profile_, type, notification_id, message);
+  notification_map_[notification_id] = new_message;
 }
 
-void FileBrowserNotifications::HideNotificationById(const std::string& id) {
-  NotificationMap::iterator it = notification_map_.find(id);
+void FileBrowserNotifications::HideNotificationById(
+    const std::string& notification_id) {
+  NotificationMap::iterator it = notification_map_.find(notification_id);
   if (it != notification_map_.end()) {
-    it->second->Hide();
-    delete it->second;
-    notification_map_.erase(it);
+    // Will trigger Delegate::Close which will call RemoveNotificationById.
+    DesktopNotificationService::RemoveNotification(notification_id);
   } else {
     // Mark as hidden so it does not get shown from a delayed task.
-    hidden_notifications_.insert(id);
+    hidden_notifications_.insert(notification_id);
   }
 }
+
+void FileBrowserNotifications::RemoveNotificationById(
+    const std::string& notification_id) {
+  NotificationMap::iterator it = notification_map_.find(notification_id);
+  if (it != notification_map_.end()) {
+    NotificationMessage* notification = it->second;
+    notification_map_.erase(it);
+    delete notification;
+  }
+}
+
+string16 FileBrowserNotifications::GetNotificationMessageForTest(
+    const std::string& id) const {
+  NotificationMap::const_iterator it = notification_map_.find(id);
+  if (it == notification_map_.end())
+    return string16();
+  return it->second->message();
+}
+

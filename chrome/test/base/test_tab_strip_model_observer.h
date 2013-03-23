@@ -29,11 +29,11 @@ class TestTabStripModelObserver : public content::TestNavigationObserver,
   virtual ~TestTabStripModelObserver();
 
  private:
-  // Callback to observer the print preview tab associated with |contents|.
-  void ObservePrintPreviewTabContents(TabContents* contents);
+  // Callback to observer the print preview dialog associated with |contents|.
+  void ObservePrintPreviewTabContents(content::WebContents* contents);
 
   // TabStripModelObserver:
-  virtual void TabBlockedStateChanged(TabContents* contents,
+  virtual void TabBlockedStateChanged(content::WebContents* contents,
                                       int index) OVERRIDE;
 
   // |tab_strip_model_| is the object this observes. The constructor will

@@ -17,12 +17,11 @@ class ChangeProcessorMock
  public:
   ChangeProcessorMock();
   virtual ~ChangeProcessorMock();
-  MOCK_METHOD2(ApplyChangesFromSyncModel,
-               void(const syncer::BaseTransaction*,
+  MOCK_METHOD3(ApplyChangesFromSyncModel,
+               void(const syncer::BaseTransaction*, int64,
                     const syncer::ImmutableChangeRecordList&));
   MOCK_METHOD0(CommitChangesFromSyncModel, void());
   MOCK_METHOD1(StartImpl, void(Profile*));
-  MOCK_METHOD0(StopImpl, void());
   MOCK_CONST_METHOD0(IsRunning, bool());
   MOCK_METHOD2(OnUnrecoverableError, void(const tracked_objects::Location&,
                                           const std::string&));

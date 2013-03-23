@@ -132,13 +132,13 @@ const NSTimeInterval kDragHoverCloseDelay = 0.4;
 // Sent when the state has changed (after any animation), but before the final
 // display update.
 - (void)bookmarkBar:(BookmarkBarController*)controller
- didChangeFromState:(bookmarks::VisualState)oldState
-            toState:(bookmarks::VisualState)newState;
+ didChangeFromState:(BookmarkBar::State)oldState
+            toState:(BookmarkBar::State)newState;
 
 // Sent before the animation begins.
 - (void)bookmarkBar:(BookmarkBarController*)controller
-willAnimateFromState:(bookmarks::VisualState)oldState
-            toState:(bookmarks::VisualState)newState;
+willAnimateFromState:(BookmarkBar::State)oldState
+            toState:(BookmarkBar::State)newState;
 
 @end
 
@@ -153,15 +153,15 @@ willAnimateFromState:(bookmarks::VisualState)oldState
                      NSUserInterfaceValidations,
                      NSDraggingDestination> {
  @private
-  // The visual state of the bookmark bar. If an animation is running, this is
-  // set to the "destination" and |lastVisualState_| is set to the "original"
-  // state. This is set to |kInvalidState| on initialization (when the
-  // appropriate state is not yet known).
-  bookmarks::VisualState visualState_;
+  // The state of the bookmark bar. If an animation is running, this is set to
+  // the "destination" and |lastState_| is set to the "original" state.
+  BookmarkBar::State state_;
 
-  // The "original" state of the bookmark bar if an animation is running,
-  // otherwise it should be |kInvalidState|.
-  bookmarks::VisualState lastVisualState_;
+  // The "original" state of the bookmark bar if an animation is running.
+  BookmarkBar::State lastState_;
+
+  // YES if an animation is running.
+  BOOL isAnimationRunning_;
 
   Browser* browser_;              // weak; owned by its window
   BookmarkModel* bookmarkModel_;  // weak; part of the profile owned by the
@@ -264,11 +264,16 @@ willAnimateFromState:(bookmarks::VisualState)oldState
   // The x point on the bar where the left edge of the new item will end
   // up if it is dropped.
   CGFloat insertionPos_;
+
+  // YES if the bookmark bar is empty.
+  BOOL isEmpty_;
 }
 
-@property(readonly, nonatomic) bookmarks::VisualState visualState;
-@property(readonly, nonatomic) bookmarks::VisualState lastVisualState;
+@property(readonly, nonatomic) BookmarkBar::State state;
+@property(readonly, nonatomic) BookmarkBar::State lastState;
+@property(readonly, nonatomic) BOOL isAnimationRunning;
 @property(assign, nonatomic) id<BookmarkBarControllerDelegate> delegate;
+@property(readonly, nonatomic) BOOL isEmpty;
 
 // Initializes the bookmark bar controller with the given browser
 // profile and delegates.
@@ -278,13 +283,15 @@ willAnimateFromState:(bookmarks::VisualState)oldState
        resizeDelegate:(id<ViewResizer>)resizeDelegate;
 
 // Updates the bookmark bar (from its current, possibly in-transition) state to
-// the one appropriate for the new conditions.
-- (void)updateAndShowNormalBar:(BOOL)showNormalBar
-               showDetachedBar:(BOOL)showDetachedBar
-                 withAnimation:(BOOL)animate;
+// the new state.
+- (void)updateState:(BookmarkBar::State)newState
+         changeType:(BookmarkBar::AnimateChangeType)changeType;
 
 // Update the visible state of the bookmark bar.
 - (void)updateVisibility;
+
+// Hides or shows the bookmark bar depending on the current state.
+- (void)updateHiddenState;
 
 // Turn on or off the bookmark bar and prevent or reallow its appearance. On
 // disable, toggle off if shown. On enable, show only if needed. App and popup
@@ -396,6 +403,7 @@ willAnimateFromState:(bookmarks::VisualState)oldState
 - (BookmarkButton*)buttonForDroppingOnAtPoint:(NSPoint)point;
 - (BOOL)isEventAnExitEvent:(NSEvent*)event;
 - (BOOL)shrinkOrHideView:(NSView*)view forMaxX:(CGFloat)maxViewX;
+- (void)unhighlightBookmark:(const BookmarkNode*)node;
 
 // The following are for testing purposes only and are not used internally.
 - (NSMenu *)menuForFolderNode:(const BookmarkNode*)node;

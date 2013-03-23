@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/string16.h"
-#include "net/base/cert_database.h"
 #include "net/base/x509_certificate.h"
 
 namespace crypto {
@@ -40,8 +39,8 @@ class CertLibrary {
   // Wrapper class to provide an additional interface for net::CertificateList.
   class CertList {
    public:
-    explicit CertList(CertLibrary* library) : cert_library_(library) {}
-    ~CertList() {}
+    explicit CertList(CertLibrary* library);
+    ~CertList();
     void Append(net::X509Certificate* cert) { list_.push_back(cert); }
     void Clear() { list_.clear(); }
     int Size() const { return static_cast<int>(list_.size()); }

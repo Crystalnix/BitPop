@@ -18,12 +18,6 @@ class WebContents;
 
 namespace chrome {
 
-// Returns the index to insert a tab at during session restore and startup.
-// |relative_index| gives the index of the url into the number of tabs that
-// are going to be opened. For example, if three urls are passed in on the
-// command line this is invoked three times with the values 0, 1 and 2.
-int GetIndexForInsertionDuringRestore(Browser* browser, int relative_index);
-
 // Add a tab with its session history restored from the SessionRestore
 // system. If select is true, the tab is selected. |tab_index| gives the index
 // to insert the tab at. |selected_navigation| is the index of the
@@ -31,7 +25,9 @@ int GetIndexForInsertionDuringRestore(Browser* browser, int relative_index);
 // non-empty the tab is an app tab and |extension_app_id| is the id of the
 // extension. If |pin| is true and |tab_index|/ is the last pinned tab, then
 // the newly created tab is pinned. If |from_last_session| is true,
-// |navigations| are from the previous session.
+// |navigations| are from the previous session. |user_agent_override| contains
+// the string being used as the user agent for all of the tab's navigations when
+// the regular user agent is overridden.
 content::WebContents* AddRestoredTab(
     Browser* browser,
     const std::vector<TabNavigation>& navigations,
@@ -41,7 +37,8 @@ content::WebContents* AddRestoredTab(
     bool select,
     bool pin,
     bool from_last_session,
-    content::SessionStorageNamespace* storage_namespace);
+    content::SessionStorageNamespace* storage_namespace,
+    const std::string& user_agent_override);
 
 // Replaces the state of the currently selected tab with the session
 // history restored from the SessionRestore system.
@@ -51,7 +48,8 @@ void ReplaceRestoredTab(
     int selected_navigation,
     bool from_last_session,
     const std::string& extension_app_id,
-    content::SessionStorageNamespace* session_storage_namespace);
+    content::SessionStorageNamespace* session_storage_namespace,
+    const std::string& user_agent_override);
 
 
 }  // namespace chrome

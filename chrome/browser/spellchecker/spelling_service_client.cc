@@ -18,24 +18,12 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_result.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/google_api_keys.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "unicode/uloc.h"
 
-#if defined(GOOGLE_CHROME_BUILD)
-#include "chrome/browser/spellchecker/internal/spellcheck_internal.h"
-#endif
-
-// Use the public URL to the Spelling service on Chromium. Unfortunately, this
-// service is an experimental service and returns an error without a key.
-#ifndef SPELLING_SERVICE_KEY_V1
-#define SPELLING_SERVICE_KEY_V1 ""
-#endif
-
-#ifndef SPELLING_SERVICE_KEY_V2
-#define SPELLING_SERVICE_KEY_V2 ""
-#endif
-
+// Use the public URL to the Spelling service on Chromium.
 #ifndef SPELLING_SERVICE_URL
 #define SPELLING_SERVICE_URL "https://www.googleapis.com/rpc"
 #endif
@@ -88,17 +76,18 @@ bool SpellingServiceClient::RequestTextCheck(
       "\"params\":{"
       "\"text\":\"%s\","
       "\"language\":\"%s\","
-      "\"origin_country\":\"%s\","
+      "\"originCountry\":\"%s\","
       "\"key\":\"%s\""
       "}"
       "}";
+  std::string api_key = google_apis::GetAPIKey();
   std::string request = base::StringPrintf(
       kSpellingRequest,
       type,
       encoded_text.c_str(),
       language,
       country,
-      type == SUGGEST ? SPELLING_SERVICE_KEY_V1 : SPELLING_SERVICE_KEY_V2);
+      api_key.c_str());
 
   static const char kSpellingServiceURL[] = SPELLING_SERVICE_URL;
   GURL url = GURL(kSpellingServiceURL);
@@ -116,28 +105,35 @@ bool SpellingServiceClient::RequestTextCheck(
 
 bool SpellingServiceClient::IsAvailable(Profile* profile, ServiceType type) {
   const PrefService* pref = profile->GetPrefs();
-  if (!pref->GetBoolean(prefs::kEnableSpellCheck) ||
+  if (!pref->GetBoolean(prefs::kEnableContinuousSpellcheck) ||
       !pref->GetBoolean(prefs::kSpellCheckUseSpellingService))
     return false;
 
-  // The spellchecking service should be avilable only when asynchronous
-  // spellchecking is enabled because this service depends on it.
+  // If the locale for spelling has not been set, the user has not decided to
+  // use spellcheck so we don't do anything remote (suggest or spelling).
+  std::string locale = pref->GetString(prefs::kSpellCheckDictionary);
+  if (locale.empty())
+    return false;
+
+  // If we do not have the spelling service enabled, then we are only available
+  // for SUGGEST.
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableAsynchronousSpellChecking))
+  if (!command_line->HasSwitch(switches::kUseSpellingService))
     return type == SUGGEST;
 
-  // Enable the suggest service only on languages not supported by the
-  // spellcheck service. When this client calls the spellcheck service, it
-  // returns not only spellcheck results but also spelling suggestions provided
-  // by the suggest service. That is, it is not useful to use the suggest
-  // service when this client can use the spellcheck service.
-  std::string locale = pref->GetString(prefs::kSpellCheckDictionary);
-#if defined(OS_MACOSX)
-  bool spellcheck_available = locale.empty();
-#else
-  bool spellcheck_available = locale.empty() || !locale.compare(0, 2, "en");
-#endif
-  return type == SUGGEST ? !spellcheck_available : spellcheck_available;
+  // Finally, if all options are available, we only enable only SUGGEST
+  // if SPELLCHECK is not available for our language because SPELLCHECK results
+  // are a superset of SUGGEST results.
+  // TODO(rlp): Only available for English right now. Fix this line to include
+  // all languages SPELLCHECK covers.
+  bool language_available = !locale.compare(0, 2, "en");
+  if (language_available) {
+    // Either SUGGEST or SPELLCHECK are allowed.
+    return true;
+  } else {
+    // Only SUGGEST is allowed.
+    return type == SUGGEST;
+  }
 }
 
 void SpellingServiceClient::OnURLFetchComplete(

@@ -8,9 +8,11 @@
 #include <string>
 
 #include "base/values.h"
-#include "chrome/common/net/gaia/gaia_oauth_client.h"
 #include "chrome/service/cloud_print/cloud_print_url_fetcher.h"
+#include "google_apis/gaia/gaia_oauth_client.h"
 #include "googleurl/src/gurl.h"
+
+namespace cloud_print {
 
 // CloudPrintAuth is a class to handle login, token refresh, and other
 // authentication tasks for Cloud Print.
@@ -37,7 +39,6 @@ class CloudPrintAuth
 
   CloudPrintAuth(Client* client,
                  const GURL& cloud_print_server_url,
-                 const base::DictionaryValue* print_sys_settings,
                  const gaia::OAuthClientInfo& oauth_client_info,
                  const std::string& proxy_id);
 
@@ -87,7 +88,6 @@ class CloudPrintAuth
   Client* client_;
   gaia::OAuthClientInfo oauth_client_info_;
   scoped_ptr<gaia::GaiaOAuthClient> oauth_client_;
-  scoped_ptr<DictionaryValue> print_system_settings_;
 
   // The CloudPrintURLFetcher instance for the current request.
   scoped_refptr<CloudPrintURLFetcher> request_;
@@ -110,6 +110,8 @@ class CloudPrintAuth
 
   DISALLOW_COPY_AND_ASSIGN(CloudPrintAuth);
 };
+
+}  // namespace cloud_print
 
 #endif  // CHROME_SERVICE_CLOUD_PRINT_CLOUD_PRINT_AUTH_H_
 

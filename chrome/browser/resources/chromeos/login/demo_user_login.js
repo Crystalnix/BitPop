@@ -14,6 +14,7 @@
 onClick = function(e) {
   document.removeEventListener('click', onClick);
   e.stopPropagation();
+  showLoginSpinner();
   chrome.send('launchDemoUser');
 };
 
@@ -26,8 +27,20 @@ initialize = function() {
   chrome.send('demoWebuiReady');
   // Report back sign in UI being painted.
   window.webkitRequestAnimationFrame(function() {
-    chrome.send('loginVisible');
+    chrome.send('loginVisible', ['demo']);
   });
+};
+
+/**
+ * Show the login spinner.
+ */
+showLoginSpinner = function() {
+  // We're already logging in - don't login on click.
+  document.removeEventListener('click', onClick);
+
+  // Hide the "Click to start" and show the spinner.
+  $('demo-login-text').hidden = true;
+  $('login-spinner').hidden = false;
 };
 
 disableTextSelectAndDrag();

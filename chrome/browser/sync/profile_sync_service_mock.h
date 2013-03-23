@@ -12,8 +12,8 @@
 #include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/test/base/testing_profile.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync_protocol_error.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -34,9 +34,10 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   static ProfileKeyedService* BuildMockProfileSyncService(Profile* profile);
 
   MOCK_METHOD0(DisableForUser, void());
-  MOCK_METHOD2(OnBackendInitialized,
-               void(const syncer::WeakHandle<syncer::JsBackend>&,
-                    bool));
+  MOCK_METHOD3(OnBackendInitialized,
+      void(const syncer::WeakHandle<syncer::JsBackend>&,
+           const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&,
+           bool));
   MOCK_METHOD0(OnSyncCycleCompleted, void());
   MOCK_METHOD0(OnAuthError, void());
   MOCK_METHOD4(OnUserSubmittedAuth,
@@ -62,7 +63,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
                     browser_sync::ChangeProcessor*));
   MOCK_METHOD1(DeactivateDataType, void(syncer::ModelType));
 
-  MOCK_METHOD0(InitializeBackend, void());
+  MOCK_METHOD0(StartUp, void());
   MOCK_METHOD1(AddObserver, void(Observer*));
   MOCK_METHOD1(RemoveObserver, void(Observer*));
   MOCK_METHOD0(GetJsController, base::WeakPtr<syncer::JsController>());
@@ -88,6 +89,14 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_CONST_METHOD0(waiting_for_auth, bool());
   MOCK_METHOD1(OnActionableError, void(
       const syncer::SyncProtocolError&));
+  MOCK_METHOD1(SetSetupInProgress, void(bool));
+
+  // DataTypeManagerObserver mocks.
+  MOCK_METHOD0(OnConfigureBlocked, void());
+  MOCK_METHOD1(OnConfigureDone,
+               void(const browser_sync::DataTypeManager::ConfigureResult&));
+  MOCK_METHOD0(OnConfigureRetry, void());
+  MOCK_METHOD0(OnConfigureStart, void());
 
   MOCK_METHOD0(IsSyncEnabledAndLoggedIn, bool());
   MOCK_METHOD0(IsSyncTokenAvailable, bool());
@@ -95,6 +104,8 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_CONST_METHOD0(IsPassphraseRequired, bool());
   MOCK_CONST_METHOD0(IsPassphraseRequiredForDecryption, bool());
   MOCK_CONST_METHOD0(IsUsingSecondaryPassphrase, bool());
+  MOCK_CONST_METHOD0(GetPassphraseType, syncer::PassphraseType());
+  MOCK_CONST_METHOD0(GetPassphraseTime, base::Time());
 
   MOCK_METHOD1(SetDecryptionPassphrase, bool(const std::string& passphrase));
   MOCK_METHOD2(SetEncryptionPassphrase, void(const std::string& passphrase,

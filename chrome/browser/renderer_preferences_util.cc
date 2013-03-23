@@ -18,6 +18,10 @@
 #include "ui/gfx/gtk_util.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/views/controls/textfield/native_textfield_views.h"
+#endif
+
 namespace renderer_preferences_util {
 
 namespace {
@@ -75,6 +79,8 @@ void UpdateFromSystemSettings(
     content::RendererPreferences* prefs, Profile* profile) {
   const PrefService* pref_service = profile->GetPrefs();
   prefs->enable_referrers = pref_service->GetBoolean(prefs::kEnableReferrers);
+  prefs->enable_do_not_track =
+      pref_service->GetBoolean(prefs::kEnableDoNotTrack);
   prefs->default_zoom_level = pref_service->GetDouble(prefs::kDefaultZoomLevel);
 
 #if defined(TOOLKIT_GTK)
@@ -91,13 +97,7 @@ void UpdateFromSystemSettings(
       theme_service->get_inactive_selection_bg_color();
   prefs->inactive_selection_fg_color =
       theme_service->get_inactive_selection_fg_color();
-
-  const base::TimeDelta cursor_blink_time = gfx::GetCursorBlinkCycle();
-  prefs->caret_blink_interval =
-      cursor_blink_time.InMilliseconds() ?
-      cursor_blink_time.InMilliseconds() / kGtkCursorBlinkCycleFactor :
-      0;
-#elif defined(USE_ASH)
+#elif defined(USE_DEFAULT_RENDER_THEME)
   // This color is 0x544d90fe modulated with 0xffffff.
   prefs->active_selection_bg_color = SkColorSetRGB(0xCB, 0xE4, 0xFA);
   prefs->active_selection_fg_color = SK_ColorBLACK;
@@ -105,8 +105,22 @@ void UpdateFromSystemSettings(
   prefs->inactive_selection_fg_color = SK_ColorBLACK;
 #endif
 
+#if defined(TOOLKIT_GTK)
+  const base::TimeDelta cursor_blink_time = gfx::GetCursorBlinkCycle();
+  prefs->caret_blink_interval =
+      cursor_blink_time.InMilliseconds() ?
+      cursor_blink_time.InMilliseconds() / kGtkCursorBlinkCycleFactor :
+      0;
+#elif defined(USE_AURA)
+  // WebKit accepts a single parameter to control the interval over which the
+  // cursor is shown or hidden, so divide Views's time for the full cycle by two
+  // and then convert to seconds.
+  prefs->caret_blink_interval =
+      views::NativeTextfieldViews::kCursorBlinkCycleMs / 2.0 / 1000;
+#endif
+
 #if defined(OS_LINUX) || defined(OS_ANDROID)
-  const gfx::FontRenderParams& params = gfx::GetDefaultFontRenderParams();
+  const gfx::FontRenderParams& params = gfx::GetDefaultWebKitFontRenderParams();
   prefs->should_antialias_text = params.antialiasing;
   prefs->use_subpixel_positioning = params.subpixel_positioning;
   prefs->hinting = GetRendererPreferencesHintingEnum(params.hinting);

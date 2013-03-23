@@ -5,13 +5,16 @@
 #include "chrome/renderer/pepper/pepper_flash_renderer_message_filter.h"
 
 #include "chrome/renderer/pepper/ppb_pdf_impl.h"
+#include "content/public/renderer/renderer_ppapi_host.h"
+#include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
 namespace chrome {
 
 PepperFlashRendererMessageFilter::PepperFlashRendererMessageFilter(
-    ppapi::host::PpapiHost* host)
-    : InstanceMessageFilter(host) {
+    content::RendererPpapiHost* host)
+    : InstanceMessageFilter(host->GetPpapiHost()),
+      host_(host) {
 }
 
 PepperFlashRendererMessageFilter::~PepperFlashRendererMessageFilter() {
@@ -19,6 +22,10 @@ PepperFlashRendererMessageFilter::~PepperFlashRendererMessageFilter() {
 
 bool PepperFlashRendererMessageFilter::OnInstanceMessageReceived(
     const IPC::Message& msg) {
+  if (!host_->GetPpapiHost()->permissions().HasPermission(
+          ppapi::PERMISSION_FLASH))
+    return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PepperFlashRendererMessageFilter, msg)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBFlash_InvokePrinting,

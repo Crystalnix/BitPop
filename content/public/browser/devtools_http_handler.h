@@ -9,6 +9,8 @@
 
 #include "content/common/content_export.h"
 
+class GURL;
+
 namespace net {
 class StreamListenSocketFactory;
 class URLRequestContextGetter;
@@ -45,7 +47,6 @@ class DevToolsHttpHandler {
   CONTENT_EXPORT static DevToolsHttpHandler* Start(
       const net::StreamListenSocketFactory* socket_factory,
       const std::string& frontend_url,
-      net::URLRequestContextGetter* request_context_getter,
       DevToolsHttpHandlerDelegate* delegate);
 
   // Called from the main thread in order to stop protocol handler.
@@ -55,6 +56,9 @@ class DevToolsHttpHandler {
   // Set the RenderViewHostBinding instance. If no instance is provided the
   // default implementation will be used.
   virtual void SetRenderViewHostBinding(RenderViewHostBinding* binding) = 0;
+
+  // Returns the URL for the address to debug |render_view_host|.
+  virtual GURL GetFrontendURL(RenderViewHost* render_view_host) = 0;
 
  protected:
   virtual ~DevToolsHttpHandler() {}

@@ -194,6 +194,10 @@ class SyncTest : public InProcessBrowserTest {
   // this state until shut down.
   void TriggerAuthError();
 
+  // Triggers an XMPP auth error on the server.  Note the server will
+  // stay in this state until shut down.
+  void TriggerXmppAuthError();
+
   // Triggers a sync error on the server.
   //   error: The error the server is expected to return.
   //   frequency: Frequency with which the error is returned.
@@ -292,6 +296,11 @@ class SyncTest : public InProcessBrowserTest {
   // kIssueAuthTokenUrl, kGetUserInfoUrl and kSearchDomainCheckUrl in order to
   // mock out calls to GAIA servers.
   void SetupMockGaiaResponses();
+
+  // Helper method used to clear any fake responses that might have been set for
+  // various gaia URLs, cancel any outstanding URL requests, and return to using
+  // the default URLFetcher creation mechanism.
+  void ClearMockGaiaResponses();
 
   // Test server of type sync, started on demand.
   net::LocalSyncTestServer sync_server_;

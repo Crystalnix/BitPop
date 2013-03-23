@@ -21,8 +21,7 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "ui/gl/gl_implementation.h"
 
-const int kGpuTimeout = 10000;
-
+namespace content {
 namespace {
 
 bool GpuProcessLogMessageHandler(int severity,
@@ -48,13 +47,14 @@ bool GpuProcessLogMessageHandler(int severity,
 
 }  // namespace
 
-GpuChildThread::GpuChildThread(bool dead_on_arrival,
-                               const content::GPUInfo& gpu_info)
+GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
+                               bool dead_on_arrival,
+                               const GPUInfo& gpu_info)
     : dead_on_arrival_(dead_on_arrival),
       gpu_info_(gpu_info) {
+  watchdog_thread_ = watchdog_thread;
 #if defined(OS_WIN)
   target_services_ = NULL;
-  collecting_dx_diagnostics_ = false;
 #endif
 }
 
@@ -63,7 +63,6 @@ GpuChildThread::GpuChildThread(const std::string& channel_id)
       dead_on_arrival_(false) {
 #if defined(OS_WIN)
   target_services_ = NULL;
-  collecting_dx_diagnostics_ = false;
 #endif
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU)) {
@@ -74,7 +73,6 @@ GpuChildThread::GpuChildThread(const std::string& channel_id)
     }
   }
 }
-
 
 GpuChildThread::~GpuChildThread() {
   logging::SetLogMessageHandler(NULL);
@@ -98,9 +96,14 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP_EX(GpuChildThread, msg, msg_is_ok)
     IPC_MESSAGE_HANDLER(GpuMsg_Initialize, OnInitialize)
     IPC_MESSAGE_HANDLER(GpuMsg_CollectGraphicsInfo, OnCollectGraphicsInfo)
+    IPC_MESSAGE_HANDLER(GpuMsg_GetVideoMemoryUsageStats,
+                        OnGetVideoMemoryUsageStats)
+    IPC_MESSAGE_HANDLER(GpuMsg_SetVideoMemoryWindowCount,
+                        OnSetVideoMemoryWindowCount)
     IPC_MESSAGE_HANDLER(GpuMsg_Clean, OnClean)
     IPC_MESSAGE_HANDLER(GpuMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(GpuMsg_Hang, OnHang)
+    IPC_MESSAGE_HANDLER(GpuMsg_DisableWatchdog, OnDisableWatchdog)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -112,6 +115,8 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void GpuChildThread::OnInitialize() {
+  Send(new GpuHostMsg_Initialized(!dead_on_arrival_));
+
   if (dead_on_arrival_) {
     VLOG(1) << "Exiting GPU process due to errors during initialization";
     MessageLoop::current()->Quit();
@@ -128,38 +133,6 @@ void GpuChildThread::OnInitialize() {
   // take a significant amount of time.
   gpu_info_.initialization_time = base::Time::Now() - process_start_time_;
 
-  // In addition to disabling the watchdog if the command line switch is
-  // present, disable it in two other cases. OSMesa is expected to run very
-  // slowly.  Also disable the watchdog on valgrind because the code is expected
-  // to run slowly in that case.
-  bool enable_watchdog =
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuWatchdog) &&
-      gfx::GetGLImplementation() != gfx::kGLImplementationOSMesaGL &&
-      !RunningOnValgrind();
-
-  // Disable the watchdog in debug builds because they tend to only be run by
-  // developers who will not appreciate the watchdog killing the GPU process.
-#ifndef NDEBUG
-  enable_watchdog = false;
-#endif
-
-  // Disable the watchdog for Windows. It tends to abort when the GPU process
-  // is not hung but still taking a long time to do something. Instead, the
-  // browser process displays a dialog when it notices that the child window
-  // is hung giving the user an opportunity to terminate it. This is the
-  // same mechanism used to abort hung plugins.
-#if defined(OS_WIN)
-  enable_watchdog = false;
-#endif
-
-  // Start the GPU watchdog only after anything that is expected to be time
-  // consuming has completed, otherwise the process is liable to be aborted.
-  if (enable_watchdog) {
-    watchdog_thread_ = new GpuWatchdogThread(kGpuTimeout);
-    watchdog_thread_->Start();
-  }
-
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
@@ -169,11 +142,9 @@ void GpuChildThread::OnInitialize() {
       ChildProcess::current()->io_message_loop_proxy(),
       ChildProcess::current()->GetShutDownEvent()));
 
-#if defined(OS_LINUX)
   // Ensure the browser process receives the GPU info before a reply to any
   // subsequent IPC it might send.
   Send(new GpuHostMsg_GraphicsInfoCollected(gpu_info_));
-#endif
 }
 
 void GpuChildThread::StopWatchdog() {
@@ -183,37 +154,49 @@ void GpuChildThread::StopWatchdog() {
 }
 
 void GpuChildThread::OnCollectGraphicsInfo() {
-  if (!gpu_info_.finalized &&
-      (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuSandbox) ||
-       CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
-       CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU))) {
-    // GPU full info collection should only happen on un-sandboxed GPU process
-    // or single process/in-process gpu mode.
+#if defined(OS_WIN)
+  // GPU full info collection should only happen on un-sandboxed GPU process
+  // or single process/in-process gpu mode on Windows.
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  DCHECK(command_line->HasSwitch(switches::kDisableGpuSandbox) ||
+         command_line->HasSwitch(switches::kSingleProcess) ||
+         command_line->HasSwitch(switches::kInProcessGPU));
+#endif  // OS_WIN
 
-    if (!gpu_info_collector::CollectGraphicsInfo(&gpu_info_))
-      VLOG(1) << "gpu_info_collector::CollectGraphicsInfo failed";
-    content::GetContentClient()->SetGpuInfo(gpu_info_);
+  if (!gpu_info_collector::CollectContextGraphicsInfo(&gpu_info_))
+    VLOG(1) << "gpu_info_collector::CollectGraphicsInfo failed";
+  GetContentClient()->SetGpuInfo(gpu_info_);
 
 #if defined(OS_WIN)
-    if (!collecting_dx_diagnostics_) {
-      // Prevent concurrent collection of DirectX diagnostics.
-      collecting_dx_diagnostics_ = true;
+  // This is slow, but it's the only thing the unsandboxed GPU process does,
+  // and GpuDataManager prevents us from sending multiple collecting requests,
+  // so it's OK to be blocking.
+  gpu_info_collector::GetDxDiagnostics(&gpu_info_.dx_diagnostics);
+  gpu_info_.finalized = true;
+#endif  // OS_WIN
 
-      // Asynchronously collect the DirectX diagnostics because this can take a
-      // couple of seconds.
-      if (!base::WorkerPool::PostTask(
-          FROM_HERE, base::Bind(&GpuChildThread::CollectDxDiagnostics, this),
-          true)) {
-        // Flag GPU info as complete if the DirectX diagnostics cannot be
-        // collected.
-        collecting_dx_diagnostics_ = false;
-        gpu_info_.finalized = true;
-      }
-    }
-#endif
-  }
   Send(new GpuHostMsg_GraphicsInfoCollected(gpu_info_));
+
+#if defined(OS_WIN)
+  if (!command_line->HasSwitch(switches::kSingleProcess) &&
+      !command_line->HasSwitch(switches::kInProcessGPU)) {
+    // The unsandboxed GPU process fulfilled its duty.  Rest in peace.
+    MessageLoop::current()->Quit();
+  }
+#endif  // OS_WIN
+}
+
+void GpuChildThread::OnGetVideoMemoryUsageStats() {
+  GPUVideoMemoryUsageStats video_memory_usage_stats;
+  if (gpu_channel_manager_.get())
+    gpu_channel_manager_->gpu_memory_manager()->GetVideoMemoryUsageStats(
+        video_memory_usage_stats);
+  Send(new GpuHostMsg_VideoMemoryUsageStats(video_memory_usage_stats));
+}
+
+void GpuChildThread::OnSetVideoMemoryWindowCount(uint32 window_count) {
+  if (gpu_channel_manager_.get())
+    gpu_channel_manager_->gpu_memory_manager()->SetWindowCount(window_count);
 }
 
 void GpuChildThread::OnClean() {
@@ -237,25 +220,17 @@ void GpuChildThread::OnHang() {
   }
 }
 
-#if defined(OS_WIN)
-
-// Runs on a worker thread. The GPU process never terminates voluntarily so
-// it is safe to assume that its message loop is valid.
-void GpuChildThread::CollectDxDiagnostics(GpuChildThread* thread) {
-  content::DxDiagNode node;
-  gpu_info_collector::GetDxDiagnostics(&node);
-
-  thread->message_loop()->PostTask(
-      FROM_HERE, base::Bind(&GpuChildThread::SetDxDiagnostics, thread, node));
+void GpuChildThread::OnDisableWatchdog() {
+  VLOG(1) << "GPU: Disabling watchdog thread";
+  if (watchdog_thread_.get()) {
+    // Disarm the watchdog before shutting down the message loop. This prevents
+    // the future posting of tasks to the message loop.
+    if (watchdog_thread_->message_loop())
+      watchdog_thread_->PostAcknowledge();
+    // Prevent rearming.
+    watchdog_thread_->Stop();
+  }
 }
 
-// Runs on the main thread.
-void GpuChildThread::SetDxDiagnostics(GpuChildThread* thread,
-                                      const content::DxDiagNode& node) {
-  thread->gpu_info_.dx_diagnostics = node;
-  thread->gpu_info_.finalized = true;
-  thread->collecting_dx_diagnostics_ = false;
-  thread->Send(new GpuHostMsg_GraphicsInfoCollected(thread->gpu_info_));
-}
+}  // namespace content
 
-#endif

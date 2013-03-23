@@ -19,8 +19,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/test_chrome_web_ui_controller_factory.h"
 #include "chrome/browser/ui/webui/web_ui_test_handler.h"
@@ -198,7 +197,8 @@ void WebUIBrowserTest::PreLoadJavascriptLibraries(
 void WebUIBrowserTest::BrowsePreload(const GURL& browse_to) {
   content::TestNavigationObserver navigation_observer(
       content::Source<NavigationController>(
-          &chrome::GetActiveWebContents(browser())->GetController()),
+          &browser()->tab_strip_model()->
+              GetActiveWebContents()->GetController()),
       this, 1);
   chrome::NavigateParams params(browser(), GURL(browse_to),
                                 content::PAGE_TRANSITION_TYPED);
@@ -224,10 +224,10 @@ void WebUIBrowserTest::BrowsePrintPreload(const GURL& browse_to) {
   printing::PrintPreviewTabController* tab_controller =
       printing::PrintPreviewTabController::GetInstance();
   ASSERT_TRUE(tab_controller);
-  TabContents* preview_tab = tab_controller->GetPrintPreviewForTab(
-      chrome::GetActiveTabContents(browser()));
+  WebContents* preview_tab = tab_controller->GetPrintPreviewForTab(
+      browser()->tab_strip_model()->GetActiveWebContents());
   ASSERT_TRUE(preview_tab);
-  SetWebUIInstance(preview_tab->web_contents()->GetWebUI());
+  SetWebUIInstance(preview_tab->GetWebUI());
 }
 
 const char WebUIBrowserTest::kDummyURL[] = "chrome://DummyURL";
@@ -327,7 +327,7 @@ void WebUIBrowserTest::SetUpInProcessBrowserTestFixture() {
   FilePath resources_pack_path;
   PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
   ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      resources_pack_path, ui::SCALE_FACTOR_100P);
+      resources_pack_path, ui::SCALE_FACTOR_NONE);
 
   FilePath mockPath;
   ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &mockPath));
@@ -466,7 +466,7 @@ bool WebUIBrowserTest::RunJavascriptUsingHandler(
 void WebUIBrowserTest::SetupHandlers() {
   content::WebUI* web_ui_instance = override_selected_web_ui_ ?
       override_selected_web_ui_ :
-      chrome::GetActiveWebContents(browser())->GetWebUI();
+      browser()->tab_strip_model()->GetActiveWebContents()->GetWebUI();
   ASSERT_TRUE(web_ui_instance != NULL);
 
   test_handler_->set_web_ui(web_ui_instance);
@@ -516,7 +516,7 @@ WebUIBrowserTest* WebUIBrowserExpectFailTest::s_test_ = NULL;
 IN_PROC_BROWSER_TEST_F(WebUIBrowserExpectFailTest, TestFailsFast) {
   AddLibrary(FilePath(FILE_PATH_LITERAL("sample_downloads.js")));
   ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIDownloadsURL));
-  EXPECT_FATAL_FAILURE(RunJavascriptTestNoReturn("FAILS_BogusFunctionName"),
+  EXPECT_FATAL_FAILURE(RunJavascriptTestNoReturn("DISABLED_BogusFunctionName"),
                        "WebUITestHandler::Observe");
 }
 
@@ -534,7 +534,7 @@ IN_PROC_BROWSER_TEST_F(WebUIBrowserExpectFailTest, TestFailsAsyncFast) {
   AddLibrary(FilePath(FILE_PATH_LITERAL("sample_downloads.js")));
   ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIDownloadsURL));
   EXPECT_FATAL_FAILURE(
-      RunJavascriptAsyncTestNoReturn("FAILS_BogusFunctionName"),
+      RunJavascriptAsyncTestNoReturn("DISABLED_BogusFunctionName"),
       "WebUITestHandler::Observe");
 }
 

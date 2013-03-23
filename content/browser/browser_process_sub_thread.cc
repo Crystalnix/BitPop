@@ -4,24 +4,22 @@
 
 #include "content/browser/browser_process_sub_thread.h"
 
-#if defined(OS_WIN)
-#include <Objbase.h>
-#endif
-
 #include "base/debug/leak_tracker.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "content/browser/browser_child_process_host_impl.h"
-#include "content/browser/in_process_webkit/indexed_db_key_utility_client.h"
 #include "content/browser/notification_service_impl.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request.h"
 
+#if defined(OS_WIN)
+#include "base/win/scoped_com_initializer.h"
+#endif
+
 namespace content {
 
 BrowserProcessSubThread::BrowserProcessSubThread(BrowserThread::ID identifier)
-    : BrowserThreadImpl(identifier),
-      notification_service_(NULL) {
+    : BrowserThreadImpl(identifier) {
 }
 
 BrowserProcessSubThread::~BrowserProcessSubThread() {
@@ -30,11 +28,10 @@ BrowserProcessSubThread::~BrowserProcessSubThread() {
 
 void BrowserProcessSubThread::Init() {
 #if defined(OS_WIN)
-  // Initializes the COM library on the current thread.
-  CoInitialize(NULL);
+  com_initializer_.reset(new base::win::ScopedCOMInitializer());
 #endif
 
-  notification_service_ = new NotificationServiceImpl;
+  notification_service_.reset(new NotificationServiceImpl());
 
   BrowserThreadImpl::Init();
 
@@ -53,13 +50,10 @@ void BrowserProcessSubThread::CleanUp() {
 
   BrowserThreadImpl::CleanUp();
 
-  delete notification_service_;
-  notification_service_ = NULL;
+  notification_service_.reset();
 
 #if defined(OS_WIN)
-  // Closes the COM library on the current thread. CoInitialize must
-  // be balanced by a corresponding call to CoUninitialize.
-  CoUninitialize();
+  com_initializer_.reset();
 #endif
 }
 
@@ -70,12 +64,12 @@ void BrowserProcessSubThread::IOThreadPreCleanUp() {
   // Destroy all URLRequests started by URLFetchers.
   net::URLFetcher::CancelAll();
 
-  IndexedDBKeyUtilityClient::Shutdown();
-
+#if !defined(OS_IOS)
   // If any child processes are still running, terminate them and
   // and delete the BrowserChildProcessHost instances to release whatever
   // IO thread only resources they are referencing.
   BrowserChildProcessHostImpl::TerminateAll();
+#endif  // !defined(OS_IOS)
 }
 
 }  // namespace content

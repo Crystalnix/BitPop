@@ -15,14 +15,17 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/defaults.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
 #include "chrome/browser/ui/search/search.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_page_handler.h"
@@ -47,23 +50,16 @@
 #include "grit/theme_resources.h"
 #include "ui/base/animation/animation.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/sys_color_change_listener.h"
 
-#if defined(OS_MACOSX)
-#include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_constants.h"
-#elif defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/bookmarks/bookmark_bar_gtk.h"
-#endif
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/platform_util.h"
 #endif
 
-using base::Time;
 using content::BrowserThread;
 
 namespace {
@@ -124,7 +120,8 @@ SkColor GetThemeColor(ui::ThemeProvider* tp, int id) {
 // Get the CSS string for the background position on the new tab page for the
 // states when the bar is attached or detached.
 std::string GetNewTabBackgroundCSS(const ui::ThemeProvider* theme_provider,
-                                   bool bar_attached) {
+                                   bool bar_attached,
+                                   bool is_ntp_search) {
   int alignment;
   theme_provider->GetDisplayProperty(
       ThemeService::NTP_BACKGROUND_ALIGNMENT, &alignment);
@@ -137,28 +134,26 @@ std::string GetNewTabBackgroundCSS(const ui::ThemeProvider* theme_provider,
     return "-64px";
   }
 
-  if (bar_attached)
+  // For instant extended API i.e. |is_ntp_search| is true, bookmark bar is
+  // always detached at bottom of content view in the y-direction, floating on
+  // top of it in the z-order, and not showing any part of the theme background
+  // image, so the content view should show the entire theme background image as
+  // is, with no vertical offset.
+  if (bar_attached || is_ntp_search)
     return ThemeService::AlignmentToString(alignment);
 
-  // The bar is detached, so we must offset the background by the bar size
-  // if it's a top-aligned bar.
-#if defined(OS_WIN) || defined(TOOLKIT_VIEWS)
-  int offset = browser_defaults::kNewtabBookmarkBarHeight;
-#elif defined(OS_MACOSX)
-  int offset = bookmarks::kNTPBookmarkBarHeight;
-#elif defined(TOOLKIT_GTK)
-  int offset = BookmarkBarGtk::kBookmarkBarNTPHeight;
-#else
-  int offset = 0;
-#endif
-
   if (alignment & ThemeService::ALIGN_TOP) {
+    // The bar is detached, so we must offset the background by the bar size
+    // if it's a top-aligned bar.
+    int offset = chrome::kNTPBookmarkBarHeight;
+
     if (alignment & ThemeService::ALIGN_LEFT)
       return "left " + base::IntToString(-offset) + "px";
     else if (alignment & ThemeService::ALIGN_RIGHT)
       return "right " + base::IntToString(-offset) + "px";
     return "center " + base::IntToString(-offset) + "px";
   }
+
   return ThemeService::AlignmentToString(alignment);
 }
 
@@ -172,13 +167,6 @@ std::string GetNewTabBackgroundTilingCSS(
   return ThemeService::TilingToString(repeat_mode);
 }
 
-// Is the current time within a given date range?
-bool InDateRange(double begin, double end) {
-  Time start_time = Time::FromDoubleT(begin);
-  Time end_time = Time::FromDoubleT(end);
-  return start_time < Time::Now() && end_time > Time::Now();
-}
-
 }  // namespace
 
 NTPResourceCache::NTPResourceCache(Profile* profile)
@@ -189,12 +177,15 @@ NTPResourceCache::NTPResourceCache(Profile* profile)
   registrar_.Add(this, chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED,
                  content::NotificationService::AllSources());
 
+  base::Closure callback = base::Bind(&NTPResourceCache::OnPreferenceChanged,
+                                      base::Unretained(this));
+
   // Watch for pref changes that cause us to need to invalidate the HTML cache.
   pref_change_registrar_.Init(profile_->GetPrefs());
-  pref_change_registrar_.Add(prefs::kSyncAcknowledgedSyncTypes, this);
-  pref_change_registrar_.Add(prefs::kShowBookmarkBar, this);
-  pref_change_registrar_.Add(prefs::kNtpShownPage, this);
-  pref_change_registrar_.Add(prefs::kSyncPromoShowNTPBubble, this);
+  pref_change_registrar_.Add(prefs::kSyncAcknowledgedSyncTypes, callback);
+  pref_change_registrar_.Add(prefs::kShowBookmarkBar, callback);
+  pref_change_registrar_.Add(prefs::kNtpShownPage, callback);
+  pref_change_registrar_.Add(prefs::kSyncPromoShowNTPBubble, callback);
 }
 
 NTPResourceCache::~NTPResourceCache() {}
@@ -241,8 +232,8 @@ base::RefCountedMemory* NTPResourceCache::GetNewTabCSS(bool is_incognito) {
 }
 
 void NTPResourceCache::Observe(int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
   // Invalidate the cache.
   if (chrome::NOTIFICATION_BROWSER_THEME_CHANGED == type ||
       chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED == type) {
@@ -250,14 +241,17 @@ void NTPResourceCache::Observe(int type,
     new_tab_html_ = NULL;
     new_tab_incognito_css_ = NULL;
     new_tab_css_ = NULL;
-  } else if (chrome::NOTIFICATION_PREF_CHANGED == type) {
-    // A change occurred to one of the preferences we care about, so flush the
-    // cache.
-    new_tab_incognito_html_ = NULL;
-    new_tab_html_ = NULL;
   } else {
     NOTREACHED();
   }
+}
+
+void NTPResourceCache::OnPreferenceChanged() {
+  // A change occurred to one of the preferences we care about, so flush the
+  // cache.
+  new_tab_incognito_html_ = NULL;
+  new_tab_html_ = NULL;
+  new_tab_css_ = NULL;
 }
 
 void NTPResourceCache::CreateNewTabIncognitoHTML() {
@@ -273,6 +267,23 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
     new_tab_message_ids = IDS_NEW_TAB_GUEST_SESSION_MESSAGE;
     new_tab_html_idr = IDR_GUEST_SESSION_TAB_HTML;
     new_tab_link = kLearnMoreGuestSessionUrl;
+
+    std::string enterprise_domain =
+        g_browser_process->browser_policy_connector()->GetEnterpriseDomain();
+    if (!enterprise_domain.empty()) {
+      // Device is enterprise enrolled.
+      localized_strings.SetString("enterpriseInfoVisible", "true");
+      string16 enterprise_info = l10n_util::GetStringFUTF16(
+          IDS_DEVICE_OWNED_BY_NOTICE,
+          UTF8ToUTF16(enterprise_domain));
+      localized_strings.SetString("enterpriseInfoMessage", enterprise_info);
+      localized_strings.SetString("learnMore",
+          l10n_util::GetStringUTF16(IDS_LEARN_MORE));
+      localized_strings.SetString("enterpriseInfoHintLink",
+          GetUrlWithLang(GURL(chrome::kLearnMoreEnterpriseURL)));
+    } else {
+      localized_strings.SetString("enterpriseInfoVisible", "false");
+    }
   }
 #endif
   localized_strings.SetString("content",
@@ -291,7 +302,7 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
 
   static const base::StringPiece incognito_tab_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-          new_tab_html_idr, ui::SCALE_FACTOR_NONE));
+          new_tab_html_idr));
 
   std::string full_html = jstemplate_builder::GetI18nTemplateHtml(
       incognito_tab_html, &localized_strings);
@@ -341,6 +352,8 @@ void NTPResourceCache::CreateNewTabHTML() {
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
   load_time_data.SetString("appoptions",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_APP_OPTIONS));
+  load_time_data.SetString("appdetails",
+      l10n_util::GetStringUTF16(IDS_NEW_TAB_APP_DETAILS));
   load_time_data.SetString("appdisablenotifications",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_APP_DISABLE_NOTIFICATIONS));
   load_time_data.SetString("appcreateshortcut",
@@ -371,8 +384,8 @@ void NTPResourceCache::CreateNewTabHTML() {
       GetUrlWithLang(GURL(extension_urls::GetWebstoreLaunchURL())));
   load_time_data.SetString("appInstallHintText",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_APP_INSTALL_HINT_LABEL));
-  load_time_data.SetBoolean("isSuggestionsPageEnabled",
-      NewTabUI::IsSuggestionsPageEnabled());
+  load_time_data.SetBoolean("isDiscoveryInNTPEnabled",
+      NewTabUI::IsDiscoveryInNTPEnabled());
   load_time_data.SetBoolean("showApps", NewTabUI::ShouldShowApps());
   load_time_data.SetString("collapseSessionMenuItemText",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_OTHER_SESSIONS_COLLAPSE_SESSION));
@@ -382,7 +395,12 @@ void NTPResourceCache::CreateNewTabHTML() {
       l10n_util::GetStringUTF16(IDS_NEW_TAB_OTHER_SESSIONS_OPEN_ALL));
   load_time_data.SetString("learn_more",
       l10n_util::GetStringUTF16(IDS_LEARN_MORE));
-
+  load_time_data.SetString("tile_grid_screenreader_accessible_description",
+      l10n_util::GetStringUTF16(IDS_NEW_TAB_TILE_GRID_ACCESSIBLE_DESCRIPTION));
+  load_time_data.SetString("page_switcher_change_title",
+      l10n_util::GetStringUTF16(IDS_NEW_TAB_PAGE_SWITCHER_CHANGE_TITLE));
+  load_time_data.SetString("page_switcher_same_title",
+      l10n_util::GetStringUTF16(IDS_NEW_TAB_PAGE_SWITCHER_SAME_TITLE));
   // On Mac OS X 10.7+, horizontal scrolling can be treated as a back or
   // forward gesture. Pass through a flag that indicates whether or not that
   // feature is enabled.
@@ -408,11 +426,28 @@ void NTPResourceCache::CreateNewTabHTML() {
   load_time_data.SetString("themegravity",
       (alignment & ThemeService::ALIGN_RIGHT) ? "right" : "");
 
-  // Set the promo string for display if there is a valid outstanding promo.
-  NotificationPromo notification_promo(profile_);
-  notification_promo.InitFromPrefs(NotificationPromo::NTP_NOTIFICATION_PROMO);
-  if (notification_promo.CanShow())
-    load_time_data.SetString("serverpromo", notification_promo.promo_text());
+  // Disable the promo if this is the first run, otherwise set the promo string
+  // for display if there is a valid outstanding promo.
+  if (first_run::IsChromeFirstRun()) {
+    NotificationPromo::HandleClosed(profile_,
+                                    NotificationPromo::NTP_NOTIFICATION_PROMO);
+  } else {
+    NotificationPromo notification_promo(profile_);
+    notification_promo.InitFromPrefs(NotificationPromo::NTP_NOTIFICATION_PROMO);
+    if (notification_promo.CanShow()) {
+      load_time_data.SetString("notificationPromoText",
+                               notification_promo.promo_text());
+      DVLOG(1) << "Notification promo:" << notification_promo.promo_text();
+    }
+
+    NotificationPromo bubble_promo(profile_);
+    bubble_promo.InitFromPrefs(NotificationPromo::NTP_BUBBLE_PROMO);
+    if (bubble_promo.CanShow()) {
+      load_time_data.SetString("bubblePromoText",
+                               bubble_promo.promo_text());
+      DVLOG(1) << "Bubble promo:" << bubble_promo.promo_text();
+    }
+  }
 
   // Determine whether to show the menu for accessing tabs on other devices.
   bool show_other_sessions_menu = !CommandLine::ForCurrentProcess()->HasSwitch(
@@ -425,8 +460,7 @@ void NTPResourceCache::CreateNewTabHTML() {
   // Load the new tab page appropriate for this build
   base::StringPiece new_tab_html(ResourceBundle::GetSharedInstance().
       GetRawDataResource(chrome::search::IsInstantExtendedAPIEnabled(profile_) ?
-                             IDR_NEW_TAB_SEARCH_HTML : IDR_NEW_TAB_4_HTML,
-                         ui::SCALE_FACTOR_NONE));
+                         IDR_NEW_TAB_SEARCH_HTML : IDR_NEW_TAB_4_HTML));
   jstemplate_builder::UseVersion2 version2;
   std::string full_html =
       jstemplate_builder::GetI18nTemplateHtml(new_tab_html, &load_time_data);
@@ -448,16 +482,18 @@ void NTPResourceCache::CreateNewTabIncognitoCSS() {
   subst.push_back(
       profile_->GetPrefs()->GetString(prefs::kCurrentThemeID));  // $1
 
+  bool is_ntp_search = chrome::search::IsInstantExtendedAPIEnabled(profile_);
+
   // Colors.
   subst.push_back(SkColorToRGBAString(color_background));  // $2
-  subst.push_back(GetNewTabBackgroundCSS(tp, false));  // $3
-  subst.push_back(GetNewTabBackgroundCSS(tp, true));  // $4
+  subst.push_back(GetNewTabBackgroundCSS(tp, false, is_ntp_search));  // $3
+  subst.push_back(GetNewTabBackgroundCSS(tp, true, is_ntp_search));  // $4
   subst.push_back(GetNewTabBackgroundTilingCSS(tp));  // $5
 
   // Get our template.
   static const base::StringPiece new_tab_theme_css(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-      IDR_NEW_INCOGNITO_TAB_THEME_CSS, ui::SCALE_FACTOR_NONE));
+          IDR_NEW_INCOGNITO_TAB_THEME_CSS));
 
   // Create the string from our template and the replacements.
   std::string full_css = ReplaceStringPlaceholders(
@@ -522,10 +558,12 @@ void NTPResourceCache::CreateNewTabCSS() {
   subst.push_back(
       profile_->GetPrefs()->GetString(prefs::kCurrentThemeID));  // $1
 
+  bool is_ntp_search = chrome::search::IsInstantExtendedAPIEnabled(profile_);
+
   // Colors.
   subst.push_back(SkColorToRGBAString(color_background));  // $2
-  subst.push_back(GetNewTabBackgroundCSS(tp, false));  // $3
-  subst.push_back(GetNewTabBackgroundCSS(tp, true));  // $4
+  subst.push_back(GetNewTabBackgroundCSS(tp, false, is_ntp_search));  // $3
+  subst.push_back(GetNewTabBackgroundCSS(tp, true, is_ntp_search));  // $4
   subst.push_back(GetNewTabBackgroundTilingCSS(tp));  // $5
   subst.push_back(SkColorToRGBAString(color_header));  // $6
   subst.push_back(SkColorToRGBAString(color_header_gradient_light));  // $7
@@ -551,10 +589,8 @@ void NTPResourceCache::CreateNewTabCSS() {
 
   // Get our template.
   static const base::StringPiece new_tab_theme_css(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          chrome::search::IsInstantExtendedAPIEnabled(profile_) ?
-              IDR_NEW_TAB_SEARCH_THEME_CSS : IDR_NEW_TAB_4_THEME_CSS,
-          ui::SCALE_FACTOR_NONE));
+      ResourceBundle::GetSharedInstance().GetRawDataResource(is_ntp_search ?
+          IDR_NEW_TAB_SEARCH_THEME_CSS : IDR_NEW_TAB_4_THEME_CSS));
 
   // Create the string from our template and the replacements.
   std::string css_string;

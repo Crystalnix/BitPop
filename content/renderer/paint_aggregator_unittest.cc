@@ -5,6 +5,8 @@
 #include "content/renderer/paint_aggregator.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace content {
+
 TEST(PaintAggregator, InitialState) {
   PaintAggregator greg;
   EXPECT_FALSE(greg.HasPendingUpdate());
@@ -35,7 +37,7 @@ TEST(PaintAggregator, DoubleDisjointInvalidation) {
   greg.InvalidateRect(r1);
   greg.InvalidateRect(r2);
 
-  gfx::Rect expected_bounds = r1.Union(r2);
+  gfx::Rect expected_bounds = gfx::UnionRects(r1, r2);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -59,7 +61,7 @@ TEST(PaintAggregator, DisjointInvalidationsCombined) {
   greg.InvalidateRect(r1);
   greg.InvalidateRect(r2);
 
-  gfx::Rect expected_bounds = r1.Union(r2);
+  gfx::Rect expected_bounds = gfx::UnionRects(r1, r2);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -75,8 +77,8 @@ TEST(PaintAggregator, SingleScroll) {
   PaintAggregator greg;
 
   gfx::Rect rect(1, 2, 3, 4);
-  gfx::Point delta(1, 0);
-  greg.ScrollRect(delta.x(), delta.y(), rect);
+  gfx::Vector2d delta(1, 0);
+  greg.ScrollRect(delta, rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -99,10 +101,10 @@ TEST(PaintAggregator, DoubleOverlappingScroll) {
   PaintAggregator greg;
 
   gfx::Rect rect(1, 2, 3, 4);
-  gfx::Point delta1(1, 0);
-  gfx::Point delta2(1, 0);
-  greg.ScrollRect(delta1.x(), delta1.y(), rect);
-  greg.ScrollRect(delta2.x(), delta2.y(), rect);
+  gfx::Vector2d delta1(1, 0);
+  gfx::Vector2d delta2(1, 0);
+  greg.ScrollRect(delta1, rect);
+  greg.ScrollRect(delta2, rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -113,10 +115,8 @@ TEST(PaintAggregator, DoubleOverlappingScroll) {
 
   EXPECT_EQ(rect, update.scroll_rect);
 
-  gfx::Point expected_delta(delta1.x() + delta2.x(),
-                            delta1.y() + delta2.y());
-  EXPECT_EQ(expected_delta.x(), update.scroll_delta.x());
-  EXPECT_EQ(expected_delta.y(), update.scroll_delta.y());
+  gfx::Vector2d expected_delta = delta1 + delta2;
+  EXPECT_EQ(expected_delta.ToString(), update.scroll_delta.ToString());
 
   gfx::Rect resulting_damage = update.GetScrollDamage();
   gfx::Rect expected_damage(1, 2, 2, 4);
@@ -130,10 +130,10 @@ TEST(PaintAggregator, NegatingScroll) {
   // should be no scrolling.
 
   gfx::Rect rect(1, 2, 3, 4);
-  gfx::Point delta1(1, 0);
-  gfx::Point delta2(-1, 0);
-  greg.ScrollRect(delta1.x(), delta1.y(), rect);
-  greg.ScrollRect(delta2.x(), delta2.y(), rect);
+  gfx::Vector2d delta1(1, 0);
+  gfx::Vector2d delta2(-1, 0);
+  greg.ScrollRect(delta1, rect);
+  greg.ScrollRect(delta2, rect);
 
   EXPECT_FALSE(greg.HasPendingUpdate());
 }
@@ -145,8 +145,8 @@ TEST(PaintAggregator, DiagonalScroll) {
   // repainting.
 
   gfx::Rect rect(1, 2, 3, 4);
-  gfx::Point delta(1, 1);
-  greg.ScrollRect(delta.x(), delta.y(), rect);
+  gfx::Vector2d delta(1, 1);
+  greg.ScrollRect(delta, rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -162,7 +162,7 @@ TEST(PaintAggregator, ContainedPaintAfterScroll) {
   PaintAggregator greg;
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   gfx::Rect paint_rect(4, 4, 2, 2);
   greg.InvalidateRect(paint_rect);
@@ -186,7 +186,7 @@ TEST(PaintAggregator, ContainedPaintBeforeScroll) {
   greg.InvalidateRect(paint_rect);
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -209,7 +209,7 @@ TEST(PaintAggregator, ContainedPaintsBeforeAndAfterScroll) {
   greg.InvalidateRect(paint_rect1);
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   gfx::Rect paint_rect2(6, 4, 2, 2);
   greg.InvalidateRect(paint_rect2);
@@ -232,7 +232,7 @@ TEST(PaintAggregator, LargeContainedPaintAfterScroll) {
   PaintAggregator greg;
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(0, 1, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(0, 1), scroll_rect);
 
   gfx::Rect paint_rect(0, 0, 10, 9);  // Repaint 90%
   greg.InvalidateRect(paint_rect);
@@ -254,7 +254,7 @@ TEST(PaintAggregator, LargeContainedPaintBeforeScroll) {
   greg.InvalidateRect(paint_rect);
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(0, 1, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(0, 1), scroll_rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -273,9 +273,9 @@ TEST(PaintAggregator, OverlappingPaintBeforeScroll) {
   greg.InvalidateRect(paint_rect);
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
-  gfx::Rect expected_paint_rect = scroll_rect.Union(paint_rect);
+  gfx::Rect expected_paint_rect = gfx::UnionRects(scroll_rect, paint_rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -291,12 +291,12 @@ TEST(PaintAggregator, OverlappingPaintAfterScroll) {
   PaintAggregator greg;
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   gfx::Rect paint_rect(4, 4, 10, 2);
   greg.InvalidateRect(paint_rect);
 
-  gfx::Rect expected_paint_rect = scroll_rect.Union(paint_rect);
+  gfx::Rect expected_paint_rect = gfx::UnionRects(scroll_rect, paint_rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -315,7 +315,7 @@ TEST(PaintAggregator, DisjointPaintBeforeScroll) {
   greg.InvalidateRect(paint_rect);
 
   gfx::Rect scroll_rect(0, 0, 2, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -332,7 +332,7 @@ TEST(PaintAggregator, DisjointPaintAfterScroll) {
   PaintAggregator greg;
 
   gfx::Rect scroll_rect(0, 0, 2, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   gfx::Rect paint_rect(4, 4, 10, 2);
   greg.InvalidateRect(paint_rect);
@@ -355,7 +355,7 @@ TEST(PaintAggregator, ContainedPaintTrimmedByScroll) {
   greg.InvalidateRect(paint_rect);
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(2, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(2, 0), scroll_rect);
 
   // The paint rect should have become narrower.
   gfx::Rect expected_paint_rect(6, 4, 4, 6);
@@ -378,7 +378,7 @@ TEST(PaintAggregator, ContainedPaintEliminatedByScroll) {
   greg.InvalidateRect(paint_rect);
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(6, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(6, 0), scroll_rect);
 
   EXPECT_TRUE(greg.HasPendingUpdate());
   PaintAggregator::PendingUpdate update;
@@ -394,7 +394,7 @@ TEST(PaintAggregator, ContainedPaintAfterScrollTrimmedByScrollDamage) {
   PaintAggregator greg;
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(4, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(4, 0), scroll_rect);
 
   gfx::Rect paint_rect(2, 0, 4, 10);
   greg.InvalidateRect(paint_rect);
@@ -418,7 +418,7 @@ TEST(PaintAggregator, ContainedPaintAfterScrollEliminatedByScrollDamage) {
   PaintAggregator greg;
 
   gfx::Rect scroll_rect(0, 0, 10, 10);
-  greg.ScrollRect(4, 0, scroll_rect);
+  greg.ScrollRect(gfx::Vector2d(4, 0), scroll_rect);
 
   gfx::Rect paint_rect(2, 0, 2, 10);
   greg.InvalidateRect(paint_rect);
@@ -435,3 +435,5 @@ TEST(PaintAggregator, ContainedPaintAfterScrollEliminatedByScrollDamage) {
   EXPECT_EQ(scroll_rect, update.scroll_rect);
   EXPECT_EQ(expected_scroll_damage, update.GetScrollDamage());
 }
+
+}  // namespace content

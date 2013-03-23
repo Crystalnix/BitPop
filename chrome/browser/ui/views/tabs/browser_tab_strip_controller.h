@@ -7,17 +7,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/browser/ui/search/search_model_observer.h"
-#include "chrome/browser/ui/search/toolbar_search_animator_observer.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "chrome/browser/ui/tabs/hover_tab_selector.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
-#include "content/public/browser/notification_observer.h"
 
-class BaseTab;
 class Browser;
-class TabContents;
+class Tab;
 class TabStrip;
 class TabStripSelectionModel;
 struct TabRendererData;
@@ -27,13 +23,9 @@ class WebContents;
 }
 
 // An implementation of TabStripController that sources data from the
-// TabContentses in a TabStripModel.
-class BrowserTabStripController
-    : public TabStripController,
-      public TabStripModelObserver,
-      public content::NotificationObserver,
-      public chrome::search::SearchModelObserver,
-      public chrome::search::ToolbarSearchAnimatorObserver {
+// WebContentses in a TabStripModel.
+class BrowserTabStripController : public TabStripController,
+                                  public TabStripModelObserver {
  public:
   BrowserTabStripController(Browser* browser, TabStripModel* model);
   virtual ~BrowserTabStripController();
@@ -43,10 +35,10 @@ class BrowserTabStripController
   TabStripModel* model() const { return model_; }
 
   bool IsCommandEnabledForTab(TabStripModel::ContextMenuCommand command_id,
-                              BaseTab* tab) const;
+                              Tab* tab) const;
   void ExecuteCommandForTab(TabStripModel::ContextMenuCommand command_id,
-                            BaseTab* tab);
-  bool IsTabPinned(BaseTab* tab) const;
+                            Tab* tab);
+  bool IsTabPinned(Tab* tab) const;
 
   // TabStripController implementation:
   virtual const TabStripSelectionModel& GetSelectionModel() OVERRIDE;
@@ -61,8 +53,8 @@ class BrowserTabStripController
   virtual void ExtendSelectionTo(int model_index) OVERRIDE;
   virtual void ToggleSelected(int model_index) OVERRIDE;
   virtual void AddSelectionFromAnchorTo(int model_index) OVERRIDE;
-  virtual void CloseTab(int model_index) OVERRIDE;
-  virtual void ShowContextMenuForTab(BaseTab* tab,
+  virtual void CloseTab(int model_index, CloseTabSource source) OVERRIDE;
+  virtual void ShowContextMenuForTab(Tab* tab,
                                      const gfx::Point& p) OVERRIDE;
   virtual void UpdateLoadingAnimations() OVERRIDE;
   virtual int HasAvailableDragActions() const OVERRIDE;
@@ -72,48 +64,34 @@ class BrowserTabStripController
                            const GURL& url) OVERRIDE;
   virtual bool IsCompatibleWith(TabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
-  virtual void ClickActiveTab(int index) OVERRIDE;
   virtual bool IsIncognito() OVERRIDE;
   virtual void LayoutTypeMaybeChanged() OVERRIDE;
 
   // TabStripModelObserver implementation:
-  virtual void TabInsertedAt(TabContents* contents,
+  virtual void TabInsertedAt(content::WebContents* contents,
                              int model_index,
                              bool is_active) OVERRIDE;
-  virtual void TabDetachedAt(TabContents* contents,
+  virtual void TabDetachedAt(content::WebContents* contents,
                              int model_index) OVERRIDE;
   virtual void TabSelectionChanged(
       TabStripModel* tab_strip_model,
       const TabStripSelectionModel& old_model) OVERRIDE;
-  virtual void TabMoved(TabContents* contents,
+  virtual void TabMoved(content::WebContents* contents,
                         int from_model_index,
                         int to_model_index) OVERRIDE;
-  virtual void TabChangedAt(TabContents* contents,
+  virtual void TabChangedAt(content::WebContents* contents,
                             int model_index,
                             TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int model_index) OVERRIDE;
-  virtual void TabPinnedStateChanged(TabContents* contents,
+  virtual void TabPinnedStateChanged(content::WebContents* contents,
                                      int model_index) OVERRIDE;
-  virtual void TabMiniStateChanged(TabContents* contents,
+  virtual void TabMiniStateChanged(content::WebContents* contents,
                                    int model_index) OVERRIDE;
-  virtual void TabBlockedStateChanged(TabContents* contents,
+  virtual void TabBlockedStateChanged(content::WebContents* contents,
                                       int model_index) OVERRIDE;
-
-  // chrome::search::SearchModelObserver implementation:
-  virtual void ModeChanged(const chrome::search::Mode& mode) OVERRIDE;
-
-  // chrome::search::ToolbarSearchAnimatorObserver implementation:
-  virtual void OnToolbarBackgroundAnimatorProgressed() OVERRIDE;
-  virtual void OnToolbarBackgroundAnimatorCanceled(
-      TabContents* tab_contents) OVERRIDE;
-
-  // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
  protected:
   // The context in which SetTabRendererDataFromModel is being called.
@@ -138,17 +116,17 @@ class BrowserTabStripController
   class TabContextMenuContents;
 
   // Invokes tabstrip_->SetTabData.
-  void SetTabDataAt(TabContents* contents, int model_index);
+  void SetTabDataAt(content::WebContents* web_contents, int model_index);
 
   void StartHighlightTabsForCommand(
       TabStripModel::ContextMenuCommand command_id,
-      BaseTab* tab);
+      Tab* tab);
   void StopHighlightTabsForCommand(
       TabStripModel::ContextMenuCommand command_id,
-      BaseTab* tab);
+      Tab* tab);
 
   // Adds a tab.
-  void AddTab(TabContents* contents, int index, bool is_active);
+  void AddTab(content::WebContents* contents, int index, bool is_active);
 
   // Resets the tabstrips layout type from prefs.
   void UpdateLayoutType();

@@ -10,13 +10,15 @@
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_filter.h"
 
+using content::URLRequestMockHTTPJob;
+
 namespace {
 
-FilePath GetMockFilePath() {
-  FilePath test_dir;
-  bool success = PathService::Get(chrome::DIR_TEST_DATA, &test_dir);
-  DCHECK(success);
-  return test_dir.AppendASCII("mock-link-doctor.html");
+// This is the file path leading to the root of the directory to use as the
+// root of the http server. This returns a reference that can be assigned to.
+FilePath& BasePath() {
+  CR_DEFINE_STATIC_LOCAL(FilePath, base_path, ());
+  return base_path;
 }
 
 }  // namespace
@@ -24,19 +26,25 @@ FilePath GetMockFilePath() {
 // static
 net::URLRequestJob* URLRequestMockLinkDoctorJob::Factory(
     net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
     const std::string& scheme) {
-  return new URLRequestMockLinkDoctorJob(request);
+  return new URLRequestMockLinkDoctorJob(request, network_delegate);
 }
 
 // static
-void URLRequestMockLinkDoctorJob::AddUrlHandler() {
+void URLRequestMockLinkDoctorJob::AddUrlHandler(const FilePath& base_path) {
+  BasePath() = base_path;
+
   net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
   filter->AddHostnameHandler("http",
-                             GURL(google_util::kLinkDoctorBaseURL).host(),
+                             google_util::LinkDoctorBaseURL().host(),
                              URLRequestMockLinkDoctorJob::Factory);
 }
 
 URLRequestMockLinkDoctorJob::URLRequestMockLinkDoctorJob(
-    net::URLRequest* request)
-    : URLRequestMockHTTPJob(request, GetMockFilePath()) {
+    net::URLRequest* request, net::NetworkDelegate* network_delegate)
+    : URLRequestMockHTTPJob(
+        request,
+        network_delegate,
+        BasePath().AppendASCII("mock-link-doctor.html")) {
 }

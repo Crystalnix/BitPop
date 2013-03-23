@@ -7,6 +7,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/surface/transport_dib.h"
 
+namespace content {
+
 MockRenderProcess::MockRenderProcess()
     : transport_dib_next_sequence_number_(0),
       enabled_bindings_(0) {
@@ -18,7 +20,7 @@ MockRenderProcess::~MockRenderProcess() {
 skia::PlatformCanvas* MockRenderProcess::GetDrawingCanvas(
     TransportDIB** memory,
     const gfx::Rect& rect) {
-  size_t stride = skia::PlatformCanvas::StrideForWidth(rect.width());
+  size_t stride = skia::PlatformCanvasStrideForWidth(rect.width());
   size_t size = stride * rect.height();
 
   // Unlike RenderProcessImpl, when we're a test, we can just create transport
@@ -54,3 +56,4 @@ void MockRenderProcess::FreeTransportDIB(TransportDIB* dib) {
   delete dib;
 }
 
+}  // namespace content

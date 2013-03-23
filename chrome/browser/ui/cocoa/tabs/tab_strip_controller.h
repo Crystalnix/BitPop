@@ -12,7 +12,6 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_controller_target.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #include "chrome/browser/ui/tabs/hover_tab_selector.h"
-#import "third_party/GTM/AppKit/GTMWindowSheetController.h"
 
 @class CrTrackingArea;
 @class NewTabButton;
@@ -22,10 +21,12 @@
 @class TabStripView;
 
 class Browser;
-class ConstrainedWindowMac;
-class TabContents;
 class TabStripModelObserverBridge;
 class TabStripModel;
+
+namespace content {
+class WebContents;
+}
 
 // The interface for the tab strip controller's delegate.
 // Delegating TabStripModelObserverBridge's events (in lieu of directly
@@ -36,9 +37,6 @@ class TabStripModel;
 
 // Stripped down version of TabStripModelObserverBridge:selectTabWithContents.
 - (void)onActivateTabWithContents:(content::WebContents*)contents;
-
-// Stripped down version of TabStripModelObserverBridge:tabReplacedWithContents.
-- (void)onReplaceTabWithContents:(content::WebContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabChangedWithContents.
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
@@ -58,8 +56,7 @@ class TabStripModel;
 // http://www.chromium.org/developers/design-documents/tab-strip-mac
 @interface TabStripController :
   NSObject<TabControllerTarget,
-           URLDropTargetController,
-           GTMWindowSheetControllerDelegate> {
+           URLDropTargetController> {
  @private
   scoped_nsobject<TabStripView> tabStripView_;
   NSView* switchView_;  // weak
@@ -136,9 +133,6 @@ class TabStripModel;
   CGFloat leftIndentForControls_;
   CGFloat rightIndentForControls_;
 
-  // Manages per-tab sheets.
-  scoped_nsobject<GTMWindowSheetController> sheetController_;
-
   // Is the mouse currently inside the strip;
   BOOL mouseInside_;
 
@@ -174,7 +168,7 @@ class TabStripModel;
 // current placeholder.
 - (void)moveTabFromIndex:(NSInteger)from;
 
-// Drop a given TabContents at the location of the current placeholder.
+// Drop a given WebContents at the location of the current placeholder.
 // If there is no placeholder, it will go at the end. Used when dragging from
 // another window when we don't have access to the WebContents as part of our
 // strip. |frame| is in the coordinate system of the tab strip view and
@@ -183,7 +177,7 @@ class TabStripModel;
 // its previous window, setting |pinned| to YES will propagate that state to the
 // new window. Mini-tabs are either app or pinned tabs; the app state is stored
 // by the |contents|, but the |pinned| state is the caller's responsibility.
-- (void)dropTabContents:(TabContents*)contents
+- (void)dropWebContents:(content::WebContents*)contents
               withFrame:(NSRect)frame
             asPinnedTab:(BOOL)pinned;
 
@@ -237,27 +231,12 @@ class TabStripModel;
 // Default indentation for tabs (see |leftIndentForControls_|).
 + (CGFloat)defaultLeftIndentForControls;
 
-// Returns the (lazily created) window sheet controller of this window. Used
-// for the per-tab sheets.
-- (GTMWindowSheetController*)sheetController;
-
-// Destroys the window sheet controller of this window, if it exists.  The sheet
-// controller can be recreated by a subsequent call to |-sheetController|.  Must
-// not be called if any sheets are currently open.
-// TODO(viettrungluu): This is temporary code needed to allow sheets to work
-// (read: not crash) in fullscreen mode.  Once GTMWindowSheetController is
-// modified to support moving sheets between windows, this code can go away.
-// http://crbug.com/19093.
-- (void)destroySheetController;
-
 // Returns the currently active TabContentsController.
 - (TabContentsController*)activeTabContentsController;
 
-  // See comments in browser_window_controller.h for documentation about these
-  // functions.
-- (void)attachConstrainedWindow:(ConstrainedWindowMac*)window;
-- (void)removeConstrainedWindow:(ConstrainedWindowMac*)window;
-
 @end
+
+// Returns the parent view to use when showing a sheet for a given web contents.
+NSView* GetSheetParentViewForWebContents(content::WebContents* web_contents);
 
 #endif  // CHROME_BROWSER_UI_COCOA_TABS_TAB_STRIP_CONTROLLER_H_

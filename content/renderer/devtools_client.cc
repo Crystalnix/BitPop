@@ -19,8 +19,10 @@
 using WebKit::WebDevToolsFrontend;
 using WebKit::WebString;
 
+namespace content {
+
 DevToolsClient::DevToolsClient(RenderViewImpl* render_view)
-    : content::RenderViewObserver(render_view) {
+    : RenderViewObserver(render_view) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   web_tools_frontend_.reset(
       WebDevToolsFrontend::create(
@@ -62,14 +64,6 @@ void DevToolsClient::moveWindowBy(const WebKit::WebFloatPoint& offset) {
   Send(new DevToolsHostMsg_MoveWindow(routing_id(), offset.x, offset.y));
 }
 
-void DevToolsClient::requestDockWindow() {
-  Send(new DevToolsHostMsg_RequestDockWindow(routing_id()));
-}
-
-void DevToolsClient::requestUndockWindow() {
-  Send(new DevToolsHostMsg_RequestUndockWindow(routing_id()));
-}
-
 void DevToolsClient::requestSetDockSide(const WebKit::WebString& side) {
   Send(new DevToolsHostMsg_RequestSetDockSide(routing_id(), side.utf8()));
 }
@@ -99,3 +93,5 @@ void DevToolsClient::OnDispatchOnInspectorFrontend(const std::string& message) {
   web_tools_frontend_->dispatchOnInspectorFrontend(
       WebString::fromUTF8(message));
 }
+
+}  // namespace content

@@ -5,20 +5,19 @@
 #include "chrome/test/ui/ui_test.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/constrained_window_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/webui/test_web_dialog_delegate.h"
+#include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "ui/web_dialogs/constrained_web_dialog_ui.h"
+#include "ui/web_dialogs/test/test_web_dialog_delegate.h"
 
 using content::WebContents;
-using ui::ConstrainedWebDialogDelegate;
 using ui::WebDialogDelegate;
 
 namespace {
@@ -28,18 +27,18 @@ class ConstrainedWebDialogBrowserTestObserver
  public:
   explicit ConstrainedWebDialogBrowserTestObserver(WebContents* contents)
       : content::WebContentsObserver(contents),
-        tab_destroyed_(false) {
+        contents_destroyed_(false) {
   }
   virtual ~ConstrainedWebDialogBrowserTestObserver() {}
 
-  bool tab_destroyed() { return tab_destroyed_; }
+  bool contents_destroyed() { return contents_destroyed_; }
 
  private:
   virtual void WebContentsDestroyed(WebContents* tab) OVERRIDE {
-    tab_destroyed_ = true;
+    contents_destroyed_ = true;
   }
 
-  bool tab_destroyed_;
+  bool contents_destroyed_;
 };
 
 }  // namespace
@@ -49,55 +48,56 @@ class ConstrainedWebDialogBrowserTest : public InProcessBrowserTest {
   ConstrainedWebDialogBrowserTest() {}
 
  protected:
-  size_t GetConstrainedWindowCount(TabContents* tab_contents) const {
-    return tab_contents->
-        constrained_window_tab_helper()->constrained_window_count();
+  size_t GetConstrainedWindowCount(WebContents* web_contents) const {
+    ConstrainedWindowTabHelper* constrained_window_tab_helper =
+        ConstrainedWindowTabHelper::FromWebContents(web_contents);
+    return constrained_window_tab_helper->constrained_window_count();
   }
 };
 
 // Tests that opening/closing the constrained window won't crash it.
 IN_PROC_BROWSER_TEST_F(ConstrainedWebDialogBrowserTest, BasicTest) {
   // The delegate deletes itself.
-  WebDialogDelegate* delegate = new test::TestWebDialogDelegate(
+  WebDialogDelegate* delegate = new ui::test::TestWebDialogDelegate(
       GURL(chrome::kChromeUIConstrainedHTMLTestURL));
-  TabContents* tab_contents = chrome::GetActiveTabContents(browser());
-  ASSERT_TRUE(tab_contents);
+  WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  ASSERT_TRUE(web_contents);
 
   ConstrainedWebDialogDelegate* dialog_delegate =
-      ui::CreateConstrainedWebDialog(browser()->profile(),
-                                     delegate,
-                                     NULL,
-                                     tab_contents);
+      CreateConstrainedWebDialog(browser()->profile(),
+                                 delegate,
+                                 NULL,
+                                 web_contents);
   ASSERT_TRUE(dialog_delegate);
-  EXPECT_TRUE(dialog_delegate->window());
-  EXPECT_EQ(1U, GetConstrainedWindowCount(tab_contents));
+  EXPECT_TRUE(dialog_delegate->GetWindow());
+  EXPECT_EQ(1U, GetConstrainedWindowCount(web_contents));
 }
 
-// Tests that ReleaseTabContentsOnDialogClose() works.
+// Tests that ReleaseWebContentsOnDialogClose() works.
 IN_PROC_BROWSER_TEST_F(ConstrainedWebDialogBrowserTest,
-                       ReleaseTabContentsOnDialogClose) {
+                       ReleaseWebContentsOnDialogClose) {
   // The delegate deletes itself.
-  WebDialogDelegate* delegate = new test::TestWebDialogDelegate(
+  WebDialogDelegate* delegate = new ui::test::TestWebDialogDelegate(
       GURL(chrome::kChromeUIConstrainedHTMLTestURL));
-  TabContents* tab_contents = chrome::GetActiveTabContents(browser());
-  ASSERT_TRUE(tab_contents);
+  WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  ASSERT_TRUE(web_contents);
 
   ConstrainedWebDialogDelegate* dialog_delegate =
-      ui::CreateConstrainedWebDialog(browser()->profile(),
-                                     delegate,
-                                     NULL,
-                                     tab_contents);
+      CreateConstrainedWebDialog(browser()->profile(),
+                                 delegate,
+                                 NULL,
+                                 web_contents);
   ASSERT_TRUE(dialog_delegate);
-  scoped_ptr<TabContents> new_tab(dialog_delegate->tab());
+  scoped_ptr<WebContents> new_tab(dialog_delegate->GetWebContents());
   ASSERT_TRUE(new_tab.get());
-  ASSERT_EQ(1U, GetConstrainedWindowCount(tab_contents));
+  ASSERT_EQ(1U, GetConstrainedWindowCount(web_contents));
 
-  ConstrainedWebDialogBrowserTestObserver observer(new_tab->web_contents());
-  dialog_delegate->ReleaseTabContentsOnDialogClose();
+  ConstrainedWebDialogBrowserTestObserver observer(new_tab.get());
+  dialog_delegate->ReleaseWebContentsOnDialogClose();
   dialog_delegate->OnDialogCloseFromWebUI();
 
-  ASSERT_FALSE(observer.tab_destroyed());
-  EXPECT_EQ(0U, GetConstrainedWindowCount(tab_contents));
+  ASSERT_FALSE(observer.contents_destroyed());
+  EXPECT_EQ(0U, GetConstrainedWindowCount(web_contents));
   new_tab.reset();
-  EXPECT_TRUE(observer.tab_destroyed());
+  EXPECT_TRUE(observer.contents_destroyed());
 }

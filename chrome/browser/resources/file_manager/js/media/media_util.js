@@ -16,10 +16,15 @@ function ThumbnailLoader(url, opt_metadata, opt_mediaType) {
     return;
   }
 
+  this.fallbackUrl_ = null;
+  this.thumbnailUrl_ = null;
   if (opt_metadata.gdata) {
     var apps = opt_metadata.gdata.driveApps;
-    if (apps.length > 0 && apps[0].docIcon) {
-      this.fallbackUrl_ = apps[0].docIcon;
+    for (var i = 0; i < apps.length; ++i) {
+      if (apps[i].docIcon && apps[i].isPrimary) {
+        this.fallbackUrl_ = apps[i].docIcon;
+        break;
+      }
     }
   }
 
@@ -50,7 +55,7 @@ ThumbnailLoader.MAX_FILE_SIZE = 1 << 20; // 1 Mb
 /**
  * If an image file does not have an embedded thumbnail we might want to use
  * the image itself as a thumbnail. If the image is too large it hurts
- * the performance very much so we allow it only for moderately sized files.
+ * the performance a lot so we allow it only for moderately sized files.
  *
  * @param {Object} metadata Metadata object
  * @return {boolean} Whether it is OK to use the image url for a preview.
@@ -71,39 +76,106 @@ ThumbnailLoader.canUseImageUrl_ = function(metadata) {
  * @param {function(HTMLImageElement, object} opt_onSuccess Success callback,
  *   accepts the image and the transform.
  * @param {function} opt_onError Error callback.
+ * @param {function} opt_onGeneric Callback for generic image used.
  */
 ThumbnailLoader.prototype.load = function(
-    box, fill, opt_onSuccess, opt_onError) {
+    box, fill, opt_onSuccess, opt_onError, opt_onGeneric) {
   if (!this.thumbnailUrl_) {
     // Relevant CSS rules are in file_types.css.
     box.setAttribute('generic-thumbnail', this.mediaType_);
+    if (opt_onGeneric) opt_onGeneric();
     return;
   }
 
-  var img = box.ownerDocument.createElement('img');
-  img.onload = function() {
-    util.applyTransform(box, this.transform_);
-    ThumbnailLoader.centerImage_(box, img, fill,
-        this.transform_ && (this.transform_.rotate90 % 2 == 1));
+  this.image_ = box.ownerDocument.createElement('img');
+  this.image_.onload = function() {
+    this.attachImage(box, fill);
     if (opt_onSuccess)
-      opt_onSuccess(img, this.transform_);
-    box.textContent = '';
-    box.appendChild(img);
+      opt_onSuccess(this.image_, this.transform_);
   }.bind(this);
-  img.onerror = function() {
+  this.image_.onerror = function() {
     if (opt_onError)
       opt_onError();
-    if (this.fallbackUrl_)
+    if (this.fallbackUrl_) {
       new ThumbnailLoader(this.fallbackUrl_, null, this.mediaType_).
           load(box, fill, opt_onSuccess);
+    } else {
+      box.setAttribute('generic-thumbnail', this.mediaType_);
+    }
   }.bind(this);
 
-  if (img.src == this.thumbnailUrl_) {
+  if (this.image_.src == this.thumbnailUrl_) {
     console.warn('Thumnbnail already loaded: ' + this.thumbnailUrl_);
     return;
   }
 
-  img.src = this.thumbnailUrl_;
+  util.loadImage(this.image_, this.thumbnailUrl_);
+};
+
+/**
+ * @return {boolean} True if a valid image is loaded.
+ */
+ThumbnailLoader.prototype.hasValidImage = function() {
+  return !!(this.image_ && this.image_.width && this.image_.height);
+};
+
+/**
+ * @return {boolean} True if the image is rotated 90 degrees left or right.
+ * @private
+ */
+ThumbnailLoader.prototype.isRotated_ = function() {
+  return this.transform_ && (this.transform_.rotate90 % 2 == 1);
+};
+
+/**
+ * @return {number} Image width (corrected for rotation).
+ */
+ThumbnailLoader.prototype.getWidth = function() {
+  return this.isRotated_() ? this.image_.height : this.image_.width;
+};
+
+/**
+ * @return {number} Image height (corrected for rotation).
+ */
+ThumbnailLoader.prototype.getHeight = function() {
+  return this.isRotated_() ? this.image_.width : this.image_.height;
+};
+
+/**
+ * Load an image but do not attach it.
+ *
+ * @param {function(boolean)} callback Callback, parameter is true if the image
+ *   has loaded successfully or a stock icon has been used.
+ */
+ThumbnailLoader.prototype.loadDetachedImage = function(callback) {
+  if (!this.thumbnailUrl_) {
+    callback(true);
+    return;
+  }
+
+  this.image_ = new Image();
+  this.image_.onload = callback.bind(null, true);
+  this.image_.onerror = callback.bind(null, false);
+  util.loadImage(this.image_, this.thumbnailUrl_);
+};
+
+/**
+ * Attach the image to a given element.
+ * @param {Element} container Parent element.
+ * @param {boolean} fill True for fill, false for fit.
+ */
+ThumbnailLoader.prototype.attachImage = function(container, fill) {
+  if (!this.hasValidImage()) {
+    container.setAttribute('generic-thumbnail', this.mediaType_);
+    return;
+  }
+
+  util.applyTransform(container, this.transform_);
+  ThumbnailLoader.centerImage_(container, this.image_, fill, this.isRotated_());
+  if (this.image_.parentNode != container) {
+    container.textContent = '';
+    container.appendChild(this.image_);
+  }
 };
 
 /**

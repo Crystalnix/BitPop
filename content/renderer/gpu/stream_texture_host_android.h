@@ -7,17 +7,17 @@
 
 #include "base/memory/weak_ptr.h"
 #include "content/common/android/surface_texture_peer.h"
-#include "ipc/ipc_channel.h"
+#include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
 
 namespace gfx {
 class Size;
 }
 
-class GpuChannelHost;
 struct GpuStreamTextureMsg_MatrixChanged_Params;
 
 namespace content {
+class GpuChannelHost;
 
 // Class for handling all the IPC messages between the GPU process and
 // StreamTextureProxy.

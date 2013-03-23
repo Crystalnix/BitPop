@@ -17,9 +17,12 @@ std::string StorageTypeToString(quota::StorageType type) {
       return "temporary";
     case quota::kStorageTypePersistent:
       return "persistent";
-    default:
+    case quota::kStorageTypeSyncable:
+      return "syncable";
+    case quota::kStorageTypeUnknown:
       return "unknown";
   }
+  return "unknown";
 }
 
 }  // anonymous namespace
@@ -84,7 +87,7 @@ base::Value* PerOriginStorageInfo::NewValue() const {
   dict->SetString("type", StorageTypeToString(type_));
   dict->SetString("host", host_);
   if (in_use_ >= 0)
-    dict->SetBoolean("inUse", in_use_ ? true : false);
+    dict->SetBoolean("inUse", (in_use_ > 0));
   if (used_count_ >= 0)
     dict->SetInteger("usedCount", used_count_);
   if (!last_access_time_.is_null())

@@ -5,66 +5,24 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
-#include "base/synchronization/waitable_event.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/test/automation/automation_proxy.h"
-#include "chrome/test/automation/browser_proxy.h"
-#include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "net/cookies/cookie_store.h"
-#include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_context_getter.h"
+#include "content/public/test/browser_test_utils.h"
 
 using content::BrowserThread;
-
-namespace {
-
-void GetCookiesCallback(std::string* cookies_out,
-                        base::WaitableEvent* event,
-                        const std::string& cookies) {
-  *cookies_out = cookies;
-  event->Signal();
-}
-
-void GetCookiesOnIOThread(const GURL& url,
-                          net::URLRequestContextGetter* context_getter,
-                          base::WaitableEvent* event,
-                          std::string* cookies) {
-  net::CookieStore* cookie_store =
-      context_getter->GetURLRequestContext()->cookie_store();
-  cookie_store->GetCookiesWithOptionsAsync(
-      url, net::CookieOptions(),
-      base::Bind(&GetCookiesCallback,
-                 base::Unretained(cookies), base::Unretained(event)));
-}
-
-}  // namespace
 
 class FastShutdown : public InProcessBrowserTest {
  protected:
   FastShutdown() {
-  }
-
-  std::string GetCookies(const GURL& url) {
-    std::string cookies;
-    base::WaitableEvent event(true, false);
-    net::URLRequestContextGetter* context_getter =
-        browser()->profile()->GetRequestContext();
-
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&GetCookiesOnIOThread, url,
-                   make_scoped_refptr(context_getter), &event, &cookies));
-    event.Wait();
-    return cookies;
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) {
@@ -79,13 +37,13 @@ class FastShutdown : public InProcessBrowserTest {
 // would enable fast shutdown even if an onunload handler still existed.
 // Flaky on all platforms, http://crbug.com/89173
 #if !defined(OS_CHROMEOS)  // ChromeOS opens tabs instead of windows for popups.
-IN_PROC_BROWSER_TEST_F(FastShutdown, SlowTermination) {
+IN_PROC_BROWSER_TEST_F(FastShutdown, DISABLED_SlowTermination) {
   // Need to run these tests on http:// since we only allow cookies on that (and
   // https obviously).
   ASSERT_TRUE(test_server()->Start());
   // This page has an unload handler.
   GURL url = test_server()->GetURL("files/fast_shutdown/on_unloader.html");
-  EXPECT_EQ("", GetCookies(url));
+  EXPECT_EQ("", content::GetCookies(browser()->profile(), url));
 
   content::WindowedNotificationObserver window_observer(
       chrome::NOTIFICATION_BROWSER_WINDOW_READY,
@@ -110,7 +68,6 @@ IN_PROC_BROWSER_TEST_F(FastShutdown, SlowTermination) {
   chrome::CloseTab(browser());
   renderer_shutdown_observer.Wait();
 
-  
-  EXPECT_EQ("unloaded=ohyeah", GetCookies(url));
+  EXPECT_EQ("unloaded=ohyeah", content::GetCookies(browser()->profile(), url));
 }
 #endif

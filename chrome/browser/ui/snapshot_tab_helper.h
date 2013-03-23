@@ -6,20 +6,24 @@
 #define CHROME_BROWSER_UI_SNAPSHOT_TAB_HELPER_H_
 
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 
 class SkBitmap;
-class TabContents;
 
 // Per-tab class to handle snapshot functionality.
-class SnapshotTabHelper : public content::WebContentsObserver {
+class SnapshotTabHelper
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<SnapshotTabHelper> {
  public:
-  explicit SnapshotTabHelper(content::WebContents* tab);
   virtual ~SnapshotTabHelper();
 
   // Captures a snapshot of the page.
   void CaptureSnapshot();
 
  private:
+  explicit SnapshotTabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<SnapshotTabHelper>;
+
   // content::WebContentsObserver overrides:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 

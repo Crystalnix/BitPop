@@ -29,6 +29,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
@@ -70,9 +71,13 @@ class TestData {
 // whether it starts and finishes.
 class SimpleTestJob : public net::URLRequestTestJob {
  public:
-  explicit SimpleTestJob(net::URLRequest* request)
-      : net::URLRequestTestJob(request, test_headers(),
-                               TestData::GetInstance()->GetTestData(), true) {}
+  SimpleTestJob(net::URLRequest* request,
+                net::NetworkDelegate* network_delegate)
+      : net::URLRequestTestJob(request,
+                               network_delegate,
+                               test_headers(),
+                               TestData::GetInstance()->GetTestData(),
+                               true) {}
 
   virtual void GetResponseInfo(net::HttpResponseInfo* info) {
     net::URLRequestTestJob::GetResponseInfo(info);
@@ -114,10 +119,10 @@ class TestController {
   const GURL expected_url() {
     return expected_url_;
   }
-  void set_delegate(TestDelegate* delegate) {
+  void set_delegate(net::TestDelegate* delegate) {
     delegate_ = delegate;
   }
-  TestDelegate* delegate() {
+  net::TestDelegate* delegate() {
     return delegate_;
   }
   void set_use_delegate(bool value) {
@@ -135,7 +140,7 @@ class TestController {
   bool result_;
   bool use_delegate_;
   GURL expected_url_;
-  TestDelegate* delegate_;
+  net::TestDelegate* delegate_;
 
   friend struct DefaultSingletonTraits<TestController>;
 };
@@ -151,7 +156,7 @@ class PrintDialogCloudTest : public InProcessBrowserTest {
   // Must be static for handing into AddHostnameHandler.
   static net::URLRequest::ProtocolFactory Factory;
 
-  class AutoQuitDelegate : public TestDelegate {
+  class AutoQuitDelegate : public net::TestDelegate {
    public:
     AutoQuitDelegate() {}
 
@@ -220,18 +225,22 @@ class PrintDialogCloudTest : public InProcessBrowserTest {
   AutoQuitDelegate delegate_;
 };
 
-net::URLRequestJob* PrintDialogCloudTest::Factory(net::URLRequest* request,
-                                                  const std::string& scheme) {
+net::URLRequestJob* PrintDialogCloudTest::Factory(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
+    const std::string& scheme) {
   if (request &&
       (request->url() == TestController::GetInstance()->expected_url())) {
     if (TestController::GetInstance()->use_delegate())
       request->set_delegate(TestController::GetInstance()->delegate());
     TestController::GetInstance()->set_result(true);
-    return new SimpleTestJob(request);
+    return new SimpleTestJob(request, network_delegate);
   }
   return new net::URLRequestTestJob(request,
+                                    network_delegate,
                                     net::URLRequestTestJob::test_headers(),
-                                    "", true);
+                                    "",
+                                    true);
 }
 
 #if defined(OS_WIN)

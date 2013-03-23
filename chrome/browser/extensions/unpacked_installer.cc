@@ -7,15 +7,18 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
+#include "chrome/browser/extensions/requirements_checker.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/string_ordinal.h"
+#include "content/public/browser/browser_thread.h"
+#include "sync/api/string_ordinal.h"
 
 using content::BrowserThread;
 using extensions::Extension;
@@ -59,7 +62,8 @@ SimpleExtensionLoadPrompt::~SimpleExtensionLoadPrompt() {
 }
 
 void SimpleExtensionLoadPrompt::ShowPrompt() {
-  install_ui_->ConfirmInstall(this, extension_);
+  install_ui_->ConfirmInstall(
+      this, extension_, ExtensionInstallPrompt::GetDefaultShowDialogCallback());
 }
 
 void SimpleExtensionLoadPrompt::InstallUIProceed() {
@@ -67,7 +71,10 @@ void SimpleExtensionLoadPrompt::InstallUIProceed() {
     extensions::PermissionsUpdater perms_updater(service_weak_->profile());
     perms_updater.GrantActivePermissions(extension_, false);
     service_weak_->OnExtensionInstalled(
-        extension_, false, StringOrdinal());  // Not from web store.
+        extension_,
+        syncer::StringOrdinal(),
+        false /* no requirement errors */,
+        false /* don't wait for idle */);
   }
   delete this;
 }
@@ -89,7 +96,9 @@ scoped_refptr<UnpackedInstaller> UnpackedInstaller::Create(
 
 UnpackedInstaller::UnpackedInstaller(ExtensionService* extension_service)
     : service_weak_(extension_service->AsWeakPtr()),
-      prompt_for_plugins_(true) {
+      prompt_for_plugins_(true),
+      requirements_checker_(new RequirementsChecker()),
+      require_modern_manifest_version_(true) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -99,12 +108,16 @@ UnpackedInstaller::~UnpackedInstaller() {
 }
 
 void UnpackedInstaller::Load(const FilePath& path_in) {
+  DCHECK(extension_path_.empty());
   extension_path_ = path_in;
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(&UnpackedInstaller::GetAbsolutePath, this));
 }
 
 void UnpackedInstaller::LoadFromCommandLine(const FilePath& path_in) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(extension_path_.empty());
+
   if (!service_weak_.get())
     return;
   // Load extensions from the command line synchronously to avoid a race
@@ -119,29 +132,54 @@ void UnpackedInstaller::LoadFromCommandLine(const FilePath& path_in) {
     return;
   }
 
+  std::string error;
+  extension_ = extension_file_util::LoadExtension(
+      extension_path_,
+      Extension::LOAD,
+      GetFlags(),
+      &error);
+
+  if (!extension_.get()) {
+    ReportExtensionLoadError(error);
+    return;
+  }
+
+  CheckRequirements();
+}
+
+void UnpackedInstaller::CheckRequirements() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  requirements_checker_->Check(
+      extension_,
+      base::Bind(&UnpackedInstaller::OnRequirementsChecked, this));
+}
+
+void UnpackedInstaller::OnRequirementsChecked(
+    std::vector<std::string> requirement_errors) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (!requirement_errors.empty()) {
+    ReportExtensionLoadError(JoinString(requirement_errors, ' '));
+    return;
+  }
+
+  OnLoaded();
+}
+
+int UnpackedInstaller::GetFlags() {
   std::string id = Extension::GenerateIdForPath(extension_path_);
   bool allow_file_access =
       Extension::ShouldAlwaysAllowFileAccess(Extension::LOAD);
   if (service_weak_->extension_prefs()->HasAllowFileAccessSetting(id))
     allow_file_access = service_weak_->extension_prefs()->AllowFileAccess(id);
 
-  int flags = Extension::REQUIRE_MODERN_MANIFEST_VERSION;
+  int result = Extension::FOLLOW_SYMLINKS_ANYWHERE;
   if (allow_file_access)
-    flags |= Extension::ALLOW_FILE_ACCESS;
+    result |= Extension::ALLOW_FILE_ACCESS;
+  if (require_modern_manifest_version_)
+    result |= Extension::REQUIRE_MODERN_MANIFEST_VERSION;
 
-  std::string error;
-  scoped_refptr<const Extension> extension(extension_file_util::LoadExtension(
-      extension_path_,
-      Extension::LOAD,
-      flags | Extension::FOLLOW_SYMLINKS_ANYWHERE,
-      &error));
-
-  if (!extension) {
-    ReportExtensionLoadError(error);
-    return;
-  }
-
-  OnLoaded(extension);
+  return result;
 }
 
 bool UnpackedInstaller::IsLoadingUnpackedAllowed() const {
@@ -171,33 +209,22 @@ void UnpackedInstaller::CheckExtensionFileAccess() {
     return;
   }
 
-  std::string id = Extension::GenerateIdForPath(extension_path_);
-  // Unpacked extensions default to allowing file access, but if that has been
-  // overridden, don't reset the value.
-  bool allow_file_access =
-      Extension::ShouldAlwaysAllowFileAccess(Extension::LOAD);
-  if (service_weak_->extension_prefs()->HasAllowFileAccessSetting(id))
-    allow_file_access = service_weak_->extension_prefs()->AllowFileAccess(id);
-
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(
-          &UnpackedInstaller::LoadWithFileAccess,
-          this, allow_file_access));
+          &UnpackedInstaller::LoadWithFileAccess, this, GetFlags()));
 }
 
-void UnpackedInstaller::LoadWithFileAccess(bool allow_file_access) {
+void UnpackedInstaller::LoadWithFileAccess(int flags) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  int flags = Extension::REQUIRE_MODERN_MANIFEST_VERSION;
-  if (allow_file_access)
-    flags |= Extension::ALLOW_FILE_ACCESS;
+
   std::string error;
-  scoped_refptr<const Extension> extension(extension_file_util::LoadExtension(
+  extension_ = extension_file_util::LoadExtension(
       extension_path_,
       Extension::LOAD,
-      flags | Extension::FOLLOW_SYMLINKS_ANYWHERE,
-      &error));
+      flags,
+      &error);
 
-  if (!extension) {
+  if (!extension_.get()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
         base::Bind(
             &UnpackedInstaller::ReportExtensionLoadError,
@@ -206,9 +233,7 @@ void UnpackedInstaller::LoadWithFileAccess(bool allow_file_access) {
   }
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(
-          &UnpackedInstaller::OnLoaded,
-          this, extension));
+      base::Bind(&UnpackedInstaller::CheckRequirements, this));
 }
 
 void UnpackedInstaller::ReportExtensionLoadError(const std::string &error) {
@@ -218,8 +243,7 @@ void UnpackedInstaller::ReportExtensionLoadError(const std::string &error) {
   service_weak_->ReportExtensionLoadError(extension_path_, error, true);
 }
 
-void UnpackedInstaller::OnLoaded(
-    const scoped_refptr<const Extension>& extension) {
+void UnpackedInstaller::OnLoaded() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!service_weak_.get())
     return;
@@ -227,21 +251,22 @@ void UnpackedInstaller::OnLoaded(
       service_weak_->disabled_extensions();
   if (service_weak_->show_extensions_prompts() &&
       prompt_for_plugins_ &&
-      !extension->plugins().empty() &&
-      !disabled_extensions->Contains(extension->id())) {
+      !extension_->plugins().empty() &&
+      !disabled_extensions->Contains(extension_->id())) {
     SimpleExtensionLoadPrompt* prompt = new SimpleExtensionLoadPrompt(
         service_weak_->profile(),
         service_weak_,
-        extension);
+        extension_);
     prompt->ShowPrompt();
     return;  // continues in SimpleExtensionLoadPrompt::InstallPrompt*
   }
 
   PermissionsUpdater perms_updater(service_weak_->profile());
-  perms_updater.GrantActivePermissions(extension, false);
-  service_weak_->OnExtensionInstalled(extension,
-                                      false,  // Not from web store.
-                                      StringOrdinal());
+  perms_updater.GrantActivePermissions(extension_, false);
+  service_weak_->OnExtensionInstalled(extension_,
+                                      syncer::StringOrdinal(),
+                                      false /* no requirement errors */,
+                                      false /* don't wait for idle */);
 }
 
 }  // namespace extensions

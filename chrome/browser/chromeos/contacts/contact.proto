@@ -12,12 +12,12 @@ package contacts;
 
 // A contact, roughly based on the GData Contact kind:
 // https://developers.google.com/gdata/docs/2.0/elements#gdContactKind
-// All strings are UTF-8.
+// All strings are UTF-8 with Unicode byte order marks stripped out.
 message Contact {
-  // Next ID to use: 15
+  // Next ID to use: 16
 
   // Provider-assigned unique identifier.
-  optional string provider_id = 1;
+  optional string contact_id = 1;
 
   // Last time at which this contact was updated within the upstream provider,
   // as given by base::Time::ToInternalValue().
@@ -25,6 +25,10 @@ message Contact {
 
   // Has the contact been deleted recently within the upstream provider?
   optional bool deleted = 3 [default = false];
+
+  // Affinity between the user and this contact, in the range [0.0, 1.0].
+  // Unset if the affinity is unknown.
+  optional float affinity = 15;
 
   // Taken from https://developers.google.com/gdata/docs/2.0/elements#gdName.
   optional string full_name = 4;
@@ -100,9 +104,13 @@ message Contact {
 
 // Singleton message used by ContactDatabase to store update-related metadata.
 message UpdateMetadata {
-  // Next ID to use: 2
+  // Next ID to use: 3
 
   // Time at which the last successful update was started, as given by
   // base::Time::ToInternalValue().
   optional int64 last_update_start_time = 1;
+
+  // Latest time that we've seen in a contact's |update_time| field.  Note that
+  // the time may have come from a deleted contact that has been discarded.
+  optional int64 last_contact_update_time = 2;
 }

@@ -7,6 +7,9 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_icon_factory.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -16,18 +19,15 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
 #include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/base/events/event.h"
+#include "ui/gfx/canvas.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -42,35 +42,19 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
     : owner_(owner),
       page_action_(page_action),
       browser_(browser),
-      ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)),
       current_tab_id_(-1),
       preview_enabled_(false),
       popup_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
           page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetTabContents())),
+              SessionID::IdForTab(owner->GetWebContents())),
           this)) {
   const Extension* extension = owner_->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
 
-  // Load all the icons declared in the manifest. This is the contents of the
-  // icons array, plus the default_icon property, if any.
-  std::vector<std::string> icon_paths(*page_action->icon_paths());
-  if (!page_action_->default_icon_path().empty())
-    icon_paths.push_back(page_action_->default_icon_path());
-
-  for (std::vector<std::string>::iterator i(icon_paths.begin());
-       i != icon_paths.end(); ++i) {
-    tracker_.LoadImage(extension, extension->GetResource(*i),
-                       gfx::Size(Extension::kPageActionIconMaxSize,
-                                 Extension::kPageActionIconMaxSize),
-                       ImageLoadingTracker::DONT_CACHE);
-  }
-
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(
-                     owner_->profile()->GetOriginalProfile()));
+  icon_factory_.reset(
+      new ExtensionActionIconFactory(extension, page_action, this));
 
   set_accessibility_focusable(true);
   set_context_menu_controller(this);
@@ -125,21 +109,23 @@ PageActionImageView::~PageActionImageView() {
   HidePopup();
 }
 
-void PageActionImageView::ExecuteAction(int button) {
-  TabContents* tab_contents = owner_->GetTabContents();
-  if (!tab_contents)
+void PageActionImageView::ExecuteAction(
+    ExtensionPopup::ShowAction show_action) {
+  WebContents* web_contents = owner_->GetWebContents();
+  if (!web_contents)
     return;
 
+  extensions::TabHelper* extensions_tab_helper =
+      extensions::TabHelper::FromWebContents(web_contents);
   LocationBarController* controller =
-      tab_contents->extension_tab_helper()->location_bar_controller();
+      extensions_tab_helper->location_bar_controller();
 
-  // 1 is left click.
   switch (controller->OnClicked(page_action_->extension_id(), 1)) {
     case LocationBarController::ACTION_NONE:
       break;
 
     case LocationBarController::ACTION_SHOW_POPUP:
-      ShowPopupWithURL(page_action_->GetPopupUrl(current_tab_id_));
+      ShowPopupWithURL(page_action_->GetPopupUrl(current_tab_id_), show_action);
       break;
 
     case LocationBarController::ACTION_SHOW_CONTEXT_MENU:
@@ -151,7 +137,8 @@ void PageActionImageView::ExecuteAction(int button) {
       break;
 
     case LocationBarController::ACTION_SHOW_SCRIPT_POPUP:
-      ShowPopupWithURL(ExtensionInfoUI::GetURL(page_action_->extension_id()));
+      ShowPopupWithURL(ExtensionInfoUI::GetURL(page_action_->extension_id()),
+                       show_action);
       break;
   }
 }
@@ -161,61 +148,33 @@ void PageActionImageView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->name = UTF8ToUTF16(tooltip_);
 }
 
-bool PageActionImageView::OnMousePressed(const views::MouseEvent& event) {
+bool PageActionImageView::OnMousePressed(const ui::MouseEvent& event) {
   // We want to show the bubble on mouse release; that is the standard behavior
   // for buttons.  (Also, triggering on mouse press causes bugs like
   // http://crbug.com/33155.)
   return true;
 }
 
-void PageActionImageView::OnMouseReleased(const views::MouseEvent& event) {
-  if (!HitTest(event.location()))
+void PageActionImageView::OnMouseReleased(const ui::MouseEvent& event) {
+  if (!HitTestPoint(event.location()))
     return;
 
-  int button = -1;
-  if (event.IsLeftMouseButton()) {
-    button = 1;
-  } else if (event.IsMiddleMouseButton()) {
-    button = 2;
-  } else if (event.IsRightMouseButton()) {
+  if (event.IsRightMouseButton()) {
     // Don't show a menu here, its handled in View::ProcessMouseReleased. We
     // show the context menu by way of being the ContextMenuController.
     return;
   }
 
-  ExecuteAction(button);
+  ExecuteAction(ExtensionPopup::SHOW);
 }
 
-bool PageActionImageView::OnKeyPressed(const views::KeyEvent& event) {
+bool PageActionImageView::OnKeyPressed(const ui::KeyEvent& event) {
   if (event.key_code() == ui::VKEY_SPACE ||
       event.key_code() == ui::VKEY_RETURN) {
-    ExecuteAction(1);
+    ExecuteAction(ExtensionPopup::SHOW);
     return true;
   }
   return false;
-}
-
-void PageActionImageView::OnImageLoaded(const gfx::Image& image,
-                                        const std::string& extension_id,
-                                        int index) {
-  // We loaded icons()->size() icons, plus one extra if the page action had
-  // a default icon.
-  int total_icons = static_cast<int>(page_action_->icon_paths()->size());
-  if (!page_action_->default_icon_path().empty())
-    total_icons++;
-  DCHECK(index < total_icons);
-
-  // Map the index of the loaded image back to its name. If we ever get an
-  // index greater than the number of icons, it must be the default icon.
-  if (index < static_cast<int>(page_action_->icon_paths()->size()))
-    page_action_->CacheIcon(page_action_->icon_paths()->at(index), image);
-  else
-    page_action_->CacheIcon(page_action_->default_icon_path(), image);
-
-  // During object construction owner_ will be NULL.
-  TabContents* tab_contents = owner_ ? owner_->GetTabContents() : NULL;
-  if (tab_contents)
-    UpdateVisibility(tab_contents->web_contents(), current_url_);
 }
 
 void PageActionImageView::ShowContextMenuForView(View* source,
@@ -226,13 +185,14 @@ void PageActionImageView::ShowContextMenuForView(View* source,
     return;
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_model(
-      new ExtensionContextMenuModel(extension, browser_));
+      new ExtensionContextMenuModel(extension, browser_, this));
   views::MenuModelAdapter menu_model_adapter(context_menu_model.get());
   menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
   if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(screen_loc, size()),
-          views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS) ==
+          views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS |
+          views::MenuRunner::CONTEXT_MENU) ==
       views::MenuRunner::MENU_DELETED)
     return;
 }
@@ -241,7 +201,7 @@ bool PageActionImageView::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
   DCHECK(visible());  // Should not have happened due to CanHandleAccelerator.
 
-  ExecuteAction(1);  // 1 means left-click.
+  ExecuteAction(ExtensionPopup::SHOW);
   return true;
 }
 
@@ -269,12 +229,15 @@ void PageActionImageView::UpdateVisibility(WebContents* contents,
   SetTooltipText(UTF8ToUTF16(tooltip_));
 
   // Set the image.
-  gfx::Image icon = page_action_->GetIcon(current_tab_id_);
-  if (!icon.IsEmpty()) {
+  gfx::Image icon = icon_factory_->GetIcon(current_tab_id_);
+  if (!icon.IsEmpty())
     SetImage(*icon.ToImageSkia());
-  }
 
   SetVisible(true);
+}
+
+void PageActionImageView::InspectPopup(ExtensionAction* action) {
+  ExecuteAction(ExtensionPopup::SHOW_AND_INSPECT);
 }
 
 void PageActionImageView::OnWidgetClosing(views::Widget* widget) {
@@ -283,24 +246,25 @@ void PageActionImageView::OnWidgetClosing(views::Widget* widget) {
   popup_ = NULL;
 }
 
-void PageActionImageView::Observe(int type,
-                                  const content::NotificationSource& source,
-                                  const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_UNLOADED, type);
-  const Extension* unloaded_extension =
-      content::Details<extensions::UnloadedExtensionInfo>(details)->extension;
-  if (page_action_ == unloaded_extension ->page_action())
-    owner_->UpdatePageActions();
+void PageActionImageView::OnIconUpdated() {
+  WebContents* web_contents = owner_->GetWebContents();
+  if (web_contents)
+    UpdateVisibility(web_contents, current_url_);
 }
 
-void PageActionImageView::OnIconChanged(
-    const ExtensionAction::IconAnimation& animation) {
-  TabContents* tab_contents = owner_->GetTabContents();
-  if (tab_contents)
-    UpdateVisibility(tab_contents->web_contents(), current_url_);
+void PageActionImageView::OnIconChanged() {
+  OnIconUpdated();
 }
 
-void PageActionImageView::ShowPopupWithURL(const GURL& popup_url) {
+void PageActionImageView::PaintChildren(gfx::Canvas* canvas) {
+  View::PaintChildren(canvas);
+  if (current_tab_id_ >= 0)
+    page_action_->PaintBadge(canvas, GetLocalBounds(), current_tab_id_);
+}
+
+void PageActionImageView::ShowPopupWithURL(
+    const GURL& popup_url,
+    ExtensionPopup::ShowAction show_action) {
   bool popup_showing = popup_ != NULL;
 
   // Always hide the current popup. Only one popup at a time.
@@ -313,7 +277,8 @@ void PageActionImageView::ShowPopupWithURL(const GURL& popup_url) {
   views::BubbleBorder::ArrowLocation arrow_location = base::i18n::IsRTL() ?
       views::BubbleBorder::TOP_LEFT : views::BubbleBorder::TOP_RIGHT;
 
-  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, this, arrow_location);
+  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, this, arrow_location,
+                                     show_action);
   popup_->GetWidget()->AddObserver(this);
 }
 

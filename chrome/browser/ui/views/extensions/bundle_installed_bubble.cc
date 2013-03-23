@@ -33,11 +33,7 @@ const int kColumnSetId = 0;
 const int kLeftColumnWidth = 325;
 
 // Heading font size correction.
-#if defined(CROS_FONTS_USING_BCI)
-const int kHeadingFontSizeDelta = 0;
-#else
 const int kHeadingFontSizeDelta = 1;
-#endif
 
 class BundleInstalledBubble : public views::BubbleDelegateView,
                               public views::ButtonListener {
@@ -119,7 +115,7 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
           l10n_util::GetStringFUTF16(
               IDS_EXTENSION_PERMISSION_LINE, extension_name));
       extension_label->SetMultiLine(true);
-      extension_label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+      extension_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
       extension_label->SizeToFit(kLeftColumnWidth);
       layout->AddView(extension_label);
     }
@@ -129,11 +125,11 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
     views::ImageButton* button = new views::ImageButton(listener);
-    button->SetImage(views::CustomButton::BS_NORMAL,
+    button->SetImage(views::CustomButton::STATE_NORMAL,
                      rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
-    button->SetImage(views::CustomButton::BS_HOT,
+    button->SetImage(views::CustomButton::STATE_HOVERED,
                      rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
-    button->SetImage(views::CustomButton::BS_PUSHED,
+    button->SetImage(views::CustomButton::STATE_PRESSED,
                      rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
     layout->AddView(button);
   }
@@ -145,14 +141,14 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
 
     views::Label* heading_label = new views::Label(heading, bold_font);
     heading_label->SetMultiLine(true);
-    heading_label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+    heading_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     heading_label->SizeToFit(kLeftColumnWidth);
     layout->AddView(heading_label);
   }
 
   // views::ButtonListener implementation:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE {
+                             const ui::Event& event) OVERRIDE {
     StartFade(false);
   }
 

@@ -6,15 +6,15 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/renderer/extensions/extension_dispatcher.h"
+#include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_groups.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/error_utils.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
@@ -36,13 +36,13 @@ using WebKit::WebView;
 
 namespace extensions {
 
-UserScriptScheduler::UserScriptScheduler(
-    WebFrame* frame, ExtensionDispatcher* extension_dispatcher)
+UserScriptScheduler::UserScriptScheduler(WebFrame* frame,
+                                         Dispatcher* dispatcher)
     : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       frame_(frame),
       current_location_(UserScript::UNDEFINED),
       has_run_idle_(false),
-      extension_dispatcher_(extension_dispatcher) {
+      dispatcher_(dispatcher) {
   for (int i = UserScript::UNDEFINED; i < UserScript::RUN_LOCATION_LAST; ++i) {
     pending_execution_map_[static_cast<UserScript::RunLocation>(i)] =
       std::queue<linked_ptr<ExtensionMsg_ExecuteCode_Params> >();
@@ -115,7 +115,7 @@ void UserScriptScheduler::MaybeRun() {
 
   if (!has_run_idle_ && current_location_ == UserScript::DOCUMENT_IDLE) {
     has_run_idle_ = true;
-    extension_dispatcher_->user_script_slave()->InjectScripts(
+    dispatcher_->user_script_slave()->InjectScripts(
         frame_, UserScript::DOCUMENT_IDLE);
   }
 
@@ -134,7 +134,7 @@ void UserScriptScheduler::MaybeRun() {
 
 void UserScriptScheduler::ExecuteCodeImpl(
     const ExtensionMsg_ExecuteCode_Params& params) {
-  const Extension* extension = extension_dispatcher_->extensions()->GetByID(
+  const Extension* extension = dispatcher_->extensions()->GetByID(
       params.extension_id);
   content::RenderView* render_view =
       content::RenderView::FromWebView(frame_->view());
@@ -159,9 +159,11 @@ void UserScriptScheduler::ExecuteCodeImpl(
   if (params.all_frames)
     GetAllChildFrames(frame_, &frame_vector);
 
+  std::string error;
+
   for (std::vector<WebFrame*>::iterator frame_it = frame_vector.begin();
        frame_it != frame_vector.end(); ++frame_it) {
-    WebFrame* frame = *frame_it;
+    WebFrame* child_frame = *frame_it;
     if (params.is_javascript) {
       // We recheck access here in the renderer for extra safety against races
       // with navigation.
@@ -173,23 +175,18 @@ void UserScriptScheduler::ExecuteCodeImpl(
       //
       // For child frames, we just skip ones the extension doesn't have access
       // to and carry on.
-      if (!extension->CanExecuteScriptOnPage(frame->document().url(),
+      if (!extension->CanExecuteScriptOnPage(child_frame->document().url(),
+                                             frame_->document().url(),
                                              extension_helper->tab_id(),
                                              NULL,
                                              NULL)) {
-        if (frame->parent()) {
+        if (child_frame->parent()) {
           continue;
         } else {
-          render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
-              render_view->GetRoutingID(),
-              params.request_id,
-              ExtensionErrorUtils::FormatErrorMessage(
-                  extension_manifest_errors::kCannotAccessPage,
-                  frame->document().url().spec()),
-              -1,
-              GURL(""),
-              execution_results));
-          return;
+          error = ErrorUtils::FormatErrorMessage(
+              extension_manifest_errors::kCannotAccessPage,
+              child_frame->document().url().spec());
+          break;
         }
       }
 
@@ -202,17 +199,16 @@ void UserScriptScheduler::ExecuteCodeImpl(
 
       scoped_ptr<content::V8ValueConverter> v8_converter(
           content::V8ValueConverter::create());
-      v8_converter->SetUndefinedAllowed(true);
       v8::Handle<v8::Value> script_value;
       if (params.in_main_world) {
-        script_value = frame->executeScriptAndReturnValue(source);
+        script_value = child_frame->executeScriptAndReturnValue(source);
       } else {
         WebKit::WebVector<v8::Local<v8::Value> > results;
         std::vector<WebScriptSource> sources;
         sources.push_back(source);
-        frame->executeScriptInIsolatedWorld(
-            extension_dispatcher_->user_script_slave()->
-                GetIsolatedWorldIdForExtension(extension, frame),
+        child_frame->executeScriptInIsolatedWorld(
+            dispatcher_->user_script_slave()->
+                GetIsolatedWorldIdForExtension(extension, child_frame),
             &sources.front(), sources.size(), EXTENSION_GROUP_CONTENT_SCRIPTS,
             &results);
         // We only expect one value back since we only pushed one source
@@ -222,11 +218,14 @@ void UserScriptScheduler::ExecuteCodeImpl(
       if (!script_value.IsEmpty()) {
         base::Value* base_val =
             v8_converter->FromV8Value(script_value, context);
-        execution_results.Append(base_val);
+        // Always append an execution result (i.e. no result == null result) so
+        // that |execution_results| lines up with the frames.
+        execution_results.Append(base_val ? base_val :
+                                            base::Value::CreateNullValue());
         script_value.Clear();
       }
     } else {
-      frame->document().insertUserStyleSheet(
+      child_frame->document().insertUserStyleSheet(
           WebString::fromUTF8(params.code),
           // Author level is consistent with WebView::addUserStyleSheet.
           WebDocument::UserStyleAuthorLevel);
@@ -236,7 +235,7 @@ void UserScriptScheduler::ExecuteCodeImpl(
   render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
       render_view->GetRoutingID(),
       params.request_id,
-      "",  // no error
+      error,
       render_view->GetPageId(),
       UserScriptSlave::GetDataSourceURLForFrame(frame_),
       execution_results));

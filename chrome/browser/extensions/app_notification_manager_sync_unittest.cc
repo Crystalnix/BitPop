@@ -229,7 +229,7 @@ class AppNotificationManagerSyncTest : public testing::Test {
   content::TestBrowserThread file_thread_;
 
   // We keep two TemplateURLServices to test syncing between them.
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingProfile> profile_;
   scoped_refptr<AppNotificationManager> model_;
 
@@ -479,7 +479,7 @@ TEST_F(AppNotificationManagerSyncTest, ModelAssocBothNonEmptyTitleMismatch) {
       syncer::APP_NOTIFICATIONS,
       initial_data,
       PassProcessor(),
-      error_handler.PassAs<syncer::SyncErrorFactory>());
+      error_handler.PassAs<syncer::SyncErrorFactory>()).error();
 
   EXPECT_TRUE(sync_error.IsSet());
   EXPECT_EQ(syncer::APP_NOTIFICATIONS, sync_error.type());
@@ -512,7 +512,7 @@ TEST_F(AppNotificationManagerSyncTest, ModelAssocBothNonEmptyMatchesLocal) {
       syncer::APP_NOTIFICATIONS,
       initial_data,
       PassProcessor(),
-      error_handler.PassAs<syncer::SyncErrorFactory>());
+      error_handler.PassAs<syncer::SyncErrorFactory>()).error();
 
   EXPECT_TRUE(sync_error.IsSet());
   EXPECT_EQ(syncer::APP_NOTIFICATIONS, sync_error.type());
@@ -571,7 +571,9 @@ TEST_F(AppNotificationManagerSyncTest, ProcessSyncChangesNonEmptyModel) {
 }
 
 // Process sync changes should ignore a bad ADD.
-TEST_F(AppNotificationManagerSyncTest, ProcessSyncChangesIgnoreBadAdd) {
+// Hangs: http://crbug.com/149712
+TEST_F(AppNotificationManagerSyncTest,
+       DISABLED_ProcessSyncChangesIgnoreBadAdd) {
   AppNotification* n1 = CreateNotification(1);
   model()->Add(n1);
   AppNotification* n2 = CreateNotification(2);
@@ -619,7 +621,9 @@ TEST_F(AppNotificationManagerSyncTest, ProcessSyncChangesIgnoreBadDelete) {
 }
 
 // Process sync changes should ignore bad UPDATEs.
-TEST_F(AppNotificationManagerSyncTest, ProcessSyncChangesIgnoreBadUpdates) {
+// Hangs: http://crbug.com/149712
+TEST_F(AppNotificationManagerSyncTest,
+       DISABLED_ProcessSyncChangesIgnoreBadUpdates) {
   AppNotification* n1 = CreateNotification(1);
   model()->Add(n1);
   AppNotification* n2 = CreateNotification(2);

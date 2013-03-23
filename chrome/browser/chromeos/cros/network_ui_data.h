@@ -13,6 +13,7 @@
 #include "chrome/browser/chromeos/cros/certificate_pattern.h"
 #include "chrome/browser/chromeos/cros/enum_mapper.h"
 #include "chrome/browser/chromeos/cros/network_constants.h"
+#include "chromeos/network/onc/onc_constants.h"
 
 namespace chromeos {
 
@@ -25,23 +26,16 @@ class NetworkPropertyUIData;
 // |network|:
 //
 //      NetworkUIData ui_data;
-//      ui_data.set_onc_source(NetworkUIData::ONC_SOURCE_USER_IMPORT);
+//      ui_data.set_onc_source(onc::ONC_SOURCE_USER_IMPORT);
 //      ui_data.FillDictionary(network->ui_data());
 class NetworkUIData {
  public:
-  // Indicates from which source an ONC blob comes from.
-  enum ONCSource {
-    ONC_SOURCE_NONE,
-    ONC_SOURCE_USER_IMPORT,
-    ONC_SOURCE_DEVICE_POLICY,
-    ONC_SOURCE_USER_POLICY,
-  };
   NetworkUIData();
   explicit NetworkUIData(const base::DictionaryValue& dict);
   ~NetworkUIData();
 
-  void set_onc_source(ONCSource onc_source) { onc_source_ = onc_source; }
-  ONCSource onc_source() const { return onc_source_; }
+  void set_onc_source(onc::ONCSource onc_source) { onc_source_ = onc_source; }
+  onc::ONCSource onc_source() const { return onc_source_; }
 
   void set_certificate_pattern(const CertificatePattern& pattern) {
     certificate_pattern_ = pattern;
@@ -56,8 +50,8 @@ class NetworkUIData {
     return certificate_type_;
   }
   bool is_managed() const {
-    return onc_source_ == ONC_SOURCE_DEVICE_POLICY ||
-        onc_source_ == ONC_SOURCE_USER_POLICY;
+    return onc_source_ == onc::ONC_SOURCE_DEVICE_POLICY ||
+        onc_source_ == onc::ONC_SOURCE_USER_POLICY;
   }
 
   // Fills in |dict| with the currently configured values. This will write the
@@ -76,14 +70,14 @@ class NetworkUIData {
   static const char kKeyCertificateType[];
 
  private:
-  static EnumMapper<ONCSource>& GetONCSourceMapper();
+  static EnumMapper<onc::ONCSource>& GetONCSourceMapper();
   static EnumMapper<ClientCertType>& GetClientCertMapper();
 
   CertificatePattern certificate_pattern_;
-  ONCSource onc_source_;
+  onc::ONCSource onc_source_;
   ClientCertType certificate_type_;
 
-  static const EnumMapper<NetworkUIData::ONCSource>::Pair kONCSourceTable[];
+  static const EnumMapper<onc::ONCSource>::Pair kONCSourceTable[];
   static const EnumMapper<ClientCertType>::Pair kClientCertTable[];
 };
 
@@ -106,10 +100,6 @@ class NetworkPropertyUIData {
 
   // Initializes the object by calling Reset() with the provided ui_data.
   explicit NetworkPropertyUIData(const NetworkUIData& ui_data);
-
-  // Initializes the object with the given values. |default_value| may be NULL
-  // to specify no default value is present. Takes ownership of |default_value|.
-  NetworkPropertyUIData(Controller controller, base::Value* default_value);
 
   // Resets the property to the controller specified by the given |ui_data| and
   // clears the default value.

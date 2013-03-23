@@ -14,6 +14,7 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/file_path.h"
 #include "base/string16.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -27,6 +28,14 @@ class WorkItemList;
 // independently.
 class InstallUtil {
  public:
+  // Get the path to this distribution's Active Setup registry entries.
+  // e.g. Software\Microsoft\Active Setup\Installed Components\<dist_guid>
+  static string16 GetActiveSetupPath(BrowserDistribution* dist);
+
+  // Attempts to trigger the command that would be run by Active Setup for a
+  // system-level Chrome. For use only when system-level Chrome is installed.
+  static void TriggerActiveSetupCommand();
+
   // Launches given exe as admin on Vista.
   static bool ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code);
 
@@ -93,10 +102,12 @@ class InstallUtil {
   // by either --chrome-sxs or the executable path).
   static bool IsChromeSxSProcess();
 
-  // Returns true if the Chrome installed at |chrome_exe| has a Windows shell
-  // DelegateExecute verb handler.
-  static bool HasDelegateExecuteHandler(BrowserDistribution* dist,
-                                        const string16& chrome_exe);
+  // Populates |path| with the path to |file| in the sentinel directory. This is
+  // the application directory for user-level installs, and the default user
+  // data dir for system-level installs. Returns false on error.
+  static bool GetSentinelFilePath(const FilePath::CharType* file,
+                                  BrowserDistribution* dist,
+                                  FilePath* path);
 
   // Deletes the registry key at path key_path under the key given by root_key.
   static bool DeleteRegistryKey(HKEY root_key, const string16& key_path);
@@ -123,8 +134,8 @@ class InstallUtil {
 
   // Deletes the key |key_to_delete_path| under |root_key| iff the value
   // |value_name| in the key |key_to_test_path| under |root_key| satisfies
-  // |predicate|.  |value_name| must be an empty string to test the key's
-  // default value.
+  // |predicate|.  |value_name| may be either NULL or an empty string to test
+  // the key's default value.
   static ConditionalDeleteResult DeleteRegistryKeyIf(
       HKEY root_key,
       const string16& key_to_delete_path,
@@ -133,8 +144,8 @@ class InstallUtil {
       const RegistryValuePredicate& predicate);
 
   // Deletes the value |value_name| in the key |key_path| under |root_key| iff
-  // its current value satisfies |predicate|.  |value_name| must be an empty
-  // string to test the key's default value.
+  // its current value satisfies |predicate|.  |value_name| may be either NULL
+  // or an empty string to test/delete the key's default value.
   static ConditionalDeleteResult DeleteRegistryValueIf(
       HKEY root_key,
       const wchar_t* key_path,

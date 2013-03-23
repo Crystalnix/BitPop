@@ -11,8 +11,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/text_input_client_messages.h"
 
-using content::RenderWidgetHost;
-using content::RenderWidgetHostImpl;
+namespace content {
 
 // The amount of time in milliseconds that the browser process will wait for a
 // response from the renderer.
@@ -48,8 +47,8 @@ NSUInteger TextInputClientMac::GetCharacterIndexAtPoint(RenderWidgetHost* rwh,
   AfterRequest();
 
   base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_TIMES("TextInputClient.CharacterIndex",
-                      delta * base::Time::kMicrosecondsPerMillisecond);
+  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.CharacterIndex",
+                           delta * base::Time::kMicrosecondsPerMillisecond);
 
   return character_index_;
 }
@@ -69,8 +68,8 @@ NSRect TextInputClientMac::GetFirstRectForRange(RenderWidgetHost* rwh,
   AfterRequest();
 
   base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_TIMES("TextInputClient.FirstRect",
-                      delta * base::Time::kMicrosecondsPerMillisecond);
+  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.FirstRect",
+                           delta * base::Time::kMicrosecondsPerMillisecond);
 
   return first_rect_;
 }
@@ -90,8 +89,8 @@ NSAttributedString* TextInputClientMac::GetAttributedSubstringFromRange(
   AfterRequest();
 
   base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_TIMES("TextInputClient.Substring",
-                      delta * base::Time::kMicrosecondsPerMillisecond);
+  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.Substring",
+                           delta * base::Time::kMicrosecondsPerMillisecond);
 
   // Lookup.framework calls this method repeatedly and expects that repeated
   // calls don't deallocate previous results immediately. Returning an
@@ -126,8 +125,8 @@ void TextInputClientMac::BeforeRequest() {
   lock_.Acquire();
 
   base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_TIMES("TextInputClient.LockWait",
-                      delta * base::Time::kMicrosecondsPerMillisecond);
+  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.LockWait",
+                           delta * base::Time::kMicrosecondsPerMillisecond);
 
   character_index_ = NSNotFound;
   first_rect_ = NSZeroRect;
@@ -137,3 +136,5 @@ void TextInputClientMac::BeforeRequest() {
 void TextInputClientMac::AfterRequest() {
   lock_.Release();
 }
+
+}  // namespace content

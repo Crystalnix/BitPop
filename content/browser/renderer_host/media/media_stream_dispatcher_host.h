@@ -15,14 +15,13 @@
 #include "content/common/media/media_stream_options.h"
 #include "content/public/browser/browser_message_filter.h"
 
-namespace media_stream {
+namespace content {
 
 // MediaStreamDispatcherHost is a delegate for Media Stream API messages used by
 // MediaStreamImpl. It's the complement of MediaStreamDispatcher
 // (owned by RenderView).
-class CONTENT_EXPORT MediaStreamDispatcherHost
-    : public content::BrowserMessageFilter,
-      public MediaStreamRequester {
+class CONTENT_EXPORT MediaStreamDispatcherHost : public BrowserMessageFilter,
+                                                 public MediaStreamRequester {
  public:
   explicit MediaStreamDispatcherHost(int render_process_id);
 
@@ -32,14 +31,12 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
       const StreamDeviceInfoArray& audio_devices,
       const StreamDeviceInfoArray& video_devices) OVERRIDE;
   virtual void StreamGenerationFailed(const std::string& label) OVERRIDE;
-  virtual void AudioDeviceFailed(const std::string& label, int index) OVERRIDE;
-  virtual void VideoDeviceFailed(const std::string& label, int index) OVERRIDE;
   virtual void DevicesEnumerated(const std::string& label,
                                  const StreamDeviceInfoArray& devices) OVERRIDE;
   virtual void DeviceOpened(const std::string& label,
                             const StreamDeviceInfo& video_device) OVERRIDE;
 
-  // content::BrowserMessageFilter implementation.
+  // BrowserMessageFilter implementation.
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
@@ -54,19 +51,24 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
                         int page_request_id,
                         const StreamOptions& components,
                         const GURL& security_origin);
+  void OnGenerateStreamForDevice(int render_view_id,
+                                 int page_request_id,
+                                 const StreamOptions& components,
+                                 const std::string& device_id,
+                                 const GURL& security_origin);
   void OnCancelGenerateStream(int render_view_id,
                               int page_request_id);
   void OnStopGeneratedStream(int render_view_id, const std::string& label);
 
   void OnEnumerateDevices(int render_view_id,
                           int page_request_id,
-                          media_stream::MediaStreamType type,
+                          MediaStreamType type,
                           const GURL& security_origin);
 
   void OnOpenDevice(int render_view_id,
                     int page_request_id,
                     const std::string& device_id,
-                    media_stream::MediaStreamType type,
+                    MediaStreamType type,
                     const GURL& security_origin);
 
   // Returns the media stream manager to forward events to,
@@ -84,6 +86,6 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
   DISALLOW_COPY_AND_ASSIGN(MediaStreamDispatcherHost);
 };
 
-}  // namespace media_stream
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_DISPATCHER_HOST_H_

@@ -4,7 +4,10 @@
 
 #include "chrome/browser/value_store/value_store_frontend.h"
 
-#include "chrome/browser/value_store/failing_value_store.h"
+#include "base/bind.h"
+#include "base/debug/trace_event.h"
+#include "base/file_path.h"
+#include "base/logging.h"
 #include "chrome/browser/value_store/leveldb_value_store.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -17,9 +20,9 @@ class ValueStoreFrontend::Backend : public base::RefCountedThreadSafe<Backend> {
   void Init(const FilePath& db_path) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
     DCHECK(!storage_);
-    storage_ = LeveldbValueStore::Create(db_path);
-    if (!storage_)
-      storage_ = new FailingValueStore();
+    TRACE_EVENT1("ValueStoreFrontend::Backend", "Init",
+                 "db_path", db_path.value().c_str());
+    storage_ = new LeveldbValueStore(db_path);
   }
 
   // This variant is useful for testing (using a mock ValueStore).
@@ -82,11 +85,13 @@ class ValueStoreFrontend::Backend : public base::RefCountedThreadSafe<Backend> {
   DISALLOW_COPY_AND_ASSIGN(Backend);
 };
 
+ValueStoreFrontend::ValueStoreFrontend()
+    : backend_(new Backend()) {
+}
+
 ValueStoreFrontend::ValueStoreFrontend(const FilePath& db_path)
     : backend_(new Backend()) {
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      base::Bind(&ValueStoreFrontend::Backend::Init,
-                 backend_, db_path));
+  Init(db_path);
 }
 
 ValueStoreFrontend::ValueStoreFrontend(ValueStore* value_store)
@@ -98,6 +103,12 @@ ValueStoreFrontend::ValueStoreFrontend(ValueStore* value_store)
 
 ValueStoreFrontend::~ValueStoreFrontend() {
   DCHECK(CalledOnValidThread());
+}
+
+void ValueStoreFrontend::Init(const FilePath& db_path) {
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+      base::Bind(&ValueStoreFrontend::Backend::Init,
+                 backend_, db_path));
 }
 
 void ValueStoreFrontend::Get(const std::string& key,

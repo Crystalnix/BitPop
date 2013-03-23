@@ -23,7 +23,6 @@ namespace safe_browsing {
 class PrefixSet;
 }
 
-class BloomFilter;
 class GURL;
 class MessageLoop;
 class SafeBrowsingDatabase;
@@ -133,7 +132,7 @@ class SafeBrowsingDatabase {
   //   db.DeleteChunks(chunks_deletes);
   //
   //   // If passed true, processes the collected chunk info and
-  //   // rebuilds the bloom filter.  If passed false, rolls everything
+  //   // rebuilds the filter.  If passed false, rolls everything
   //   // back.
   //   db.UpdateFinished(success);
   // }
@@ -156,7 +155,11 @@ class SafeBrowsingDatabase {
       const std::vector<SBFullHashResult>& full_hits) = 0;
 
   // The name of the bloom-filter file for the given database file.
+  // NOTE(shess): OBSOLETE.  Present for deleting stale files.
   static FilePath BloomFilterForFilename(const FilePath& db_filename);
+
+  // The name of the prefix set file for the given database file.
+  static FilePath PrefixSetForFilename(const FilePath& db_filename);
 
   // Filename for malware and phishing URL database.
   static FilePath BrowseDBFilename(const FilePath& db_base_filename);
@@ -179,9 +182,9 @@ class SafeBrowsingDatabase {
     FAILURE_DATABASE_CORRUPT_HANDLER,
     FAILURE_BROWSE_DATABASE_UPDATE_BEGIN,
     FAILURE_BROWSE_DATABASE_UPDATE_FINISH,
-    FAILURE_DATABASE_FILTER_MISSING,
-    FAILURE_DATABASE_FILTER_READ,
-    FAILURE_DATABASE_FILTER_WRITE,
+    FAILURE_DATABASE_FILTER_MISSING_OBSOLETE,
+    FAILURE_DATABASE_FILTER_READ_OBSOLETE,
+    FAILURE_DATABASE_FILTER_WRITE_OBSOLETE,
     FAILURE_DATABASE_FILTER_DELETE,
     FAILURE_DATABASE_STORE_MISSING,
     FAILURE_DATABASE_STORE_DELETE,
@@ -189,6 +192,11 @@ class SafeBrowsingDatabase {
     FAILURE_DOWNLOAD_DATABASE_UPDATE_FINISH,
     FAILURE_WHITELIST_DATABASE_UPDATE_BEGIN,
     FAILURE_WHITELIST_DATABASE_UPDATE_FINISH,
+    FAILURE_DATABASE_PREFIX_SET_MISSING,
+    FAILURE_DATABASE_PREFIX_SET_READ,
+    FAILURE_DATABASE_PREFIX_SET_WRITE,
+    FAILURE_DATABASE_PREFIX_SET_DELETE,
+
     // Memory space for histograms is determined by the max.  ALWAYS
     // ADD NEW VALUES BEFORE THIS ONE.
     FAILURE_DATABASE_MAX
@@ -267,11 +275,11 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
     // Deletes the files on disk.
   bool Delete();
 
-  // Load the bloom filter off disk, or generates one if it doesn't exist.
-  void LoadBloomFilter();
+  // Load the prefix set off disk, if available.
+  void LoadPrefixSet();
 
-  // Writes the current bloom filter to disk.
-  void WriteBloomFilter();
+  // Writes the current prefix set to disk.
+  void WritePrefixSet();
 
   // Loads the given full-length hashes to the given whitelist.  If the number
   // of hashes is too large or if the kill switch URL is on the whitelist
@@ -319,9 +327,9 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   MessageLoop* creation_loop_;
 
   // Lock for protecting access to variables that may be used on the
-  // IO thread.  This includes |browse_bloom_filter_|, |full_browse_hashes_|,
-  // |pending_browse_hashes_|, |prefix_miss_cache_|, |csd_whitelist_|, and
-  // |csd_whitelist_all_urls_|.
+  // IO thread.  This includes |prefix_set_|, |full_browse_hashes_|,
+  // |pending_browse_hashes_|, |prefix_miss_cache_|, |csd_whitelist_|,
+  // and |csd_whitelist_all_urls_|.
   base::Lock lookup_lock_;
 
   // Underlying persistent store for chunk data.
@@ -345,11 +353,6 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
 
   SBWhitelist csd_whitelist_;
   SBWhitelist download_whitelist_;
-
-  // Bloom filter generated from the add-prefixes in |browse_store_|.
-  // Only browse_store_ requires the BloomFilter for fast query.
-  FilePath bloom_filter_filename_;
-  scoped_refptr<BloomFilter> browse_bloom_filter_;
 
   // Cached browse store related full-hash items, ordered by prefix for
   // efficient scanning.
@@ -377,6 +380,7 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   bool change_detected_;
 
   // Used to check if a prefix was in the database.
+  FilePath prefix_set_filename_;
   scoped_ptr<safe_browsing::PrefixSet> prefix_set_;
 };
 

@@ -26,10 +26,10 @@ base::WaitableEvent* PepperProxyChannelDelegateImpl::GetShutdownEvent() {
 IPC::PlatformFileForTransit
 PepperProxyChannelDelegateImpl::ShareHandleWithRemote(
     base::PlatformFile handle,
-    const IPC::SyncChannel& channel,
+    base::ProcessId remote_pid,
     bool should_close_source) {
-  return content::BrokerGetFileHandleForProcess(handle, channel.peer_pid(),
-                                                should_close_source);
+  return BrokerGetFileHandleForProcess(handle, remote_pid,
+                                       should_close_source);
 }
 
 }  // namespace content

@@ -6,18 +6,23 @@
 #define CHROME_BROWSER_EXTERNAL_PROTOCOL_EXTERNAL_PROTOCOL_OBSERVER_H_
 
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 
 // ExternalProtocolObserver is responsible for handling messages from
 // WebContents relating to external protocols.
-class ExternalProtocolObserver : public content::WebContentsObserver {
+class ExternalProtocolObserver
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<ExternalProtocolObserver> {
  public:
-  explicit ExternalProtocolObserver(content::WebContents* web_contents);
   virtual ~ExternalProtocolObserver();
 
   // content::WebContentsObserver overrides.
   virtual void DidGetUserGesture() OVERRIDE;
 
  private:
+  explicit ExternalProtocolObserver(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<ExternalProtocolObserver>;
+
   DISALLOW_COPY_AND_ASSIGN(ExternalProtocolObserver);
 };
 

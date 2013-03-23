@@ -5,19 +5,13 @@
 #ifndef CHROME_BROWSER_POLICY_CLOUD_POLICY_REFRESH_SCHEDULER_H_
 #define CHROME_BROWSER_POLICY_CLOUD_POLICY_REFRESH_SCHEDULER_H_
 
-#include <string>
-
 #include "base/basictypes.h"
 #include "base/cancelable_callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "chrome/browser/policy/cloud_policy_client.h"
 #include "chrome/browser/policy/cloud_policy_store.h"
-#include "chrome/browser/prefs/pref_member.h"
-#include "content/public/browser/notification_observer.h"
 #include "net/base/network_change_notifier.h"
-
-class PrefService;
 
 namespace base {
 class TaskRunner;
@@ -30,10 +24,10 @@ namespace policy {
 class CloudPolicyRefreshScheduler
     : public CloudPolicyClient::Observer,
       public CloudPolicyStore::Observer,
-      public content::NotificationObserver,
       public net::NetworkChangeNotifier::IPAddressObserver {
  public:
   // Refresh constants.
+  static const int64 kDefaultRefreshDelayMs;
   static const int64 kUnmanagedRefreshDelayMs;
   static const int64 kInitialErrorRetryDelayMs;
 
@@ -46,10 +40,14 @@ class CloudPolicyRefreshScheduler
   CloudPolicyRefreshScheduler(
       CloudPolicyClient* client,
       CloudPolicyStore* store,
-      PrefService* prefs,
-      const std::string& refresh_pref,
       const scoped_refptr<base::TaskRunner>& task_runner);
   virtual ~CloudPolicyRefreshScheduler();
+
+  base::Time last_refresh() const { return last_refresh_; }
+  int64 refresh_delay() const { return refresh_delay_ms_; }
+
+  // Sets the refresh delay to |refresh_delay| (subject to min/max clamping).
+  void SetRefreshDelay(int64 refresh_delay);
 
   // CloudPolicyClient::Observer:
   virtual void OnPolicyFetched(CloudPolicyClient* client) OVERRIDE;
@@ -59,11 +57,6 @@ class CloudPolicyRefreshScheduler
   // CloudPolicyStore::Observer:
   virtual void OnStoreLoaded(CloudPolicyStore* store) OVERRIDE;
   virtual void OnStoreError(CloudPolicyStore* store) OVERRIDE;
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   // net::NetworkChangeNotifier::IPAddressObserver:
   virtual void OnIPAddressChanged() OVERRIDE;
@@ -87,9 +80,6 @@ class CloudPolicyRefreshScheduler
   // relative to |last_refresh_|.
   void RefreshAfter(int delta_ms);
 
-  // Gets the refresh delay in milliseconds, clamped to the allowed bounds.
-  int64 GetRefreshDelay();
-
   CloudPolicyClient* client_;
   CloudPolicyStore* store_;
 
@@ -105,7 +95,8 @@ class CloudPolicyRefreshScheduler
   // Error retry delay in milliseconds.
   int64 error_retry_delay_ms_;
 
-  IntegerPrefMember refresh_delay_;
+  // The refresh delay.
+  int64 refresh_delay_ms_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPolicyRefreshScheduler);
 };

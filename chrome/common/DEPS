@@ -1,5 +1,8 @@
 include_rules = [
   "+chrome/plugin",  # For checking whether we're a plugin process.
+  "+device/bluetooth",  # For BluetoothDevicePermission
+  "+device/usb",  # For UsbDevicePermission
+  "+extensions/common",
   "+grit",  # For generated headers
   "+libxml",
   "+ppapi/c",  # For various types.
@@ -8,22 +11,19 @@ include_rules = [
   "+remoting/client/plugin",
   "+sandbox/win/src",
   "+skia",
-  "+webkit/forms",  # Defines some types that are marshalled over IPC.
   "+webkit/glue",
   "+webkit/plugins",
-
-  # TODO(jam): remove this once all of chrome doesn't depend on content/common.
-  "-content/common",
-  "+content/common/content_message_generator.h",  # needed by all_messages.h
+  "+webkit/user_agent",
 
   # TODO(jam): remove me once chrome_notifcation_types.h moves to browser
-  "+content/public/browser/notification_source.h",
   "+content/public/browser/notification_types.h",
 
   # Other libraries.
   "+chrome/third_party/xdg_user_dirs",
   "+third_party/bzip2",
+  "+third_party/mt19937ar",
   "+third_party/npapi",
+  "+third_party/re2",
   "+third_party/sqlite",
   "+third_party/zlib",
 

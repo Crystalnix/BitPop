@@ -9,6 +9,7 @@ import time
 import pyauto_functional
 import pyauto
 import pyauto_errors
+import test_utils
 
 
 class YoutubeTestHelper():
@@ -121,6 +122,13 @@ class YoutubeTestHelper():
         window.domAutomationController.send('');
     """)
 
+  def StopVideo(self):
+    """Stops the video and cancels loading."""
+    self._pyauto.ExecuteJavascript("""
+        ytplayer.stopVideo();
+        window.domAutomationController.send('');
+    """)
+
   def PauseVideo(self):
     """Pause the video."""
     self.ExecuteJavascript("""
@@ -128,16 +136,18 @@ class YoutubeTestHelper():
         window.domAutomationController.send('');
     """)
 
-  def PlayVideoAndAssert(self, youtube_video='zuzaxlddWbk'):
+  def PlayVideoAndAssert(self, youtube_video='zuzaxlddWbk',
+                         ignore_assert=False):
     """Start video and assert the playing state.
 
     By default test uses http://www.youtube.com/watch?v=zuzaxlddWbki.
 
     Args:
       youtube_video: The string ID of the youtube video to play.
+      ignore_assert: flag to ignore the assertion and continue the test. 
     """
     self._pyauto.assertTrue(self._pyauto.IsFlashPluginEnabled(),
-        msg='From here Flash plugin is disabled or not available')
+        msg='From here Flash plugin is disabled or not available.')
     url = self._pyauto.GetHttpURLForDataPath(
         'media', 'youtube.html?video=' + youtube_video)
     self._pyauto.NavigateToURL(url)
@@ -151,8 +161,45 @@ class YoutubeTestHelper():
       self.WaitUntilPlayerReady()
       i = i + 1
     self.PlayVideo()
+    if ignore_assert:
+      return self.is_playing
     self.AssertPlayerState(state=self.is_playing,
-                           msg='Player did not enter the playing state')
+                           msg='Player did not enter the playing state.')
+
+  def VideoBytesLoadingAndAssert(self):
+    """Assert the video loading."""
+    total_bytes = self.GetVideoTotalBytes()
+    prev_loaded_bytes = 0
+    loaded_bytes = 0
+    count = 0
+    while loaded_bytes < total_bytes:
+      # We want to test bytes loading only twice
+      count = count + 1
+      if count == 2:
+        break
+      loaded_bytes = self.GetVideoLoadedBytes()
+      self.assertTrue(prev_loaded_bytes <= loaded_bytes)
+      prev_loaded_bytes = loaded_bytes
+      # Give some time to load a video
+      time.sleep(1)
+
+  def PlayFAVideo(self):
+    """Play and assert FA video playing.
+       
+    We are using multiple test videos in case any FA video playback fails
+    becuase other tests are palying the same video and the test gets the
+    simultaneous playback error.
+    """
+    fa_videos = ('APRpcscmbY0', 'yQqvrED-np0', 'KJuFw6hQdNY',
+                 'BeFQbgxr_9g', 'L6JwlOudqA4')
+    credentials = self.GetPrivateInfo()['test_fa_account']
+    test_utils.GoogleAccountsLogin(self,
+        credentials['username'], credentials['password'])
+    for video in fa_videos:
+      result = self.PlayVideoAndAssert(video, ignore_assert=True)
+      if result is self.is_playing:
+        return
+    self.assertTrue(False, msg='Player did not enter the playing state.')
 
 
 class YoutubeTest(pyauto.PyUITest, YoutubeTestHelper):
@@ -173,7 +220,7 @@ class YoutubeTest(pyauto.PyUITest, YoutubeTestHelper):
     self.PlayVideoAndAssert()
     self.PauseVideo()
     self.AssertPlayerState(state=self.is_paused,
-                           msg='Player did not enter the paused state')
+                           msg='Player did not enter the paused state.')
     # Seek to the end of video
     self.ExecuteJavascript("""
         val = ytplayer.getDuration();
@@ -184,7 +231,7 @@ class YoutubeTest(pyauto.PyUITest, YoutubeTestHelper):
     # We've seeked to almost the end of the video but not quite.
     # Wait until the end.
     self.AssertPlayerState(state=self.has_ended,
-                           msg='Player did not reach the stopped state')
+                           msg='Player did not reach the stopped state.')
 
   def testPlayerResolution(self):
     """Test various video resolutions."""
@@ -208,20 +255,18 @@ class YoutubeTest(pyauto.PyUITest, YoutubeTestHelper):
   def testPlayerBytes(self):
     """Test that player downloads video bytes."""
     self.PlayVideoAndAssert()
-    total_bytes = self.GetVideoTotalBytes()
-    prev_loaded_bytes = 0
-    loaded_bytes = 0
-    count = 0
-    while loaded_bytes < total_bytes:
-      # We want to test bytes loading only twice
-      count = count + 1
-      if count == 2:
-        break
-      loaded_bytes = self.GetVideoLoadedBytes()
-      self.assertTrue(prev_loaded_bytes <= loaded_bytes)
-      prev_loaded_bytes = loaded_bytes
-      # Give some time to load a video
-      time.sleep(1)
+    self.VideoBytesLoadingAndAssert()
+
+  def testFAVideo(self):
+    """Test that FlashAccess/DRM video plays."""
+    self.PlayFAVideo()
+    self.StopVideo()
+
+  def testFAVideoBytes(self):
+    """Test FlashAccess/DRM video bytes loading."""
+    self.PlayFAVideo()
+    self.VideoBytesLoadingAndAssert()
+    self.StopVideo()
 
 
 if __name__ == '__main__':

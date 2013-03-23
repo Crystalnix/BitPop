@@ -16,13 +16,12 @@
 namespace {
 
 void DeleteThread(base::Thread* thread) {
-  thread->Stop();
   delete thread;
 }
 
 }
 
-namespace device_orientation {
+namespace content {
 
 class ProviderImpl::PollingThread : public base::Thread {
  public:
@@ -73,6 +72,7 @@ ProviderImpl::PollingThread::PollingThread(
 }
 
 ProviderImpl::PollingThread::~PollingThread() {
+  Stop();
 }
 
 void ProviderImpl::PollingThread::DoAddPollingDataType(DeviceData::Type type) {
@@ -291,4 +291,4 @@ void ProviderImpl::DoNotify(const DeviceData* device_data,
 }
 
 
-}  // namespace device_orientation
+}  // namespace content

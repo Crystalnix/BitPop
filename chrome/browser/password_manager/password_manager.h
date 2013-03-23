@@ -9,13 +9,14 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/prefs/public/pref_member.h"
 #include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
-#include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/login/login_model.h"
+#include "chrome/common/password_form_fill_data.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "webkit/forms/password_form.h"
-#include "webkit/forms/password_form_dom_manager.h"
+#include "content/public/browser/web_contents_user_data.h"
+#include "content/public/common/password_form.h"
 
 class PasswordManagerDelegate;
 class PasswordManagerTest;
@@ -27,14 +28,14 @@ class PrefService;
 // database through the PasswordStore. The PasswordManager is a LoginModel
 // for purposes of supporting HTTP authentication dialogs.
 class PasswordManager : public LoginModel,
-                        public content::WebContentsObserver {
+                        public content::WebContentsObserver,
+                        public content::WebContentsUserData<PasswordManager> {
  public:
   static void RegisterUserPrefs(PrefService* prefs);
 
-  // The delegate passed in is required to outlive the PasswordManager.
-  PasswordManager(content::WebContents* web_contents,
-                  PasswordManagerDelegate* delegate);
-
+  static void CreateForWebContentsAndDelegate(
+      content::WebContents* contents,
+      PasswordManagerDelegate* delegate);
   virtual ~PasswordManager();
 
   // Is saving new data for password autofill enabled for the current profile?
@@ -44,23 +45,23 @@ class PasswordManager : public LoginModel,
 
   // Called by a PasswordFormManager when it decides a form can be autofilled
   // on the page.
-  virtual void Autofill(const webkit::forms::PasswordForm& form_for_autofill,
-                        const webkit::forms::PasswordFormMap& best_matches,
-                        const webkit::forms::PasswordForm& preferred_match,
+  virtual void Autofill(const content::PasswordForm& form_for_autofill,
+                        const content::PasswordFormMap& best_matches,
+                        const content::PasswordForm& preferred_match,
                         bool wait_for_username) const;
 
   // LoginModel implementation.
   virtual void SetObserver(LoginModelObserver* observer) OVERRIDE;
 
   // Mark this form as having a generated password.
-  void SetFormHasGeneratedPassword(const webkit::forms::PasswordForm& form);
+  void SetFormHasGeneratedPassword(const content::PasswordForm& form);
 
   // TODO(isherman): This should not be public, but is currently being used by
   // the LoginPrompt code.
   // When a form is submitted, we prepare to save the password but wait
   // until we decide the user has successfully logged in. This is step 1
   // of 2 (see SavePassword).
-  void ProvisionallySavePassword(const webkit::forms::PasswordForm& form);
+  void ProvisionallySavePassword(const content::PasswordForm& form);
 
   // content::WebContentsObserver overrides.
   virtual void DidNavigateAnyFrame(
@@ -71,13 +72,17 @@ class PasswordManager : public LoginModel,
   // TODO(isherman): This should not be public, but is currently being used by
   // the LoginPrompt code.
   void OnPasswordFormsParsed(
-      const std::vector<webkit::forms::PasswordForm>& forms);
+      const std::vector<content::PasswordForm>& forms);
   void OnPasswordFormsRendered(
-      const std::vector<webkit::forms::PasswordForm>& visible_forms);
+      const std::vector<content::PasswordForm>& visible_forms);
+
+ protected:
+  // Subclassed for unit tests.
+  PasswordManager(content::WebContents* web_contents,
+                  PasswordManagerDelegate* delegate);
 
  private:
-  // Is password autofill enabled for the current profile?
-  bool IsFillingEnabled() const;
+  friend class content::WebContentsUserData<PasswordManager>;
 
   // Note about how a PasswordFormManager can transition from
   // pending_login_managers_ to provisional_save_manager_ and the infobar.
@@ -110,8 +115,8 @@ class PasswordManager : public LoginModel,
   // The LoginModelObserver (i.e LoginView) requiring autofill.
   LoginModelObserver* observer_;
 
-  // Set to false to disable the password manager (will no longer fill
-  // passwords or ask you if you want to save passwords).
+  // Set to false to disable the password manager (will no longer ask if you
+  // want to save passwords but will continue to fill passwords).
   BooleanPrefMember password_manager_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordManager);

@@ -12,8 +12,9 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/features/feature.h"
+#include "chrome/common/extensions/features/simple_feature.h"
+#include "extensions/common/error_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace errors = extension_manifest_errors;
@@ -31,8 +32,8 @@ class ManifestTest : public testing::Test {
     EXPECT_EQ(type == Extension::TYPE_THEME, manifest->is_theme());
     EXPECT_EQ(type == Extension::TYPE_PLATFORM_APP,
               manifest->is_platform_app());
-    EXPECT_EQ(type == Extension::TYPE_PACKAGED_APP,
-              manifest->is_packaged_app());
+    EXPECT_EQ(type == Extension::TYPE_LEGACY_PACKAGED_APP,
+              manifest->is_legacy_packaged_app());
     EXPECT_EQ(type == Extension::TYPE_HOSTED_APP, manifest->is_hosted_app());
   }
 
@@ -94,11 +95,12 @@ TEST_F(ManifestTest, Extension) {
   EXPECT_TRUE(error.empty());
   ASSERT_EQ(2u, warnings.size());
   {
-    Feature feature;
+    SimpleFeature feature;
     feature.set_name("background_page");
     feature.set_max_manifest_version(1);
-    EXPECT_EQ(feature.GetErrorMessage(Feature::INVALID_MAX_MANIFEST_VERSION),
-              warnings[0].message);
+    EXPECT_EQ(
+        "'background_page' requires manifest version of 1 or lower.",
+        warnings[0].message);
   }
 
   // Test DeepCopy and Equals.
@@ -137,7 +139,7 @@ TEST_F(ManifestTest, ExtensionTypes) {
   // Packaged app.
   MutateManifest(
       &manifest, keys::kApp, new DictionaryValue());
-  AssertType(manifest.get(), Extension::TYPE_PACKAGED_APP);
+  AssertType(manifest.get(), Extension::TYPE_LEGACY_PACKAGED_APP);
 
   // Platform app.
   MutateManifest(
@@ -190,15 +192,21 @@ TEST_F(ManifestTest, RestrictedKeys) {
       &manifest, keys::kPlatformAppBackground, NULL);
 
   // "commands" is restricted to manifest_version >= 2.
-  MutateManifest(
-      &manifest, keys::kCommands, new DictionaryValue());
-  EXPECT_FALSE(manifest->HasKey(keys::kCommands));
-  EXPECT_FALSE(manifest->Get(keys::kCommands, &output));
+  {
+    // ... and dev channel, for now.
+    Feature::ScopedCurrentChannel dev_channel_scope(
+        chrome::VersionInfo::CHANNEL_DEV);
 
-  MutateManifest(
-      &manifest, keys::kManifestVersion, Value::CreateIntegerValue(2));
-  EXPECT_TRUE(manifest->HasKey(keys::kCommands));
-  EXPECT_TRUE(manifest->Get(keys::kCommands, &output));
+    MutateManifest(
+        &manifest, keys::kCommands, new DictionaryValue());
+    EXPECT_FALSE(manifest->HasKey(keys::kCommands));
+    EXPECT_FALSE(manifest->Get(keys::kCommands, &output));
+
+    MutateManifest(
+        &manifest, keys::kManifestVersion, Value::CreateIntegerValue(2));
+    EXPECT_TRUE(manifest->HasKey(keys::kCommands));
+    EXPECT_TRUE(manifest->Get(keys::kCommands, &output));
+  }
 };
 
 }  // namespace extensions

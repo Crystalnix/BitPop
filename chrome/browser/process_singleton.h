@@ -24,16 +24,11 @@
 #include "base/threading/non_thread_safe.h"
 #include "ui/gfx/native_widget_types.h"
 
-#if defined(OS_POSIX)
-#include "base/file_path.h"
-#endif  // defined(OS_POSIX)
-
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 
 class CommandLine;
-class FilePath;
 
 // ProcessSingleton ----------------------------------------------------------
 //
@@ -53,6 +48,7 @@ class ProcessSingleton : public base::NonThreadSafe {
     PROCESS_NOTIFIED,
     PROFILE_IN_USE,
     LOCK_ERROR,
+    NUM_NOTIFY_RESULTS,
   };
 
   // Implement this callback to handle notifications from other processes. The
@@ -67,55 +63,25 @@ class ProcessSingleton : public base::NonThreadSafe {
   explicit ProcessSingleton(const FilePath& user_data_dir);
   ~ProcessSingleton();
 
-  // Notify another process, if available.
-  // Returns true if another process was found and notified, false if we
-  // should continue with this process.
-  // Windows code roughly based on Mozilla.
-  //
-  // TODO(brettw): this will not handle all cases. If two process start up too
-  // close to each other, the Create() might not yet have happened for the
-  // first one, so this function won't find it.
-  NotifyResult NotifyOtherProcess();
-
   // Notify another process, if available. Otherwise sets ourselves as the
   // singleton instance and stores the provided callback for notification from
   // future processes. Returns PROCESS_NONE if we became the singleton
-  // instance.
+  // instance. Callers are guaranteed to either have notified an existing
+  // process or have grabbed the singleton (unless the profile is locked by an
+  // unreachable process).
+  // TODO(brettw): Make the implementation of this method non-platform-specific
+  // by making Linux re-use the Windows implementation.
   NotifyResult NotifyOtherProcessOrCreate(
       const NotificationCallback& notification_callback);
-
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
-  // Exposed for testing.  We use a timeout on Linux, and in tests we want
-  // this timeout to be short.
-  NotifyResult NotifyOtherProcessWithTimeout(const CommandLine& command_line,
-                                             int timeout_seconds,
-                                             bool kill_unresponsive);
-  NotifyResult NotifyOtherProcessWithTimeoutOrCreate(
-      const CommandLine& command_line,
-      const NotificationCallback& notification_callback,
-      int timeout_seconds);
-  void OverrideCurrentPidForTesting(base::ProcessId pid);
-  void OverrideKillCallbackForTesting(const base::Callback<void(int)>& callback);
-  static void DisablePromptForTesting();
-#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // Used in specific cases to let us know that there is an existing instance
-  // of Chrome running with this profile. In general, you should not use this
-  // function. Instead consider using NotifyOtherProcessOrCreate().
-  // For non profile-specific method, use
-  // browser_util::IsBrowserAlreadyRunning().
-  bool FoundOtherProcessWindow() const {
-      return (NULL != remote_window_);
-  }
-#endif  // defined(OS_WIN)
 
   // Sets ourself up as the singleton instance.  Returns true on success.  If
   // false is returned, we are not the singleton instance and the caller must
   // exit. Otherwise, stores the provided callback for notification from
   // future processes.
-  bool Create(
-      const NotificationCallback& notification_callback);
+  // NOTE: Most callers should generally prefer NotifyOtherProcessOrCreate() to
+  // this method, only callers for whom failure is prefered to notifying another
+  // process should call this directly.
+  bool Create(const NotificationCallback& notification_callback);
 
   // Clear any lock state during shutdown.
   void Cleanup();
@@ -148,6 +114,32 @@ class ProcessSingleton : public base::NonThreadSafe {
   LRESULT WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
 #endif
 
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
+  static void DisablePromptForTesting();
+#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
+
+ protected:
+  // Notify another process, if available.
+  // Returns true if another process was found and notified, false if we should
+  // continue with the current process.
+  // On Windows, Create() has to be called before this.
+  NotifyResult NotifyOtherProcess();
+
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
+  // Exposed for testing.  We use a timeout on Linux, and in tests we want
+  // this timeout to be short.
+  NotifyResult NotifyOtherProcessWithTimeout(const CommandLine& command_line,
+                                             int timeout_seconds,
+                                            bool kill_unresponsive);
+  NotifyResult NotifyOtherProcessWithTimeoutOrCreate(
+      const CommandLine& command_line,
+      const NotificationCallback& notification_callback,
+      int timeout_seconds);
+  void OverrideCurrentPidForTesting(base::ProcessId pid);
+  void OverrideKillCallbackForTesting(
+      const base::Callback<void(int)>& callback);
+#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
+
  private:
   typedef std::pair<CommandLine::StringVector, FilePath> DelayedStartupMessage;
 
@@ -171,6 +163,7 @@ class ProcessSingleton : public base::NonThreadSafe {
   HWND window_;  // The HWND_MESSAGE window.
   bool is_virtualized_;  // Stuck inside Microsoft Softricity VM environment.
   HANDLE lock_file_;
+  FilePath user_data_dir_;
 #elif defined(OS_LINUX) || defined(OS_OPENBSD)
   // Return true if the given pid is one of our child processes.
   // Assumes that the current pid is the root of all pids of the current
@@ -204,7 +197,7 @@ class ProcessSingleton : public base::NonThreadSafe {
   FilePath cookie_path_;
 
   // Temporary directory to hold the socket.
-  ScopedTempDir socket_dir_;
+  base::ScopedTempDir socket_dir_;
 
   // Helper class for linux specific messages.  LinuxWatcher is ref counted
   // because it posts messages between threads.

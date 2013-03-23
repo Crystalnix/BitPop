@@ -52,14 +52,22 @@ class DocViewingTest(pyauto.PyUITest):
                                                                        fname))
         file_browser = self._GetFullPageFileBrowser()
         self.assertTrue(file_browser, msg='File browser failed to initialize.')
-        self.assertTrue(file_browser.Select(fname),
+
+        def _SelectFile():
+          try:
+            file_browser.Select(fname)
+            return True
+          except AssertionError:
+            return False
+
+        self.assertTrue(self.WaitUntil(_SelectFile),
                         msg='"%s" does not exist.' % fname)
         file_browser.ExecuteDefaultTask()
         self.assertTrue(self.WaitUntil(self.GetActiveTabTitle,
                         expect_retval=fname),
                         msg='"%s" does not open.' % fname)
         # Close the document viewing tab after use.
-        self.GetBrowserWindow(0).GetTab(1).Close(True)
+        self.CloseTab(tab_index=1)
 
 
 if __name__ == '__main__':

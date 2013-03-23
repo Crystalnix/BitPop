@@ -9,6 +9,8 @@
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/plugins/plugin_finder.h"
+#include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
@@ -133,7 +135,18 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
       nibPath = @"ContentBlockedMixedScript"; break;
     case CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS:
       nibPath = @"ContentProtocolHandlers"; break;
-    default:
+    // These content types have no bubble:
+    case CONTENT_SETTINGS_TYPE_DEFAULT:
+    case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
+    case CONTENT_SETTINGS_TYPE_INTENTS:
+    case CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE:
+    case CONTENT_SETTINGS_TYPE_FULLSCREEN:
+    case CONTENT_SETTINGS_TYPE_MOUSELOCK:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
+    case CONTENT_SETTINGS_TYPE_PPAPI_BROKER:
+    case CONTENT_SETTINGS_NUM_TYPES:
       NOTREACHED();
   }
   if ((self = [super initWithWindowNibPath:nibPath
@@ -238,12 +251,11 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
     frame.size.height -= delta;
     [[self window] setFrame:frame display:NO];
   } else {
+    PluginFinder* finder = PluginFinder::GetInstance();
     for (std::set<std::string>::iterator it = plugins.begin();
          it != plugins.end(); ++it) {
-      NSString* name = SysUTF16ToNSString(
-          PluginService::GetInstance()->GetPluginGroupName(*it));
-      if ([name length] == 0)
-        name = base::SysUTF8ToNSString(*it);
+      NSString* name =
+          SysUTF16ToNSString(finder->FindPluginNameWithIdentifier(*it));
       [pluginArray addObject:name];
     }
     [blockedResourcesField_
@@ -280,10 +292,7 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
   int row = 0;
   for (std::vector<ContentSettingBubbleModel::PopupItem>::const_iterator
        it(popupItems.begin()); it != popupItems.end(); ++it, ++row) {
-    const SkBitmap& icon = it->bitmap;
-    NSImage* image = nil;
-    if (!icon.empty())
-      image = gfx::SkBitmapToNSImage(icon);
+    NSImage* image = it->image.AsNSImage();
 
     std::string title(it->title);
     // The popup may not have committed a load yet, in which case it won't

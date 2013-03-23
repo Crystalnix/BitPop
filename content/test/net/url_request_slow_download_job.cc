@@ -15,10 +15,9 @@
 #include "net/base/io_buffer.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_filter.h"
 
-using content::BrowserThread;
+namespace content {
 
 const char URLRequestSlowDownloadJob::kUnknownSizeUrl[] =
   "http://url.handled.by.slow.download/download-unknown-size";
@@ -55,9 +54,11 @@ void URLRequestSlowDownloadJob::AddUrlHandler() {
 // static
 net::URLRequestJob* URLRequestSlowDownloadJob::Factory(
     net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
     const std::string& scheme) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  URLRequestSlowDownloadJob* job = new URLRequestSlowDownloadJob(request);
+  URLRequestSlowDownloadJob* job = new URLRequestSlowDownloadJob(
+      request, network_delegate);
   if (request->url().spec() != kFinishDownloadUrl)
     pending_requests_.Get().insert(job);
   return job;
@@ -79,8 +80,9 @@ void URLRequestSlowDownloadJob::FinishPendingRequests() {
   }
 }
 
-URLRequestSlowDownloadJob::URLRequestSlowDownloadJob(net::URLRequest* request)
-    : net::URLRequestJob(request, request->context()->network_delegate()),
+URLRequestSlowDownloadJob::URLRequestSlowDownloadJob(
+    net::URLRequest* request, net::NetworkDelegate* network_delegate)
+    : net::URLRequestJob(request, network_delegate),
       bytes_already_sent_(0),
       should_finish_download_(false),
       buffer_size_(0),
@@ -241,3 +243,5 @@ bool URLRequestSlowDownloadJob::GetMimeType(std::string* mime_type) const {
   GetResponseInfoConst(&info);
   return info.headers && info.headers->GetMimeType(mime_type);
 }
+
+}  // namespace content

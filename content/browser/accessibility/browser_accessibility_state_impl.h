@@ -5,10 +5,15 @@
 #ifndef CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_STATE_IMPL_H_
 #define CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_STATE_IMPL_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/timer.h"
+#include "base/memory/singleton.h"
+#include "content/common/view_message_enums.h"
 #include "content/public/browser/browser_accessibility_state.h"
+
+namespace content {
 
 // The BrowserAccessibilityState class is used to determine if Chrome should be
 // customized for users with assistive technology, such as screen readers. We
@@ -28,31 +33,41 @@
 // improvement over reading defaults preference values (which has no callback
 // mechanism).
 class CONTENT_EXPORT BrowserAccessibilityStateImpl
-    : public BrowserAccessibilityState {
+    : public base::RefCountedThreadSafe<BrowserAccessibilityStateImpl>,
+      public BrowserAccessibilityState {
  public:
   BrowserAccessibilityStateImpl();
-
-  // Leaky singleton, destructor generally won't be called.
-  virtual ~BrowserAccessibilityStateImpl();
 
   static BrowserAccessibilityStateImpl* GetInstance();
 
   virtual void OnAccessibilityEnabledManually() OVERRIDE;
   virtual void OnScreenReaderDetected() OVERRIDE;
   virtual bool IsAccessibleBrowser() OVERRIDE;
+  virtual void AddHistogramCallback(base::Closure callback) OVERRIDE;
 
   // Called a short while after startup to allow time for the accessibility
   // state to be determined. Updates a histogram with the current state.
   void UpdateHistogram();
 
- protected:
-  // Set to true when full accessibility features should be enabled.
-  bool accessibility_enabled_;
+  AccessibilityMode GetAccessibilityMode();
+  void SetAccessibilityMode(AccessibilityMode mode);
 
-  // Timer to update the histogram a short while after startup.
-  base::OneShotTimer<BrowserAccessibilityStateImpl> update_histogram_timer_;
+ private:
+  friend class base::RefCountedThreadSafe<BrowserAccessibilityStateImpl>;
+  friend struct DefaultSingletonTraits<BrowserAccessibilityStateImpl>;
+
+  // Leaky singleton, destructor generally won't be called.
+  virtual ~BrowserAccessibilityStateImpl();
+
+  void UpdatePlatformSpecificHistograms();
+
+  AccessibilityMode accessibility_mode_;
+
+  std::vector<base::Closure> histogram_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityStateImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_STATE_IMPL_H_

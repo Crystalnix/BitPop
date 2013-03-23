@@ -11,17 +11,21 @@
 #include "base/memory/ref_counted.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/extensions/api/app/app_api.h"
+#include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
+#include "chrome/browser/extensions/app_file_handler_util.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/lazy_background_task_queue.h"
+#include "chrome/browser/intents/web_intents_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_intents_dispatcher.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -30,12 +34,13 @@
 #include "webkit/glue/web_intent_service_data.h"
 
 using content::BrowserThread;
-using extensions::Extension;
-using extensions::ExtensionSystem;
+using app_file_handler_util::FileHandlerForId;
+using app_file_handler_util::FileHandlerCanHandleFileWithMimeType;
+using app_file_handler_util::FirstFileHandlerForMimeType;
+
+namespace extensions {
 
 namespace {
-
-const char kViewIntent[] = "http://webintents.org/view";
 
 bool MakePathAbsolute(const FilePath& current_directory,
                       FilePath* file_path) {
@@ -53,105 +58,138 @@ bool MakePathAbsolute(const FilePath& current_directory,
   return true;
 }
 
-// Class to handle launching of platform apps with command line information.
+bool GetAbsolutePathFromCommandLine(const CommandLine* command_line,
+                                    const FilePath& current_directory,
+                                    FilePath* path) {
+  if (!command_line || !command_line->GetArgs().size())
+    return false;
+
+  FilePath relative_path(command_line->GetArgs()[0]);
+  FilePath absolute_path(relative_path);
+  if (!MakePathAbsolute(current_directory, &absolute_path)) {
+    LOG(WARNING) << "Cannot make absolute path from " << relative_path.value();
+    return false;
+  }
+  *path = absolute_path;
+  return true;
+}
+
+// Helper method to launch the platform app |extension| with no data. This
+// should be called in the fallback case, where it has been impossible to
+// load or obtain file launch data.
+void LaunchPlatformAppWithNoData(Profile* profile, const Extension* extension) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  extensions::AppEventRouter::DispatchOnLaunchedEvent(profile, extension);
+}
+
+// Class to handle launching of platform apps to open a specific path.
 // An instance of this class is created for each launch. The lifetime of these
 // instances is managed by reference counted pointers. As long as an instance
 // has outstanding tasks on a message queue it will be retained; once all
 // outstanding tasks are completed it will be deleted.
-class PlatformAppCommandLineLauncher
-    : public base::RefCountedThreadSafe<PlatformAppCommandLineLauncher> {
+class PlatformAppPathLauncher
+    : public base::RefCountedThreadSafe<PlatformAppPathLauncher> {
  public:
-  PlatformAppCommandLineLauncher(Profile* profile,
-                                 const Extension* extension,
-                                 const CommandLine* command_line,
-                                 const FilePath& current_directory)
+  PlatformAppPathLauncher(Profile* profile,
+                          const Extension* extension,
+                          const FilePath& file_path)
       : profile_(profile),
         extension_(extension),
-        command_line_(command_line),
-        current_directory_(current_directory) {}
+        file_path_(file_path),
+        handler_id_("") {}
 
   void Launch() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (!command_line_ || !command_line_->GetArgs().size()) {
-      LaunchWithNoLaunchData();
+    if (file_path_.empty()) {
+      LaunchPlatformAppWithNoData(profile_, extension_);
       return;
     }
 
-    FilePath file_path(command_line_->GetArgs()[0]);
+    DCHECK(file_path_.IsAbsolute());
     BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE, base::Bind(
-            &PlatformAppCommandLineLauncher::GetMimeTypeAndLaunch,
-            this, file_path));
+            &PlatformAppPathLauncher::GetMimeTypeAndLaunch, this));
+  }
+
+  void LaunchWithHandler(const std::string& handler_id) {
+    handler_id_ = handler_id;
+    Launch();
   }
 
  private:
-  friend class base::RefCountedThreadSafe<PlatformAppCommandLineLauncher>;
+  friend class base::RefCountedThreadSafe<PlatformAppPathLauncher>;
 
-  virtual ~PlatformAppCommandLineLauncher() {}
+  virtual ~PlatformAppPathLauncher() {}
 
-  void LaunchWithNoLaunchData() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    extensions::AppEventRouter::DispatchOnLaunchedEvent(profile_, extension_);
-  }
-
-  void GetMimeTypeAndLaunch(const FilePath& file_path) {
+  void GetMimeTypeAndLaunch() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-    // If we cannot construct an absolute path, launch with no launch data.
-    FilePath absolute_path(file_path);
-    if (!MakePathAbsolute(current_directory_, &absolute_path)) {
-      LOG(WARNING) << "Cannot make absolute path from " << file_path.value();
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-              &PlatformAppCommandLineLauncher::LaunchWithNoLaunchData, this));
-      return;
-    }
-
     // If the file doesn't exist, or is a directory, launch with no launch data.
-    if (!file_util::PathExists(absolute_path) ||
-        file_util::DirectoryExists(absolute_path)) {
-      LOG(WARNING) << "No file exists with path " << absolute_path.value();
+    if (!file_util::PathExists(file_path_) ||
+        file_util::DirectoryExists(file_path_)) {
+      LOG(WARNING) << "No file exists with path " << file_path_.value();
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-              &PlatformAppCommandLineLauncher::LaunchWithNoLaunchData, this));
+              &PlatformAppPathLauncher::LaunchWithNoLaunchData, this));
       return;
     }
 
     std::string mime_type;
     // If we cannot obtain the MIME type, launch with no launch data.
-    if (!net::GetMimeTypeFromFile(absolute_path, &mime_type)) {
+    if (!net::GetMimeTypeFromFile(file_path_, &mime_type)) {
       LOG(WARNING) << "Could not obtain MIME type for "
-                   << absolute_path.value();
+                   << file_path_.value();
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-              &PlatformAppCommandLineLauncher::LaunchWithNoLaunchData, this));
+              &PlatformAppPathLauncher::LaunchWithNoLaunchData, this));
       return;
     }
 
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-            &PlatformAppCommandLineLauncher::LaunchWithMimeTypeAndPath,
-            this, absolute_path, mime_type));
+            &PlatformAppPathLauncher::LaunchWithMimeType, this, mime_type));
   }
 
-  void LaunchWithMimeTypeAndPath(const FilePath& file_path,
-                                 const std::string& mime_type) {
-    // Find the intent service from the platform app for the file being opened.
-    webkit_glue::WebIntentServiceData service;
+  void LaunchWithNoLaunchData() {
+    // This method is required as an entry point on the UI thread.
+    LaunchPlatformAppWithNoData(profile_, extension_);
+  }
+
+  void LaunchWithMimeType(const std::string& mime_type) {
+    // Find the intent service or file handler from the platform app for the
+    // file being opened.
     bool found_service = false;
 
-    std::vector<webkit_glue::WebIntentServiceData> services =
-        extension_->intents_services();
-    for (size_t i = 0; i < services.size(); i++) {
-      std::string service_type_ascii = UTF16ToASCII(services[i].type);
-      if (services[i].action == ASCIIToUTF16(kViewIntent) &&
-          net::MatchesMimeType(service_type_ascii, mime_type)) {
-        service = services[i];
-        found_service = true;
-        break;
+    const Extension::FileHandlerInfo* handler = NULL;
+    if (!handler_id_.empty())
+      handler = FileHandlerForId(*extension_, handler_id_);
+    else
+      handler = FirstFileHandlerForMimeType(*extension_, mime_type);
+    if (handler &&
+        !FileHandlerCanHandleFileWithMimeType(*handler, mime_type)) {
+      LOG(WARNING) << "Extension does not provide a valid file handler for "
+                   << file_path_.value();
+      LaunchWithNoLaunchData();
+      return;
+    }
+    found_service = !!handler;
+
+    // TODO(benwells): remove this once we no longer support the "intents"
+    // syntax in platform app manifests.
+    if (!found_service) {
+      std::vector<webkit_glue::WebIntentServiceData> services =
+          extension_->intents_services();
+      for (size_t i = 0; i < services.size(); i++) {
+        std::string service_type_ascii = UTF16ToASCII(services[i].type);
+        if (services[i].action == ASCIIToUTF16(web_intents::kActionView) &&
+            net::MatchesMimeType(service_type_ascii, mime_type)) {
+          found_service = true;
+          break;
+        }
       }
     }
 
     // If this app doesn't have an intent that supports the file, launch with
     // no launch data.
     if (!found_service) {
-      LOG(WARNING) << "Extension does not provide a valid intent for "
-                   << file_path.value();
+      LOG(WARNING) << "Extension does not provide a valid file handler for "
+                   << file_path_.value();
       LaunchWithNoLaunchData();
       return;
     }
@@ -165,8 +203,8 @@ class PlatformAppCommandLineLauncher
         ExtensionSystem::Get(profile_)->lazy_background_task_queue();
     if (queue->ShouldEnqueueTask(profile_, extension_)) {
       queue->AddPendingTask(profile_, extension_->id(), base::Bind(
-              &PlatformAppCommandLineLauncher::GrantAccessToFileAndLaunch,
-              this, file_path, mime_type));
+              &PlatformAppPathLauncher::GrantAccessToFileAndLaunch,
+              this, mime_type));
       return;
     }
 
@@ -175,11 +213,10 @@ class PlatformAppCommandLineLauncher
     extensions::ExtensionHost* host =
         process_manager->GetBackgroundHostForExtension(extension_->id());
     DCHECK(host);
-    GrantAccessToFileAndLaunch(file_path, mime_type, host);
+    GrantAccessToFileAndLaunch(mime_type, host);
   }
 
-  void GrantAccessToFileAndLaunch(const FilePath& file_path,
-                                  const std::string& mime_type,
+  void GrantAccessToFileAndLaunch(const std::string& mime_type,
                                   extensions::ExtensionHost* host) {
     // If there was an error loading the app page, |host| will be NULL.
     if (!host) {
@@ -195,69 +232,76 @@ class PlatformAppCommandLineLauncher
     // If the renderer already has permission to read these paths, it is not
     // regranted, as this would overwrite any other permissions which the
     // renderer may already have.
-    if (!policy->CanReadFile(renderer_id, file_path))
-      policy->GrantReadFile(renderer_id, file_path);
+    if (!policy->CanReadFile(renderer_id, file_path_))
+      policy->GrantReadFile(renderer_id, file_path_);
 
     std::string registered_name;
     fileapi::IsolatedContext* isolated_context =
         fileapi::IsolatedContext::GetInstance();
     DCHECK(isolated_context);
     std::string filesystem_id = isolated_context->RegisterFileSystemForPath(
-        fileapi::kFileSystemTypeIsolated, file_path, &registered_name);
+        fileapi::kFileSystemTypeNativeLocal, file_path_, &registered_name);
     // Granting read file system permission as well to allow file-system
     // read operations.
     policy->GrantReadFileSystem(renderer_id, filesystem_id);
 
     extensions::AppEventRouter::DispatchOnLaunchedEventWithFileEntry(
-        profile_, extension_, ASCIIToUTF16(kViewIntent), filesystem_id,
-        registered_name);
+        profile_, extension_, ASCIIToUTF16(web_intents::kActionView),
+        handler_id_, mime_type, filesystem_id, registered_name);
   }
 
   // The profile the app should be run in.
   Profile* profile_;
   // The extension providing the app.
   const Extension* extension_;
-  // The command line to be passed through to the app, or NULL.
-  const CommandLine* command_line_;
-  // If non-empty, this is used to expand relative paths.
-  const FilePath current_directory_;
+  // The path to be passed through to the app.
+  const FilePath file_path_;
+  // The ID of the file handler used to launch the app.
+  std::string handler_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(PlatformAppCommandLineLauncher);
+  DISALLOW_COPY_AND_ASSIGN(PlatformAppPathLauncher);
 };
 
-// Class to handle launching of platform apps with WebIntent data that is being
-// passed in a a blob.
+// Class to handle launching of platform apps with WebIntent data.
 // An instance of this class is created for each launch. The lifetime of these
 // instances is managed by reference counted pointers. As long as an instance
 // has outstanding tasks on a message queue it will be retained; once all
 // outstanding tasks are completed it will be deleted.
-class PlatformAppBlobIntentLauncher
-    : public base::RefCountedThreadSafe<PlatformAppBlobIntentLauncher> {
+class PlatformAppWebIntentLauncher
+    : public base::RefCountedThreadSafe<PlatformAppWebIntentLauncher> {
  public:
-  PlatformAppBlobIntentLauncher(Profile* profile,
-                                const Extension* extension,
-                                const webkit_glue::WebIntentData& data)
+  PlatformAppWebIntentLauncher(
+      Profile* profile,
+      const Extension* extension,
+      content::WebIntentsDispatcher* intents_dispatcher,
+      content::WebContents* source)
       : profile_(profile),
         extension_(extension),
-        data_(data) {}
+        intents_dispatcher_(intents_dispatcher),
+        source_(source),
+        data_(intents_dispatcher->GetIntent()) {}
 
   void Launch() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    if (data_.data_type != webkit_glue::WebIntentData::BLOB &&
+        data_.data_type != webkit_glue::WebIntentData::FILESYSTEM) {
+      InternalLaunch();
+      return;
+    }
 
-    // Access needs to be granted to the file for the process associated with
-    // the extension. To do this the ExtensionHost is needed. This might not be
-    // available, or it might be in the process of being unloaded, in which case
-    // the lazy background task queue is used to load the extension and then
-    // call back to us.
+    // Access needs to be granted to the file or filesystem for the process
+    // associated with the extension. To do this the ExtensionHost is needed.
+    // This might not be available, or it might be in the process of being
+    // unloaded, in which case the lazy background task queue is used to load
+    // he extension and then call back to us.
     extensions::LazyBackgroundTaskQueue* queue =
         ExtensionSystem::Get(profile_)->lazy_background_task_queue();
     if (queue->ShouldEnqueueTask(profile_, extension_)) {
       queue->AddPendingTask(profile_, extension_->id(), base::Bind(
-              &PlatformAppBlobIntentLauncher::GrantAccessToFileAndLaunch,
+              &PlatformAppWebIntentLauncher::GrantAccessToFileAndLaunch,
               this));
       return;
     }
-
     ExtensionProcessManager* process_manager =
         ExtensionSystem::Get(profile_)->process_manager();
     extensions::ExtensionHost* host =
@@ -267,9 +311,9 @@ class PlatformAppBlobIntentLauncher
   }
 
  private:
-  friend class base::RefCountedThreadSafe<PlatformAppBlobIntentLauncher>;
+  friend class base::RefCountedThreadSafe<PlatformAppWebIntentLauncher>;
 
-  virtual ~PlatformAppBlobIntentLauncher() {}
+  virtual ~PlatformAppWebIntentLauncher() {}
 
   void GrantAccessToFileAndLaunch(extensions::ExtensionHost* host) {
     // If there was an error loading the app page, |host| will be NULL.
@@ -282,57 +326,94 @@ class PlatformAppBlobIntentLauncher
         content::ChildProcessSecurityPolicy::GetInstance();
     int renderer_id = host->render_process_host()->GetID();
 
-    // Granting read file permission to allow reading file content.
-    // If the renderer already has permission to read these paths, it is not
-    // regranted, as this would overwrite any other permissions which the
-    // renderer may already have.
-    if (!policy->CanReadFile(renderer_id, data_.blob_file))
-      policy->GrantReadFile(renderer_id, data_.blob_file);
+    if (data_.data_type == webkit_glue::WebIntentData::BLOB) {
+      // Granting read file permission to allow reading file content.
+      // If the renderer already has permission to read these paths, it is not
+      // regranted, as this would overwrite any other permissions which the
+      // renderer may already have.
+      if (!policy->CanReadFile(renderer_id, data_.blob_file))
+        policy->GrantReadFile(renderer_id, data_.blob_file);
+    } else if (data_.data_type == webkit_glue::WebIntentData::FILESYSTEM) {
+      // Grant read filesystem and read directory permission to allow reading
+      // any part of the specified filesystem.
+      FilePath path;
+      const bool valid =
+          fileapi::IsolatedContext::GetInstance()->GetRegisteredPath(
+              data_.filesystem_id, &path);
+      DCHECK(valid);
+      if (!policy->CanReadFile(renderer_id, path))
+        policy->GrantReadFile(renderer_id, path);
+      policy->GrantReadFileSystem(renderer_id, data_.filesystem_id);
+    } else {
+      NOTREACHED();
+    }
+    InternalLaunch();
+  }
 
+  void InternalLaunch() {
     extensions::AppEventRouter::DispatchOnLaunchedEventWithWebIntent(
-        profile_, extension_, data_);
+        profile_, extension_, intents_dispatcher_, source_);
   }
 
   // The profile the app should be run in.
   Profile* profile_;
   // The extension providing the app.
   const Extension* extension_;
-  // The WebIntent data to be passed through to the app.
+  // The dispatcher so that platform apps can respond to this intent.
+  content::WebIntentsDispatcher* intents_dispatcher_;
+  // The source of this intent.
+  content::WebContents* source_;
+  // The WebIntent data from the dispatcher.
   const webkit_glue::WebIntentData data_;
 
-  DISALLOW_COPY_AND_ASSIGN(PlatformAppBlobIntentLauncher);
+  DISALLOW_COPY_AND_ASSIGN(PlatformAppWebIntentLauncher);
 };
 
 }  // namespace
-
-namespace extensions {
 
 void LaunchPlatformApp(Profile* profile,
                        const Extension* extension,
                        const CommandLine* command_line,
                        const FilePath& current_directory) {
+  FilePath path;
+  if (!GetAbsolutePathFromCommandLine(command_line, current_directory, &path)) {
+    LaunchPlatformAppWithNoData(profile, extension);
+    return;
+  }
+
+  // TODO(benwells): add a command-line argument to provide a handler ID.
+  LaunchPlatformAppWithPath(profile, extension, path);
+}
+
+void LaunchPlatformAppWithPath(Profile* profile,
+                               const Extension* extension,
+                               const FilePath& file_path) {
   // launcher will be freed when nothing has a reference to it. The message
   // queue will retain a reference for any outstanding task, so when the
   // launcher has finished it will be freed.
-  scoped_refptr<PlatformAppCommandLineLauncher> launcher =
-      new PlatformAppCommandLineLauncher(profile, extension, command_line,
-                                         current_directory);
+  scoped_refptr<PlatformAppPathLauncher> launcher =
+      new PlatformAppPathLauncher(profile, extension, file_path);
   launcher->Launch();
+}
+
+void LaunchPlatformAppWithFileHandler(Profile* profile,
+                                      const Extension* extension,
+                                      const std::string& handler_id,
+                                      const FilePath& file_path) {
+  scoped_refptr<PlatformAppPathLauncher> launcher =
+      new PlatformAppPathLauncher(profile, extension, file_path);
+  launcher->LaunchWithHandler(handler_id);
 }
 
 void LaunchPlatformAppWithWebIntent(
     Profile* profile,
     const Extension* extension,
-    const webkit_glue::WebIntentData& web_intent_data) {
-  if (web_intent_data.data_type == webkit_glue::WebIntentData::BLOB) {
-    scoped_refptr<PlatformAppBlobIntentLauncher> launcher =
-        new PlatformAppBlobIntentLauncher(profile, extension, web_intent_data);
-    launcher->Launch();
-    return;
-  }
-
-  extensions::AppEventRouter::DispatchOnLaunchedEventWithWebIntent(
-      profile, extension, web_intent_data);
+    content::WebIntentsDispatcher* intents_dispatcher,
+    content::WebContents* source) {
+  scoped_refptr<PlatformAppWebIntentLauncher> launcher =
+      new PlatformAppWebIntentLauncher(
+          profile, extension, intents_dispatcher, source);
+  launcher->Launch();
 }
 
 }  // namespace extensions

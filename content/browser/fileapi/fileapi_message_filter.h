@@ -18,7 +18,6 @@
 #include "webkit/blob/blob_data.h"
 #include "webkit/fileapi/file_system_types.h"
 
-class ChromeBlobStorageContext;
 class FilePath;
 class GURL;
 
@@ -29,7 +28,7 @@ class Time;
 namespace fileapi {
 class FileSystemURL;
 class FileSystemContext;
-class FileSystemOperationInterface;
+class FileSystemOperation;
 }
 
 namespace net {
@@ -41,7 +40,10 @@ namespace webkit_blob {
 class ShareableFileReference;
 }
 
-class FileAPIMessageFilter : public content::BrowserMessageFilter {
+namespace content {
+class ChromeBlobStorageContext;
+
+class FileAPIMessageFilter : public BrowserMessageFilter {
  public:
   // Used by the renderer process host on the UI thread.
   FileAPIMessageFilter(
@@ -56,12 +58,12 @@ class FileAPIMessageFilter : public content::BrowserMessageFilter {
       fileapi::FileSystemContext* file_system_context,
       ChromeBlobStorageContext* blob_storage_context);
 
-  // content::BrowserMessageFilter implementation.
+  // BrowserMessageFilter implementation.
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OverrideThreadForMessage(
       const IPC::Message& message,
-      content::BrowserThread::ID* thread) OVERRIDE;
+      BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
 
@@ -162,7 +164,7 @@ class FileAPIMessageFilter : public content::BrowserMessageFilter {
   // Registers the given file pointed by |virtual_path| and backed by
   // |platform_path| as the |blob_url|.  Called by DidCreateSnapshot.
   void RegisterFileAsBlob(const GURL& blob_url,
-                          const FilePath& virtual_path,
+                          const fileapi::FileSystemURL& url,
                           const FilePath& platform_path);
 
   // Checks renderer's access permissions for single file.
@@ -170,8 +172,8 @@ class FileAPIMessageFilter : public content::BrowserMessageFilter {
                              int permissions,
                              base::PlatformFileError* error);
 
-  // Creates a new FileSystemOperationInterface based on |target_url|.
-  fileapi::FileSystemOperationInterface* GetNewOperation(
+  // Creates a new FileSystemOperation based on |target_url|.
+  fileapi::FileSystemOperation* GetNewOperation(
       const fileapi::FileSystemURL& target_url,
       int request_id);
 
@@ -180,7 +182,7 @@ class FileAPIMessageFilter : public content::BrowserMessageFilter {
   fileapi::FileSystemContext* context_;
 
   // Keeps ongoing file system operations.
-  typedef IDMap<fileapi::FileSystemOperationInterface> OperationsMap;
+  typedef IDMap<fileapi::FileSystemOperation> OperationsMap;
   OperationsMap operations_;
 
   // The getter holds the context until Init() can be called from the
@@ -200,5 +202,7 @@ class FileAPIMessageFilter : public content::BrowserMessageFilter {
 
   DISALLOW_COPY_AND_ASSIGN(FileAPIMessageFilter);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_FILEAPI_FILEAPI_MESSAGE_FILTER_H_

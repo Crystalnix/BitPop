@@ -26,6 +26,8 @@
 
 using gpu::Buffer;
 
+namespace content {
+
 CommandBufferProxyImpl::CommandBufferProxyImpl(
     GpuChannelHost* channel,
     int route_id)
@@ -34,10 +36,13 @@ CommandBufferProxyImpl::CommandBufferProxyImpl(
       route_id_(route_id),
       flush_count_(0),
       last_put_offset_(-1),
-      next_signal_id_(0) {
+      next_signal_id_(0),
+      state_buffer_(-1) {
 }
 
 CommandBufferProxyImpl::~CommandBufferProxyImpl() {
+  if (state_buffer_ != -1)
+    DestroyTransferBuffer(state_buffer_);
   // Delete all the locally cached shared memory objects, closing the handle
   // in this process.
   for (TransferBufferMap::iterator it = transfer_buffers_.begin();
@@ -148,14 +153,14 @@ bool CommandBufferProxyImpl::Initialize() {
     return false;
   }
 
-  int32 state_buffer = CreateTransferBuffer(sizeof *shared_state_, -1);
+  state_buffer_ = CreateTransferBuffer(sizeof *shared_state_, -1);
 
-  if (state_buffer == -1) {
+  if (state_buffer_ == -1) {
     LOG(ERROR) << "Failed to create shared state transfer buffer.";
     return false;
   }
 
-  gpu::Buffer buffer = GetTransferBuffer(state_buffer);
+  gpu::Buffer buffer = GetTransferBuffer(state_buffer_);
   if (!buffer.ptr) {
     LOG(ERROR) << "Failed to get shared state transfer buffer";
     return false;
@@ -165,7 +170,7 @@ bool CommandBufferProxyImpl::Initialize() {
   shared_state_->Initialize();
 
   if (!Send(new GpuCommandBufferMsg_SetSharedStateBuffer(route_id_,
-                                                         state_buffer))) {
+                                                         state_buffer_))) {
     LOG(ERROR) << "Failed to initialize shared command buffer state.";
     return false;
   }
@@ -258,8 +263,8 @@ int32 CommandBufferProxyImpl::CreateTransferBuffer(
   base::SharedMemoryHandle handle = shm->handle();
 #if defined(OS_WIN)
   // Windows needs to explicitly duplicate the handle out to another process.
-  if (!content::BrokerDuplicateHandle(handle, channel_->gpu_pid(),
-                                      &handle, FILE_MAP_WRITE, 0)) {
+  if (!BrokerDuplicateHandle(handle, channel_->gpu_pid(), &handle,
+                             FILE_MAP_WRITE, 0)) {
     return -1;
   }
 #elif defined(OS_POSIX)
@@ -289,8 +294,8 @@ int32 CommandBufferProxyImpl::RegisterTransferBuffer(
   base::SharedMemoryHandle handle = shared_memory->handle();
 #if defined(OS_WIN)
   // Windows needs to explicitly duplicate the handle out to another process.
-  if (!content::BrokerDuplicateHandle(handle, channel_->gpu_pid(),
-                                      &handle, FILE_MAP_WRITE, 0)) {
+  if (!BrokerDuplicateHandle(handle, channel_->gpu_pid(), &handle,
+                             FILE_MAP_WRITE, 0)) {
     return -1;
   }
 #endif
@@ -335,7 +340,7 @@ Buffer CommandBufferProxyImpl::GetTransferBuffer(int32 id) {
 
   // Assuming we are in the renderer process, the service is responsible for
   // duplicating the handle. This might not be true for NaCl.
-  base::SharedMemoryHandle handle;
+  base::SharedMemoryHandle handle = base::SharedMemoryHandle();
   uint32 size;
   if (!Send(new GpuCommandBufferMsg_GetTransferBuffer(route_id_,
                                                       id,
@@ -456,6 +461,13 @@ bool CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
   return true;
 }
 
+
+bool CommandBufferProxyImpl::GenerateMailboxNames(
+    unsigned num,
+    std::vector<std::string>* names) {
+  return channel_->GenerateMailboxNames(num, names);
+}
+
 bool CommandBufferProxyImpl::SetParent(
     CommandBufferProxy* parent_command_buffer,
     uint32 parent_texture_id) {
@@ -558,3 +570,14 @@ void CommandBufferProxyImpl::TryUpdateState() {
   if (last_state_.error == gpu::error::kNoError)
     shared_state_->Read(&last_state_);
 }
+
+void CommandBufferProxyImpl::SendManagedMemoryStats(
+    const GpuManagedMemoryStats& stats) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  Send(new GpuCommandBufferMsg_SendClientManagedMemoryStats(route_id_,
+                                                            stats));
+}
+
+}  // namespace content

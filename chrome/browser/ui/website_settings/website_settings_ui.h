@@ -34,6 +34,14 @@ class Image;
 // etc.).
 class WebsiteSettingsUI {
  public:
+  // The Website Settings UI contains several tabs. Each tab is assiciated with
+  // a unique tab id. The enum |TabId| contains all the ids for the tabs.
+  enum TabId {
+    TAB_ID_PERMISSIONS = 0,
+    TAB_ID_CONNECTION,
+    NUM_TAB_IDS,
+  };
+
   // |CookieInfo| contains information about the cookies from a specific source.
   // A source can for example be a specific origin or an entire domain.
   struct CookieInfo {
@@ -133,6 +141,9 @@ class WebsiteSettingsUI {
 
   // Sets the first visited data. |first_visit| can be an empty string.
   virtual void SetFirstVisit(const string16& first_visit) = 0;
+
+  // Selects the tab with the given |tab_id|.
+  virtual void SetSelectedTab(TabId tab_id) = 0;
 };
 
 typedef WebsiteSettingsUI::CookieInfoList CookieInfoList;

@@ -22,16 +22,13 @@
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
+namespace content {
 class MockVideoCaptureManager;
 class VideoCaptureController;
 class VideoCaptureControllerEventHandler;
 
-namespace media_stream {
-
 // VideoCaptureManager opens/closes and start/stops video capture devices.
-class CONTENT_EXPORT VideoCaptureManager
-    : public base::RefCountedThreadSafe<VideoCaptureManager>,
-      public MediaStreamProvider {
+class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
  public:
   // Calling |Start| of this id will open the first device, even though open has
   // not been called. This is used to be able to use video capture devices
@@ -65,10 +62,6 @@ class CONTENT_EXPORT VideoCaptureManager
   virtual void Stop(const media::VideoCaptureSessionId& capture_session_id,
             base::Closure stopped_cb);
 
-  // A capture device error has occurred for |capture_session_id|. The device
-  // won't stream any more captured frames.
-  virtual void Error(const media::VideoCaptureSessionId& capture_session_id);
-
   // Used by unit test to make sure a fake device is used instead of a real
   // video capture device. Due to timing requirements, the function must be
   // called before EnumerateDevices and Open.
@@ -86,8 +79,7 @@ class CONTENT_EXPORT VideoCaptureManager
       VideoCaptureControllerEventHandler* handler);
 
  private:
-  friend class ::MockVideoCaptureManager;
-  friend class base::RefCountedThreadSafe<VideoCaptureManager>;
+  friend class MockVideoCaptureManager;
 
   virtual ~VideoCaptureManager();
 
@@ -111,15 +103,16 @@ class CONTENT_EXPORT VideoCaptureManager
       VideoCaptureControllerEventHandler* handler);
 
   // Executed on Browser::IO thread to call Listener.
-  void OnOpened(int capture_session_id);
-  void OnClosed(int capture_session_id);
+  void OnOpened(MediaStreamType type, int capture_session_id);
+  void OnClosed(MediaStreamType type, int capture_session_id);
   void OnDevicesEnumerated(const StreamDeviceInfoArray& devices);
-  void OnError(int capture_session_id, MediaStreamProviderError error);
+  void OnError(MediaStreamType type, int capture_session_id,
+               MediaStreamProviderError error);
 
   // Executed on device thread to make sure Listener is called from
   // Browser::IO thread.
-  void PostOnOpened(int capture_session_id);
-  void PostOnClosed(int capture_session_id);
+  void PostOnOpened(MediaStreamType type, int capture_session_id);
+  void PostOnClosed(MediaStreamType type, int capture_session_id);
   void PostOnDevicesEnumerated(const StreamDeviceInfoArray& devices);
   void PostOnError(int capture_session_id, MediaStreamProviderError error);
 
@@ -142,8 +135,12 @@ class CONTENT_EXPORT VideoCaptureManager
   // Only accessed from device thread.
   // VideoCaptureManager owns all VideoCaptureDevices and is responsible for
   // deleting the instances when they are not used any longer.
-  typedef std::map<int, media::VideoCaptureDevice*> VideoCaptureDevices;
-  VideoCaptureDevices devices_;
+  struct DeviceEntry {
+    MediaStreamType stream_type;
+    media::VideoCaptureDevice* capture_device;  // Maybe shared across sessions.
+  };
+  typedef std::map<int, DeviceEntry> VideoCaptureDevices;
+  VideoCaptureDevices devices_;  // Maps capture_session_id to DeviceEntry.
 
   // Set to true if using fake devices for testing, false by default.
   bool use_fake_device_;
@@ -158,6 +155,6 @@ class CONTENT_EXPORT VideoCaptureManager
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureManager);
 };
 
-}  // namespace media_stream
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_MANAGER_H_

@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -50,18 +51,17 @@ void NotifyProcessOutput(Profile* profile,
     return;
   }
 
-  base::ListValue args;
-  args.Append(new base::FundamentalValue(pid));
-  args.Append(new base::StringValue(output_type));
-  args.Append(new base::StringValue(output));
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  args->Append(new base::FundamentalValue(pid));
+  args->Append(new base::StringValue(output_type));
+  args->Append(new base::StringValue(output));
 
-  std::string args_json;
-  base::JSONWriter::Write(&args, &args_json);
-
-  if (profile && profile->GetExtensionEventRouter()) {
-    profile->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id, extensions::event_names::kOnTerminalProcessOutput,
-        args_json, NULL, GURL());
+  if (profile &&
+      extensions::ExtensionSystem::Get(profile)->event_router()) {
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        extensions::event_names::kOnTerminalProcessOutput, args.Pass()));
+    extensions::ExtensionSystem::Get(profile)->event_router()->
+        DispatchEventToExtension(extension_id, event.Pass());
   }
 }
 

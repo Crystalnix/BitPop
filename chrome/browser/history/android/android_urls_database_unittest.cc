@@ -6,8 +6,8 @@
 
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_unittest_base.h"
 #include "chrome/common/chrome_constants.h"
@@ -45,7 +45,7 @@ class AndroidURLsMigrationTest : public HistoryUnitTestBase {
 
 TEST_F(AndroidURLsMigrationTest, MigrateToVersion22) {
   HistoryDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(history_db_name_, profile_->GetPath()));
+  ASSERT_EQ(sql::INIT_OK, db.Init(history_db_name_, NULL));
   // Migration has done.
   // The column of previous table shouldn't exist.
   EXPECT_FALSE(db.GetDB().DoesColumnExist("android_urls", "bookmark"));

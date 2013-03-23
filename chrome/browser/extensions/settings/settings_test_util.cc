@@ -6,6 +6,7 @@
 
 #include "base/file_path.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/settings/settings_frontend.h"
 
 namespace extensions {
@@ -26,7 +27,7 @@ ValueStore* GetStorage(
       extension_id,
       settings_namespace,
       base::Bind(&AssignStorage, &storage));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   return storage;
 }
 
@@ -74,7 +75,7 @@ void MockExtensionService::AddExtensionWithIdAndPermissions(
     case Extension::TYPE_EXTENSION:
       break;
 
-    case Extension::TYPE_PACKAGED_APP: {
+    case Extension::TYPE_LEGACY_PACKAGED_APP: {
       DictionaryValue* app = new DictionaryValue();
       DictionaryValue* app_launch = new DictionaryValue();
       app_launch->SetString("local_path", "fake.html");
@@ -105,28 +106,37 @@ void MockExtensionService::AddExtensionWithIdAndPermissions(
   }
 }
 
-// MockProfile
+// MockExtensionSystem
 
-MockProfile::MockProfile(const FilePath& file_path)
-    : TestingProfile(file_path) {
-  event_router_.reset(new EventRouter(this));
+MockExtensionSystem::MockExtensionSystem(Profile* profile)
+      : TestExtensionSystem(profile) {}
+MockExtensionSystem::~MockExtensionSystem() {}
+
+EventRouter* MockExtensionSystem::event_router() {
+  if (!event_router_.get())
+    event_router_.reset(new EventRouter(profile_, NULL));
+  return event_router_.get();
 }
 
-MockProfile::~MockProfile() {}
-
-MockExtensionService* MockProfile::GetMockExtensionService() {
-  return &extension_service_;
-}
-
-ExtensionService* MockProfile::GetExtensionService() {
+ExtensionService* MockExtensionSystem::extension_service() {
   ExtensionServiceInterface* as_interface =
       static_cast<ExtensionServiceInterface*>(&extension_service_);
   return static_cast<ExtensionService*>(as_interface);
 }
 
-EventRouter* MockProfile::GetExtensionEventRouter() {
-  return event_router_.get();
+ProfileKeyedService* BuildMockExtensionSystem(Profile* profile) {
+  return new MockExtensionSystem(profile);
 }
+
+// MockProfile
+
+MockProfile::MockProfile(const FilePath& file_path)
+    : TestingProfile(file_path) {
+  ExtensionSystemFactory::GetInstance()->SetTestingFactoryAndUse(this,
+      &BuildMockExtensionSystem);
+}
+
+MockProfile::~MockProfile() {}
 
 // ScopedSettingsFactory
 
@@ -144,7 +154,8 @@ void ScopedSettingsStorageFactory::Reset(
 }
 
 ValueStore* ScopedSettingsStorageFactory::Create(
-    const FilePath& base_path, const std::string& extension_id) {
+    const FilePath& base_path,
+    const std::string& extension_id) {
   DCHECK(delegate_.get());
   return delegate_->Create(base_path, extension_id);
 }

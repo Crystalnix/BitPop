@@ -12,15 +12,11 @@
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/policy/cloud_policy_store.h"
 #include "chrome/browser/policy/cloud_policy_validator.h"
+#include "chrome/browser/policy/user_cloud_policy_store_base.h"
 
 namespace chromeos {
 class SessionManagerClient;
-}
-
-namespace enterprise_management {
-class CloudPolicySettings;
 }
 
 namespace policy {
@@ -34,10 +30,11 @@ class LegacyPolicyCacheLoader;
 // Additionally, this class drives legacy UserPolicyTokenCache and
 // UserPolicyDiskCache instances, migrating policy from these to session_manager
 // storage on the fly.
-class UserCloudPolicyStoreChromeOS : public CloudPolicyStore {
+class UserCloudPolicyStoreChromeOS : public UserCloudPolicyStoreBase {
  public:
   UserCloudPolicyStoreChromeOS(
       chromeos::SessionManagerClient* session_manager_client,
+      const std::string& username,
       const FilePath& legacy_token_cache_file,
       const FilePath& legacy_policy_cache_file);
   virtual ~UserCloudPolicyStoreChromeOS();
@@ -61,11 +58,6 @@ class UserCloudPolicyStoreChromeOS : public CloudPolicyStore {
 
   // Called back from SessionManagerClient for policy store operations.
   void OnPolicyStored(bool);
-
-  // Installs |policy_data| and |payload|.
-  void InstallPolicy(
-      scoped_ptr<enterprise_management::PolicyData> policy_data,
-      scoped_ptr<enterprise_management::CloudPolicySettings> payload);
 
   // Starts policy blob validation.
   void Validate(
@@ -92,6 +84,7 @@ class UserCloudPolicyStoreChromeOS : public CloudPolicyStore {
   static void RemoveLegacyCacheDir(const FilePath& dir);
 
   chromeos::SessionManagerClient* session_manager_client_;
+  const std::string username_;
 
   base::WeakPtrFactory<UserCloudPolicyStoreChromeOS> weak_factory_;
 

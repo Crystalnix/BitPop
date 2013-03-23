@@ -49,7 +49,7 @@ DraggedTabView::DraggedTabView(const std::vector<views::View*>& renderers,
   container_->SetContentsView(this);
 #if defined(OS_WIN) && !defined(USE_AURA)
   static_cast<views::NativeWidgetWin*>(container_->native_widget())->
-      set_can_update_layered_window(false);
+      SetCanUpdateLayeredWindow(false);
 
   BOOL drag;
   if ((::SystemParametersInfo(SPI_GETDRAGFULLWINDOWS, 0, &drag, 0) != 0) &&
@@ -152,30 +152,22 @@ void DraggedTabView::PaintDetachedView(gfx::Canvas* canvas) {
   for (size_t i = 0; i < renderers_.size(); ++i)
     renderers_[i]->Paint(&scale_canvas);
 
-  SkIRect subset;
-  subset.set(0, 0, ps.width(), ps.height());
   SkBitmap mipmap = scale_canvas.ExtractImageRep().sk_bitmap();
   mipmap.buildMipMap(true);
 
-  SkShader* bitmap_shader =
+  skia::RefPtr<SkShader> bitmap_shader = skia::AdoptRef(
       SkShader::CreateBitmapShader(mipmap, SkShader::kClamp_TileMode,
-                                   SkShader::kClamp_TileMode);
+                                   SkShader::kClamp_TileMode));
 
   SkMatrix shader_scale;
   shader_scale.setScale(kScalingFactor, kScalingFactor);
   bitmap_shader->setLocalMatrix(shader_scale);
 
   SkPaint paint;
-  paint.setShader(bitmap_shader);
+  paint.setShader(bitmap_shader.get());
   paint.setAntiAlias(true);
-  bitmap_shader->unref();
 
-  SkRect rc;
-  rc.fLeft = 0;
-  rc.fTop = 0;
-  rc.fRight = SkIntToScalar(ps.width());
-  rc.fBottom = SkIntToScalar(ps.height());
-  canvas->sk_canvas()->drawRect(rc, paint);
+  canvas->DrawRect(gfx::Rect(ps), paint);
 }
 
 void DraggedTabView::PaintFocusRect(gfx::Canvas* canvas) {

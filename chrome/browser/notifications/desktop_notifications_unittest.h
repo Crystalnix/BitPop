@@ -10,16 +10,17 @@
 
 #include "base/message_loop.h"
 #include "chrome/browser/notifications/balloon_collection_impl.h"
+#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_test_util.h"
-#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/render_view_test.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+class ActiveDesktopMonitor;
 class DesktopNotificationsTest;
 typedef LoggingNotificationDelegate<DesktopNotificationsTest>
     LoggingNotificationProxy;
@@ -108,14 +109,16 @@ class DesktopNotificationsTest : public testing::Test {
   MockBalloonCollection* balloon_collection_;
 
   // Real UI manager.
-  scoped_ptr<NotificationUIManager> ui_manager_;
+  scoped_ptr<BalloonNotificationUIManager> ui_manager_;
 
   // Real DesktopNotificationService
   scoped_ptr<DesktopNotificationService> service_;
 
-#if defined(USE_AURA)
+#if defined(USE_ASH)
   content::RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox
       webkit_platform_support_;
+
+  scoped_ptr<ActiveDesktopMonitor> active_desktop_monitor_;
 #endif
 
   // Contains the cumulative output of the unit test.

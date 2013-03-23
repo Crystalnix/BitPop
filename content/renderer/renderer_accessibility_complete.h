@@ -14,8 +14,6 @@
 #include "content/renderer/renderer_accessibility.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityNotification.h"
 
-class RenderViewImpl;
-
 namespace WebKit {
 class WebAccessibilityObject;
 class WebDocument;
@@ -23,6 +21,7 @@ class WebNode;
 };
 
 namespace content {
+class RenderViewImpl;
 
 // This is the subclass of RendererAccessibility that implements
 // complete accessibility support for assistive technology (as opposed to
@@ -57,8 +56,8 @@ class RendererAccessibilityComplete : public RendererAccessibility {
   // representation of the browser tree - just IDs and parent/child
   // relationships.
   struct BrowserTreeNode {
-    BrowserTreeNode() : id(0) {}
-    ~BrowserTreeNode() {}
+    BrowserTreeNode();
+    ~BrowserTreeNode();
     int32 id;
     std::vector<BrowserTreeNode*> children;
   };

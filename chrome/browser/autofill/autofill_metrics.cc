@@ -9,7 +9,7 @@
 #include "base/time.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/autofill/form_structure.h"
-#include "webkit/forms/form_data.h"
+#include "chrome/common/form_data.h"
 
 namespace {
 
@@ -52,6 +52,7 @@ enum FieldTypeGroupForMetrics {
   CREDIT_CARD_NAME,
   CREDIT_CARD_NUMBER,
   CREDIT_CARD_DATE,
+  CREDIT_CARD_TYPE,
   NUM_FIELD_TYPE_GROUPS_FOR_METRICS
 };
 
@@ -137,6 +138,8 @@ int GetFieldTypeGroupMetric(const AutofillFieldType field_type,
         case ::CREDIT_CARD_NUMBER:
           group = CREDIT_CARD_NUMBER;
           break;
+        case ::CREDIT_CARD_TYPE:
+          group = CREDIT_CARD_TYPE;
         default:
           group = CREDIT_CARD_DATE;
       }
@@ -203,7 +206,7 @@ void LogServerExperimentId(const std::string& histogram_name,
   ServerExperiment metric = UNKNOWN_EXPERIMENT;
 
   const std::string default_experiment_name =
-      FormStructure(webkit::forms::FormData()).server_experiment_id();
+      FormStructure(FormData()).server_experiment_id();
   if (experiment_id.empty())
     metric = NO_EXPERIMENT;
   else if (experiment_id == "ar06")
@@ -256,6 +259,14 @@ void AutofillMetrics::LogCreditCardInfoBarMetric(InfoBarMetric metric) const {
 
   UMA_HISTOGRAM_ENUMERATION("Autofill.CreditCardInfoBar", metric,
                             NUM_INFO_BAR_METRICS);
+}
+
+void AutofillMetrics::LogDeveloperEngagementMetric(
+    DeveloperEngagementMetric metric) const {
+  DCHECK(metric < NUM_DEVELOPER_ENGAGEMENT_METRICS);
+
+  UMA_HISTOGRAM_ENUMERATION("Autofill.DeveloperEngagement", metric,
+                            NUM_DEVELOPER_ENGAGEMENT_METRICS);
 }
 
 void AutofillMetrics::LogHeuristicTypePrediction(

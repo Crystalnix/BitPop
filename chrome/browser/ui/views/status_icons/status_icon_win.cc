@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
 
+#include "base/string_number_conversions.h"
+#include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/icon_util.h"
@@ -11,6 +13,7 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
+#include "win8/util/win8_util.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // StatusIconWin, public:
@@ -81,19 +84,19 @@ void StatusIconWin::ResetIcon() {
     LOG(WARNING) << "Unable to re-create status tray icon.";
 }
 
-void StatusIconWin::SetImage(const SkBitmap& image) {
+void StatusIconWin::SetImage(const gfx::ImageSkia& image) {
   // Create the icon.
   NOTIFYICONDATA icon_data;
   InitIconData(&icon_data);
   icon_data.uFlags = NIF_ICON;
-  icon_.Set(IconUtil::CreateHICONFromSkBitmap(image));
+  icon_.Set(IconUtil::CreateHICONFromSkBitmap(*image.bitmap()));
   icon_data.hIcon = icon_.Get();
   BOOL result = Shell_NotifyIcon(NIM_MODIFY, &icon_data);
   if (!result)
     LOG(WARNING) << "Error setting status tray icon image";
 }
 
-void StatusIconWin::SetPressedImage(const SkBitmap& image) {
+void StatusIconWin::SetPressedImage(const gfx::ImageSkia& image) {
   // Ignore pressed images, since the standard on Windows is to not highlight
   // pressed status icons.
 }
@@ -109,7 +112,7 @@ void StatusIconWin::SetToolTip(const string16& tool_tip) {
     LOG(WARNING) << "Unable to set tooltip for status tray icon";
 }
 
-void StatusIconWin::DisplayBalloon(const SkBitmap& icon,
+void StatusIconWin::DisplayBalloon(const gfx::ImageSkia& icon,
                                    const string16& title,
                                    const string16& contents) {
   NOTIFYICONDATA icon_data;
@@ -121,8 +124,8 @@ void StatusIconWin::DisplayBalloon(const SkBitmap& icon,
   icon_data.uTimeout = 0;
 
   base::win::Version win_version = base::win::GetVersion();
-  if (!icon.empty() && win_version != base::win::VERSION_PRE_XP) {
-    balloon_icon_.Set(IconUtil::CreateHICONFromSkBitmap(icon));
+  if (!icon.isNull() && win_version != base::win::VERSION_PRE_XP) {
+    balloon_icon_.Set(IconUtil::CreateHICONFromSkBitmap(*icon.bitmap()));
     if (win_version >= base::win::VERSION_VISTA) {
       icon_data.hBalloonIcon = balloon_icon_.Get();
       icon_data.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON;
@@ -158,3 +161,51 @@ void StatusIconWin::InitIconData(NOTIFYICONDATA* icon_data) {
   icon_data->hWnd = window_;
   icon_data->uID = icon_id_;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// StatusIconMetro
+
+StatusIconMetro::StatusIconMetro(UINT id)
+    : id_(id) {
+  DCHECK(win8::IsSingleWindowMetroMode());
+}
+
+StatusIconMetro::~StatusIconMetro() {
+}
+
+void StatusIconMetro::SetImage(const gfx::ImageSkia& image) {
+  DVLOG(1) << __FUNCTION__;
+}
+
+void StatusIconMetro::SetPressedImage(const gfx::ImageSkia& image) {
+  DVLOG(1) << __FUNCTION__;
+}
+
+void StatusIconMetro::SetToolTip(const string16& tool_tip) {
+  DVLOG(1) << __FUNCTION__;
+  tool_tip_ = tool_tip;
+}
+
+void StatusIconMetro::DisplayBalloon(const gfx::ImageSkia& icon,
+                                     const string16& title,
+                                     const string16& contents) {
+  DVLOG(1) << __FUNCTION__;
+
+  HMODULE metro_module = base::win::GetMetroModule();
+  DCHECK(metro_module);
+
+  if (metro_module) {
+    base::win::MetroNotification notification =
+        reinterpret_cast<base::win::MetroNotification>(
+            ::GetProcAddress(metro_module, "DisplayNotification"));
+    DCHECK(notification);
+    notification("", "", title.c_str(), contents.c_str(), L"",
+                 base::IntToString(id_).c_str(), NULL, NULL);
+  }
+}
+
+void StatusIconMetro::UpdatePlatformContextMenu(ui::MenuModel* menu) {
+  DVLOG(1) << __FUNCTION__
+           << " This functionality is not supported in Windows 8 metro";
+}
+

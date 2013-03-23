@@ -19,8 +19,6 @@
 #include "content/public/common/common_param_traits_macros.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_utils.h"
-#include "net/base/ip_endpoint.h"
-#include "net/url_request/url_request_status.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/surface/transport_dib.h"
 
@@ -35,16 +33,11 @@ class Point;
 class Rect;
 class RectF;
 class Size;
+class Vector2d;
 }  // namespace gfx
 
 namespace net {
-class HttpResponseHeaders;
 class HostPortPair;
-class UploadData;
-}
-
-namespace ui {
-class Range;
 }
 
 namespace IPC {
@@ -57,43 +50,11 @@ struct CONTENT_EXPORT ParamTraits<GURL> {
   static void Log(const param_type& p, std::string* l);
 };
 
-template <>
-struct CONTENT_EXPORT ParamTraits<net::URLRequestStatus> {
-  typedef net::URLRequestStatus param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
-template <>
-struct CONTENT_EXPORT ParamTraits<scoped_refptr<net::UploadData> > {
-  typedef scoped_refptr<net::UploadData> param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
 template<>
 struct CONTENT_EXPORT ParamTraits<net::HostPortPair> {
   typedef net::HostPortPair param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
-template <>
-struct ParamTraits<scoped_refptr<net::HttpResponseHeaders> > {
-  typedef scoped_refptr<net::HttpResponseHeaders> param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
-template <>
-struct ParamTraits<net::IPEndPoint> {
-  typedef net::IPEndPoint param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* p);
   static void Log(const param_type& p, std::string* l);
 };
 
@@ -114,8 +75,40 @@ struct CONTENT_EXPORT ParamTraits<gfx::Point> {
 };
 
 template <>
+struct CONTENT_EXPORT ParamTraits<gfx::PointF> {
+  typedef gfx::PointF param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
 struct CONTENT_EXPORT ParamTraits<gfx::Size> {
   typedef gfx::Size param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct CONTENT_EXPORT ParamTraits<gfx::SizeF> {
+  typedef gfx::SizeF param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct CONTENT_EXPORT ParamTraits<gfx::Vector2d> {
+  typedef gfx::Vector2d param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct CONTENT_EXPORT ParamTraits<gfx::Vector2dF> {
+  typedef gfx::Vector2dF param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -167,14 +160,6 @@ struct ParamTraits<gfx::NativeWindow> {
   static void Log(const param_type& p, std::string* l) {
     l->append("<gfx::NativeWindow>");
   }
-};
-
-template <>
-struct CONTENT_EXPORT ParamTraits<ui::Range> {
-  typedef ui::Range param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
 };
 
 #if defined(OS_WIN)

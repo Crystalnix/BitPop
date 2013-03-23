@@ -26,6 +26,8 @@ using media::PipelineStatusCB;
 using media::StatisticsCB;
 using media::VideoDecoder;
 
+namespace content {
+
 RTCVideoDecoder::RTCVideoDecoder(base::TaskRunner* video_decoder_thread,
                                  base::TaskRunner* main_thread,
                                  webrtc::VideoTrackInterface* video_track)
@@ -34,7 +36,6 @@ RTCVideoDecoder::RTCVideoDecoder(base::TaskRunner* video_decoder_thread,
       visible_size_(640, 480),
       state_(kUnInitialized),
       got_first_frame_(false),
-      shutting_down_(false),
       video_track_(video_track) {
 }
 
@@ -68,12 +69,13 @@ void RTCVideoDecoder::Read(const ReadCB& read_cb) {
 
   base::AutoLock auto_lock(lock_);
   CHECK(read_cb_.is_null());
-  read_cb_ = read_cb;
 
-  if (shutting_down_) {
-    video_decoder_thread_->PostTask(FROM_HERE,
-        base::Bind(&RTCVideoDecoder::CancelPendingRead, this));
+  if (state_ == kStopped) {
+    read_cb.Run(kOk, NULL);
+    return;
   }
+
+  read_cb_ = read_cb;
 }
 
 void RTCVideoDecoder::Reset(const base::Closure& closure) {
@@ -99,18 +101,8 @@ void RTCVideoDecoder::Stop(const base::Closure& closure) {
   }
 
   state_ = kStopped;
-  closure.Run();
-}
-
-void RTCVideoDecoder::PrepareForShutdownHack() {
-  if (!video_decoder_thread_->RunsTasksOnCurrentThread()) {
-    video_decoder_thread_->PostTask(
-        FROM_HERE, base::Bind(&RTCVideoDecoder::PrepareForShutdownHack,
-                              this));
-    return;
-  }
-  shutting_down_ = true;
   CancelPendingRead();
+  closure.Run();
 }
 
 void RTCVideoDecoder::SetSize(int width, int height) {
@@ -155,6 +147,7 @@ void RTCVideoDecoder::RenderFrame(const cricket::VideoFrame* frame) {
   scoped_refptr<media::VideoFrame> video_frame =
       media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
                                      visible_size_,
+                                     gfx::Rect(visible_size_),
                                      visible_size_,
                                      timestamp - start_time_);
   last_frame_timestamp_ = timestamp;
@@ -202,3 +195,5 @@ void RTCVideoDecoder::DeregisterFromVideoTrack() {
 RTCVideoDecoder::~RTCVideoDecoder() {
   DCHECK_NE(kNormal, state_);
 }
+
+}  // namespace content

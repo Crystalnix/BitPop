@@ -18,7 +18,6 @@ class BackingStore;
 class GURL;
 class PrefService;
 class SkBitmap;
-class TabContents;
 
 namespace base {
 class DictionaryValue;
@@ -29,7 +28,7 @@ class WebContents;
 }
 
 namespace skia {
-class PlatformCanvas;
+class PlatformBitmap;
 }
 
 // Windows
@@ -109,6 +108,11 @@ class CreateTabFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("tabs.create")
 };
+class DuplicateTabFunction : public SyncExtensionFunction {
+  virtual ~DuplicateTabFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("tabs.duplicate")
+};
 class HighlightTabsFunction : public SyncExtensionFunction {
   virtual ~HighlightTabsFunction() {}
   virtual bool RunImpl() OVERRIDE;
@@ -125,7 +129,7 @@ class UpdateTabFunction : public AsyncExtensionFunction {
                                   bool* is_async);
   virtual void PopulateResult();
 
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
 
  private:
   virtual bool RunImpl() OVERRIDE;
@@ -180,15 +184,14 @@ class CaptureVisibleTabFunction : public AsyncExtensionFunction,
 
   virtual ~CaptureVisibleTabFunction() {}
   virtual bool RunImpl() OVERRIDE;
-  virtual bool GetTabToCapture(content::WebContents** web_contents,
-                               TabContents** tab_contents);
+  virtual bool GetTabToCapture(content::WebContents** web_contents);
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
   void SendResultFromBitmap(const SkBitmap& screen_capture);
 
  private:
-  void CopyFromBackingStoreComplete(skia::PlatformCanvas* canvas,
+  void CopyFromBackingStoreComplete(skia::PlatformBitmap* bitmap,
                                     bool succeeded);
 
   content::NotificationRegistrar registrar_;

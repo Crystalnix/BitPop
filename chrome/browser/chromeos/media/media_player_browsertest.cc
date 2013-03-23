@@ -26,14 +26,14 @@ class MediaPlayerBrowserTest : public InProcessBrowserTest {
       return false;
     for (BrowserList::const_iterator it = BrowserList::begin();
          it != BrowserList::end(); ++it) {
-      if ((*it)->is_type_panel() && (*it)->is_app() && (*it) == browser)
+      if ((*it)->is_type_popup() && (*it)->is_app() && (*it) == browser)
         return true;
     }
     return false;
   }
 
   bool IsPlayerVisible() {
-    return IsBrowserVisible(MediaPlayer::GetInstance()->mediaplayer_browser_);
+    return IsBrowserVisible(MediaPlayer::GetInstance()->GetBrowser());
   }
 };
 

@@ -12,26 +12,26 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/renderer_host/pepper/pepper_file_message_filter.h"
+#include "base/process.h"
+#include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "ipc/ipc_sender.h"
-
-class BrowserChildProcessHostImpl;
-
-namespace content {
-struct PepperPluginInfo;
-class ResourceContext;
-}
+#include "ppapi/shared_impl/ppapi_permissions.h"
 
 namespace net {
 class HostResolver;
 }
 
+namespace content {
+class BrowserChildProcessHostImpl;
+class ResourceContext;
+struct PepperPluginInfo;
+
 // Process host for PPAPI plugin and broker processes.
 // When used for the broker, interpret all references to "plugin" with "broker".
-class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
+class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
                                public IPC::Sender {
  public:
   class Client {
@@ -47,6 +47,7 @@ class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
     //   0
     virtual void OnPpapiChannelOpened(
         const IPC::ChannelHandle& channel_handle,
+        base::ProcessId plugin_pid,
         int plugin_child_id) = 0;
 
     // Returns true if the current connection is off-the-record.
@@ -59,7 +60,7 @@ class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
   class PluginClient : public Client {
    public:
     // Returns the resource context for the renderer requesting the channel.
-    virtual content::ResourceContext* GetResourceContext() = 0;
+    virtual ResourceContext* GetResourceContext() = 0;
 
    protected:
     virtual ~PluginClient() {}
@@ -73,11 +74,25 @@ class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
   virtual ~PpapiPluginProcessHost();
 
   static PpapiPluginProcessHost* CreatePluginHost(
-      const content::PepperPluginInfo& info,
+      const PepperPluginInfo& info,
       const FilePath& profile_data_directory,
       net::HostResolver* host_resolver);
   static PpapiPluginProcessHost* CreateBrokerHost(
-      const content::PepperPluginInfo& info);
+      const PepperPluginInfo& info);
+
+  // Notification that a PP_Instance has been created and the associated
+  // renderer related data including the RenderView/Process pair for the given
+  // plugin. This is necessary so that when the plugin calls us with a
+  // PP_Instance we can find the RenderView associated with it without trusting
+  // the plugin.
+  static void DidCreateOutOfProcessInstance(
+      int plugin_process_id,
+      int32 pp_instance,
+      const PepperRendererInstanceData& instance_data);
+
+  // The opposite of DIdCreate... above.
+  static void DidDeleteOutOfProcessInstance(int plugin_process_id,
+                                            int32 pp_instance);
 
   // IPC::Sender implementation:
   virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -98,14 +113,14 @@ class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
 
   // Constructors for plugin and broker process hosts, respectively.
   // You must call Init before doing anything else.
-  PpapiPluginProcessHost(const content::PepperPluginInfo& info,
+  PpapiPluginProcessHost(const PepperPluginInfo& info,
                          const FilePath& profile_data_directory,
                          net::HostResolver* host_resolver);
   PpapiPluginProcessHost();
 
   // Actually launches the process with the given plugin info. Returns true
   // on success (the process was spawned).
-  bool Init(const content::PepperPluginInfo& info);
+  bool Init(const PepperPluginInfo& info);
 
   void RequestPluginChannel(Client* client);
 
@@ -124,8 +139,8 @@ class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
   // Handles most requests from the plugin. May be NULL.
   scoped_refptr<PepperMessageFilter> filter_;
 
-  // Handles filesystem requests from flash plugins. May be NULL.
-  scoped_refptr<PepperFileMessageFilter> file_filter_;
+  ppapi::PpapiPermissions permissions_;
+  scoped_ptr<BrowserPpapiHostImpl> host_impl_;
 
   // Observes network changes. May be NULL.
   scoped_ptr<PluginNetworkObserver> network_observer_;
@@ -152,22 +167,24 @@ class PpapiPluginProcessHost : public content::BrowserChildProcessHostDelegate,
 };
 
 class PpapiPluginProcessHostIterator
-    : public content::BrowserChildProcessHostTypeIterator<
+    : public BrowserChildProcessHostTypeIterator<
           PpapiPluginProcessHost> {
  public:
   PpapiPluginProcessHostIterator()
-      : content::BrowserChildProcessHostTypeIterator<
-          PpapiPluginProcessHost>(content::PROCESS_TYPE_PPAPI_PLUGIN) {}
+      : BrowserChildProcessHostTypeIterator<
+          PpapiPluginProcessHost>(PROCESS_TYPE_PPAPI_PLUGIN) {}
 };
 
 class PpapiBrokerProcessHostIterator
-    : public content::BrowserChildProcessHostTypeIterator<
+    : public BrowserChildProcessHostTypeIterator<
           PpapiPluginProcessHost> {
  public:
   PpapiBrokerProcessHostIterator()
-      : content::BrowserChildProcessHostTypeIterator<
-          PpapiPluginProcessHost>(content::PROCESS_TYPE_PPAPI_BROKER) {}
+      : BrowserChildProcessHostTypeIterator<
+          PpapiPluginProcessHost>(PROCESS_TYPE_PPAPI_BROKER) {}
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_PPAPI_PLUGIN_PROCESS_HOST_H_
 

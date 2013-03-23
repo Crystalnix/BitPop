@@ -7,16 +7,17 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
+#include "grit/ui_resources.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_text_field.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_text_field_cell.h"
+#import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -74,8 +75,7 @@ const float kRightEdgeOffset = 25;
 }
 
 - (void)dealloc {
-  // All animations should be explicitly stopped by the TabContents
-  // before a tab is closed.
+  // All animations should have been explicitly stopped before a tab is closed.
   DCHECK(!showHideAnimation_.get());
   DCHECK(!moveAnimation_.get());
   [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -93,6 +93,15 @@ const float kRightEdgeOffset = 25;
 }
 
 - (void)awakeFromNib {
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+                   forButtonState:image_button_cell::kDefaultState];
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_H
+                   forButtonState:image_button_cell::kHoverState];
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_P
+                   forButtonState:image_button_cell::kPressedState];
+  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+                   forButtonState:image_button_cell::kDisabledState];
+
   [findBarView_ setFrame:[self hiddenFindBarFrame]];
   defaultWidth_ = NSWidth([findBarView_ frame]);
 
@@ -111,9 +120,9 @@ const float kRightEdgeOffset = 25;
 
 - (IBAction)previousResult:(id)sender {
   if (findBarBridge_) {
-    FindTabHelper* find_tab_helper = findBarBridge_->
-        GetFindBarController()->tab_contents()->find_tab_helper();
-    find_tab_helper->StartFinding(
+    FindTabHelper* findTabHelper = FindTabHelper::FromWebContents(
+        findBarBridge_->GetFindBarController()->web_contents());
+    findTabHelper->StartFinding(
         base::SysNSStringToUTF16([findText_ stringValue]),
         false, false);
   }
@@ -121,9 +130,9 @@ const float kRightEdgeOffset = 25;
 
 - (IBAction)nextResult:(id)sender {
   if (findBarBridge_) {
-    FindTabHelper* find_tab_helper = findBarBridge_->
-        GetFindBarController()->tab_contents()->find_tab_helper();
-    find_tab_helper->StartFinding(
+    FindTabHelper* findTabHelper = FindTabHelper::FromWebContents(
+        findBarBridge_->GetFindBarController()->web_contents());
+    findTabHelper->StartFinding(
         base::SysNSStringToUTF16([findText_ stringValue]),
         true, false);
   }
@@ -164,15 +173,15 @@ const float kRightEdgeOffset = 25;
 }
 
 // NSControl delegate method.
-- (void)controlTextDidChange:(NSNotification *)aNotification {
+- (void)controlTextDidChange:(NSNotification*)aNotification {
   if (!findBarBridge_)
     return;
 
-  TabContents* tab_contents =
-      findBarBridge_->GetFindBarController()->tab_contents();
-  if (!tab_contents)
+  content::WebContents* webContents =
+      findBarBridge_->GetFindBarController()->web_contents();
+  if (!webContents)
     return;
-  FindTabHelper* find_tab_helper = tab_contents->find_tab_helper();
+  FindTabHelper* findTabHelper = FindTabHelper::FromWebContents(webContents);
 
   NSString* findText = [findText_ stringValue];
   suppressPboardUpdateActions_ = YES;
@@ -180,12 +189,12 @@ const float kRightEdgeOffset = 25;
   suppressPboardUpdateActions_ = NO;
 
   if ([findText length] > 0) {
-    find_tab_helper->
+    findTabHelper->
         StartFinding(base::SysNSStringToUTF16(findText), true, false);
   } else {
     // The textbox is empty so we reset.
-    find_tab_helper->StopFinding(FindBarController::kClearSelectionOnPage);
-    [self updateUIForFindResult:find_tab_helper->find_result()
+    findTabHelper->StopFinding(FindBarController::kClearSelectionOnPage);
+    [self updateUIForFindResult:findTabHelper->find_result()
                        withText:string16()];
   }
 }
@@ -222,9 +231,9 @@ const float kRightEdgeOffset = 25;
              command == @selector(scrollToEndOfDocument:) ||
              command == @selector(moveUp:) ||
              command == @selector(moveDown:)) {
-    TabContents* contents =
-        findBarBridge_->GetFindBarController()->tab_contents();
-    if (!contents)
+    content::WebContents* web_contents =
+        findBarBridge_->GetFindBarController()->web_contents();
+    if (!web_contents)
       return NO;
 
     // Sanity-check to make sure we got a keyboard event.
@@ -239,7 +248,7 @@ const float kRightEdgeOffset = 25;
     // cmd-up/down if we ever decide to include |moveToBeginningOfDocument:| in
     // the list above.
     content::RenderViewHost* render_view_host =
-        contents->web_contents()->GetRenderViewHost();
+        web_contents->GetRenderViewHost();
     render_view_host->ForwardKeyboardEvent(NativeWebKeyboardEvent(event));
     return YES;
   }
@@ -303,8 +312,7 @@ const float kRightEdgeOffset = 25;
   if (!(focusTracker_.get() &&
         [focusTracker_ restoreFocusInWindow:[findBarView_ window]])) {
     // Fall back to giving focus to the tab contents.
-    findBarBridge_->
-        GetFindBarController()->tab_contents()->web_contents()->Focus();
+    findBarBridge_->GetFindBarController()->web_contents()->Focus();
   }
   focusTracker_.reset(nil);
 }
@@ -335,7 +343,7 @@ const float kRightEdgeOffset = 25;
   }
 
   // Make sure Find Next and Find Previous are enabled if we found any matches.
-  BOOL buttonsEnabled = result.number_of_matches() > 0 ? YES : NO;
+  BOOL buttonsEnabled = result.number_of_matches() > 0;
   [previousButton_ setEnabled:buttonsEnabled];
   [nextButton_ setEnabled:buttonsEnabled];
 
@@ -391,12 +399,12 @@ const float kRightEdgeOffset = 25;
 }
 
 - (gfx::Point)findBarWindowPosition {
-  gfx::Rect view_rect(NSRectToCGRect([[self view] frame]));
+  gfx::Rect viewRect(NSRectToCGRect([[self view] frame]));
   // Convert Cocoa coordinates (Y growing up) to Y growing down.
   // Offset from |maxY_|, which represents the content view's top, instead
   // of from the superview, which represents the whole browser window.
-  view_rect.set_y(maxY_ - view_rect.bottom());
-  return view_rect.origin();
+  viewRect.set_y(maxY_ - viewRect.bottom());
+  return viewRect.origin();
 }
 
 - (int)findBarWidth {
@@ -462,41 +470,40 @@ const float kRightEdgeOffset = 25;
   // Get the rect of the FindBar.
   NSView* view = [self view];
   NSRect frame = [view frame];
-  gfx::Rect view_rect(NSRectToCGRect(frame));
+  gfx::Rect viewRect(NSRectToCGRect(frame));
 
   if (!findBarBridge_ || !findBarBridge_->GetFindBarController())
     return frame.origin.x;
-  TabContents* contents =
-      findBarBridge_->GetFindBarController()->tab_contents();
+  content::WebContents* contents =
+      findBarBridge_->GetFindBarController()->web_contents();
   if (!contents)
     return frame.origin.x;
 
   // Get the size of the container.
-  gfx::Rect container_rect(
-      contents->web_contents()->GetView()->GetContainerSize());
+  gfx::Rect containerRect(contents->GetView()->GetContainerSize());
 
   // Position the FindBar on the top right corner.
-  view_rect.set_x(
-      container_rect.width() - view_rect.width() - kRightEdgeOffset);
+  viewRect.set_x(
+      containerRect.width() - viewRect.width() - kRightEdgeOffset);
   // Convert from Cocoa coordinates (Y growing up) to Y growing down.
   // Notice that the view frame's Y offset is relative to the whole window,
   // while GetLocationForFindbarView() expects it relative to the
   // content's boundaries. |maxY_| has the correct placement in Cocoa coords,
   // so we just have to invert the Y coordinate.
-  view_rect.set_y(maxY_ - view_rect.bottom());
+  viewRect.set_y(maxY_ - viewRect.bottom());
 
   // Get the rect of the current find result, if there is one.
-  const FindNotificationDetails& find_result =
-      contents->find_tab_helper()->find_result();
-  if (find_result.number_of_matches() == 0)
-    return view_rect.x();
-  gfx::Rect selection_rect(find_result.selection_rect());
+  const FindNotificationDetails& findResult =
+      FindTabHelper::FromWebContents(contents)->find_result();
+  if (findResult.number_of_matches() == 0)
+    return viewRect.x();
+  gfx::Rect selectionRect(findResult.selection_rect());
 
   // Adjust |view_rect| to avoid the |selection_rect| within |container_rect|.
-  gfx::Rect new_pos = FindBarController::GetLocationForFindbarView(
-      view_rect, container_rect, selection_rect);
+  gfx::Rect newPos = FindBarController::GetLocationForFindbarView(
+      viewRect, containerRect, selectionRect);
 
-  return new_pos.x();
+  return newPos.x();
 }
 
 - (void)moveFindBarIfNecessary:(BOOL)animate {
@@ -530,12 +537,13 @@ const float kRightEdgeOffset = 25;
   // End the find session, hide the "x of y" text and disable the
   // buttons, but do not close the find bar or raise the window here.
   if (stopSearch && findBarBridge_) {
-    TabContents* contents =
-        findBarBridge_->GetFindBarController()->tab_contents();
+    content::WebContents* contents =
+        findBarBridge_->GetFindBarController()->web_contents();
     if (contents) {
-      FindTabHelper* find_tab_helper = contents->find_tab_helper();
-      find_tab_helper->StopFinding(FindBarController::kClearSelectionOnPage);
-      findBarBridge_->ClearResults(find_tab_helper->find_result());
+      FindTabHelper* findTabHelper =
+          FindTabHelper::FromWebContents(contents);
+      findTabHelper->StopFinding(FindBarController::kClearSelectionOnPage);
+      findBarBridge_->ClearResults(findTabHelper->find_result());
     }
   }
 

@@ -155,7 +155,7 @@ bool WebIntentsTable::MigrateToVersion46AddSchemeColumn() {
   return true;
 }
 
-bool WebIntentsTable::GetWebIntentServices(
+bool WebIntentsTable::GetWebIntentServicesForAction(
     const string16& action,
     std::vector<WebIntentServiceData>* services) {
   DCHECK(services);
@@ -262,7 +262,7 @@ bool WebIntentsTable::GetDefaultServices(
       return false;
     }
     entry.user_date = s.ColumnInt(3);
-    entry.suppression = s.ColumnInt(4);
+    entry.suppression = s.ColumnInt64(4);
     entry.service_url = s.ColumnString(5);
 
     default_services->push_back(entry);
@@ -286,7 +286,7 @@ bool WebIntentsTable::GetAllDefaultServices(
       return false;
     }
     entry.user_date = s.ColumnInt(3);
-    entry.suppression = s.ColumnInt(4);
+    entry.suppression = s.ColumnInt64(4);
     entry.service_url = s.ColumnString(5);
 
     default_services->push_back(entry);
@@ -300,14 +300,16 @@ bool WebIntentsTable::SetDefaultService(
     const DefaultWebIntentService& default_service) {
   sql::Statement s(db_->GetUniqueStatement(
       "INSERT OR REPLACE INTO web_intents_defaults "
-      "(action, type, url_pattern, user_date, suppression, service_url) "
-      "VALUES (?, ?, ?, ?, ?, ?)"));
+      "(action, type, url_pattern, user_date, suppression,"
+      " service_url, scheme) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?)"));
   s.BindString16(0, default_service.action);
   s.BindString16(1, default_service.type);
   s.BindString(2, default_service.url_pattern.GetAsString());
   s.BindInt(3, default_service.user_date);
-  s.BindInt(4, default_service.suppression);
+  s.BindInt64(4, default_service.suppression);
   s.BindString(5, default_service.service_url);
+  s.BindString16(6, default_service.scheme);
 
   return s.Run();
 }
@@ -320,6 +322,14 @@ bool WebIntentsTable::RemoveDefaultService(
   s.BindString16(0, default_service.action);
   s.BindString16(1, default_service.type);
   s.BindString(2, default_service.url_pattern.GetAsString());
+
+  return s.Run();
+}
+
+bool WebIntentsTable::RemoveServiceDefaults(const GURL& service_url) {
+  sql::Statement s(db_->GetUniqueStatement(
+      "DELETE FROM web_intents_defaults WHERE service_url = ?"));
+  s.BindString(0, service_url.spec());
 
   return s.Run();
 }

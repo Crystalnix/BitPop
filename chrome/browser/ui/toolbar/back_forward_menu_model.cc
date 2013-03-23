@@ -10,13 +10,13 @@
 #include "base/bind_helpers.h"
 #include "base/string_number_conversions.h"
 #include "chrome/browser/event_disposition.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/singleton_tabs.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/favicon_status.h"
@@ -30,7 +30,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
-#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/favicon_size.h"
 
 using content::NavigationController;
 using content::NavigationEntry;
@@ -79,6 +79,11 @@ int BackForwardMenuModel::GetItemCount() const {
 
 ui::MenuModel::ItemType BackForwardMenuModel::GetTypeAt(int index) const {
   return IsSeparator(index) ? TYPE_SEPARATOR : TYPE_COMMAND;
+}
+
+ui::MenuSeparatorType BackForwardMenuModel::GetSeparatorTypeAt(
+    int index) const {
+  return ui::NORMAL_SEPARATOR;
 }
 
 int BackForwardMenuModel::GetCommandIdAt(int index) const {
@@ -133,16 +138,16 @@ int BackForwardMenuModel::GetGroupIdAt(int index) const {
   return false;
 }
 
-bool BackForwardMenuModel::GetIconAt(int index, gfx::ImageSkia* icon) {
+bool BackForwardMenuModel::GetIconAt(int index, gfx::Image* icon) {
   if (!ItemHasIcon(index))
     return false;
 
   if (index == GetItemCount() - 1) {
-    *icon = *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+    *icon = ResourceBundle::GetSharedInstance().GetNativeImageNamed(
         IDR_HISTORY_FAVICON);
   } else {
     NavigationEntry* entry = GetNavigationEntry(index);
-    *icon = *entry->GetFavicon().image.ToImageSkia();
+    *icon = entry->GetFavicon().image;
     if (!entry->GetFavicon().valid && menu_model_delegate()) {
       FetchFavicon(entry);
     }
@@ -205,7 +210,7 @@ void BackForwardMenuModel::ActivatedAt(int index, int event_flags) {
 void BackForwardMenuModel::MenuWillShow() {
   content::RecordComputedAction(BuildActionName("Popup", -1));
   requested_favicons_.clear();
-  load_consumer_.CancelAllRequests();
+  cancelable_task_tracker_.TryCancelAll();
 }
 
 bool BackForwardMenuModel::IsSeparator(int index) const {
@@ -232,6 +237,10 @@ void BackForwardMenuModel::SetMenuModelDelegate(
   menu_model_delegate_ = menu_model_delegate;
 }
 
+ui::MenuModelDelegate* BackForwardMenuModel::GetMenuModelDelegate() const {
+  return menu_model_delegate_;
+}
+
 void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
   // If the favicon has already been requested for this menu, don't do
   // anything.
@@ -240,29 +249,33 @@ void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
     return;
   }
   requested_favicons_.insert(entry->GetUniqueID());
-  FaviconService* favicon_service =
-      browser_->profile()->GetFaviconService(Profile::EXPLICIT_ACCESS);
+  FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
+      browser_->profile(), Profile::EXPLICIT_ACCESS);
   if (!favicon_service)
     return;
-  FaviconService::Handle handle = favicon_service->GetFaviconForURL(
-      entry->GetURL(), history::FAVICON, &load_consumer_,
+
+  favicon_service->GetFaviconImageForURL(
+      FaviconService::FaviconForURLParams(browser_->profile(),
+                                          entry->GetURL(),
+                                          history::FAVICON,
+                                          gfx::kFaviconSize),
       base::Bind(&BackForwardMenuModel::OnFavIconDataAvailable,
-                 base::Unretained(this)));
-  load_consumer_.SetClientData(favicon_service, handle, entry->GetUniqueID());
+                 base::Unretained(this),
+                 entry->GetUniqueID()),
+      &cancelable_task_tracker_);
 }
 
 void BackForwardMenuModel::OnFavIconDataAvailable(
-    FaviconService::Handle handle,
-    history::FaviconData favicon) {
-  if (favicon.is_valid()) {
-    int unique_id = load_consumer_.GetClientDataForCurrentRequest();
-    // Find the current model_index for the unique_id.
+    int navigation_entry_unique_id,
+    const history::FaviconImageResult& image_result) {
+  if (!image_result.image.IsEmpty()) {
+    // Find the current model_index for the unique id.
     NavigationEntry* entry = NULL;
     int model_index = -1;
     for (int i = 0; i < GetItemCount() - 1; i++) {
       if (IsSeparator(i))
         continue;
-      if (GetNavigationEntry(i)->GetUniqueID() == unique_id) {
+      if (GetNavigationEntry(i)->GetUniqueID() == navigation_entry_unique_id) {
         model_index = i;
         entry = GetNavigationEntry(i);
         break;
@@ -277,20 +290,11 @@ void BackForwardMenuModel::OnFavIconDataAvailable(
 
     // Now that we have a valid NavigationEntry, decode the favicon and assign
     // it to the NavigationEntry.
-    SkBitmap fav_icon;
-    if (gfx::PNGCodec::Decode(favicon.image_data->front(),
-                              favicon.image_data->size(),
-                              &fav_icon)) {
-      entry->GetFavicon().valid = true;
-      entry->GetFavicon().url = favicon.icon_url;
-      if (fav_icon.empty())
-        return;
-      // TODO: Once the history service returns more representations,
-      // use them all instead of having just the lodpi favicon.
-      entry->GetFavicon().image = gfx::Image(fav_icon);
-      if (menu_model_delegate()) {
-        menu_model_delegate()->OnIconChanged(model_index);
-      }
+    entry->GetFavicon().valid = true;
+    entry->GetFavicon().url = image_result.icon_url;
+    entry->GetFavicon().image = image_result.image;
+    if (menu_model_delegate()) {
+      menu_model_delegate()->OnIconChanged(model_index);
     }
   }
 }

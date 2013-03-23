@@ -10,10 +10,10 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/prefs/pref_store.h"
 #include "base/values.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/policy_service.h"
-#include "chrome/common/pref_store.h"
 
 class PrefValueMap;
 
@@ -35,8 +35,8 @@ class ConfigurationPolicyPrefStore
   virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
   virtual size_t NumberOfObservers() const OVERRIDE;
   virtual bool IsInitializationComplete() const OVERRIDE;
-  virtual ReadResult GetValue(const std::string& key,
-                              const Value** result) const OVERRIDE;
+  virtual bool GetValue(const std::string& key,
+                        const Value** result) const OVERRIDE;
 
   // PolicyService::Observer methods:
   virtual void OnPolicyUpdated(PolicyDomain domain,

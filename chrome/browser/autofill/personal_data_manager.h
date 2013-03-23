@@ -13,22 +13,26 @@
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "base/string16.h"
+#include "chrome/browser/api/sync/profile_sync_service_observer.h"
+#include "chrome/browser/api/webdata/web_data_service_consumer.h"
 #include "chrome/browser/autofill/autofill_profile.h"
 #include "chrome/browser/autofill/credit_card.h"
 #include "chrome/browser/autofill/field_types.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class AutofillMetrics;
 class FormStructure;
 class PersonalDataManagerObserver;
-class Profile;
 
 namespace autofill_helper {
 void SetProfiles(int, std::vector<AutofillProfile>*);
+void SetCreditCards(int, std::vector<CreditCard>*);
+}
+
+namespace content {
+class BrowserContext;
 }
 
 // Handles loading and saving Autofill profile information to the web database.
@@ -42,7 +46,7 @@ class PersonalDataManager
  public:
   // WebDataServiceConsumer:
   virtual void OnWebDataServiceRequestDone(
-      WebDataService::Handle h,
+      WebDataServiceBase::Handle h,
       const WDTypedResult* result) OVERRIDE;
 
   // Sets the listener to be notified of PersonalDataManager events.
@@ -55,13 +59,13 @@ class PersonalDataManager
   virtual void OnStateChanged() OVERRIDE;
 
   // ProfileKeyedService:
-  // Cancels any pending requests to WebDataService and stops listening for Sync
-  // notifications.
+  // Cancels any pending requests to WebDataServiceBase and stops
+  // listening for Sync notifications.
   virtual void Shutdown() OVERRIDE;
 
   // content::NotificationObserver:
   // Observes "batch" changes made by Sync and refreshes data from the
-  // WebDataService in response.
+  // WebDataServiceBase in response.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
@@ -74,6 +78,9 @@ class PersonalDataManager
   bool ImportFormData(const FormStructure& form,
                       const CreditCard** credit_card);
 
+  // Saves |imported_profile| to the WebDB if it exists.
+  virtual void SaveImportedProfile(const AutofillProfile& imported_profile);
+
   // Saves a credit card value detected in |ImportedFormData|.
   virtual void SaveImportedCreditCard(const CreditCard& imported_credit_card);
 
@@ -83,11 +90,12 @@ class PersonalDataManager
   // Updates |profile| which already exists in the web database.
   void UpdateProfile(const AutofillProfile& profile);
 
-  // Removes the profile represented by |guid|.
-  virtual void RemoveProfile(const std::string& guid);
+  // Removes the profile or credit card represented by |guid|.
+  virtual void RemoveByGUID(const std::string& guid);
 
   // Returns the profile with the specified |guid|, or NULL if there is no
-  // profile with the specified |guid|.
+  // profile with the specified |guid|. Both web and auxiliary profiles may
+  // be returned.
   AutofillProfile* GetProfileByGUID(const std::string& guid);
 
   // Adds |credit_card| to the web database.
@@ -96,15 +104,12 @@ class PersonalDataManager
   // Updates |credit_card| which already exists in the web database.
   void UpdateCreditCard(const CreditCard& credit_card);
 
-  // Removes the credit card represented by |guid|.
-  virtual void RemoveCreditCard(const std::string& guid);
-
   // Returns the credit card with the specified |guid|, or NULL if there is
   // no credit card with the specified |guid|.
   CreditCard* GetCreditCardByGUID(const std::string& guid);
 
   // Gets the field types availabe in the stored address and credit card data.
-  void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
+  void GetNonEmptyTypes(FieldTypeSet* non_empty_types);
 
   // Returns true if the credit card information is stored with a password.
   bool HasPassword();
@@ -116,7 +121,7 @@ class PersonalDataManager
   // lifetime is until the web database is updated with new profile and credit
   // card information, respectively.  |profiles()| returns both web and
   // auxiliary profiles.  |web_profiles()| returns only web profiles.
-  const std::vector<AutofillProfile*>& profiles() const;
+  const std::vector<AutofillProfile*>& GetProfiles();
   virtual const std::vector<AutofillProfile*>& web_profiles() const;
   virtual const std::vector<CreditCard*>& credit_cards() const;
 
@@ -148,12 +153,15 @@ class PersonalDataManager
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AutofillIsEnabledAtStartup);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            AggregateExistingAuxiliaryProfile);
+  friend class AutofillTest;
   friend class PersonalDataManagerFactory;
   friend class PersonalDataManagerTest;
   friend class scoped_ptr<PersonalDataManager>;
   friend class ProfileSyncServiceAutofillTest;
+  friend class RemoveAutofillTester;
   friend class TestingAutomationProvider;
   friend void autofill_helper::SetProfiles(int, std::vector<AutofillProfile>*);
+  friend void autofill_helper::SetCreditCards(int, std::vector<CreditCard>*);
 
   PersonalDataManager();
   virtual ~PersonalDataManager();
@@ -178,27 +186,24 @@ class PersonalDataManager
   virtual void LoadProfiles();
 
   // Loads the auxiliary profiles.  Currently Mac only.
-  void LoadAuxiliaryProfiles() const;
+  virtual void LoadAuxiliaryProfiles();
 
   // Loads the saved credit cards from the web database.
   virtual void LoadCreditCards();
 
   // Receives the loaded profiles from the web data service and stores them in
   // |credit_cards_|.
-  void ReceiveLoadedProfiles(WebDataService::Handle h,
+  void ReceiveLoadedProfiles(WebDataServiceBase::Handle h,
                              const WDTypedResult* result);
 
   // Receives the loaded credit cards from the web data service and stores them
   // in |credit_cards_|.
-  void ReceiveLoadedCreditCards(WebDataService::Handle h,
+  void ReceiveLoadedCreditCards(WebDataServiceBase::Handle h,
                                 const WDTypedResult* result);
 
   // Cancels a pending query to the web database.  |handle| is a pointer to the
   // query handle.
-  void CancelPendingQuery(WebDataService::Handle* handle);
-
-  // Saves |imported_profile| to the WebDB if it exists.
-  virtual void SaveImportedProfile(const AutofillProfile& imported_profile);
+  void CancelPendingQuery(WebDataServiceBase::Handle* handle);
 
   // Notifies Sync about data migration if necessary.
   void EmptyMigrationTrash();
@@ -213,9 +218,10 @@ class PersonalDataManager
   // For tests.
   const AutofillMetrics* metric_logger() const;
   void set_metric_logger(const AutofillMetrics* metric_logger);
+  void set_browser_context(content::BrowserContext* context);
 
-  // The profile hosting this PersonalDataManager.
-  Profile* profile_;
+  // The browser context this PersonalDataManager is in.
+  content::BrowserContext* browser_context_;
 
   // True if personal data has been loaded from the web database.
   bool is_data_loaded_;
@@ -233,19 +239,19 @@ class PersonalDataManager
   // The loaded credit cards.
   ScopedVector<CreditCard> credit_cards_;
 
-  // When the manager makes a request from WebDataService, the database
+  // When the manager makes a request from WebDataServiceBase, the database
   // is queried on another thread, we record the query handle until we
   // get called back.  We store handles for both profile and credit card queries
   // so they can be loaded at the same time.
-  WebDataService::Handle pending_profiles_query_;
-  WebDataService::Handle pending_creditcards_query_;
+  WebDataServiceBase::Handle pending_profiles_query_;
+  WebDataServiceBase::Handle pending_creditcards_query_;
 
   // The observers.
   ObserverList<PersonalDataManagerObserver> observers_;
 
  private:
   // Kicks off asynchronous loading of profiles and credit cards.
-  void Init(Profile* profile);
+  void Init(content::BrowserContext* context);
 
   // For logging UMA metrics. Overridden by metrics tests.
   scoped_ptr<const AutofillMetrics> metric_logger_;

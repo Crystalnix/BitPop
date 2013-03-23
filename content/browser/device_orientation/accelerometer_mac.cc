@@ -10,7 +10,7 @@
 #include "content/browser/device_orientation/orientation.h"
 #include "third_party/sudden_motion_sensor/sudden_motion_sensor_mac.h"
 
-namespace device_orientation {
+namespace content {
 
 // Create a AccelerometerMac object and return NULL if no valid sensor found.
 DataFetcher* AccelerometerMac::Create() {
@@ -93,7 +93,8 @@ const Orientation* AccelerometerMac::GetOrientation() {
   DCHECK_GE(orientation->gamma(), -90.0);
   DCHECK_LT(orientation->gamma(),  90.0);
 
-  return orientation.release();
+  orientation->AddRef();
+  return orientation.get();
 }
 
 bool AccelerometerMac::Init() {
@@ -101,4 +102,4 @@ bool AccelerometerMac::Init() {
   return sudden_motion_sensor_.get() != NULL;
 }
 
-}  // namespace device_orientation
+}  // namespace content

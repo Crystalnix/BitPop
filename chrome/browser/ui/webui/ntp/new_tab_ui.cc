@@ -31,7 +31,6 @@
 #include "chrome/browser/ui/webui/ntp/favicon_webui_handler.h"
 #include "chrome/browser/ui/webui/ntp/foreign_session_handler.h"
 #include "chrome/browser/ui/webui/ntp/most_visited_handler.h"
-#include "chrome/browser/ui/webui/ntp/new_tab_page_handler.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache_factory.h"
 #include "chrome/browser/ui/webui/ntp/recently_closed_tabs_handler.h"
@@ -51,14 +50,19 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if !defined(OS_ANDROID)
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
+#include "chrome/browser/ui/webui/ntp/new_tab_page_handler.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_page_sync_handler.h"
 #include "chrome/browser/ui/webui/ntp/ntp_login_handler.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_page_handler.h"
+#else
+#include "chrome/browser/ui/webui/ntp/android/bookmarks_handler.h"
+#include "chrome/browser/ui/webui/ntp/android/context_menu_handler.h"
+#include "chrome/browser/ui/webui/ntp/android/new_tab_page_ready_handler.h"
+#include "chrome/browser/ui/webui/ntp/android/promo_handler.h"
 #endif
 
 using content::BrowserThread;
@@ -107,7 +111,8 @@ NewTabUI::NewTabUI(content::WebUI* web_ui)
     web_ui->AddMessageHandler(new RecentlyClosedTabsHandler());
     web_ui->AddMessageHandler(new MetricsHandler());
 #if !defined(OS_ANDROID)
-    if (NewTabUI::IsSuggestionsPageEnabled())
+    web_ui->AddMessageHandler(new NewTabPageHandler());
+    if (NewTabUI::IsDiscoveryInNTPEnabled())
       web_ui->AddMessageHandler(new SuggestionsHandler());
     // Android doesn't have a sync promo/username on NTP.
     if (GetProfile()->IsSyncAccessible())
@@ -123,11 +128,17 @@ NewTabUI::NewTabUI(content::WebUI* web_ui)
     }
 #endif
 
-    web_ui->AddMessageHandler(new NewTabPageHandler());
     web_ui->AddMessageHandler(new FaviconWebUIHandler());
   }
 
-#if !defined(OS_ANDROID)
+#if defined(OS_ANDROID)
+  // These handlers are specific to the Android NTP page.
+  web_ui->AddMessageHandler(new BookmarksHandler());
+  web_ui->AddMessageHandler(new ContextMenuHandler());
+  web_ui->AddMessageHandler(new NewTabPageReadyHandler());
+  if (!GetProfile()->IsOffTheRecord())
+    web_ui->AddMessageHandler(new PromoHandler());
+#else
   // Android uses native UI for sync setup.
   if (NTPLoginHandler::ShouldShow(GetProfile()))
     web_ui->AddMessageHandler(new NTPLoginHandler());
@@ -141,8 +152,8 @@ NewTabUI::NewTabUI(content::WebUI* web_ui)
       new NewTabHTMLSource(GetProfile()->GetOriginalProfile());
   // These two resources should be loaded only if suggestions NTP is enabled.
   html_source->AddResource("suggestions_page.css", "text/css",
-      NewTabUI::IsSuggestionsPageEnabled() ? IDR_SUGGESTIONS_PAGE_CSS : 0);
-  if (NewTabUI::IsSuggestionsPageEnabled()) {
+      NewTabUI::IsDiscoveryInNTPEnabled() ? IDR_SUGGESTIONS_PAGE_CSS : 0);
+  if (NewTabUI::IsDiscoveryInNTPEnabled()) {
     html_source->AddResource("suggestions_page.js", "application/javascript",
         IDR_SUGGESTIONS_PAGE_JS);
   }
@@ -153,7 +164,9 @@ NewTabUI::NewTabUI(content::WebUI* web_ui)
   ChromeURLDataManager::AddDataSource(profile, html_source);
 
   pref_change_registrar_.Init(GetProfile()->GetPrefs());
-  pref_change_registrar_.Add(prefs::kShowBookmarkBar, this);
+  pref_change_registrar_.Add(prefs::kShowBookmarkBar,
+                             base::Bind(&NewTabUI::OnShowBookmarkBarChanged,
+                                        base::Unretained(this)));
 
 #if defined(ENABLE_THEMES)
   // Listen for theme installation.
@@ -211,6 +224,9 @@ void NewTabUI::StartTimingPaint(RenderViewHost* render_view_host) {
 }
 
 bool NewTabUI::CanShowBookmarkBar() const {
+  if (web_ui()->GetWebContents()->GetURL().SchemeIs(chrome::kViewSourceScheme))
+    return false;
+
   PrefService* prefs = GetProfile()->GetPrefs();
   bool disabled_by_policy =
       prefs->IsManagedPreference(prefs::kShowBookmarkBar) &&
@@ -230,13 +246,6 @@ void NewTabUI::Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_PREF_CHANGED: {  // kShowBookmarkBar
-      StringValue attached(
-          GetProfile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar) ?
-              "true" : "false");
-      web_ui()->CallJavascriptFunction("ntp.setBookmarkBarAttached", attached);
-      break;
-    }
 #if defined(ENABLE_THEMES)
     case chrome::NOTIFICATION_BROWSER_THEME_CHANGED: {
       InitializeCSSCaches();
@@ -256,6 +265,13 @@ void NewTabUI::Observe(int type,
   }
 }
 
+void NewTabUI::OnShowBookmarkBarChanged() {
+  StringValue attached(
+      GetProfile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar) ?
+          "true" : "false");
+  web_ui()->CallJavascriptFunction("ntp.setBookmarkBarAttached", attached);
+}
+
 void NewTabUI::InitializeCSSCaches() {
 #if defined(ENABLE_THEMES)
   Profile* profile = GetProfile();
@@ -266,10 +282,10 @@ void NewTabUI::InitializeCSSCaches() {
 
 // static
 void NewTabUI::RegisterUserPrefs(PrefService* prefs) {
-  NewTabPageHandler::RegisterUserPrefs(prefs);
 #if !defined(OS_ANDROID)
   AppLauncherHandler::RegisterUserPrefs(prefs);
-  if (NewTabUI::IsSuggestionsPageEnabled())
+  NewTabPageHandler::RegisterUserPrefs(prefs);
+  if (NewTabUI::IsDiscoveryInNTPEnabled())
     SuggestionsHandler::RegisterUserPrefs(prefs);
 #endif
   MostVisitedHandler::RegisterUserPrefs(prefs);
@@ -283,18 +299,20 @@ bool NewTabUI::ShouldShowApps() {
   // Android does not have apps.
   return false;
 #else
-  return true;
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kShowAppListShortcut);
 #endif
 }
 
 // static
-bool NewTabUI::IsSuggestionsPageEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableSuggestionsTabPage);
+bool NewTabUI::IsDiscoveryInNTPEnabled() {
+  // TODO(beaudoin): The flag was removed during a clean-up pass. We leave that
+  // here to easily enable it back when we will explore this option again.
+  return false;
 }
 
 // static
-void NewTabUI::SetURLTitleAndDirection(DictionaryValue* dictionary,
+void NewTabUI::SetUrlTitleAndDirection(DictionaryValue* dictionary,
                                        const string16& title,
                                        const GURL& gurl) {
   dictionary->SetString("url", gurl.spec());
@@ -359,7 +377,7 @@ void NewTabUI::NewTabHTMLSource::StartDataRequest(const std::string& path,
     scoped_refptr<base::RefCountedStaticMemory> resource_bytes(
         it->second.second ?
             ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
-                it->second.second, ui::SCALE_FACTOR_NONE) :
+                it->second.second) :
             new base::RefCountedStaticMemory);
     SendResponse(request_id, resource_bytes);
     return;
@@ -368,7 +386,14 @@ void NewTabUI::NewTabHTMLSource::StartDataRequest(const std::string& path,
   if (!path.empty() && path[0] != '#') {
     // A path under new-tab was requested; it's likely a bad relative
     // URL from the new tab page, but in any case it's an error.
+
+    // TODO(dtrainor): Can remove this #if check once we update the
+    // accessibility script to no longer try to access urls like
+    // '?2314124523523'.
+    // See http://crbug.com/150252.
+#if !defined(OS_ANDROID)
     NOTREACHED() << path << " should not have been requested on the NTP";
+#endif
     return;
   }
 
@@ -400,3 +425,5 @@ void NewTabUI::NewTabHTMLSource::AddResource(const char* resource,
   resource_map_[std::string(resource)] =
       std::make_pair(std::string(mime_type), resource_id);
 }
+
+NewTabUI::NewTabHTMLSource::~NewTabHTMLSource() {}

@@ -13,7 +13,6 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
@@ -504,12 +503,13 @@ IN_PROC_BROWSER_TEST_F(TabRestoreTest, RestoreTabWithSpecialURL) {
 
   // Restore the closed tab.
   ASSERT_NO_FATAL_FAILURE(RestoreTab(0, 1));
-  TabContents* tab = chrome::GetTabContentsAt(browser(), 1);
-  EnsureTabFinishedRestoring(tab->web_contents());
+  content::WebContents* tab = chrome::GetWebContentsAt(browser(), 1);
+  EnsureTabFinishedRestoring(tab);
 
   // See if content is as expected.
   EXPECT_GT(
-      ui_test_utils::FindInPage(tab, ASCIIToUTF16("webkit"), true, false, NULL),
+      ui_test_utils::FindInPage(tab, ASCIIToUTF16("webkit"), true, false, NULL,
+                                NULL),
       0);
 }
 
@@ -533,13 +533,14 @@ IN_PROC_BROWSER_TEST_F(TabRestoreTest, RestoreTabWithSpecialURLOnBack) {
 
   // Restore the closed tab.
   ASSERT_NO_FATAL_FAILURE(RestoreTab(0, 1));
-  TabContents* tab = chrome::GetTabContentsAt(browser(), 1);
-  EnsureTabFinishedRestoring(tab->web_contents());
-  ASSERT_EQ(http_url, tab->web_contents()->GetURL());
+  content::WebContents* tab = chrome::GetWebContentsAt(browser(), 1);
+  EnsureTabFinishedRestoring(tab);
+  ASSERT_EQ(http_url, tab->GetURL());
 
   // Go back, and see if content is as expected.
   GoBack(browser());
   EXPECT_GT(
-      ui_test_utils::FindInPage(tab, ASCIIToUTF16("webkit"), true, false, NULL),
+      ui_test_utils::FindInPage(tab, ASCIIToUTF16("webkit"), true, false, NULL,
+                                NULL),
       0);
 }

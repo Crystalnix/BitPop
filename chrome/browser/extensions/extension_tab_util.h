@@ -13,7 +13,6 @@
 class Browser;
 class GURL;
 class Profile;
-class TabContents;
 class TabStripModel;
 
 namespace base {
@@ -42,31 +41,50 @@ class ExtensionTabUtil {
   static int GetTabId(const content::WebContents* web_contents);
   static std::string GetTabStatusText(bool is_loading);
   static int GetWindowIdOfTab(const content::WebContents* web_contents);
-  static base::ListValue* CreateTabList(const Browser* browser);
+  static base::ListValue* CreateTabList(
+      const Browser* browser,
+      const extensions::Extension* extension);
+
   static base::DictionaryValue* CreateTabValue(
-      const content::WebContents* web_contents);
+      const content::WebContents* web_contents,
+      const extensions::Extension* extension) {
+    return CreateTabValue(web_contents, NULL, -1, extension);
+  }
   static base::DictionaryValue* CreateTabValue(
       const content::WebContents* web_contents,
       TabStripModel* tab_strip,
-      int tab_index);
-  // Create a tab value, overriding its kSelectedKey to the provided boolean.
-  static base::DictionaryValue* CreateTabValueActive(
+      int tab_index,
+      const extensions::Extension* extension);
+
+  enum IncludePrivacySensitiveFields {
+    INCLUDE_PRIVACY_SENSITIVE_FIELDS,
+    OMIT_PRIVACY_SENSITIVE_FIELDS
+  };
+  static base::DictionaryValue* CreateTabValue(
       const content::WebContents* web_contents,
-      bool active);
+      IncludePrivacySensitiveFields include_privacy_sensitive_fields) {
+    return CreateTabValue(web_contents, NULL, -1,
+                          include_privacy_sensitive_fields);
+  }
+  static base::DictionaryValue* CreateTabValue(
+      const content::WebContents* web_contents,
+      TabStripModel* tab_strip,
+      int tab_index,
+      IncludePrivacySensitiveFields include_privacy_sensitive_fields);
 
   // Gets the |tab_strip_model| and |tab_index| for the given |web_contents|.
   static bool GetTabStripModel(const content::WebContents* web_contents,
                                TabStripModel** tab_strip_model,
                                int* tab_index);
   static bool GetDefaultTab(Browser* browser,
-                            TabContents** contents,
+                            content::WebContents** contents,
                             int* tab_id);
   // Any out parameter (|browser|, |tab_strip|, |contents|, & |tab_index|) may
   // be NULL and will not be set within the function.
   static bool GetTabById(int tab_id, Profile* profile, bool incognito_enabled,
                          Browser** browser,
                          TabStripModel** tab_strip,
-                         TabContents** contents,
+                         content::WebContents** contents,
                          int* tab_index);
 
   // Takes |url_string| and returns a GURL which is either valid and absolute

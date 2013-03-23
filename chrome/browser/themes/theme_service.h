@@ -12,14 +12,14 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/base/theme_provider.h"
 
 class BrowserThemePack;
 class ThemeServiceTest;
+class ThemeSyncableService;
 class FilePath;
 class Profile;
 
@@ -47,7 +47,6 @@ extern "C" NSString* const kBrowserThemeDidChangeNotification;
 #endif  // __OBJC__
 
 class ThemeService : public base::NonThreadSafe,
-                     public content::NotificationObserver,
                      public ProfileKeyedService,
                      public ui::ThemeProvider {
  public:
@@ -95,11 +94,6 @@ class ThemeService : public base::NonThreadSafe,
     COLOR_NTP_SECTION_LINK_UNDERLINE,
     COLOR_CONTROL_BACKGROUND,
     COLOR_BUTTON_BACKGROUND,
-
-    COLOR_SEARCH_NTP_BACKGROUND,
-    COLOR_SEARCH_SEARCH_BACKGROUND,
-    COLOR_SEARCH_DEFAULT_BACKGROUND,
-    COLOR_SEARCH_SEPARATOR_LINE,
 
     // These colors don't have constant default values. They are derived from
     // the runtime value of other colors.
@@ -159,10 +153,9 @@ class ThemeService : public base::NonThreadSafe,
   //
   // TODO(erg): Make this part of the ui::ThemeProvider and the main way to get
   // theme properties out of the theme provider since it's cross platform.
-  virtual const gfx::Image* GetImageNamed(int id) const;
+  virtual gfx::Image GetImageNamed(int id) const;
 
   // Overridden from ui::ThemeProvider:
-  virtual SkBitmap* GetBitmapNamed(int id) const OVERRIDE;
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE;
   virtual SkColor GetColor(int id) const OVERRIDE;
   virtual bool GetDisplayProperty(int id, int* result) const OVERRIDE;
@@ -187,6 +180,8 @@ class ThemeService : public base::NonThreadSafe,
 #endif
 
   // Set the current theme to the theme defined in |extension|.
+  // |extension| must already be added to this profile's
+  // ExtensionService.
   virtual void SetTheme(const extensions::Extension* extension);
 
   // Reset the theme to default.
@@ -247,6 +242,10 @@ class ThemeService : public base::NonThreadSafe,
   // Remove preference values for themes that are no longer in use.
   void RemoveUnusedThemes();
 
+  // Returns the syncable service for syncing theme. The returned service is
+  // owned by |this| object.
+  virtual ThemeSyncableService* GetThemeSyncableService() const;
+
   // Save the images to be written to disk, mapping file path to id.
   typedef std::map<FilePath, int> ImagesDiskCache;
 
@@ -273,11 +272,6 @@ class ThemeService : public base::NonThreadSafe,
   virtual void FreePlatformCaches();
 
   Profile* profile() { return profile_; }
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend class ThemeServiceTest;
@@ -320,7 +314,7 @@ class ThemeService : public base::NonThreadSafe,
   // The number of infobars currently displayed.
   int number_of_infobars_;
 
-  content::NotificationRegistrar registrar_;
+  scoped_ptr<ThemeSyncableService> theme_syncable_service_;
 
   DISALLOW_COPY_AND_ASSIGN(ThemeService);
 };

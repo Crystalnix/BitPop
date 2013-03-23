@@ -9,25 +9,28 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/json/json_string_value_serializer.h"
 #include "base/memory/scoped_vector.h"
+#include "base/sequenced_task_runner.h"
 #include "base/string_util.h"
+#include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_index.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_storage.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/browser_process.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/pref_names.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_collator.h"
+#include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image_util.h"
 
 using base::Time;
@@ -38,6 +41,14 @@ namespace {
 BookmarkNode* AsMutable(const BookmarkNode* node) {
   return const_cast<BookmarkNode*>(node);
 }
+
+// Whitespace characters to strip from bookmark titles.
+const char16 kInvalidChars[] = {
+  '\n', '\r', '\t',
+  0x2028,  // Line separator
+  0x2029,  // Paragraph separator
+  0
+};
 
 }  // namespace
 
@@ -57,26 +68,85 @@ BookmarkNode::~BookmarkNode() {
 }
 
 void BookmarkNode::SetTitle(const string16& title) {
-  // Remove extra whitespace from folder/bookmark names.
-  ui::TreeNode<BookmarkNode>::SetTitle(CollapseWhitespace(title, false));
+  // Replace newlines and other problematic whitespace characters in
+  // folder/bookmark names with spaces.
+  string16 trimmed_title;
+  ReplaceChars(title, kInvalidChars, ASCIIToUTF16(" "), &trimmed_title);
+  ui::TreeNode<BookmarkNode>::SetTitle(trimmed_title);
 }
-
 
 bool BookmarkNode::IsVisible() const {
   return true;
+}
+
+bool BookmarkNode::GetMetaInfo(const std::string& key,
+                               std::string* value) const {
+  if (meta_info_str_.empty())
+    return false;
+
+  JSONStringValueSerializer serializer(meta_info_str_);
+  scoped_ptr<DictionaryValue> meta_dict(
+      static_cast<DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+  return meta_dict.get() ? meta_dict->GetString(key, value) : false;
+}
+
+bool BookmarkNode::SetMetaInfo(const std::string& key,
+                               const std::string& value) {
+  JSONStringValueSerializer serializer(&meta_info_str_);
+  scoped_ptr<DictionaryValue> meta_dict;
+  if (!meta_info_str_.empty()) {
+    meta_dict.reset(
+        static_cast<DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+  }
+  if (!meta_dict.get()) {
+    meta_dict.reset(new DictionaryValue);
+  } else {
+    std::string old_value;
+    if (meta_dict->GetString(key, &old_value) && old_value == value)
+      return false;
+  }
+  meta_dict->SetString(key, value);
+  serializer.Serialize(*meta_dict);
+  std::string(meta_info_str_.data(), meta_info_str_.size()).swap(
+      meta_info_str_);
+  return true;
+}
+
+bool BookmarkNode::DeleteMetaInfo(const std::string& key) {
+  if (meta_info_str_.empty())
+    return false;
+
+  JSONStringValueSerializer serializer(&meta_info_str_);
+  scoped_ptr<DictionaryValue> meta_dict(
+      static_cast<DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
+  if (meta_dict.get() && meta_dict->HasKey(key)) {
+    meta_dict->Remove(key, NULL);
+    if (meta_dict->empty()) {
+      meta_info_str_.clear();
+    } else {
+      serializer.Serialize(*meta_dict);
+      std::string(meta_info_str_.data(), meta_info_str_.size()).swap(
+          meta_info_str_);
+    }
+    return true;
+  } else {
+    return false;
+  }
 }
 
 void BookmarkNode::Initialize(int64 id) {
   id_ = id;
   type_ = url_.is_empty() ? FOLDER : URL;
   date_added_ = Time::Now();
-  is_favicon_loaded_ = false;
-  favicon_load_handle_ = 0;
+  favicon_state_ = INVALID_FAVICON;
+  favicon_load_task_id_ = CancelableTaskTracker::kBadTaskId;
+  meta_info_str_.clear();
 }
 
 void BookmarkNode::InvalidateFavicon() {
+  icon_url_ = GURL();
   favicon_ = gfx::Image();
-  is_favicon_loaded_ = false;
+  favicon_state_ = INVALID_FAVICON;
 }
 
 namespace {
@@ -87,10 +157,10 @@ class SortComparator : public std::binary_function<const BookmarkNode*,
                                                    const BookmarkNode*,
                                                    bool> {
  public:
-  explicit SortComparator(icu::Collator* collator) : collator_(collator) { }
+  explicit SortComparator(icu::Collator* collator) : collator_(collator) {}
 
-  // Returns true if lhs preceeds rhs.
-  bool operator() (const BookmarkNode* n1, const BookmarkNode* n2) {
+  // Returns true if |n1| preceeds |n2|.
+  bool operator()(const BookmarkNode* n1, const BookmarkNode* n2) {
     if (n1->type() == n2->type()) {
       // Types are the same, compare the names.
       if (!collator_)
@@ -127,7 +197,6 @@ bool BookmarkPermanentNode::IsVisible() const {
 BookmarkModel::BookmarkModel(Profile* profile)
     : profile_(profile),
       loaded_(false),
-      file_changed_(false),
       root_(GURL()),
       bookmark_bar_node_(NULL),
       other_node_(NULL),
@@ -171,7 +240,7 @@ void BookmarkModel::Load() {
   }
 
   expanded_state_tracker_.reset(new BookmarkExpandedStateTracker(
-      profile_, prefs::kBookmarkEditorExpandedNodes, this));
+      profile_, this));
 
   // Listen for changes to favicons so that we can update the favicon of the
   // node appropriately.
@@ -179,7 +248,7 @@ void BookmarkModel::Load() {
                  content::Source<Profile>(profile_));
 
   // Load the bookmarks. BookmarkStorage notifies us when done.
-  store_ = new BookmarkStorage(profile_, this);
+  store_ = new BookmarkStorage(profile_, this, profile_->GetIOTaskRunner());
   store_->LoadBookmarks(CreateLoadDetails());
 }
 
@@ -241,8 +310,6 @@ void BookmarkModel::Move(const BookmarkNode* node,
     return;
   }
 
-  SetDateFolderModified(new_parent, Time::Now());
-
   const BookmarkNode* old_parent = node->parent();
   int old_index = old_parent->GetIndexOf(node);
 
@@ -251,6 +318,8 @@ void BookmarkModel::Move(const BookmarkNode* node,
     // Node is already in this position, nothing to do.
     return;
   }
+
+  SetDateFolderModified(new_parent, Time::Now());
 
   if (old_parent == new_parent && index > old_index)
     index--;
@@ -293,9 +362,9 @@ void BookmarkModel::Copy(const BookmarkNode* node,
 
 const gfx::Image& BookmarkModel::GetFavicon(const BookmarkNode* node) {
   DCHECK(node);
-  if (!node->is_favicon_loaded()) {
+  if (node->favicon_state() == BookmarkNode::INVALID_FAVICON) {
     BookmarkNode* mutable_node = AsMutable(node);
-    mutable_node->set_is_favicon_loaded(true);
+    mutable_node->set_favicon_state(BookmarkNode::LOADING_FAVICON);
     LoadFavicon(mutable_node);
   }
   return node->favicon();
@@ -366,6 +435,45 @@ void BookmarkModel::SetURL(const BookmarkNode* node, const GURL& url) {
 
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
                     BookmarkNodeChanged(this, node));
+}
+
+void BookmarkModel::SetNodeMetaInfo(const BookmarkNode* node,
+                                    const std::string& key,
+                                    const std::string& value) {
+  if (AsMutable(node)->SetMetaInfo(key, value) && store_.get())
+    store_->ScheduleSave();
+}
+
+void BookmarkModel::DeleteNodeMetaInfo(const BookmarkNode* node,
+                                       const std::string& key) {
+  if (AsMutable(node)->DeleteMetaInfo(key) && store_.get())
+    store_->ScheduleSave();
+}
+
+void BookmarkModel::SetDateAdded(const BookmarkNode* node,
+                                 base::Time date_added) {
+  if (!node) {
+    NOTREACHED();
+    return;
+  }
+
+  if (node->date_added() == date_added)
+    return;
+
+  if (is_permanent_node(node)) {
+    NOTREACHED();
+    return;
+  }
+
+  AsMutable(node)->set_date_added(date_added);
+
+  // Syncing might result in dates newer than the folder's last modified date.
+  if (date_added > node->parent()->date_folder_modified()) {
+    // Will trigger store_->ScheduleSave().
+    SetDateFolderModified(node->parent(), date_added);
+  } else if (store_.get()) {
+    store_->ScheduleSave();
+  }
 }
 
 void BookmarkModel::GetNodesByURL(const GURL& url,
@@ -468,7 +576,9 @@ const BookmarkNode* BookmarkModel::AddURLWithCreationTime(
 
   bool was_bookmarked = IsBookmarked(url);
 
-  SetDateFolderModified(parent, creation_time);
+  // Syncing may result in dates newer than the last modified date.
+  if (creation_time > parent->date_folder_modified())
+    SetDateFolderModified(parent, creation_time);
 
   BookmarkNode* new_node = new BookmarkNode(generate_next_node_id(), url);
   new_node->SetTitle(title);
@@ -491,10 +601,10 @@ void BookmarkModel::SortChildren(const BookmarkNode* parent) {
   }
 
   UErrorCode error = U_ZERO_ERROR;
+  icu::Locale application_locale(
+      content::GetContentClient()->browser()->GetApplicationLocale().c_str());
   scoped_ptr<icu::Collator> collator(
-      icu::Collator::createInstance(
-          icu::Locale(g_browser_process->GetApplicationLocale().c_str()),
-          error));
+      icu::Collator::createInstance(application_locale, error));
   if (U_FAILURE(error))
     collator.reset(NULL);
   BookmarkNode* mutable_parent = AsMutable(parent);
@@ -590,8 +700,7 @@ void BookmarkModel::RemoveNode(BookmarkNode* node,
     RemoveNode(node->GetChild(i), removed_urls);
 }
 
-void BookmarkModel::DoneLoading(
-    BookmarkLoadDetails* details_delete_me) {
+void BookmarkModel::DoneLoading(BookmarkLoadDetails* details_delete_me) {
   DCHECK(details_delete_me);
   scoped_ptr<BookmarkLoadDetails> details(details_delete_me);
   if (loaded_) {
@@ -601,8 +710,6 @@ void BookmarkModel::DoneLoading(
   }
 
   next_node_id_ = details->max_id();
-  if (details->computed_checksum() != details->stored_checksum())
-    file_changed_ = true;
   if (details->computed_checksum() != details->stored_checksum() ||
       details->ids_reassigned()) {
     // If bookmarks file changed externally, the IDs may have changed
@@ -623,6 +730,8 @@ void BookmarkModel::DoneLoading(
   root_.Add(other_node_, 1);
   root_.Add(mobile_node_, 2);
 
+  root_.set_meta_info_str(details->model_meta_info());
+
   {
     base::AutoLock url_lock(url_lock_);
     // Update nodes_ordered_by_url_set_ from the nodes.
@@ -640,7 +749,7 @@ void BookmarkModel::DoneLoading(
   // And generic notification.
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED,
-      content::Source<Profile>(profile_),
+      content::Source<content::BrowserContext>(profile_),
       content::NotificationService::NoDetails());
 }
 
@@ -651,21 +760,21 @@ void BookmarkModel::RemoveAndDeleteNode(BookmarkNode* delete_me) {
   DCHECK(parent);
   int index = parent->GetIndexOf(node.get());
   parent->Remove(node.get());
-  history::URLsStarredDetails details(false);
+  std::set<GURL> changed_urls;
   {
     base::AutoLock url_lock(url_lock_);
-    RemoveNode(node.get(), &details.changed_urls);
+    RemoveNode(node.get(), &changed_urls);
 
     // RemoveNode adds an entry to changed_urls for each node of type URL. As we
     // allow duplicates we need to remove any entries that are still bookmarked.
-    for (std::set<GURL>::iterator i = details.changed_urls.begin();
-         i != details.changed_urls.end(); ) {
+    for (std::set<GURL>::iterator i = changed_urls.begin();
+         i != changed_urls.end(); ) {
       if (IsBookmarkedNoLock(*i)) {
         // When we erase the iterator pointing at the erasee is
         // invalidated, so using i++ here within the "erase" call is
         // important as it advances the iterator before passing the
         // old value through to erase.
-        details.changed_urls.erase(i++);
+        changed_urls.erase(i++);
       } else {
         ++i;
       }
@@ -678,7 +787,7 @@ void BookmarkModel::RemoveAndDeleteNode(BookmarkNode* delete_me) {
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
                     BookmarkNodeRemoved(this, parent, index, node.get()));
 
-  if (details.changed_urls.empty()) {
+  if (changed_urls.empty()) {
     // No point in sending out notification if the starred state didn't change.
     return;
   }
@@ -688,13 +797,8 @@ void BookmarkModel::RemoveAndDeleteNode(BookmarkNode* delete_me) {
         HistoryServiceFactory::GetForProfile(profile_,
                                              Profile::EXPLICIT_ACCESS);
     if (history)
-      history->URLsNoLongerBookmarked(details.changed_urls);
+      history->URLsNoLongerBookmarked(changed_urls);
   }
-
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_URLS_STARRED,
-      content::Source<Profile>(profile_),
-      content::Details<history::URLsStarredDetails>(&details));
 }
 
 BookmarkNode* BookmarkModel::AddNode(BookmarkNode* parent,
@@ -711,14 +815,6 @@ BookmarkNode* BookmarkModel::AddNode(BookmarkNode* parent,
 
   index_->Add(node);
 
-  if (node->is_url() && !was_bookmarked) {
-    history::URLsStarredDetails details(true);
-    details.changed_urls.insert(node->url());
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_URLS_STARRED,
-        content::Source<Profile>(profile_),
-        content::Details<history::URLsStarredDetails>(&details));
-  }
   return node;
 }
 
@@ -775,21 +871,15 @@ BookmarkPermanentNode* BookmarkModel::CreatePermanentNode(
 }
 
 void BookmarkModel::OnFaviconDataAvailable(
-    FaviconService::Handle handle,
-    history::FaviconData favicon) {
-  BookmarkNode* node =
-      load_consumer_.GetClientData(
-          profile_->GetFaviconService(Profile::EXPLICIT_ACCESS), handle);
+    BookmarkNode* node,
+    const history::FaviconImageResult& image_result) {
   DCHECK(node);
-  node->set_favicon_load_handle(0);
-  if (favicon.is_valid()) {
-    scoped_ptr<gfx::Image> favicon_image(
-        gfx::ImageFromPNGEncodedData(favicon.image_data->front(),
-                                     favicon.image_data->size()));
-    if (favicon_image.get()) {
-      node->set_favicon(*favicon_image.get());
-      FaviconLoaded(node);
-    }
+  node->set_favicon_load_task_id(CancelableTaskTracker::kBadTaskId);
+  node->set_favicon_state(BookmarkNode::LOADED_FAVICON);
+  if (!image_result.image.IsEmpty()) {
+    node->set_favicon(image_result.image);
+    node->set_icon_url(image_result.icon_url);
+    FaviconLoaded(node);
   }
 }
 
@@ -798,16 +888,19 @@ void BookmarkModel::LoadFavicon(BookmarkNode* node) {
     return;
 
   DCHECK(node->url().is_valid());
-  FaviconService* favicon_service =
-      profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
+  FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
+      profile_, Profile::EXPLICIT_ACCESS);
   if (!favicon_service)
     return;
-  FaviconService::Handle handle = favicon_service->GetFaviconForURL(
-      node->url(), history::FAVICON, &load_consumer_,
+  FaviconService::Handle handle = favicon_service->GetFaviconImageForURL(
+      FaviconService::FaviconForURLParams(profile_,
+                                          node->url(),
+                                          history::FAVICON,
+                                          gfx::kFaviconSize),
       base::Bind(&BookmarkModel::OnFaviconDataAvailable,
-                 base::Unretained(this)));
-  load_consumer_.SetClientData(favicon_service, handle, node);
-  node->set_favicon_load_handle(handle);
+                 base::Unretained(this), node),
+      &cancelable_task_tracker_);
+  node->set_favicon_load_task_id(handle);
 }
 
 void BookmarkModel::FaviconLoaded(const BookmarkNode* node) {
@@ -816,12 +909,9 @@ void BookmarkModel::FaviconLoaded(const BookmarkNode* node) {
 }
 
 void BookmarkModel::CancelPendingFaviconLoadRequests(BookmarkNode* node) {
-  if (node->favicon_load_handle()) {
-    FaviconService* favicon_service =
-        profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
-    if (favicon_service)
-      favicon_service->CancelRequest(node->favicon_load_handle());
-    node->set_favicon_load_handle(0);
+  if (node->favicon_load_task_id() != CancelableTaskTracker::kBadTaskId) {
+    cancelable_task_tracker_.TryCancel(node->favicon_load_task_id());
+    node->set_favicon_load_task_id(CancelableTaskTracker::kBadTaskId);
   }
 }
 
@@ -875,5 +965,6 @@ BookmarkLoadDetails* BookmarkModel::CreateLoadDetails() {
   BookmarkPermanentNode* mobile_node =
       CreatePermanentNode(BookmarkNode::MOBILE);
   return new BookmarkLoadDetails(bb_node, other_node, mobile_node,
-                                 new BookmarkIndex(profile_), next_node_id_);
+                                 new BookmarkIndex(profile_),
+                                 next_node_id_);
 }

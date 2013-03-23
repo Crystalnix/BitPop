@@ -65,6 +65,24 @@ util.getFileErrorMnemonic = function(code) {
 };
 
 /**
+ * @param {number} code File error code (from FileError object).
+ * @return {string} Translated file error string.
+ */
+util.getFileErrorString = function(code) {
+  for (var key in FileError) {
+    var match = /(.*)_ERR$/.exec(key);
+    if (match && FileError[key] == code) {
+      // This would convert 1 to 'NOT_FOUND'.
+      code = match[1];
+      break;
+    }
+  }
+  console.warn('File error: ' + code);
+  return loadTimeData.getString('FILE_ERROR_' + code) ||
+      loadTimeData.getString('FILE_ERROR_GENERIC');
+};
+
+/**
  * @param {string} str String to unescape.
  * @return {string} Unescaped string.
  */
@@ -565,7 +583,27 @@ util.applyTransform = function(element, transform) {
  * @return {string} URL.
  */
 util.makeFilesystemUrl = function(path) {
-  return 'filesystem:' + chrome.extension.getURL('external' + path);
+  path = path.split('/').map(encodeURIComponent).join('/');
+  var prefix = 'external';
+  if (chrome.fileBrowserPrivate.mocked) {
+    prefix = (chrome.fileBrowserPrivate.FS_TYPE == window.TEMPORARY) ?
+        'temporary' : 'persistent';
+  }
+  return 'filesystem:' + document.location.origin + '/' + prefix + path;
+};
+
+/**
+ * Extracts path from filesystem: URL.
+ * @param {string} url Filesystem URL.
+ * @return {string} The path.
+ */
+util.extractFilePath = function(url) {
+  var match =
+      /^filesystem:[\w-]*:\/\/[\w]*\/(external|persistent|temporary)(\/.*)$/.
+      exec(url);
+  var path = match && match[2];
+  if (!path) return null;
+  return decodeURIComponent(path);
 };
 
 /**
@@ -574,23 +612,58 @@ util.makeFilesystemUrl = function(path) {
  * @param {function(Array.<Entry>)} callback The callback is called at the very
  *     end with a list of entries found.
  * @param {number?} max_depth Maximum depth. Pass zero to traverse everything.
+ * @param {function(entry):boolean=} opt_filter Optional filter to skip some
+ *     files/directories.
  */
-util.traverseTree = function(root, callback, max_depth) {
+util.traverseTree = function(root, callback, max_depth, opt_filter) {
+  var list = [];
+  util.forEachEntryInTree(root, function(entry) {
+    if (entry) {
+      list.push(entry);
+    } else {
+      callback(list);
+    }
+    return true;
+  }, max_depth, opt_filter);
+};
+
+/**
+ * Traverses a tree up to a certain depth, and calls a callback for each entry.
+ * @param {FileEntry} root Root entry.
+ * @param {function(Entry):boolean} callback The callback is called for each
+ *     entry, and then once with null passed. If callback returns false once,
+ *     the whole traversal is stopped.
+ * @param {number?} max_depth Maximum depth. Pass zero to traverse everything.
+ * @param {function(entry):boolean=} opt_filter Optional filter to skip some
+ *     files/directories.
+ */
+util.forEachEntryInTree = function(root, callback, max_depth, opt_filter) {
   if (root.isFile) {
-    callback([root]);
+    if (opt_filter && !opt_filter(root)) {
+      callback(null);
+      return;
+    }
+    if (callback(root))
+      callback(null);
     return;
   }
 
-  var result = [];
   var pending = 0;
+  var cancelled = false;
 
   function maybeDone() {
-    if (pending == 0)
-      callback(result);
+    if (pending == 0 && !cancelled)
+      callback(null);
   }
 
   function readEntry(entry, depth) {
-    result.push(entry);
+    if (cancelled) return;
+    if (opt_filter && !opt_filter(entry)) return;
+
+    if (!callback(entry)) {
+      cancelled = true;
+      return;
+    }
 
     // Do not recurse too deep and into files.
     if (entry.isFile || (max_depth != 0 && depth >= max_depth))
@@ -609,6 +682,73 @@ util.traverseTree = function(root, callback, max_depth) {
   }
 
   readEntry(root, 0);
+};
+
+/**
+ * A shortcut function to create a child element with given tag and class.
+ *
+ * @param {HTMLElement} parent Parent element.
+ * @param {string} opt_className Class name.
+ * @param {string} opt_tag Element tag, DIV is omitted.
+ * @return {Element} Newly created element.
+ */
+util.createChild = function(parent, opt_className, opt_tag) {
+  var child = parent.ownerDocument.createElement(opt_tag || 'div');
+  if (opt_className)
+    child.className = opt_className;
+  parent.appendChild(child);
+  return child;
+};
+
+/**
+ * Update the app state.
+ * For app v1 use the top window location search query and hash.
+ * For app v2 use the top window appState variable.
+ *
+ * @param {boolean} replace True if the history state should be replaced,
+ *                          false if pushed.
+ * @param {string} path Path to be put in the address bar after the hash.
+ *   If null the hash is left unchanged.
+ * @param {string|object} opt_param Search parameter. Used directly if string,
+ *   stringified if object. If omitted the search query is left unchanged.
+ */
+util.updateAppState = function(replace, path, opt_param) {
+  if (window.appState) {
+    // |replace| parameter is ignored. There is no stack, so saving/restoring
+    // the state is the apps responsibility.
+    if (typeof opt_param == 'string')
+      window.appState.params = {};
+    else if (typeof opt_param == 'object')
+      window.appState.params = opt_param;
+    if (path)
+      window.appState.defaultPath = path;
+    util.saveAppState();
+    return;
+  }
+
+  var location = document.location;
+
+  var search;
+  if (typeof opt_param == 'string')
+    search = opt_param;
+  else if (typeof opt_param == 'object')
+    search = '?' + JSON.stringify(opt_param);
+  else
+    search = location.search;
+
+  var hash;
+  if (path)
+    hash = '#' + encodeURI(path);
+  else
+    hash = location.hash;
+
+  var newLocation = location.origin + location.pathname + search + hash;
+  //TODO(kaznacheev): Fix replaceState for component extensions. Currently it
+  //does not replace the content of the address bar.
+  if (replace)
+    history.replaceState(undefined, path, newLocation);
+  else
+    history.pushState(undefined, path, newLocation);
 };
 
 /**
@@ -638,3 +778,483 @@ function strf(id, var_args) {
   return loadTimeData.getStringF.apply(loadTimeData, arguments);
 }
 
+/**
+ * Adapter object that abstracts away the the difference between Chrome app APIs
+ * v1 and v2. Is only necessary while the migration to v2 APIs is in progress.
+ */
+util.platform = {
+  /**
+   * @return {boolean} True for v2.
+   */
+  v2: function() {
+    try {
+      return !!(chrome.app && chrome.app.runtime);
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
+   * @param {function(Object)} callback Function accepting a preference map.
+   */
+  getPreferences: function(callback) {
+    try {
+      callback(window.localStorage);
+    } catch (ignore) {
+      chrome.storage.local.get(callback);
+    }
+  },
+
+  /**
+   * @param {string} key Preference name.
+   * @param {function(string)} callback Function accepting the preference value.
+   */
+  getPreference: function(key, callback) {
+    try {
+      callback(window.localStorage[key]);
+    } catch (ignore) {
+      chrome.storage.local.get(key, function(items) {
+        callback(items[key]);
+      });
+    }
+  },
+
+  /**
+   * @param {string} key Preference name.
+   * @param {string|object} value Preference value.
+   * @param {function} opt_callback Completion callback.
+   */
+  setPreference: function(key, value, opt_callback) {
+    if (typeof value != 'string')
+      value = JSON.stringify(value);
+
+    try {
+      window.localStorage[key] = value;
+      if (opt_callback) opt_callback();
+    } catch (ignore) {
+      var items = {};
+      items[key] = value;
+      chrome.storage.local.set(items, opt_callback);
+    }
+  },
+
+  /**
+   * @param {function(Object)} callback Function accepting a status object.
+   */
+  getWindowStatus: function(callback) {
+    try {
+      chrome.windows.getCurrent(callback);
+    } catch (ignore) {
+      // TODO: fill the status object once the API is available.
+      callback({});
+    }
+  },
+
+  /**
+   * Close current window.
+   */
+  closeWindow: function() {
+    if (this.v2()) {
+      window.close();
+    } else {
+      chrome.tabs.getCurrent(function(tab) {
+        chrome.tabs.remove(tab.id);
+      });
+    }
+  },
+
+  /**
+   * @return {string} Applicaton id.
+   */
+  getAppId: function() {
+    if (this.v2()) {
+      return chrome.runtime.id;
+    } else {
+      return chrome.extension.getURL('').split('/')[2];
+    }
+  },
+
+  /**
+   * @param {string} path Path relative to the extension root.
+   * @return {string} Extension-based URL.
+   */
+  getURL: function(path) {
+    if (this.v2()) {
+      return chrome.runtime.getURL(path);
+    } else {
+      return chrome.extension.getURL(path);
+    }
+  },
+
+  /**
+   * Suppress default context menu in a current window.
+   */
+  suppressContextMenu: function() {
+    // For packed v2 apps the default context menu would not show until
+    // --debug-packed-apps is added to the command line.
+    // For unpacked v2 apps (used for debugging) it is ok to show the menu.
+    if (util.platform.v2())
+      return;
+
+    // For the old style app we show the menu only in the test harness mode.
+    if (!util.TEST_HARNESS)
+      document.addEventListener('contextmenu',
+          function(e) { e.preventDefault() });
+  },
+
+  /**
+   * Creates a new window.
+   * @param {string} url Window url.
+   * @param {Object} options Window options.
+   */
+  createWindow: function(url, options) {
+    if (util.platform.v2()) {
+      chrome.app.window.create(url, options);
+    } else {
+      var params = {};
+      for (var key in options) {
+        if (options.hasOwnProperty(key)) {
+          params[key] = options[key];
+        }
+      }
+      params.url = url;
+      params.type = 'popup';
+      chrome.windows.create(params);
+    }
+  }
+};
+
+/**
+ * Load Javascript resources dynamically.
+ * @param {Array.<string>} urls Array of script urls.
+ * @param {function} onload Completion callback.
+ */
+util.loadScripts = function(urls, onload) {
+  var countdown = urls.length;
+  if (!countdown) {
+    onload();
+    return;
+  }
+  function done() {
+    if (--countdown == 0)
+      onload();
+  }
+  while (urls.length) {
+    var script = document.createElement('script');
+    script.src = urls.shift();
+    document.head.appendChild(script);
+    script.onload = done;
+    script.onerror = done;
+  }
+};
+
+// TODO(serya): remove it when have migrated to AppsV2.
+util.__defineGetter__('storage', function() {
+  delete util.storage;
+  if (chrome.storage) {
+    util.storage = chrome.storage;
+    return util.storage;
+  }
+
+  var listeners = [];
+
+  function StorageArea(type) {
+    this.type_ = type;
+  }
+
+  StorageArea.prototype.set = function(items, opt_callback) {
+    var changes = {};
+    for (var i in items) {
+      changes[i] = {oldValue: localStorage[i], newValue: items[i]};
+      localStorage[i] = items[i];
+    }
+    if (opt_callback)
+      callback();
+    for (var i = 0; i < listeners.length; i++) {
+      listeners[i](changes, this.type_);
+    }
+  };
+
+  StorageArea.prototype.get = function(keys, callback) {
+    if (!callback) {
+      // Since key is optionsl it's the callback.
+      keys(localStorage);
+      return;
+    }
+    if (typeof(keys) == 'string')
+      keys = [keys];
+    var result = {};
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      result[key] = localStorage[key];
+    }
+    callback(result);
+  };
+
+  /**
+   * Simulation of the AppsV2 storage interface.
+   * @type {object}
+   */
+  util.storage = {
+    local: new StorageArea('local'),
+    sync: new StorageArea('sync'),
+    onChanged: {
+      addListener: function(l) {
+        listeners.push(l);
+      },
+      removeListener: function(l) {
+        for (var i = 0; i < listeners.length; i++) {
+          listeners.splice(i, 1);
+        }
+      }
+    }
+  };
+  return util.storage;
+});
+
+/**
+ * Attach page load handler.
+ * Loads mock chrome.* APIs is the real ones are not present.
+ * @param {function} handler Application-specific load handler.
+ */
+util.addPageLoadHandler = function(handler) {
+  document.addEventListener('DOMContentLoaded', function() {
+    if (chrome.fileBrowserPrivate) {
+      handler();
+    } else {
+      util.TEST_HARNESS = true;
+      util.loadScripts(['js/mock_chrome.js', 'js/file_copy_manager.js'],
+          handler);
+    }
+    util.platform.suppressContextMenu();
+  });
+};
+
+/**
+ * Save app v2 launch data to the local storage.
+ */
+util.saveAppState = function() {
+  if (window.appState)
+    util.platform.setPreference(window.appID, window.appState);
+};
+
+
+/**
+ *  AppCache is a persistent timestamped key-value storage backed by
+ *  HTML5 local storage.
+ *
+ *  It is not designed for frequent access. In order to avoid costly
+ *  localStorage iteration all data is kept in a single localStorage item.
+ *  There is no in-memory caching, so concurrent access is _almost_ safe.
+ *
+ *  TODO(kaznacheev) Reimplement this based on Indexed DB.
+ */
+util.AppCache = function() {};
+
+/**
+ * Local storage key.
+ */
+util.AppCache.KEY = 'AppCache';
+
+/**
+ * Max number of items.
+ */
+util.AppCache.CAPACITY = 100;
+
+/**
+ * Default lifetime.
+ */
+util.AppCache.LIFETIME = 30 * 24 * 60 * 60 * 1000;  // 30 days.
+
+/**
+ * @param {string} key Key
+ * @param {function(number)} callback Callback accepting a value.
+ */
+util.AppCache.getValue = function(key, callback) {
+  util.AppCache.read_(function(map) {
+    var entry = map[key];
+    callback(entry && entry.value);
+  });
+};
+
+/**
+ * Update the cache.
+ *
+ * @param {string} key Key.
+ * @param {string} value Value. Remove the key if value is null.
+ * @param {number} opt_lifetime Maximim time to keep an item (in milliseconds).
+ */
+util.AppCache.update = function(key, value, opt_lifetime) {
+  util.AppCache.read_(function(map) {
+    if (value != null) {
+      map[key] = {
+        value: value,
+        expire: Date.now() + (opt_lifetime || util.AppCache.LIFETIME)
+      };
+    } else if (key in map) {
+      delete map[key];
+    } else {
+      return;  // Nothing to do.
+    }
+    util.AppCache.cleanup_(map);
+    util.AppCache.write_(map);
+  });
+};
+
+/**
+ * @param {function(Object)} callback Callback accepting a map of timestamped
+ *   key-value pairs.
+ * @private
+ */
+util.AppCache.read_ = function(callback) {
+  util.platform.getPreference(util.AppCache.KEY, function(json) {
+    if (json) {
+      try {
+        callback(JSON.parse(json));
+      } catch (e) {
+        // The local storage item somehow got messed up, start fresh.
+      }
+    }
+    callback({});
+  });
+};
+
+/**
+ * @param {Object} map A map of timestamped key-value pairs.
+ * @private
+ */
+util.AppCache.write_ = function(map) {
+  util.platform.setPreference(util.AppCache.KEY, JSON.stringify(map));
+};
+
+/**
+ * Remove over-capacity and obsolete items.
+ *
+ * @param {Object} map A map of timestamped key-value pairs.
+ * @private
+ */
+util.AppCache.cleanup_ = function(map) {
+  // Sort keys by ascending timestamps.
+  var keys = [];
+  for (var key in map) {
+    if (map.hasOwnProperty(key))
+      keys.push(key);
+  }
+  keys.sort(function(a, b) { return map[a].expire > map[b].expire });
+
+  var cutoff = Date.now();
+
+  var obsolete = 0;
+  while (obsolete < keys.length &&
+         map[keys[obsolete]].expire < cutoff) {
+    obsolete++;
+  }
+
+  var overCapacity = Math.max(0, keys.length - util.AppCache.CAPACITY);
+
+  var itemsToDelete = Math.max(obsolete, overCapacity);
+  for (var i = 0; i != itemsToDelete; i++) {
+    delete map[keys[i]];
+  }
+};
+
+/**
+ * RemoteImageLoader loads an image from a remote url.
+ *
+ * Fetches a blob via XHR, converts it to a data: url and assigns to img.src.
+ * @constructor
+ */
+util.RemoteImageLoader = function() {};
+
+/**
+ * @param {Image} image Image element.
+ * @param {string} url Remote url to load into the image.
+ */
+util.RemoteImageLoader.prototype.load = function(image, url) {
+  this.onSuccess_ = function(dataURL) { image.src = dataURL };
+  this.onError_ = function() { image.onerror() };
+
+  var xhr = new XMLHttpRequest();
+  xhr.responseType = 'blob';
+  xhr.onload = function() {
+    if (xhr.status == 200) {
+      var reader = new FileReader;
+      reader.onload = function(e) {
+        this.onSuccess_(e.target.result);
+      }.bind(this);
+      reader.onerror = this.onError_;
+      reader.readAsDataURL(xhr.response);
+    } else {
+      this.onError_();
+    }
+  }.bind(this);
+  xhr.onerror = this.onError_;
+
+  try {
+    xhr.open('GET', url, true);
+    xhr.send();
+  } catch (e) {
+    console.log(e);
+    this.onError_();
+  }
+};
+
+/**
+ * Cancels the loading.
+ */
+util.RemoteImageLoader.prototype.cancel = function() {
+  // We cannot really cancel the XHR.send and FileReader.readAsDataURL,
+  // silencing the callbacks instead.
+  this.onSuccess_ = this.onError_ = function() {};
+};
+
+/**
+ * Load an image.
+ *
+ * In packaged apps img.src is not allowed to point to http(s)://.
+ * For such urls util.RemoteImageLoader is used.
+ *
+ * @param {Image} image Image element.
+ * @param {string} url Source url.
+ * @return {util.RemoteImageLoader?} RemoteImageLoader object reference, use it
+ *   to cancel the loading.
+ */
+util.loadImage = function(image, url) {
+  if (util.platform.v2() && url.match(/^http(s):/)) {
+    var imageLoader = new util.RemoteImageLoader();
+    imageLoader.load(image, url);
+    return imageLoader;
+  }
+
+  // OK to load directly.
+  image.src = url;
+  return null;
+};
+
+/**
+ * Finds proerty descriptor in the object prototype chain.
+ * @param {Object} object The object.
+ * @param {string} propertyName The property name.
+ * @return {Object} Property descriptor.
+ */
+util.findPropertyDescriptor = function(object, propertyName) {
+  for (var p = object; p; p = Object.getPrototypeOf(p)) {
+    var d = Object.getOwnPropertyDescriptor(p, propertyName);
+    if (d)
+      return d;
+  }
+  return null;
+};
+
+/**
+ * Calls inherited property setter (useful when property is
+ * overriden).
+ * @param {Object} object The object.
+ * @param {string} propertyName The property name.
+ * @param {*} value Value to set.
+ */
+util.callInheritedSetter = function(object, propertyName, value) {
+  var d = util.findPropertyDescriptor(Object.getPrototypeOf(object),
+                                      propertyName);
+  d.set.call(object, value);
+};

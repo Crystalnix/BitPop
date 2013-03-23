@@ -32,7 +32,7 @@ public class SandboxedProcessLauncher {
     // This must not exceed total number of SandboxedProcessServiceX classes declared in
     // this package, and defined as services in the embedding application's manifest file.
     // (See {@link SandboxedProcessService} for more details on defining the services.)
-    /* package */ static final int MAX_REGISTERED_SERVICES = 5;
+    /* package */ static final int MAX_REGISTERED_SERVICES = 6;
     private static final SandboxedProcessConnection[] mConnections =
         new SandboxedProcessConnection[MAX_REGISTERED_SERVICES];
 
@@ -161,16 +161,26 @@ public class SandboxedProcessLauncher {
      *
      * @param context Context used to obtain the application context.
      * @param commandLine The sandboxed process command line argv.
-     * @param ipcFd File descriptor used to set up IPC.
+     * @param file_ids The ID that should be used when mapping files in the created process.
+     * @param file_fds The file descriptors that should be mapped in the created process.
+     * @param file_auto_close Whether the file descriptors should be closed once they were passed to
+     * the created process.
      * @param clientContext Arbitrary parameter used by the client to distinguish this connection.
      */
     @CalledByNative
     static void start(
             Context context,
             final String[] commandLine,
-            int ipcFd,
-            int[] fileToRegisterIdFds,
+            int[] fileIds,
+            int[] fileFds,
+            boolean[] fileAutoClose,
             final int clientContext) {
+        assert fileIds.length == fileFds.length && fileFds.length == fileAutoClose.length;
+        FileDescriptorInfo[] filesToBeMapped = new FileDescriptorInfo[fileFds.length];
+        for (int i = 0; i < fileFds.length; i++) {
+            filesToBeMapped[i] =
+                    new FileDescriptorInfo(fileIds[i], fileFds[i], fileAutoClose[i]);
+        }
         assert clientContext != 0;
         SandboxedProcessConnection allocatedConnection;
         synchronized (SandboxedProcessLauncher.class) {
@@ -180,6 +190,8 @@ public class SandboxedProcessLauncher {
         if (allocatedConnection == null) {
             allocatedConnection = allocateBoundConnection(context, commandLine);
             if (allocatedConnection == null) {
+                // Notify the native code so it can free the heap allocated callback.
+                nativeOnSandboxedProcessStarted(clientContext, 0);
                 return;
             }
         }
@@ -199,8 +211,7 @@ public class SandboxedProcessLauncher {
                 nativeOnSandboxedProcessStarted(clientContext, pid);
             }
         };
-        connection.setupConnection(commandLine, ipcFd, fileToRegisterIdFds, createCallback(),
-                onConnect);
+        connection.setupConnection(commandLine, filesToBeMapped, createCallback(), onConnect);
     }
 
     /**

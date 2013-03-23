@@ -4,7 +4,6 @@
 
 #include "content/common/npobject_stub.h"
 
-#include "base/command_line.h"
 #include "content/common/np_channel_base.h"
 #include "content/common/npobject_util.h"
 #include "content/common/plugin_messages.h"
@@ -13,21 +12,27 @@
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 
+#if defined(OS_WIN)
+#include "base/command_line.h"
+#include "webkit/plugins/npapi/plugin_constants_win.h"
+#endif
+
 using WebKit::WebBindings;
+
+namespace content {
 
 NPObjectStub::NPObjectStub(
     NPObject* npobject,
     NPChannelBase* channel,
     int route_id,
-    gfx::NativeViewId containing_window,
+    int render_view_id,
     const GURL& page_url)
     : npobject_(npobject),
       channel_(channel),
       route_id_(route_id),
-      containing_window_(containing_window),
+      render_view_id_(render_view_id),
       page_url_(page_url) {
   channel_->AddMappingForNPObjectStub(route_id, npobject);
   channel_->AddRoute(route_id, this, this);
@@ -70,7 +75,7 @@ IPC::Listener* NPObjectStub::GetChannelListener() {
 }
 
 bool NPObjectStub::OnMessageReceived(const IPC::Message& msg) {
-  content::GetContentClient()->SetActiveURL(page_url_);
+  GetContentClient()->SetActiveURL(page_url_);
   if (!npobject_) {
     if (msg.is_sync()) {
       // The object could be garbage because the frame has gone away, so
@@ -144,8 +149,7 @@ void NPObjectStub::OnInvoke(bool is_default,
   NPVariant* args_var = new NPVariant[arg_count];
   for (int i = 0; i < arg_count; ++i) {
     if (!CreateNPVariant(
-            args[i], channel_, &(args_var[i]), containing_window_,
-            page_url_)) {
+            args[i], channel_, &(args_var[i]), render_view_id_, page_url_)) {
       NPObjectMsg_Invoke::WriteReplyParams(reply_msg, result_param,
                                            return_value);
       channel_->Send(reply_msg);
@@ -187,8 +191,7 @@ void NPObjectStub::OnInvoke(bool is_default,
   delete[] args_var;
 
   CreateNPVariantParam(
-      result_var, channel_, &result_param, true, containing_window_,
-      page_url_);
+      result_var, channel_, &result_param, true, render_view_id_, page_url_);
   NPObjectMsg_Invoke::WriteReplyParams(reply_msg, result_param, return_value);
   channel_->Send(reply_msg);
 }
@@ -225,7 +228,7 @@ void NPObjectStub::OnGetProperty(const NPIdentifier_Param& name,
   }
 
   CreateNPVariantParam(
-      result_var, channel_, property, true, containing_window_, page_url_);
+      result_var, channel_, property, true, render_view_id_, page_url_);
 }
 
 void NPObjectStub::OnSetProperty(const NPIdentifier_Param& name,
@@ -235,7 +238,7 @@ void NPObjectStub::OnSetProperty(const NPIdentifier_Param& name,
   NPIdentifier id = CreateNPIdentifier(name);
   NPVariant property_var;
   if (!CreateNPVariant(
-          property, channel_, &property_var, containing_window_, page_url_)) {
+          property, channel_, &property_var, render_view_id_, page_url_)) {
     NPObjectMsg_SetProperty::WriteReplyParams(reply_msg, result);
     channel_->Send(reply_msg);
     return;
@@ -341,8 +344,7 @@ void NPObjectStub::OnConstruct(const std::vector<NPVariant_Param>& args,
   NPVariant* args_var = new NPVariant[arg_count];
   for (int i = 0; i < arg_count; ++i) {
     if (!CreateNPVariant(
-           args[i], channel_, &(args_var[i]), containing_window_,
-           page_url_)) {
+           args[i], channel_, &(args_var[i]), render_view_id_, page_url_)) {
       NPObjectMsg_Invoke::WriteReplyParams(reply_msg, result_param,
                                            return_value);
       channel_->Send(reply_msg);
@@ -370,8 +372,7 @@ void NPObjectStub::OnConstruct(const std::vector<NPVariant_Param>& args,
   delete[] args_var;
 
   CreateNPVariantParam(
-      result_var, channel_, &result_param, true, containing_window_,
-      page_url_);
+      result_var, channel_, &result_param, true, render_view_id_, page_url_);
   NPObjectMsg_Invoke::WriteReplyParams(reply_msg, result_param, return_value);
   channel_->Send(reply_msg);
 }
@@ -394,7 +395,9 @@ void NPObjectStub::OnEvaluate(const std::string& script,
 
   NPVariant_Param result_param;
   CreateNPVariantParam(
-      result_var, channel_, &result_param, true, containing_window_, page_url_);
+      result_var, channel_, &result_param, true, render_view_id_, page_url_);
   NPObjectMsg_Evaluate::WriteReplyParams(reply_msg, result_param, return_value);
   channel_->Send(reply_msg);
 }
+
+}  // namespace content

@@ -5,25 +5,24 @@
 #include "chrome/browser/extensions/app_notify_channel_ui_impl.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -94,11 +93,11 @@ void AppNotifyChannelUIImpl::InfoBar::InfoBarDismissed() {
 
 AppNotifyChannelUIImpl::AppNotifyChannelUIImpl(
     Profile* profile,
-    TabContents* tab_contents,
+    content::WebContents* web_contents,
     const std::string& app_name,
     AppNotifyChannelUI::UIType ui_type)
     : profile_(profile->GetOriginalProfile()),
-      tab_contents_(tab_contents),
+      web_contents_(web_contents),
       app_name_(app_name),
       ui_type_(ui_type),
       delegate_(NULL),
@@ -114,10 +113,10 @@ AppNotifyChannelUIImpl::~AppNotifyChannelUIImpl() {
 
 // static
 AppNotifyChannelUI* AppNotifyChannelUI::Create(Profile* profile,
-    TabContents* tab_contents,
+    content::WebContents* web_contents,
     const std::string& app_name,
     AppNotifyChannelUI::UIType ui_type) {
-  return new AppNotifyChannelUIImpl(profile, tab_contents, app_name, ui_type);
+  return new AppNotifyChannelUIImpl(profile, web_contents, app_name, ui_type);
 }
 
 void AppNotifyChannelUIImpl::PromptSyncSetup(
@@ -136,9 +135,10 @@ void AppNotifyChannelUIImpl::PromptSyncSetup(
     return;
   }
 
-  InfoBarTabHelper* helper = tab_contents_->infobar_tab_helper();
-  helper->AddInfoBar(new AppNotifyChannelUIImpl::InfoBar(
-      this, helper, app_name_));
+  InfoBarTabHelper* infobar_tab_helper =
+      InfoBarTabHelper::FromWebContents(web_contents_);
+  infobar_tab_helper->AddInfoBar(new AppNotifyChannelUIImpl::InfoBar(
+      this, infobar_tab_helper, app_name_));
 }
 
 void AppNotifyChannelUIImpl::OnInfoBarResult(bool accepted) {
@@ -168,8 +168,7 @@ void AppNotifyChannelUIImpl::OnInfoBarResult(bool accepted) {
     }
   }
   // Any existing UI is now closed - display new login UI.
-  Browser* browser = browser::FindBrowserWithWebContents(
-      tab_contents_->web_contents());
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents_);
   chrome::ShowSettingsSubPage(browser, chrome::kSyncSetupForceLoginSubPage);
 }
 

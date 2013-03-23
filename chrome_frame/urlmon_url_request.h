@@ -11,10 +11,13 @@
 #include <map>
 #include <string>
 
-#include "base/threading/thread.h"
 #include "chrome_frame/plugin_url_request.h"
 #include "chrome_frame/urlmon_moniker.h"
 #include "chrome_frame/utils.h"
+
+namespace base {
+class Thread;
+}
 
 class UrlmonUrlRequest;
 
@@ -22,16 +25,6 @@ class UrlmonUrlRequestManager
     : public PluginUrlRequestManager,
       public PluginUrlRequestDelegate {
  public:
-  // Sub resources on the pages in chrome frame are fetched on this thread.
-  class ResourceFetcherThread : public base::Thread {
-   public:
-    explicit ResourceFetcherThread(const char* name);
-    virtual ~ResourceFetcherThread();
-
-    virtual void Init();
-    virtual void CleanUp();
-  };
-
   // Contains the privacy information for all requests issued by this instance.
   struct PrivacyInfo {
    public:
@@ -96,12 +89,11 @@ class UrlmonUrlRequestManager
   virtual void SetCookiesForUrl(const GURL& url, const std::string& cookie);
 
   // PluginUrlRequestDelegate implementation
-  virtual void OnResponseStarted(int request_id, const char* mime_type,
-                                 const char* headers, int size,
-                                 base::Time last_modified,
-                                 const std::string& redirect_url,
-                                 int redirect_status,
-                                 const net::HostPortPair& socket_address);
+  virtual void OnResponseStarted(
+      int request_id, const char* mime_type, const char* headers, int size,
+      base::Time last_modified, const std::string& redirect_url,
+      int redirect_status, const net::HostPortPair& socket_address,
+      uint64 upload_size);
   virtual void OnReadComplete(int request_id, const std::string& data);
   virtual void OnResponseEnd(int request_id,
                              const net::URLRequestStatus& status);
@@ -141,7 +133,7 @@ class UrlmonUrlRequestManager
                           base::Lock* request_map_lock);
 
   scoped_refptr<UrlmonUrlRequest> pending_request_;
-  scoped_ptr<ResourceFetcherThread> background_thread_;
+  scoped_ptr<base::Thread> background_thread_;
 
   bool stopping_;
 

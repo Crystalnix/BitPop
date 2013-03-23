@@ -11,6 +11,7 @@
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/vector2d.h"
 #include "ui/surface/transport_dib.h"
 
 class RenderProcessHost;
@@ -20,7 +21,7 @@ class Rect;
 }
 
 namespace skia {
-class PlatformCanvas;
+class PlatformBitmap;
 }
 
 namespace content {
@@ -66,11 +67,11 @@ class CONTENT_EXPORT BackingStore {
   // will call initialize() with the correct size. The return value indicates
   // success.
   virtual bool CopyFromBackingStore(const gfx::Rect& rect,
-                                    skia::PlatformCanvas* output) = 0;
+                                    skia::PlatformBitmap* output) = 0;
 
-  // Scrolls the contents of clip_rect in the backing store by dx or dy (but dx
-  // and dy cannot both be non-zero).
-  virtual void ScrollBackingStore(int dx, int dy,
+  // Scrolls the contents of clip_rect in the backing store by |delta| (but
+  // |delta|.x() and |delta|.y() cannot both be non-zero).
+  virtual void ScrollBackingStore(const gfx::Vector2d& delta,
                                   const gfx::Rect& clip_rect,
                                   const gfx::Size& view_size) = 0;
  protected:

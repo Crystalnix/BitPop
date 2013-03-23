@@ -17,7 +17,9 @@
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/api/bookmarks/bookmark_service.h"
 #include "chrome/browser/autocomplete/autocomplete_field_trial.h"
+#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
@@ -39,12 +41,16 @@ const int kScoreRank[] = { 1450, 1200, 900, 400 };
 
 bool ScoredHistoryMatch::initialized_ = false;
 bool ScoredHistoryMatch::use_new_scoring = false;
+bool ScoredHistoryMatch::only_count_matches_at_word_boundaries = false;
+bool ScoredHistoryMatch::also_do_hup_like_scoring = false;
 
 ScoredHistoryMatch::ScoredHistoryMatch()
     : raw_score(0),
       can_inline(false) {
   if (!initialized_) {
     InitializeNewScoringField();
+    InitializeOnlyCountMatchesAtWordBoundariesField();
+    InitializeAlsoDoHUPLikeScoringField();
     initialized_ = true;
   }
 }
@@ -53,12 +59,15 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
                                        const string16& lower_string,
                                        const String16Vector& terms,
                                        const RowWordStarts& word_starts,
-                                       const base::Time now)
+                                       const base::Time now,
+                                       BookmarkService* bookmark_service)
     : HistoryMatch(row, 0, false, false),
       raw_score(0),
       can_inline(false) {
   if (!initialized_) {
     InitializeNewScoringField();
+    InitializeOnlyCountMatchesAtWordBoundariesField();
+    InitializeAlsoDoHUPLikeScoringField();
     initialized_ = true;
   }
 
@@ -95,19 +104,64 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
 
   // We can inline autocomplete a result if:
   //  1) there is only one search term
-  //  2) AND EITHER:
-  //    2a) the first match starts at the beginning of the candidate URL, OR
-  //    2b) the candidate URL starts with one of the standard URL prefixes with
-  //        the URL match immediately following that prefix.
+  //  2) AND the match begins immediately after one of the prefixes in
+  //     URLPrefix such as http://www and https:// (note that one of these
+  //     is the empty prefix, for cases where the user has typed the scheme)
   //  3) AND the search string does not end in whitespace (making it look to
   //     the IMUI as though there is a single search term when actually there
   //     is a second, empty term).
-  can_inline = !url_matches.empty() &&
-      terms.size() == 1 &&
-      (url_matches[0].offset == 0 ||
-       URLPrefix::IsURLPrefix(url.substr(0, url_matches[0].offset))) &&
+  // |best_inlineable_prefix| stores the inlineable prefix computed in
+  // clause (2) or NULL if no such prefix exists.  (The URL is not inlineable.)
+  // Note that using the best prefix here means that when multiple
+  // prefixes match, we'll choose to inline following the longest one.
+  // For a URL like "http://www.washingtonmutual.com", this means
+  // typing "w" will inline "ashington..." instead of "ww.washington...".
+  const URLPrefix* best_inlineable_prefix =
+      (!url_matches.empty() && (terms.size() == 1)) ?
+      URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), terms[0]) :
+      NULL;
+  can_inline = (best_inlineable_prefix != NULL) &&
       !IsWhitespace(*(lower_string.rbegin()));
-  match_in_scheme = can_inline && url_matches[0].offset == 0;
+  match_in_scheme = can_inline && best_inlineable_prefix->prefix.empty();
+  if (can_inline) {
+    // Initialize innermost_match.
+    // The idea here is that matches that occur in the scheme or
+    // "www." are worse than matches which don't.  For the URLs
+    // "http://www.google.com" and "http://wellsfargo.com", we want
+    // the omnibox input "w" to cause the latter URL to rank higher
+    // than the former.  Note that this is not the same as checking
+    // whether one match's inlinable prefix has more components than
+    // the other match's, since in this example, both matches would
+    // have an inlinable prefix of "http://", which is one component.
+    //
+    // Instead, we look for the overall best (i.e., most components)
+    // prefix of the current URL, and then check whether the inlinable
+    // prefix has that many components.  If it does, this is an
+    // "innermost" match, and should be boosted.  In the example
+    // above, the best prefixes for the two URLs have two and one
+    // components respectively, while the inlinable prefixes each
+    // have one component; this means the first match is not innermost
+    // and the second match is innermost, resulting in us boosting the
+    // second match.
+    //
+    // Now, the code that implements this.
+    // The deepest prefix for this URL regardless of where the match is.
+    const URLPrefix* best_prefix =
+        URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), string16());
+    DCHECK(best_prefix != NULL);
+    const int num_components_in_best_prefix = best_prefix->num_components;
+    // If the URL is inlineable, we must have a match.  Note the prefix that
+    // makes it inlineable may be empty.
+    DCHECK(best_inlineable_prefix != NULL);
+    const int num_components_in_best_inlineable_prefix =
+        best_inlineable_prefix->num_components;
+    innermost_match = (num_components_in_best_inlineable_prefix ==
+        num_components_in_best_prefix);
+  }
+
+  // Determine if the associated URLs is referenced by any bookmarks.
+  float bookmark_boost =
+      (bookmark_service && bookmark_service->IsBookmarked(gurl)) ? 10.0 : 0.0;
 
   if (use_new_scoring) {
     const float topicality_score = GetTopicalityScore(
@@ -115,25 +169,22 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
     const float recency_score = GetRecencyScore(
         (now - row.last_visit()).InDays());
     const float popularity_score = GetPopularityScore(
-        row.typed_count(), row.visit_count());
-
-    // Combine recency, popularity, and topicality scores into one.
-    // Example of how this functions: Suppose the omnibox has one
-    // input term.  Suppose we have a URL that has 30 typed visits with
-    // the most recent being within a day and the omnibox input term
-    // has a single URL hostname hit at a word boundary.  Then this
-    // URL will score 1200 ( = 30 * 40.0).
-    raw_score = 40.0 * topicality_score * recency_score * popularity_score;
+        row.typed_count() + bookmark_boost, row.visit_count());
+    raw_score = GetFinalRelevancyScore(
+        topicality_score, recency_score, popularity_score);
     raw_score =
         (raw_score <= kint32max) ? static_cast<int>(raw_score) : kint32max;
   } else {  // "old" scoring
     // Get partial scores based on term matching. Note that the score for
     // each of the URL and title are adjusted by the fraction of the
     // terms appearing in each.
-    int url_score = ScoreComponentForMatches(url_matches, url.length()) *
+    int url_score =
+        ScoreComponentForMatches(url_matches, word_starts.url_word_starts_,
+                                 url.length()) *
         std::min(url_matches.size(), terms.size()) / terms.size();
     int title_score =
-        ScoreComponentForMatches(title_matches, title.length()) *
+        ScoreComponentForMatches(title_matches, word_starts.title_word_starts_,
+                                 title.length()) *
         std::min(title_matches.size(), terms.size()) / terms.size();
     // Arbitrarily pick the best.
     // TODO(mrossetti): It might make sense that a term which appears in both
@@ -150,7 +201,8 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
     const int kVisitCountLevel[] = { 50, 30, 10, 5 };
     int visit_count_value = ScoreForValue(row.visit_count(), kVisitCountLevel);
     const int kTypedCountLevel[] = { 50, 30, 10, 5 };
-    int typed_count_value = ScoreForValue(row.typed_count(), kTypedCountLevel);
+    int typed_count_value = ScoreForValue(row.typed_count() + bookmark_boost,
+                                          kTypedCountLevel);
 
     // The final raw score is calculated by:
     //   - multiplying each factor by a 'relevance'
@@ -171,6 +223,42 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
                   kVisitCountRelevance + kTypedCountRelevance);
     raw_score = std::min(kMaxTotalScore, raw_score);
   }
+
+  if (also_do_hup_like_scoring && can_inline) {
+    // HistoryURL-provider-like scoring gives any result that is
+    // capable of being inlined a certain minimum score.  Some of these
+    // are given a higher score that lets them be shown in inline.
+    // This test here derives from the test in
+    // HistoryURLProvider::PromoteMatchForInlineAutocomplete().
+    const bool promote_to_inline = (row.typed_count() > 1) ||
+        (IsHostOnly() && (row.typed_count() == 1));
+    int hup_like_score = promote_to_inline ?
+        HistoryURLProvider::kScoreForBestInlineableResult :
+        HistoryURLProvider::kBaseScoreForNonInlineableResult;
+
+    // HistoryURLProvider has the function PromoteOrCreateShorterSuggestion()
+    // that's meant to promote prefixes of the best match (if they've
+    // been visited enough related to the best match) or
+    // create/promote host-only suggestions (even if they've never
+    // been typed).  The code is complicated and we don't try to
+    // duplicate the logic here.  Instead, we handle a simple case: in
+    // low-typed-count ranges, give host-only results (i.e.,
+    // http://www.foo.com/ vs. http://www.foo.com/bar.html) a boost so
+    // that the host-only result outscores all the other results that
+    // would normally have the same base score.  This behavior is not
+    // identical to what happens in HistoryURLProvider even in these
+    // low typed count ranges--sometimes it will create/promote when
+    // this test does not (indeed, we cannot create matches like HUP
+    // can) and vice versa--but the underlying philosophy is similar.
+    if (!promote_to_inline && IsHostOnly())
+      hup_like_score++;
+
+    // All the other logic to goes into hup-like-scoring happens in
+    // the tie-breaker case of MatchScoreGreater().
+
+    // Incorporate hup_like_score into raw_score.
+    raw_score = std::max(raw_score, hup_like_score);
+  }
 }
 
 ScoredHistoryMatch::~ScoredHistoryMatch() {}
@@ -182,8 +270,23 @@ int AccumulateMatchLength(int total, const TermMatch& match) {
 }
 
 // static
-int ScoredHistoryMatch::ScoreComponentForMatches(const TermMatches& matches,
-                                                 size_t max_length) {
+int ScoredHistoryMatch::ScoreComponentForMatches(
+    const TermMatches& provided_matches,
+    const WordStarts& word_starts,
+    size_t max_length) {
+  if (provided_matches.empty())
+    return 0;
+
+  TermMatches matches_at_word_boundaries;
+  if (only_count_matches_at_word_boundaries) {
+    MakeTermMatchesOnlyAtWordBoundaries(provided_matches, word_starts,
+                                        &matches_at_word_boundaries);
+  }
+  // The actual matches we'll use for matching.  This is |provided_matches|
+  // with all the matches not at a word boundary removed (if told to do so).
+  const TermMatches& matches = only_count_matches_at_word_boundaries ?
+      matches_at_word_boundaries : provided_matches;
+
   if (matches.empty())
     return 0;
 
@@ -241,6 +344,31 @@ int ScoredHistoryMatch::ScoreComponentForMatches(const TermMatches& matches,
 }
 
 // static
+void ScoredHistoryMatch::MakeTermMatchesOnlyAtWordBoundaries(
+    const TermMatches& provided_matches,
+    const WordStarts& word_starts,
+    TermMatches* matches_at_word_boundaries) {
+  matches_at_word_boundaries->clear();
+  // Resize it to an upper-bound estimate of the correct size.
+  matches_at_word_boundaries->reserve(provided_matches.size());
+  WordStarts::const_iterator next_word_starts = word_starts.begin();
+  for (TermMatches::const_iterator iter = provided_matches.begin();
+       iter != provided_matches.end(); ++iter) {
+    // Advance next_word_starts until it's >= the position of the term
+    // we're considering.
+    while ((next_word_starts != word_starts.end()) &&
+           (*next_word_starts < iter->offset)) {
+      ++next_word_starts;
+    }
+    if ((next_word_starts != word_starts.end()) &&
+        (*next_word_starts == iter->offset)) {
+      // At word boundary: copy this element into |matches_at_word_boundaries|.
+      matches_at_word_boundaries->push_back(*iter);
+    }
+  }
+}
+
+// static
 int ScoredHistoryMatch::ScoreForValue(int value, const int* value_ranks) {
   int i = 0;
   int rank_count = arraysize(kScoreRank);
@@ -258,10 +386,43 @@ int ScoredHistoryMatch::ScoreForValue(int value, const int* value_ranks) {
   return score;
 }
 
-// Comparison function for sorting ScoredMatches by their scores.
+// Comparison function for sorting ScoredMatches by their scores with
+// intelligent tie-breaking.
 bool ScoredHistoryMatch::MatchScoreGreater(const ScoredHistoryMatch& m1,
                                            const ScoredHistoryMatch& m2) {
-  return m1.raw_score > m2.raw_score;
+  if (m1.raw_score != m2.raw_score)
+    return m1.raw_score > m2.raw_score;
+
+  // This tie-breaking logic is inspired by / largely copied from the
+  // ordering logic in history_url_provider.cc CompareHistoryMatch().
+
+  // A URL that has been typed at all is better than one that has never been
+  // typed.  (Note "!"s on each side.)
+  if (!m1.url_info.typed_count() != !m2.url_info.typed_count())
+    return m1.url_info.typed_count() > m2.url_info.typed_count();
+
+  // Innermost matches (matches after any scheme or "www.") are better than
+  // non-innermost matches.
+  if (m1.innermost_match != m2.innermost_match)
+    return m1.innermost_match;
+
+  // URLs that have been typed more often are better.
+  if (m1.url_info.typed_count() != m2.url_info.typed_count())
+    return m1.url_info.typed_count() > m2.url_info.typed_count();
+
+  // For URLs that have each been typed once, a host (alone) is better
+  // than a page inside.
+  if (m1.url_info.typed_count() == 1) {
+    if (m1.IsHostOnly() != m2.IsHostOnly())
+      return m1.IsHostOnly();
+  }
+
+  // URLs that have been visited more often are better.
+  if (m1.url_info.visit_count() != m2.url_info.visit_count())
+    return m1.url_info.visit_count() > m2.url_info.visit_count();
+
+  // URLs that have been visited more recently are better.
+  return m1.url_info.last_visit() > m2.url_info.last_visit();
 }
 
 // static
@@ -357,7 +518,7 @@ float ScoredHistoryMatch::GetTopicalityScore(
     if (word_num >= 10) break;  // only count the first ten words
     const bool at_word_boundary = (next_word_starts != end_word_starts) &&
         (*next_word_starts == iter->offset);
-    term_scores[iter->term_num] += at_word_boundary ? 8 : 2;
+    term_scores[iter->term_num] += at_word_boundary ? 8 : 0;
   }
   // TODO(mpearson): Restore logic for penalizing out-of-order matches.
   // (Perhaps discount them by 0.8?)
@@ -470,6 +631,31 @@ float ScoredHistoryMatch::GetPopularityScore(int typed_count,
       (5.0 + 3.0);
 }
 
+// static
+float ScoredHistoryMatch::GetFinalRelevancyScore(
+    float topicality_score, float recency_score, float popularity_score) {
+  // Here's how to interpret intermediate_score: Suppose the omnibox
+  // has one input term.  Suppose we have a URL that has 5 typed
+  // visits with the most recent being within a day and the omnibox
+  // input term has a single URL hostname hit at a word boundary.
+  // This URL will have an intermediate_score of 5.0 (= 1 topicality *
+  // 1 recency * 5 popularity).
+  float intermediate_score =
+      topicality_score * recency_score * popularity_score;
+  // The below code takes intermediate_score from [0, infinity) to
+  // relevancy scores in the range [0, 1400).
+  float attenuating_factor = 1.0;
+  if (intermediate_score < 4) {
+    // The formula in the final return line in this function only works if
+    // intermediate_score > 4.  For lower scores, we linearly interpolate
+    // between 0 and the formula when intermediate_score = 4.0.
+    attenuating_factor = intermediate_score / 4.0;
+    intermediate_score = 4.0;
+  }
+  DCHECK_GE(intermediate_score, 4.0);
+  return attenuating_factor * 1400.0 * (2.0 - exp(2.0 / intermediate_score));
+}
+
 void ScoredHistoryMatch::InitializeNewScoringField() {
   enum NewScoringOption {
     OLD_SCORING = 0,
@@ -527,7 +713,20 @@ void ScoredHistoryMatch::InitializeNewScoringField() {
   UMA_HISTOGRAM_ENUMERATION(
       "Omnibox.HistoryQuickProviderNewScoringFieldTrialBeacon",
       new_scoring_option, NUM_OPTIONS);
+}
 
+void ScoredHistoryMatch::InitializeOnlyCountMatchesAtWordBoundariesField() {
+  only_count_matches_at_word_boundaries =
+      AutocompleteFieldTrial::
+          InHQPOnlyCountMatchesAtWordBoundariesFieldTrial() &&
+      AutocompleteFieldTrial::
+          InHQPOnlyCountMatchesAtWordBoundariesFieldTrialExperimentGroup();
+}
+
+void ScoredHistoryMatch::InitializeAlsoDoHUPLikeScoringField() {
+  also_do_hup_like_scoring =
+      AutocompleteFieldTrial::InHQPReplaceHUPScoringFieldTrial() &&
+      AutocompleteFieldTrial::InHQPReplaceHUPScoringFieldTrialExperimentGroup();
 }
 
 }  // namespace history

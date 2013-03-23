@@ -17,7 +17,17 @@
 #else
 #error Unknown branding
 #endif
-#endif  // OS_MACOSX
+#endif  // defined(OS_MACOSX)
+
+#if defined(OS_WIN)
+#if defined(GOOGLE_CHROME_BUILD)
+#define PRODUCT_STRING_PATH L"Google\\Chrome"
+#elif defined(CHROMIUM_BUILD)
+#define PRODUCT_STRING_PATH L"Chromium"
+#else
+#error Unknown branding
+#endif
+#endif  // defined(OS_WIN)
 
 namespace chrome {
 
@@ -55,6 +65,14 @@ const FilePath::CharType kHelperProcessExecutableNameChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING " Helper");
 const FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
+#elif defined(OS_ANDROID)
+// NOTE: Keep it synced with the process names defined in AndroidManifest.xml.
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
+    FPL("");
+const FilePath::CharType kHelperProcessExecutableName[] =
+    FPL("sandboxed_process");
+const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("");
 #elif defined(OS_POSIX)
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("chrome");
@@ -82,6 +100,12 @@ const FilePath::CharType kHelperProcessExecutablePathChromium[] =
         CHROMIUM_PRODUCT_STRING " Helper");
 const FilePath::CharType kHelperProcessExecutablePath[] =
     FPL(PRODUCT_STRING " Helper.app/Contents/MacOS/" PRODUCT_STRING " Helper");
+#elif defined(OS_ANDROID)
+const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
+const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");
+const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
+    FPL("chrome");
+const FilePath::CharType kHelperProcessExecutablePathChromium[] = FPL("chrome");
 #elif defined(OS_POSIX)
 const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL("chrome");
@@ -136,10 +160,8 @@ const FilePath::CharType kCustomDictionaryFileName[] =
     FPL("Custom Dictionary.txt");
 const FilePath::CharType kExtensionsCookieFilename[] = FPL("Extension Cookies");
 const FilePath::CharType kFaviconsFilename[] = FPL("Favicons");
-const FilePath::CharType kHistoryBookmarksFileName[] =
-    FPL("Bookmarks From History");
+const FilePath::CharType kFirstRunSentinel[] = FPL("First Run");
 const FilePath::CharType kHistoryFilename[] = FPL("History");
-const FilePath::CharType kIsolatedAppStateDirname[] = FPL("Isolated Apps");
 const FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
 const FilePath::CharType kLocalStateFilename[] = FPL("Local State");
 const FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
@@ -148,8 +170,6 @@ const FilePath::CharType kManagedModePolicyFilename[] =
 const FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
 const FilePath::CharType kNewTabThumbnailsFilename[] = FPL("Top Thumbnails");
 const FilePath::CharType kOBCertFilename[] = FPL("Origin Bound Certs");
-const FilePath::CharType kOffTheRecordMediaCacheDirname[] =
-    FPL("Incognito Media Cache");
 const FilePath::CharType kPreferencesFilename[] = FPL("Preferences");
 const FilePath::CharType kReadmeFilename[] = FPL("README");
 const FilePath::CharType kSafeBrowsingBaseFilename[] = FPL("Safe Browsing");
@@ -179,7 +199,7 @@ const FilePath::CharType kPepperFlashPluginFilename[] =
 const wchar_t kUserDataDirname[] = L"User Data";
 
 #if defined(OS_CHROMEOS)
-const FilePath::CharType kGDataCacheDirname[] = FPL("GCache");
+const FilePath::CharType kDriveCacheDirname[] = FPL("GCache");
 #endif  // defined(OS_CHROMEOS)
 
 // We don't enable record mode in the released product because users could
@@ -198,23 +218,31 @@ const char* const kUnknownLanguageCode = "und";
 
 const int kJavascriptMessageExpectedDelay = 1000;
 
+#if defined(OS_ANDROID)
+const bool kEnableTouchIcon = true;
+#else
 const bool kEnableTouchIcon = false;
+#endif
 
 const float kMaxShareOfExtensionProcesses = 0.30f;
 
 #if defined(OS_LINUX)
-extern const int kLowestRendererOomScore = 300;
-extern const int kHighestRendererOomScore = 1000;
+const int kLowestRendererOomScore = 300;
+const int kHighestRendererOomScore = 1000;
 #endif
 
 #if defined(OS_WIN)
 // This is used by the PreRead experiment.
 const char kPreReadEnvironmentVariable[] = "CHROME_PRE_READ_EXPERIMENT";
+// This is used by chrome in Windows 8 metro mode.
 const wchar_t kMetroChromeUserDataSubDir[] = L"Metro";
 const wchar_t kMetroNavigationAndSearchMessage[] =
     L"CHROME_METRO_NAV_SEARCH_REQUEST";
 const wchar_t kMetroGetCurrentTabInfoMessage[] =
     L"CHROME_METRO_GET_CURRENT_TAB_INFO";
+const wchar_t kMetroRegistryPath[] =
+    L"Software\\" PRODUCT_STRING_PATH L"\\Metro";
+const wchar_t kLaunchModeValue[] = L"launch_mode";
 #endif
 
 }  // namespace chrome

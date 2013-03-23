@@ -11,10 +11,15 @@
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/common/chrome_version_info.h"
+#include "sync/api/time.h"
+#include "sync/internal_api/public/util/sync_string_conversions.h"
 #include "sync/protocol/proto_enum_conversions.h"
 
 using base::DictionaryValue;
 using base::ListValue;
+
+const char kCredentialsTitle[] = "Credentials";
+const char kDetailsKey[] = "details";
 
 namespace {
 
@@ -141,6 +146,15 @@ std::string GetVersionString() {
       version_modifier;
 }
 
+std::string GetTimeStr(base::Time time, const std::string& default_msg) {
+  std::string time_str;
+  if (time.is_null())
+    time_str = default_msg;
+  else
+    time_str = syncer::GetTimeDebugString(time);
+  return time_str;
+}
+
 }  // namespace
 
 namespace sync_ui_util {
@@ -164,7 +178,7 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   StringSyncStat client_version(section_version, "Client Version");
   StringSyncStat server_url(section_version, "Server URL");
 
-  ListValue* section_credentials = AddSection(stats_list, "Credentials");
+  ListValue* section_credentials = AddSection(stats_list, kCredentialsTitle);
   StringSyncStat client_id(section_credentials, "Client ID");
   StringSyncStat username(section_credentials, "Username");
   BoolSyncStat is_token_available(section_credentials, "Sync Token Available");
@@ -175,7 +189,6 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
                                  "Sync First-Time Setup Complete");
   BoolSyncStat is_backend_initialized(section_local,
                                       "Sync Backend Initialized");
-  BoolSyncStat is_download_complete(section_local, "Initial Download Complete");
   BoolSyncStat is_syncing(section_local, "Syncing");
 
   ListValue* section_network = AddSection(stats_list, "Network");
@@ -193,6 +206,13 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   BoolSyncStat has_pending_keys(section_encryption,
                                 "Cryptographer Has Pending Keys");
   StringSyncStat encrypted_types(section_encryption, "Encrypted Types");
+  BoolSyncStat has_keystore_key(section_encryption, "Has Keystore Key");
+  StringSyncStat keystore_migration_time(section_encryption,
+                                         "Keystore Migration Time");
+  StringSyncStat passphrase_type(section_encryption,
+                                 "Passphrase Type");
+  StringSyncStat passphrase_time(section_encryption,
+                                 "Passphrase Time");
 
   ListValue* section_last_session = AddSection(
       stats_list, "Status from Last Completed Session");
@@ -216,7 +236,7 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   IntSyncStat updates_received(section_counters, "Updates Downloaded");
   IntSyncStat tombstone_updates(section_counters, "Tombstone Updates");
   IntSyncStat reflected_updates(section_counters, "Reflected Updates");
-  IntSyncStat successful_commits(section_counters, "Syccessful Commits");
+  IntSyncStat successful_commits(section_counters, "Successful Commits");
   IntSyncStat conflicts_resolved_local_wins(section_counters,
                                      "Conflicts Resolved: Client Wins");
   IntSyncStat conflicts_resolved_server_wins(section_counters,
@@ -226,7 +246,6 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
                                              "Transient Counters (this cycle)");
   IntSyncStat encryption_conflicts(section_this_cycle, "Encryption Conflicts");
   IntSyncStat hierarchy_conflicts(section_this_cycle, "Hierarchy Conflicts");
-  IntSyncStat simple_conflicts(section_this_cycle, "Simple Conflicts");
   IntSyncStat server_conflicts(section_this_cycle, "Server Conflicts");
   IntSyncStat committed_items(section_this_cycle, "Committed Items");
   IntSyncStat updates_remaining(section_this_cycle, "Updates Remaining");
@@ -237,9 +256,16 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   IntSyncStat committed_count(section_that_cycle, "Committed Count");
   IntSyncStat entries(section_that_cycle, "Entries");
 
+  ListValue* section_nudge_info = AddSection(
+      stats_list, "Nudge Source Counters");
+  IntSyncStat nudge_source_notification(
+      section_nudge_info, "Server Invalidations");
+  IntSyncStat nudge_source_local(section_nudge_info, "Local Changes");
+  IntSyncStat nudge_source_local_refresh(section_nudge_info, "Local Refreshes");
+
   // This list of sections belongs in the 'details' field of the returned
   // message.
-  about_info->Set("details", stats_list);
+  about_info->Set(kDetailsKey, stats_list);
 
   // Populate all the fields we declared above.
   client_version.SetValue(GetVersionString());
@@ -272,7 +298,6 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   is_setup_complete.SetValue(service->HasSyncSetupCompleted());
   is_backend_initialized.SetValue(sync_initialized);
   if (is_status_valid) {
-    is_download_complete.SetValue(full_status.initial_sync_ended);
     is_syncing.SetValue(full_status.syncing);
   }
 
@@ -287,12 +312,19 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
     is_using_explicit_passphrase.SetValue(
         service->IsUsingSecondaryPassphrase());
     is_passphrase_required.SetValue(service->IsPassphraseRequired());
+    passphrase_time.SetValue(
+        GetTimeStr(service->GetExplicitPassphraseTime(), "No Passphrase Time"));
   }
   if (is_status_valid) {
     is_cryptographer_ready.SetValue(full_status.cryptographer_ready);
     has_pending_keys.SetValue(full_status.crypto_has_pending_keys);
     encrypted_types.SetValue(
         ModelTypeSetToString(full_status.encrypted_types));
+    has_keystore_key.SetValue(full_status.has_keystore_key);
+    keystore_migration_time.SetValue(
+        GetTimeStr(full_status.keystore_migration_time, "Not Migrated"));
+    passphrase_type.SetValue(
+        PassphraseTypeToString(full_status.passphrase_type));
   }
 
   if (snapshot.is_initialized()) {
@@ -332,10 +364,15 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   if (is_status_valid) {
     encryption_conflicts.SetValue(full_status.encryption_conflicts);
     hierarchy_conflicts.SetValue(full_status.hierarchy_conflicts);
-    simple_conflicts.SetValue(full_status.simple_conflicts);
     server_conflicts.SetValue(full_status.server_conflicts);
     committed_items.SetValue(full_status.committed_count);
     updates_remaining.SetValue(full_status.updates_available);
+  }
+
+  if (is_status_valid) {
+    nudge_source_notification.SetValue(full_status.nudge_source_notification);
+    nudge_source_local.SetValue(full_status.nudge_source_local);
+    nudge_source_local_refresh.SetValue(full_status.nudge_source_local_refresh);
   }
 
   if (snapshot.is_initialized()) {

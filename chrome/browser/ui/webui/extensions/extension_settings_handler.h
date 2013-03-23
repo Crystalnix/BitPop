@@ -10,10 +10,12 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/public/pref_change_registrar.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
-#include "chrome/browser/extensions/extension_warning_set.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
+#include "chrome/browser/extensions/extension_warning_service.h"
+#include "chrome/browser/extensions/requirements_checker.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
@@ -55,11 +57,14 @@ struct ExtensionPage {
 };
 
 // Extension Settings UI handler.
-class ExtensionSettingsHandler : public content::WebUIMessageHandler,
-                                 public content::NotificationObserver,
-                                 public content::WebContentsObserver,
-                                 public ui::SelectFileDialog::Listener,
-                                 public ExtensionUninstallDialog::Delegate {
+class ExtensionSettingsHandler
+    : public content::WebUIMessageHandler,
+      public content::NotificationObserver,
+      public content::WebContentsObserver,
+      public ui::SelectFileDialog::Listener,
+      public ExtensionUninstallDialog::Delegate,
+      public extensions::ExtensionWarningService::Observer,
+      public base::SupportsWeakPtr<ExtensionSettingsHandler> {
  public:
   ExtensionSettingsHandler();
   virtual ~ExtensionSettingsHandler();
@@ -68,11 +73,11 @@ class ExtensionSettingsHandler : public content::WebUIMessageHandler,
 
   // Extension Detail JSON Struct for page. |pages| is injected for unit
   // testing.
-  // Note: |warning_set| can be NULL in unit tests.
+  // Note: |warning_service| can be NULL in unit tests.
   base::DictionaryValue* CreateExtensionDetailValue(
       const extensions::Extension* extension,
       const std::vector<ExtensionPage>& pages,
-      const ExtensionWarningSet* warning_set);
+      const extensions::ExtensionWarningService* warning_service);
 
   void GetLocalizedValues(base::DictionaryValue* localized_strings);
 
@@ -109,6 +114,9 @@ class ExtensionSettingsHandler : public content::WebUIMessageHandler,
   virtual void ExtensionUninstallAccepted() OVERRIDE;
   virtual void ExtensionUninstallCanceled() OVERRIDE;
 
+  // extensions::ExtensionWarningService::Observer implementation.
+  virtual void ExtensionWarningsChanged() OVERRIDE;
+
   // Helper method that reloads all unpacked extensions.
   void ReloadUnpackedExtensions();
 
@@ -120,6 +128,12 @@ class ExtensionSettingsHandler : public content::WebUIMessageHandler,
 
   // Callback for "inspect" message.
   void HandleInspectMessage(const base::ListValue* args);
+
+  // Callback for "launch" message.
+  void HandleLaunchMessage(const ListValue* args);
+
+  // Callback for "restart" message.
+  void HandleRestartMessage(const ListValue* args);
 
   // Callback for "reload" message.
   void HandleReloadMessage(const base::ListValue* args);
@@ -166,14 +180,19 @@ class ExtensionSettingsHandler : public content::WebUIMessageHandler,
       const extensions::Extension* extension, bool extension_is_enabled);
   void GetInspectablePagesForExtensionProcess(
       const std::set<content::RenderViewHost*>& views,
-      std::vector<ExtensionPage> *result);
+      std::vector<ExtensionPage>* result);
+  void GetShellWindowPagesForExtensionProfile(
+      const extensions::Extension* extension,
+      Profile* profile,
+      std::vector<ExtensionPage>* result);
 
   // Returns the ExtensionUninstallDialog object for this class, creating it if
   // needed.
   ExtensionUninstallDialog* GetExtensionUninstallDialog();
 
-  // Helper to inspect an ExtensionHost after it has been loaded.
-  void InspectExtensionHost(extensions::ExtensionHost* host);
+  // Callback for RequirementsChecker.
+  void OnRequirementsChecked(std::string extension_id,
+                             std::vector<std::string> requirement_errors);
 
   // Our model.  Outlives us since it's owned by our containing profile.
   ExtensionService* extension_service_;
@@ -216,6 +235,15 @@ class ExtensionSettingsHandler : public content::WebUIMessageHandler,
 
   PrefChangeRegistrar pref_registrar_;
   PrefChangeRegistrar local_state_pref_registrar_;
+
+  // This will not be empty when a requirements check is in progress. Doing
+  // another Check() before the previous one is complete will cause the first
+  // one to abort.
+  scoped_ptr<extensions::RequirementsChecker> requirements_checker_;
+
+  ScopedObserver<extensions::ExtensionWarningService,
+                 extensions::ExtensionWarningService::Observer>
+      warning_service_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSettingsHandler);
 };

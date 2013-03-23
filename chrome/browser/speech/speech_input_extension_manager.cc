@@ -97,9 +97,9 @@ class SpeechInputExtensionManager::Factory : public ProfileKeyedServiceFactory {
   // ProfileKeyedServiceFactory methods:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
       Profile* profile) const OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() OVERRIDE { return false; }
-  virtual bool ServiceIsNULLWhileTesting() OVERRIDE { return true; }
-  virtual bool ServiceIsCreatedWithProfile() OVERRIDE { return true; }
+  virtual bool ServiceRedirectedInIncognito() const OVERRIDE { return false; }
+  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE { return true; }
+  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE { return true; }
 
   DISALLOW_COPY_AND_ASSIGN(Factory);
 };
@@ -263,9 +263,9 @@ int SpeechInputExtensionManager::GetRenderProcessIDForExtension(
   return rph->GetID();
 }
 
-void SpeechInputExtensionManager::OnRecognitionResult(
+void SpeechInputExtensionManager::OnRecognitionResults(
     int session_id,
-    const content::SpeechRecognitionResult& result) {
+    const content::SpeechRecognitionResults& results) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_EQ(session_id, speech_recognition_session_id_);
 
@@ -275,38 +275,40 @@ void SpeechInputExtensionManager::OnRecognitionResult(
   ForceStopOnIOThread();
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&SpeechInputExtensionManager::SetRecognitionResultOnUIThread,
-      this, result, extension_id));
+      base::Bind(&SpeechInputExtensionManager::SetRecognitionResultsOnUIThread,
+      this, results, extension_id));
 }
 
-void SpeechInputExtensionManager::SetRecognitionResultOnUIThread(
-    const content::SpeechRecognitionResult& result,
+void SpeechInputExtensionManager::SetRecognitionResultsOnUIThread(
+    const content::SpeechRecognitionResults& results,
     const std::string& extension_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ListValue args;
-  DictionaryValue* js_event = new DictionaryValue();
-  args.Append(js_event);
+  content::SpeechRecognitionResults::const_iterator it = results.begin();
+  for (; it != results.end(); ++it) {
+    const content::SpeechRecognitionResult& result = (*it);
 
-  ListValue* js_hypothesis_array = new ListValue();
-  js_event->Set(kHypothesesKey, js_hypothesis_array);
+    scoped_ptr<ListValue> args(new ListValue());
+    DictionaryValue* js_event = new DictionaryValue();
+    args->Append(js_event);
 
-  for (size_t i = 0; i < result.hypotheses.size(); ++i) {
-    const SpeechRecognitionHypothesis& hypothesis = result.hypotheses[i];
+    ListValue* js_hypothesis_array = new ListValue();
+    js_event->Set(kHypothesesKey, js_hypothesis_array);
 
-    DictionaryValue* js_hypothesis_object = new DictionaryValue();
-    js_hypothesis_array->Append(js_hypothesis_object);
+    for (size_t i = 0; i < result.hypotheses.size(); ++i) {
+      const SpeechRecognitionHypothesis& hypothesis = result.hypotheses[i];
 
-    js_hypothesis_object->SetString(kUtteranceKey,
-        UTF16ToUTF8(hypothesis.utterance));
-    js_hypothesis_object->SetDouble(kConfidenceKey,
-        hypothesis.confidence);
+      DictionaryValue* js_hypothesis_object = new DictionaryValue();
+      js_hypothesis_array->Append(js_hypothesis_object);
+
+      js_hypothesis_object->SetString(kUtteranceKey,
+          UTF16ToUTF8(hypothesis.utterance));
+      js_hypothesis_object->SetDouble(kConfidenceKey,
+          hypothesis.confidence);
+    }
+
+    DispatchEventToExtension(extension_id, kOnResultEvent, args.Pass());
   }
-
-  std::string json_args;
-  base::JSONWriter::Write(&args, &json_args);
-  VLOG(1) << "Results: " << json_args;
-  DispatchEventToExtension(extension_id, kOnResultEvent, json_args);
 }
 
 void SpeechInputExtensionManager::OnRecognitionStart(int session_id) {
@@ -434,44 +436,37 @@ void SpeechInputExtensionManager::OnSoundStart(int session_id) {
   DCHECK_EQ(session_id, speech_recognition_session_id_);
   VLOG(1) << "OnSoundStart";
 
-  std::string json_args;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&SpeechInputExtensionManager::DispatchEventToExtension,
       this, extension_id_in_use_, std::string(kOnSoundStartEvent),
-      json_args));
+      Passed(scoped_ptr<ListValue>(new ListValue()))));
 }
 
 void SpeechInputExtensionManager::OnSoundEnd(int session_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   VLOG(1) << "OnSoundEnd";
 
-  std::string json_args;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&SpeechInputExtensionManager::DispatchEventToExtension,
       this, extension_id_in_use_, std::string(kOnSoundEndEvent),
-      json_args));
+      Passed(scoped_ptr<ListValue>(new ListValue()))));
 }
 
 void SpeechInputExtensionManager::DispatchEventToExtension(
-    const std::string& extension_id, const std::string& event,
-    const std::string& json_args) {
+    const std::string& extension_id, const std::string& event_name,
+    scoped_ptr<ListValue> event_args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   base::AutoLock auto_lock(state_lock_);
   if (state_ == kShutdown)
     return;
 
-  if (profile_ && profile_->GetExtensionEventRouter()) {
-    std::string final_args;
-    if (json_args.empty()) {
-      ListValue args;
-      base::JSONWriter::Write(&args, &final_args);
-    } else {
-      final_args = json_args;
-    }
-
-    profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-        extension_id, event, final_args, profile_, GURL());
+  if (profile_ && extensions::ExtensionSystem::Get(profile_)->event_router()) {
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        event_name, event_args.Pass()));
+    event->restrict_to_profile = profile_;
+    extensions::ExtensionSystem::Get(profile_)->event_router()->
+        DispatchEventToExtension(extension_id, event.Pass());
   }
 }
 
@@ -498,14 +493,11 @@ void SpeechInputExtensionManager::DispatchError(
 
   // Used for errors that are also reported via the onError event.
   if (dispatch_event) {
-    ListValue args;
+    scoped_ptr<ListValue> args(new ListValue());
     DictionaryValue* js_error = new DictionaryValue();
-    args.Append(js_error);
+    args->Append(js_error);
     js_error->SetString(kErrorCodeKey, error);
-    std::string json_args;
-    base::JSONWriter::Write(&args, &json_args);
-    DispatchEventToExtension(extension_id,
-        kOnErrorEvent, json_args);
+    DispatchEventToExtension(extension_id, kOnErrorEvent, args.Pass());
   }
 }
 
@@ -540,8 +532,9 @@ bool SpeechInputExtensionManager::Start(
       NOTREACHED();
   }
 
-  const extensions::Extension* extension = profile_->GetExtensionService()->
-      GetExtensionById(extension_id, true);
+  const extensions::Extension* extension =
+      extensions::ExtensionSystem::Get(profile_)->extension_service()->
+          GetExtensionById(extension_id, true);
   DCHECK(extension);
   const std::string& extension_name = extension->name();
 
@@ -661,7 +654,6 @@ void SpeechInputExtensionManager::StartRecording(
   context.context_name = extension_name;
 
   content::SpeechRecognitionSessionConfig config;
-  config.is_one_shot = true;
   config.language = language;
   config.grammars.push_back(content::SpeechRecognitionGrammar(grammar));
   config.initial_context = context;

@@ -13,15 +13,12 @@
 #include "base/string_util.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/icon_messages.h"
 #include "chrome/common/prerender_messages.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/common/thumbnail_score.h"
-#include "chrome/common/thumbnail_support.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/content_settings_observer.h"
-#include "chrome/renderer/extensions/extension_dispatcher.h"
+#include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/external_host_bindings.h"
 #include "chrome/renderer/frame_sniffer.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
@@ -29,37 +26,38 @@
 #include "chrome/renderer/translate_helper.h"
 #include "chrome/renderer/webview_color_overlay.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/renderer/render_view.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/public/renderer/render_view.h"
+#include "extensions/common/constants.h"
 #include "net/base/data_url.h"
-#include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityObject.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityObject.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "ui/gfx/color_utils.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skbitmap_operations.h"
+#include "v8/include/v8-testing.h"
 #include "webkit/glue/image_decoder.h"
 #include "webkit/glue/multi_resolution_image_resource_fetcher.h"
 #include "webkit/glue/webkit_glue.h"
-#include "v8/include/v8-testing.h"
 
 using WebKit::WebAccessibilityObject;
 using WebKit::WebCString;
 using WebKit::WebDataSource;
 using WebKit::WebDocument;
 using WebKit::WebFrame;
+using WebKit::WebGestureEvent;
 using WebKit::WebIconURL;
 using WebKit::WebRect;
 using WebKit::WebSecurityOrigin;
@@ -90,10 +88,6 @@ static const int kDelayForForcedCaptureMs = 6000;
 // maximum number of characters in the document to index, any text beyond this
 // point will be clipped
 static const size_t kMaxIndexChars = 65535;
-
-// Size of the thumbnails that we'll generate
-static const int kThumbnailWidth = 212;
-static const int kThumbnailHeight = 132;
 
 // Constants for UMA statistic collection.
 static const char kWWWDotGoogleDotCom[] = "www.google.com";
@@ -157,49 +151,6 @@ enum {
 // Constants for mixed-content blocking.
 static const char kGoogleDotCom[] = "google.com";
 
-static bool PaintViewIntoCanvas(WebView* view,
-                                skia::PlatformCanvas& canvas) {
-  view->layout();
-  const WebSize& size = view->size();
-
-  if (!canvas.initialize(size.width, size.height, true))
-    return false;
-
-  view->paint(webkit_glue::ToWebCanvas(&canvas),
-              WebRect(0, 0, size.width, size.height));
-  // TODO: Add a way to snapshot the whole page, not just the currently
-  // visible part.
-
-  return true;
-}
-
-// Calculates how "boring" a thumbnail is. The boring score is the
-// 0,1 ranged percentage of pixels that are the most common
-// luma. Higher boring scores indicate that a higher percentage of a
-// bitmap are all the same brightness.
-static double CalculateBoringScore(SkBitmap* bitmap) {
-  int histogram[256] = {0};
-  color_utils::BuildLumaHistogram(*bitmap, histogram);
-
-  int color_count = *std::max_element(histogram, histogram + 256);
-  int pixel_count = bitmap->width() * bitmap->height();
-  return static_cast<double>(color_count) / pixel_count;
-}
-
-static FaviconURL::IconType ToFaviconType(WebIconURL::Type type) {
-  switch (type) {
-    case WebIconURL::TypeFavicon:
-      return FaviconURL::FAVICON;
-    case WebIconURL::TypeTouch:
-      return FaviconURL::TOUCH_ICON;
-    case WebIconURL::TypeTouchPrecomposed:
-      return FaviconURL::TOUCH_PRECOMPOSED_ICON;
-    case WebIconURL::TypeInvalid:
-      return FaviconURL::INVALID_ICON;
-  }
-  return FaviconURL::INVALID_ICON;
-}
-
 static bool isHostInDomain(const std::string& host, const std::string& domain) {
   return (EndsWith(host, domain, false) &&
           (host.length() == domain.length() ||
@@ -219,7 +170,7 @@ ChromeRenderViewObserver::ChromeRenderViewObserver(
     content::RenderView* render_view,
     ContentSettingsObserver* content_settings,
     ChromeRenderProcessObserver* chrome_render_process_observer,
-    ExtensionDispatcher* extension_dispatcher,
+    extensions::Dispatcher* extension_dispatcher,
     TranslateHelper* translate_helper)
     : content::RenderViewObserver(render_view),
       chrome_render_process_observer_(chrome_render_process_observer),
@@ -249,7 +200,6 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
                         OnHandleMessageFromExternalHost)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_JavaScriptStressTestControl,
                         OnJavaScriptStressTestControl)
-    IPC_MESSAGE_HANDLER(IconMsg_DownloadFavicon, OnDownloadFavicon)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAllowDisplayingInsecureContent,
                         OnSetAllowDisplayingInsecureContent)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAllowRunningInsecureContent,
@@ -324,28 +274,6 @@ void ChromeRenderViewObserver::OnJavaScriptStressTestControl(int cmd,
   }
 }
 
-void ChromeRenderViewObserver::OnDownloadFavicon(int id,
-                                                 const GURL& image_url,
-                                                 int image_size) {
-  bool data_image_failed = false;
-  if (image_url.SchemeIs("data")) {
-    SkBitmap data_image = ImageFromDataUrl(image_url);
-    data_image_failed = data_image.empty();
-    if (!data_image_failed) {
-      std::vector<SkBitmap> images(1, data_image);
-      Send(new IconHostMsg_DidDownloadFavicon(
-          routing_id(), id, image_url, false, image_size, images));
-    }
-  }
-
-  if (data_image_failed ||
-      !DownloadFavicon(id, image_url, image_size)) {
-    Send(new IconHostMsg_DidDownloadFavicon(
-        routing_id(), id, image_url, true, image_size,
-        std::vector<SkBitmap>()));
-  }
-}
-
 void ChromeRenderViewObserver::OnSetAllowDisplayingInsecureContent(bool allow) {
   allow_displaying_insecure_content_ = allow;
   WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
@@ -372,7 +300,7 @@ void ChromeRenderViewObserver::Navigate(const GURL& url) {
 
 void ChromeRenderViewObserver::OnSetClientSidePhishingDetection(
     bool enable_phishing_detection) {
-#if defined(ENABLE_SAFE_BROWSING) && !defined(OS_CHROMEOS)
+#if defined(FULL_SAFE_BROWSING) && !defined(OS_CHROMEOS)
   phishing_classifier_ = enable_phishing_detection ?
       safe_browsing::PhishingClassifierDelegate::Create(
           render_view(), NULL) :
@@ -381,17 +309,26 @@ void ChromeRenderViewObserver::OnSetClientSidePhishingDetection(
 }
 
 void ChromeRenderViewObserver::OnSetVisuallyDeemphasized(bool deemphasized) {
-  bool already_deemphasized = !!dimmed_color_overlay_.get();
-  if (already_deemphasized == deemphasized)
-    return;
+  // TODO(msw|wittman): Remove this function entirely once new style constrained
+  // window is enabled on the other platforms.
+#if defined(OS_MACOSX) || defined(OS_WIN)
+  return;
+#endif
 
-  if (deemphasized) {
-    // 70% opaque grey.
-    SkColor greyish = SkColorSetARGB(178, 0, 0, 0);
-    dimmed_color_overlay_.reset(
-        new WebViewColorOverlay(render_view(), greyish));
-  } else {
-    dimmed_color_overlay_.reset();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableNewDialogStyle)) {
+    bool already_deemphasized = !!dimmed_color_overlay_.get();
+    if (already_deemphasized == deemphasized)
+      return;
+
+    if (deemphasized) {
+      // 70% opaque grey.
+      SkColor greyish = SkColorSetARGB(178, 0, 0, 0);
+      dimmed_color_overlay_.reset(
+          new WebViewColorOverlay(render_view(), greyish));
+    } else {
+      dimmed_color_overlay_.reset();
+    }
   }
 }
 
@@ -485,21 +422,16 @@ bool ChromeRenderViewObserver::allowWriteToClipboard(WebFrame* frame,
   return allowed;
 }
 
-bool ChromeRenderViewObserver::HasExtensionPermission(
-    const WebSecurityOrigin& origin, APIPermission::ID permission) const {
-  if (!EqualsASCII(origin.protocol(), chrome::kExtensionScheme))
-    return false;
+const extensions::Extension* ChromeRenderViewObserver::GetExtension(
+    const WebSecurityOrigin& origin) const {
+  if (!EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
+    return NULL;
 
   const std::string extension_id = origin.host().utf8().data();
   if (!extension_dispatcher_->IsExtensionActive(extension_id))
-    return false;
+    return NULL;
 
-  const extensions::Extension* extension =
-      extension_dispatcher_->extensions()->GetByID(extension_id);
-  if (!extension)
-    return false;
-
-  return extension->HasAPIPermission(permission);
+  return extension_dispatcher_->extensions()->GetByID(extension_id);
 }
 
 bool ChromeRenderViewObserver::allowWebComponents(const WebDocument& document,
@@ -511,12 +443,10 @@ bool ChromeRenderViewObserver::allowWebComponents(const WebDocument& document,
   if (EqualsASCII(origin.protocol(), chrome::kChromeUIScheme))
     return true;
 
-  // The <browser> tag is implemented via Shadow DOM.
-  if (HasExtensionPermission(origin, APIPermission::kBrowserTag))
-    return true;
-
-  if (HasExtensionPermission(origin, APIPermission::kExperimental))
-    return true;
+  if (const extensions::Extension* extension = GetExtension(origin)) {
+    if (extension->HasAPIPermission(APIPermission::kExperimental))
+      return true;
+  }
 
   return false;
 }
@@ -524,7 +454,23 @@ bool ChromeRenderViewObserver::allowWebComponents(const WebDocument& document,
 bool ChromeRenderViewObserver::allowHTMLNotifications(
     const WebDocument& document) {
   WebSecurityOrigin origin = document.securityOrigin();
-  return HasExtensionPermission(origin, APIPermission::kNotification);
+  const extensions::Extension* extension = GetExtension(origin);
+  return extension && extension->HasAPIPermission(APIPermission::kNotification);
+}
+
+bool ChromeRenderViewObserver::allowMutationEvents(const WebDocument& document,
+                                                   bool default_value) {
+  WebSecurityOrigin origin = document.securityOrigin();
+  const extensions::Extension* extension = GetExtension(origin);
+  if (extension && extension->is_platform_app())
+    return false;
+  return default_value;
+}
+
+bool ChromeRenderViewObserver::allowPushState(const WebDocument& document) {
+  WebSecurityOrigin origin = document.securityOrigin();
+  const extensions::Extension* extension = GetExtension(origin);
+  return !extension || !extension->is_platform_app();
 }
 
 static void SendInsecureContentSignal(int signal) {
@@ -698,42 +644,6 @@ void ChromeRenderViewObserver::DidStopLoading() {
         routing_id(), render_view()->GetPageId(), osd_url,
         search_provider::AUTODETECTED_PROVIDER));
   }
-
-  int icon_types = WebIconURL::TypeFavicon;
-  if (chrome::kEnableTouchIcon)
-    icon_types |= WebIconURL::TypeTouchPrecomposed | WebIconURL::TypeTouch;
-
-  WebVector<WebIconURL> icon_urls =
-      render_view()->GetWebView()->mainFrame()->iconURLs(icon_types);
-  std::vector<FaviconURL> urls;
-  for (size_t i = 0; i < icon_urls.size(); i++) {
-    WebURL url = icon_urls[i].iconURL();
-    if (!url.isEmpty())
-      urls.push_back(FaviconURL(url, ToFaviconType(icon_urls[i].iconType())));
-  }
-  if (!urls.empty()) {
-    Send(new IconHostMsg_UpdateFaviconURL(
-        routing_id(), render_view()->GetPageId(), urls));
-  }
-}
-
-void ChromeRenderViewObserver::DidChangeIcon(WebFrame* frame,
-                                             WebIconURL::Type icon_type) {
-  if (frame->parent())
-    return;
-
-  if (!chrome::kEnableTouchIcon &&
-      icon_type != WebIconURL::TypeFavicon)
-    return;
-
-  WebVector<WebIconURL> icon_urls = frame->iconURLs(icon_type);
-  std::vector<FaviconURL> urls;
-  for (size_t i = 0; i < icon_urls.size(); i++) {
-    urls.push_back(FaviconURL(icon_urls[i].iconURL(),
-                              ToFaviconType(icon_urls[i].iconType())));
-  }
-  Send(new IconHostMsg_UpdateFaviconURL(
-      routing_id(), render_view()->GetPageId(), urls));
 }
 
 void ChromeRenderViewObserver::DidCommitProvisionalLoad(
@@ -753,33 +663,16 @@ void ChromeRenderViewObserver::DidClearWindowObject(WebFrame* frame) {
   }
 }
 
-void ChromeRenderViewObserver::DidHandleTouchEvent(const WebTouchEvent& event) {
-  // TODO(mazda): Consider using WebKit::WebInputEvent::GestureTap event when
-  //              it's implemented. Only sends the message on touch end event
-  //              for now.
-  if (event.type != WebKit::WebInputEvent::TouchEnd)
+void ChromeRenderViewObserver::DidHandleGestureEvent(
+    const WebGestureEvent& event) {
+  if (event.type != WebKit::WebGestureEvent::GestureTap)
     return;
-  // Ignore the case of multiple touches
-  if (event.touchesLength != 1)
-    return;
-  if (render_view()->GetWebView()->textInputType() ==
+
+  if (render_view()->GetWebView()->textInputType() !=
       WebKit::WebTextInputTypeNone) {
-    return;
-  }
-  WebKit::WebNode node = render_view()->GetFocusedNode();
-  if (node.isNull())
-    return;
-  WebKit::WebAccessibilityObject accessibility =
-      render_view()->GetWebView()->accessibilityObject();
-  if (accessibility.isNull())
-    return;
-  const WebKit::WebTouchPoint point = event.touches[0];
-  accessibility = accessibility.hitTest(point.position);
-  if (accessibility.isNull())
-    return;
-  if (accessibility.node() == node)
     render_view()->Send(new ChromeViewHostMsg_FocusedEditableNodeTouched(
-    render_view()->GetRoutingID()));
+        routing_id()));
+  }
 }
 
 void ChromeRenderViewObserver::CapturePageInfoLater(bool preliminary_capture,
@@ -863,13 +756,7 @@ void ChromeRenderViewObserver::CapturePageInfo(bool preliminary_capture) {
                                             contents));
   }
 
-  // Generate the thumbnail here if the in-browser thumbnailing isn't
-  // enabled. TODO(mazda): Remove this and related code once in-browser
-  // thumbnailing is supported on all platforms (http://crbug.com/120003).
-  if (!ShouldEnableInBrowserThumbnailing())
-    CaptureThumbnail();
-
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING)
   // Will swap out the string.
   if (phishing_classifier_)
     phishing_classifier_->PageCaptured(&contents, preliminary_capture);
@@ -908,123 +795,25 @@ void ChromeRenderViewObserver::CaptureText(WebFrame* frame,
   }
 }
 
-void ChromeRenderViewObserver::CaptureThumbnail() {
-  WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
-  if (!main_frame)
-    return;
-
-  // get the URL for this page
-  GURL url(main_frame->document().url());
-  if (url.is_empty())
-    return;
-
-  if (render_view()->GetSize().IsEmpty())
-    return;  // Don't create an empty thumbnail!
-
-  TRACE_EVENT0("renderer", "ChromeRenderViewObserver::CaptureThumbnail");
-
-  ThumbnailScore score;
-  SkBitmap thumbnail;
-  if (!CaptureFrameThumbnail(render_view()->GetWebView(), kThumbnailWidth,
-                             kThumbnailHeight, &thumbnail, &score))
-    return;
-
-  // send the thumbnail message to the browser process
-  Send(new ChromeViewHostMsg_Thumbnail(routing_id(), url, score, thumbnail));
-}
-
-bool ChromeRenderViewObserver::CaptureFrameThumbnail(WebView* view,
-                                                     int w,
-                                                     int h,
-                                                     SkBitmap* thumbnail,
-                                                     ThumbnailScore* score) {
-  base::TimeTicks beginning_time = base::TimeTicks::Now();
-
-  skia::PlatformCanvas canvas;
-
-  {
-    TRACE_EVENT0("renderer",
-        "ChromeRenderViewObserver::CaptureFrameThumbnail::PaintViewIntoCanvas");
-    // Paint |view| into |canvas|.
-    if (!PaintViewIntoCanvas(view, canvas))
-      return false;
-  }
-
-  SkDevice* device = skia::GetTopDevice(canvas);
-
-  const SkBitmap& src_bmp = device->accessBitmap(false);
-  // Cut off the vertical scrollbars (if any).
-  int src_bmp_width = view->mainFrame()->contentsSize().width;
-
-  SkRect dest_rect = { 0, 0, SkIntToScalar(w), SkIntToScalar(h) };
-  float dest_aspect = dest_rect.width() / dest_rect.height();
-
-  // Get the src rect so that we can preserve the aspect ratio while filling
-  // the destination.
-  SkIRect src_rect;
-  if (src_bmp_width < dest_rect.width() ||
-      src_bmp.height() < dest_rect.height()) {
-    // Source image is smaller: we clip the part of source image within the
-    // dest rect, and then stretch it to fill the dest rect. We don't respect
-    // the aspect ratio in this case.
-    src_rect.set(0, 0, static_cast<S16CPU>(dest_rect.width()),
-                 static_cast<S16CPU>(dest_rect.height()));
-    score->good_clipping = false;
-  } else {
-    float src_aspect = static_cast<float>(src_bmp_width) / src_bmp.height();
-    if (src_aspect > dest_aspect) {
-      // Wider than tall, clip horizontally: we center the smaller thumbnail in
-      // the wider screen.
-      S16CPU new_width = static_cast<S16CPU>(src_bmp.height() * dest_aspect);
-      S16CPU x_offset = (src_bmp_width - new_width) / 2;
-      src_rect.set(x_offset, 0, new_width + x_offset, src_bmp.height());
-      score->good_clipping =
-          (src_aspect >= ThumbnailScore::kTooWideAspectRatio) ? false : true;
-    } else {
-      src_rect.set(0, 0, src_bmp_width,
-                   static_cast<S16CPU>(src_bmp_width / dest_aspect));
-      score->good_clipping = true;
-    }
-  }
-
-  score->at_top = (view->mainFrame()->scrollOffset().height == 0);
-
-  SkBitmap subset;
-  device->accessBitmap(false).extractSubset(&subset, src_rect);
-
-  TRACE_EVENT_BEGIN0("renderer",
-        "ChromeRenderViewObserver::CaptureFrameThumbnail::DownsampleByTwo");
-  // First do a fast downsample by powers of two to get close to the final size.
-  SkBitmap downsampled_subset =
-      SkBitmapOperations::DownsampleByTwoUntilSize(subset, w, h);
-  TRACE_EVENT_END0("renderer",
-        "ChromeRenderViewObserver::CaptureFrameThumbnail::DownsampleByTwo");
-
-  {
-    TRACE_EVENT0("renderer",
-        "ChromeRenderViewObserver::CaptureFrameThumbnail::DownsampleLanczos3");
-    // Do a high-quality resize from the downscaled size to the final size.
-    *thumbnail = skia::ImageOperations::Resize(
-        downsampled_subset, skia::ImageOperations::RESIZE_LANCZOS3, w, h);
-  }
-
-  score->boring_score = CalculateBoringScore(thumbnail);
-
-  HISTOGRAM_TIMES("Renderer4.Thumbnail",
-                  base::TimeTicks::Now() - beginning_time);
-
-  return true;
-}
-
 bool ChromeRenderViewObserver::CaptureSnapshot(WebView* view,
                                                SkBitmap* snapshot) {
   base::TimeTicks beginning_time = base::TimeTicks::Now();
 
-  skia::PlatformCanvas canvas;
-  if (!PaintViewIntoCanvas(view, canvas))
+  view->layout();
+  const WebSize& size = view->size();
+
+  skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(
+      skia::CreatePlatformCanvas(
+          size.width, size.height, true, NULL, skia::RETURN_NULL_ON_FAILURE));
+  if (!canvas)
     return false;
 
-  SkDevice* device = skia::GetTopDevice(canvas);
+  view->paint(webkit_glue::ToWebCanvas(canvas.get()),
+              WebRect(0, 0, size.width, size.height));
+  // TODO: Add a way to snapshot the whole page, not just the currently
+  // visible part.
+
+  SkDevice* device = skia::GetTopDevice(*canvas);
 
   const SkBitmap& bitmap = device->accessBitmap(false);
   if (!bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config))
@@ -1041,61 +830,6 @@ ExternalHostBindings* ChromeRenderViewObserver::GetExternalHostBindings() {
         render_view(), routing_id()));
   }
   return external_host_bindings_.get();
-}
-
-bool ChromeRenderViewObserver::DownloadFavicon(int id,
-                                               const GURL& image_url,
-                                               int image_size) {
-  // Make sure webview was not shut down.
-  if (!render_view()->GetWebView())
-    return false;
-  // Create an image resource fetcher and assign it with a call back object.
-  image_fetchers_.push_back(linked_ptr<MultiResolutionImageResourceFetcher>(
-      new MultiResolutionImageResourceFetcher(
-          image_url, render_view()->GetWebView()->mainFrame(), id,
-          WebURLRequest::TargetIsFavicon,
-          base::Bind(&ChromeRenderViewObserver::DidDownloadFavicon,
-                     base::Unretained(this), image_size))));
-  return true;
-}
-
-void ChromeRenderViewObserver::DidDownloadFavicon(
-    int requested_size,
-    MultiResolutionImageResourceFetcher* fetcher,
-    const std::vector<SkBitmap>& images) {
-  // Notify requester of image download status.
-  Send(new IconHostMsg_DidDownloadFavicon(routing_id(),
-                                          fetcher->id(),
-                                          fetcher->image_url(),
-                                          images.empty(),
-                                          requested_size,
-                                          images));
-
-  // Remove the image fetcher from our pending list. We're in the callback from
-  // MultiResolutionImageResourceFetcher, best to delay deletion.
-  ImageResourceFetcherList::iterator iter;
-  for (iter = image_fetchers_.begin(); iter != image_fetchers_.end(); ++iter) {
-    if (iter->get() == fetcher) {
-      iter->release();
-      image_fetchers_.erase(iter);
-      break;
-    }
-  }
-  MessageLoop::current()->DeleteSoon(FROM_HERE, fetcher);
-}
-
-SkBitmap ChromeRenderViewObserver::ImageFromDataUrl(const GURL& url) const {
-  std::string mime_type, char_set, data;
-  if (net::DataURL::Parse(url, &mime_type, &char_set, &data) && !data.empty()) {
-    // Decode the favicon using WebKit's image decoder.
-    webkit_glue::ImageDecoder decoder(
-        gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize));
-    const unsigned char* src_data =
-        reinterpret_cast<const unsigned char*>(&data[0]);
-
-    return decoder.Decode(src_data, data.size());
-  }
-  return SkBitmap();
 }
 
 bool ChromeRenderViewObserver::IsStrictSecurityHost(const std::string& host) {

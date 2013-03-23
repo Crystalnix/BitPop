@@ -10,20 +10,22 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "content/public/browser/file_descriptor_info.h"
+#include "content/public/common/socket_permission_request.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/window_container_type.h"
+#include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
-#include "base/global_descriptors_posix.h"
+#include "base/posix/global_descriptors.h"
 #endif
 
 
 class CommandLine;
 class FilePath;
 class GURL;
-class PluginProcessHost;
 
 namespace webkit_glue {
 struct WebPreferences;
@@ -54,6 +56,7 @@ class AccessTokenStore;
 class BrowserChildProcessHost;
 class BrowserContext;
 class BrowserMainParts;
+class BrowserPpapiHost;
 class BrowserURLHandler;
 class MediaObserver;
 class QuotaPermissionContext;
@@ -261,18 +264,40 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual net::URLRequestContext* OverrideRequestContextForURL(
       const GURL& url, ResourceContext* context);
 
-  // Allow the embedder to specify storage parititon id associated with a child
-  // process.
-  //
-  // Child processes that have different storage partition identifiers will
-  // behave as if they belong to different web browsers and not be able to
-  // access each other's cookies, local storage, etc.  IDs must only fit the
-  // pattern [a-z0-9]* (lowercase letters or digits).
-  //
-  // Returns the empty string for the regular storage partition.
-  virtual std::string GetStoragePartitionIdForChildProcess(
+  // Allow the embedder to specify a string version of the storage partition
+  // config with a site.
+  virtual std::string GetStoragePartitionIdForSite(
       content::BrowserContext* browser_context,
-      int child_process_id);
+      const GURL& site);
+
+  // Allows the embedder to provide a validation check for |partition_id|s.
+  // This domain of valid entries should match the range of outputs for
+  // GetStoragePartitionIdForChildProcess().
+  virtual bool IsValidStoragePartitionId(BrowserContext* browser_context,
+                                         const std::string& partition_id);
+
+  // Allows the embedder to provide a storage parititon configuration for a
+  // site. A storage partition configuration includes a domain of the embedder's
+  // choice, an optional name within that domain, and whether the partition is
+  // in-memory only.
+  //
+  // If |can_be_default| is false, the caller is telling the embedder that the
+  // |site| is known to not be in the default partition. This is useful in
+  // some shutdown situations where the bookkeeping logic that maps sites to
+  // their partition configuration are no longer valid.
+  //
+  // The |partition_domain| is [a-z]* UTF-8 string, specifying the domain in
+  // which partitions live (similar to namespace). Within a domain, partitions
+  // can be uniquely identified by the combination of |partition_name| and
+  // |in_memory| values. When a partition is not to be persisted, the
+  // |in_memory| value must be set to true.
+  virtual void GetStoragePartitionConfigForSite(
+      content::BrowserContext* browser_context,
+      const GURL& site,
+      bool can_be_default,
+      std::string* partition_domain,
+      std::string* partition_name,
+      bool* in_memory);
 
   // Create and return a new quota permission context.
   virtual QuotaPermissionContext* CreateQuotaPermissionContext();
@@ -308,13 +333,15 @@ class CONTENT_EXPORT ContentBrowserClient {
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) {}
 
-  // Adds a downloaded client cert. The embedder should ensure that there's
-  // a private key for the cert, displays the cert to the user, and adds it upon
-  // user approval. If the downloaded data could not be interpreted as a valid
-  // certificate, |cert| will be NULL.
-  virtual void AddNewCertificate(
+  // Adds a new installable certificate or private key.
+  // Typically used to install an X.509 user certificate.
+  // Note that it's up to the embedder to verify that the data is
+  // well-formed. |cert_data| will be NULL if file_size is 0.
+  virtual void AddCertificate(
       net::URLRequest* request,
-      net::X509Certificate* cert,
+      net::CertificateMimeType cert_type,
+      const void* cert_data,
+      size_t cert_size,
       int render_process_id,
       int render_view_id) {}
 
@@ -420,20 +447,31 @@ class CONTENT_EXPORT ContentBrowserClient {
   // else we should do with the file.
   virtual std::string GetDefaultDownloadName();
 
-  // Returns true if renderer processes can use Pepper TCP/UDP sockets from
-  // the given origin.
-  virtual bool AllowPepperSocketAPI(BrowserContext* browser_context,
-                                    const GURL& url);
+  // Notification that a pepper plugin has just been spawned. This allows the
+  // embedder to add filters onto the host to implement interfaces.
+  // This is called on the IO thread.
+  virtual void DidCreatePpapiPlugin(BrowserPpapiHost* browser_host) {}
 
-  // Returns true if renderer processes can use private Pepper File APIs.
-  virtual bool AllowPepperPrivateFileAPI();
+  // Gets the host for an external out-of-process plugin.
+  virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
+      int plugin_child_id);
+
+  // Returns true if renderer processes can use Pepper TCP/UDP sockets from
+  // the given origin and connection type.
+  virtual bool AllowPepperSocketAPI(BrowserContext* browser_context,
+                                    const GURL& url,
+                                    const SocketPermissionRequest& params);
+
+  // Returns the directory containing hyphenation dictionaries.
+  virtual FilePath GetHyphenDictionaryDirectory();
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
   virtual void GetAdditionalMappedFilesForChildProcess(
       const CommandLine& command_line,
-      base::GlobalDescriptors::Mapping* mappings) {}
+      int child_process_id,
+      std::vector<FileDescriptorInfo>* mappings) {}
 #endif
 
 #if defined(OS_WIN)

@@ -33,14 +33,17 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
+#include "chrome/browser/android/chrome_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "base/mac/bundle_locations.h"
-#include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
+#if !defined(OS_IOS)
+#include "base/mac/mac_util.h"
 #include "chrome/browser/chrome_browser_application_mac.h"
+#endif  // !defined(OS_IOS)
 #endif
 
 #if defined(OS_POSIX)
@@ -61,14 +64,15 @@ void RemoveSharedMemoryFile(const std::string& filename) {
 bool IsCrosPythonProcess() {
 #if defined(OS_CHROMEOS)
   char buf[80];
-  int num_read = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  int num_read = readlink(base::kProcSelfExe, buf, sizeof(buf) - 1);
   if (num_read == -1)
     return false;
   buf[num_read] = 0;
   const char kPythonPrefix[] = "/python";
   return !strncmp(strrchr(buf, '/'), kPythonPrefix, sizeof(kPythonPrefix) - 1);
-#endif  // defined(OS_CHROMEOS)
+#else
   return false;
+#endif  // defined(OS_CHROMEOS)
 }
 
 // In many cases it may be not obvious that a test makes a real DNS lookup.
@@ -127,8 +131,11 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
 
     DCHECK(!content::GetContentClient());
     content_client_.reset(new chrome::ChromeContentClient);
+    // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
+#if !defined(OS_IOS)
     browser_content_client_.reset(new chrome::ChromeContentBrowserClient());
     content_client_->set_browser_for_testing(browser_content_client_.get());
+#endif
     content::SetContentClient(content_client_.get());
 
     SetUpHostResolver();
@@ -141,7 +148,10 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
     }
 
     DCHECK_EQ(content_client_.get(), content::GetContentClient());
+    // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
+#if !defined(OS_IOS)
     browser_content_client_.reset();
+#endif
     content_client_.reset();
     content::SetContentClient(NULL);
 
@@ -163,7 +173,10 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
   scoped_ptr<BrowserProcess> browser_process_;
 
   scoped_ptr<chrome::ChromeContentClient> content_client_;
+  // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
+#if !defined(OS_IOS)
   scoped_ptr<chrome::ChromeContentBrowserClient> browser_content_client_;
+#endif
 
   scoped_refptr<LocalHostResolverProc> host_resolver_proc_;
   scoped_ptr<net::ScopedDefaultHostResolverProc> scoped_host_resolver_proc_;
@@ -172,8 +185,6 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
 };
 
 }  // namespace
-
-const char ChromeTestSuite::kLaunchAsBrowser[] = "as-browser";
 
 ChromeTestSuite::ChromeTestSuite(int argc, char** argv)
     : content::ContentTestSuiteBase(argc, argv) {
@@ -185,12 +196,15 @@ ChromeTestSuite::~ChromeTestSuite() {
 void ChromeTestSuite::Initialize() {
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool autorelease_pool;
+#if !defined(OS_IOS)
   chrome_browser_application_mac::RegisterBrowserCrApp();
+#endif  // !defined(OS_IOS)
 #endif
 
 #if defined(OS_ANDROID)
   // Register JNI bindings for android.
   net::android::RegisterJni(base::android::AttachCurrentThread());
+  chrome::android::RegisterJni(base::android::AttachCurrentThread());
 #endif
 
   chrome::RegisterPathProvider();
@@ -209,7 +223,7 @@ void ChromeTestSuite::Initialize() {
   // values for DIR_EXE and DIR_MODULE.
   content::ContentTestSuiteBase::Initialize();
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   // Look in the framework bundle for resources.
   FilePath path;
   PathService::Get(base::DIR_EXE, &path);
@@ -225,7 +239,7 @@ void ChromeTestSuite::Initialize() {
   resources_pack_path =
       resources_pack_path.Append(FILE_PATH_LITERAL("resources.pak"));
   ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      resources_pack_path, ui::SCALE_FACTOR_100P);
+      resources_pack_path, ui::SCALE_FACTOR_NONE);
 
   stats_filename_ = base::StringPrintf("unit_tests-%d",
                                        base::GetCurrentProcId());
@@ -245,7 +259,7 @@ content::ContentClient* ChromeTestSuite::CreateClientForInitialization() {
 void ChromeTestSuite::Shutdown() {
   ResourceBundle::CleanupSharedInstance();
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   base::mac::SetOverrideFrameworkBundle(NULL);
 #endif
 

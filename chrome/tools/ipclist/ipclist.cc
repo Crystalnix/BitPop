@@ -7,8 +7,11 @@
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
+
 // Include once to get the type definitions
 #include "chrome/common/all_messages.h"
+#include "content/common/all_messages.h"
 
 struct msginfo {
   const char* name;
@@ -29,8 +32,10 @@ struct msginfo {
 
 static msginfo msgtable[] = {
 #include "chrome/common/all_messages.h"
+#include "content/common/all_messages.h"
 };
 #define MSGTABLE_SIZE (sizeof(msgtable)/sizeof(msgtable[0]))
+COMPILE_ASSERT(MSGTABLE_SIZE, CHECK_YOUR_HEADERS_FOR_AN_EXTRA_SEMICOLON);
 
 static bool check_msgtable() {
   bool result = true;
@@ -77,7 +82,7 @@ static bool check_msgtable() {
   }
 
   if (!result)
-    std::cout << "Please check chrome/common/all_messages.h.\n";
+    std::cout << "Please check {chrome,content}/common/all_messages.h.\n";
 
   return result;
 }

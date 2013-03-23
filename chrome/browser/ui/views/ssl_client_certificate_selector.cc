@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -26,8 +25,10 @@
 #include "ui/views/controls/table/table_view.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
+#include "ui/views/window/dialog_client_view.h"
 
 using content::BrowserThread;
+using content::WebContents;
 
 namespace {
 
@@ -88,13 +89,13 @@ void CertificateSelectorTableModel::SetObserver(
 // SSLClientCertificateSelector:
 
 SSLClientCertificateSelector::SSLClientCertificateSelector(
-    TabContents* tab_contents,
+    WebContents* web_contents,
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
-    const base::Callback<void(net::X509Certificate*)>& callback)
+    const chrome::SelectCertificateCallback& callback)
     : SSLClientAuthObserver(network_session, cert_request_info, callback),
       model_(new CertificateSelectorTableModel(cert_request_info)),
-      tab_contents_(tab_contents),
+      web_contents_(web_contents),
       window_(NULL),
       table_(NULL),
       view_cert_button_(NULL),
@@ -122,7 +123,7 @@ void SSLClientCertificateSelector::Init() {
       ASCIIToUTF16(cert_request_info()->host_and_port));
   views::Label* label = new views::Label(text);
   label->SetMultiLine(true);
-  label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label->SetAllowCharacterBreak(true);
   layout->AddView(label);
 
@@ -140,7 +141,7 @@ void SSLClientCertificateSelector::Init() {
 
   StartObserving();
 
-  window_ = new ConstrainedWindowViews(tab_contents_, this);
+  window_ = new ConstrainedWindowViews(web_contents_, this);
 
   // Select the first row automatically.  This must be done after the dialog has
   // been created.
@@ -220,18 +221,25 @@ views::View* SSLClientCertificateSelector::GetExtraView() {
   return view_cert_button_container_;
 }
 
+ui::ModalType SSLClientCertificateSelector::GetModalType() const {
+#if defined(USE_ASH)
+  return ui::MODAL_TYPE_CHILD;
+#else
+  return views::WidgetDelegate::GetModalType();
+#endif
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // views::ButtonListener implementation:
 
 void SSLClientCertificateSelector::ButtonPressed(
-    views::Button* sender, const views::Event& event) {
+    views::Button* sender, const ui::Event& event) {
   if (sender == view_cert_button_) {
     net::X509Certificate* cert = GetSelectedCert();
     if (cert)
-      ShowCertificateViewer(
-          tab_contents_->web_contents(),
-          tab_contents_->web_contents()->GetView()->GetTopLevelNativeWindow(),
-          cert);
+      ShowCertificateViewer(web_contents_,
+                            web_contents_->GetView()->GetTopLevelNativeWindow(),
+                            cert);
   }
 }
 
@@ -282,14 +290,14 @@ void SSLClientCertificateSelector::CreateViewCertButton() {
 namespace chrome {
 
 void ShowSSLClientCertificateSelector(
-    TabContents* tab_contents,
+    content::WebContents* contents,
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
-    const base::Callback<void(net::X509Certificate*)>& callback) {
-  DVLOG(1) << __FUNCTION__ << " " << tab_contents;
+    const chrome::SelectCertificateCallback& callback) {
+  DVLOG(1) << __FUNCTION__ << " " << contents;
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   (new SSLClientCertificateSelector(
-       tab_contents, network_session, cert_request_info, callback))->Init();
+       contents, network_session, cert_request_info, callback))->Init();
 }
 
 }  // namespace chrome

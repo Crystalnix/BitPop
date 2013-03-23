@@ -20,13 +20,15 @@
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/download/download_stats.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/desktop_notification_messages.h"
@@ -59,19 +61,22 @@
 #include "ui/gfx/color_profile.h"
 #include "webkit/glue/webcookie.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
+#else
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 #endif
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #endif
 #if defined(OS_WIN)
 #include "content/browser/renderer_host/backing_store_win.h"
+#include "content/common/font_cache_dispatcher_win.h"
 #endif
 
 using net::CookieStore;
@@ -84,6 +89,12 @@ const int kPluginsRefreshThresholdInSeconds = 3;
 // When two CPU usage queries arrive within this interval, we sample the CPU
 // usage only once and send it as a response for both queries.
 static const int64 kCPUUsageSampleIntervalMs = 900;
+
+// On Windows, |g_color_profile| can run on an arbitrary background thread.
+// We avoid races by using LazyInstance's constructor lock to initialize the
+// object.
+base::LazyInstance<gfx::ColorProfile>::Leaky g_color_profile =
+    LAZY_INSTANCE_INITIALIZER;
 
 // Common functionality for converting a sync renderer message to a callback
 // function in the browser. Derive from this, create it on the heap when
@@ -125,19 +136,20 @@ class OpenChannelToPpapiPluginCallback
   }
 
   virtual void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
-                                   int* renderer_id) {
+                                   int* renderer_id) OVERRIDE {
     *renderer_handle = filter()->peer_handle();
     *renderer_id = filter()->render_process_id();
   }
 
   virtual void OnPpapiChannelOpened(const IPC::ChannelHandle& channel_handle,
-                                    int plugin_child_id) {
+                                    base::ProcessId plugin_pid,
+                                    int plugin_child_id) OVERRIDE {
     ViewHostMsg_OpenChannelToPepperPlugin::WriteReplyParams(
-        reply_msg(), channel_handle, plugin_child_id);
+        reply_msg(), channel_handle, plugin_pid, plugin_child_id);
     SendReplyAndDeleteThis();
   }
 
-  virtual bool OffTheRecord() {
+  virtual bool OffTheRecord() OVERRIDE {
     return filter()->OffTheRecord();
   }
 
@@ -163,20 +175,22 @@ class OpenChannelToPpapiBrokerCallback
   virtual ~OpenChannelToPpapiBrokerCallback() {}
 
   virtual void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
-                                   int* renderer_id) {
+                                   int* renderer_id) OVERRIDE {
     *renderer_handle = filter_->peer_handle();
     *renderer_id = filter_->render_process_id();
   }
 
   virtual void OnPpapiChannelOpened(const IPC::ChannelHandle& channel_handle,
-                                    int /* plugin_child_id */) {
+                                    base::ProcessId plugin_pid,
+                                    int /* plugin_child_id */) OVERRIDE {
     filter_->Send(new ViewMsg_PpapiBrokerChannelCreated(routing_id_,
                                                         request_id_,
+                                                        plugin_pid,
                                                         channel_handle));
     delete this;
   }
 
-  virtual bool OffTheRecord() {
+  virtual bool OffTheRecord() OVERRIDE {
     return filter_->OffTheRecord();
   }
 
@@ -185,6 +199,22 @@ class OpenChannelToPpapiBrokerCallback
   int routing_id_;
   int request_id_;
 };
+
+void RaiseInfobarForBlocked3DContentOnUIThread(
+    int render_process_id,
+    int render_view_id,
+    const GURL& url,
+    content::ThreeDAPIType requester) {
+  RenderViewHost* rvh = RenderViewHost::FromID(
+      render_process_id, render_view_id);
+  if (!rvh)
+    return;
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      WebContents::FromRenderViewHost(rvh));
+  if (!web_contents)
+    return;
+  web_contents->DidBlock3DAPIs(url, requester);
+}
 
 }  // namespace
 
@@ -276,7 +306,8 @@ RenderMessageFilter::RenderMessageFilter(
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
     RenderWidgetHelper* render_widget_helper,
-    MediaObserver* media_observer)
+    MediaObserver* media_observer,
+    DOMStorageContextImpl* dom_storage_context)
     : resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
       plugin_service_(plugin_service),
       profile_data_directory_(browser_context->GetPath()),
@@ -284,9 +315,7 @@ RenderMessageFilter::RenderMessageFilter(
       resource_context_(browser_context->GetResourceContext()),
       render_widget_helper_(render_widget_helper),
       incognito_(browser_context->IsOffTheRecord()),
-      dom_storage_context_(static_cast<DOMStorageContextImpl*>(
-          BrowserContext::GetDOMStorageContext(browser_context,
-                                               render_process_id_))),
+      dom_storage_context_(dom_storage_context),
       render_process_id_(render_process_id),
       cpu_usage_(0),
       media_observer_(media_observer) {
@@ -337,12 +366,9 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                                             bool* message_was_ok) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderMessageFilter, message, *message_was_ok)
-#if defined(OS_WIN) && !defined(USE_AURA)
-    // On Windows, we handle these on the IO thread to avoid a deadlock with
-    // plugins.  On non-Windows systems, we need to handle them on the UI
-    // thread.
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowRect, OnGetWindowRect)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetRootWindowRect, OnGetRootWindowRect)
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_PreCacheFontCharacters,
+                        OnPreCacheFontCharacters)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_GenerateRoutingID, OnGenerateRoutingID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWindow, OnMsgCreateWindow)
@@ -362,10 +388,16 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_DownloadUrl, OnDownloadUrl)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPlugin,
                                     OnOpenChannelToPlugin)
+#if defined(ENABLE_PLUGINS)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPepperPlugin,
                                     OnOpenChannelToPepperPlugin)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidCreateOutOfProcessPepperInstance,
+                        OnDidCreateOutOfProcessPepperInstance)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidDeleteOutOfProcessPepperInstance,
+                        OnDidDeleteOutOfProcessPepperInstance)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
+#endif
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
@@ -393,6 +425,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvent, OnMediaLogEvent)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_Are3DAPIsBlocked, OnAre3DAPIsBlocked)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidLose3DContext, OnDidLose3DContext)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -403,13 +437,14 @@ void RenderMessageFilter::OnDestruct() const {
   BrowserThread::DeleteOnIOThread::Destruct(this);
 }
 
-void RenderMessageFilter::OverrideThreadForMessage(
-    const IPC::Message& message, BrowserThread::ID* thread) {
+base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
+    const IPC::Message& message) {
 #if defined(OS_WIN)
   // Windows monitor profile must be read from a file.
   if (message.type() == ViewHostMsg_GetMonitorColorProfile::ID)
-    *thread = BrowserThread::FILE;
+    return BrowserThread::GetBlockingPool();
 #endif
+  return NULL;
 }
 
 bool RenderMessageFilter::OffTheRecord() const {
@@ -424,8 +459,8 @@ void RenderMessageFilter::OnMsgCreateWindow(
   bool no_javascript_access;
   bool can_create_window =
       GetContentClient()->browser()->CanCreateWindow(
-          GURL(params.opener_url),
-          GURL(params.opener_security_origin),
+          params.opener_url,
+          params.opener_security_origin,
           params.window_container_type,
           resource_context_,
           render_process_id_,
@@ -438,17 +473,17 @@ void RenderMessageFilter::OnMsgCreateWindow(
   }
 
   // This will clone the sessionStorage for namespace_id_to_clone.
-  scoped_refptr<SessionStorageNamespaceImpl> session_storage_namespace =
+  scoped_refptr<SessionStorageNamespaceImpl> cloned_namespace =
       new SessionStorageNamespaceImpl(dom_storage_context_,
                                       params.session_storage_namespace_id);
-  *cloned_session_storage_namespace_id = session_storage_namespace->id();
+  *cloned_session_storage_namespace_id = cloned_namespace->id();
 
   render_widget_helper_->CreateNewWindow(params,
                                          no_javascript_access,
                                          peer_handle(),
                                          route_id,
                                          surface_id,
-                                         session_storage_namespace.get());
+                                         cloned_namespace);
 }
 
 void RenderMessageFilter::OnMsgCreateWidget(int opener_id,
@@ -472,7 +507,7 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
                                       const std::string& cookie) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanUseCookiesForOrigin(render_process_id_, url))
+  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url))
     return;
 
   net::CookieOptions options;
@@ -492,7 +527,7 @@ void RenderMessageFilter::OnGetCookies(const GURL& url,
                                        IPC::Message* reply_msg) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanUseCookiesForOrigin(render_process_id_, url)) {
+  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url)) {
     SendGetCookiesResponse(reply_msg, std::string());
     return;
   }
@@ -522,7 +557,7 @@ void RenderMessageFilter::OnGetRawCookies(
   // TODO(ananta) We need to support retreiving raw cookies from external
   // hosts.
   if (!policy->CanReadRawCookies(render_process_id_) ||
-      !policy->CanUseCookiesForOrigin(render_process_id_, url)) {
+      !policy->CanAccessCookiesForOrigin(render_process_id_, url)) {
     SendGetRawCookiesResponse(reply_msg, net::CookieList());
     return;
   }
@@ -542,7 +577,7 @@ void RenderMessageFilter::OnDeleteCookie(const GURL& url,
                                          const std::string& cookie_name) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanUseCookiesForOrigin(render_process_id_, url))
+  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url))
     return;
 
   net::URLRequestContext* context = GetRequestContextForURL(url);
@@ -676,6 +711,49 @@ void RenderMessageFilter::OnOpenChannelToPepperPlugin(
           this, resource_context_, reply_msg));
 }
 
+void RenderMessageFilter::OnDidCreateOutOfProcessPepperInstance(
+    int plugin_child_id,
+    int32 pp_instance,
+    PepperRendererInstanceData instance_data,
+    bool is_external) {
+  // It's important that we supply the render process ID ourselves based on the
+  // channel the message arrived on. We use the
+  //   PP_Instance -> (process id, view id)
+  // mapping to decide how to handle messages received from the (untrusted)
+  // plugin, so an exploited renderer must not be able to insert fake mappings
+  // that may allow it access to other render processes.
+  DCHECK(instance_data.render_process_id == 0);
+  instance_data.render_process_id = render_process_id_;
+  if (is_external) {
+    // We provide the BrowserPpapiHost to the embedder, so it's safe to cast.
+    BrowserPpapiHostImpl* host = static_cast<BrowserPpapiHostImpl*>(
+        GetContentClient()->browser()->GetExternalBrowserPpapiHost(
+            plugin_child_id));
+    if (host)
+      host->AddInstance(pp_instance, instance_data);
+  } else {
+    PpapiPluginProcessHost::DidCreateOutOfProcessInstance(
+        plugin_child_id, pp_instance, instance_data);
+  }
+}
+
+void RenderMessageFilter::OnDidDeleteOutOfProcessPepperInstance(
+    int plugin_child_id,
+    int32 pp_instance,
+    bool is_external) {
+  if (is_external) {
+    // We provide the BrowserPpapiHost to the embedder, so it's safe to cast.
+    BrowserPpapiHostImpl* host = static_cast<BrowserPpapiHostImpl*>(
+        GetContentClient()->browser()->GetExternalBrowserPpapiHost(
+            plugin_child_id));
+    if (host)
+      host->DeleteInstance(pp_instance);
+  } else {
+    PpapiPluginProcessHost::DidDeleteOutOfProcessInstance(
+        plugin_child_id, pp_instance);
+  }
+}
+
 void RenderMessageFilter::OnOpenChannelToPpapiBroker(int routing_id,
                                                      int request_id,
                                                      const FilePath& path) {
@@ -712,7 +790,7 @@ void RenderMessageFilter::OnGetHardwareSampleRate(int* sample_rate) {
 }
 
 void RenderMessageFilter::OnGetHardwareInputChannelLayout(
-    ChannelLayout* layout) {
+    media::ChannelLayout* layout) {
   // TODO(henrika): add support for all available input devices.
   *layout = media::GetAudioInputHardwareChannelLayout(
       media::AudioManagerBase::kDefaultDeviceId);
@@ -720,26 +798,25 @@ void RenderMessageFilter::OnGetHardwareInputChannelLayout(
 
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 #if defined(OS_WIN)
+  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (BackingStoreWin::ColorManagementEnabled())
     return;
 #endif
-  gfx::GetColorProfile(profile);
+  *profile = g_color_profile.Get().profile();
 }
 
 void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
                                         const GURL& url,
                                         const Referrer& referrer,
                                         const string16& suggested_name) {
-  DownloadSaveInfo save_info;
-  save_info.suggested_name = suggested_name;
-  scoped_ptr<net::URLRequest> request(new net::URLRequest(
-      url,
-      NULL,
-      resource_context_->GetRequestContext()));
+  scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
+  save_info->suggested_name = suggested_name;
+  scoped_ptr<net::URLRequest> request(
+      resource_context_->GetRequestContext()->CreateRequest(url, NULL));
   request->set_referrer(referrer.url.spec());
   webkit_glue::ConfigureURLRequestForReferrerPolicy(
       request.get(), referrer.policy);
-  download_stats::RecordDownloadSource(download_stats::INITIATED_BY_RENDERER);
+  RecordDownloadSource(INITIATED_BY_RENDERER);
   resource_dispatcher_host_->BeginDownload(
       request.Pass(),
       true,  // is_content_initiated
@@ -747,7 +824,7 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
       render_process_id_,
       message.routing_id(),
       false,
-      save_info,
+      save_info.Pass(),
       ResourceDispatcherHostImpl::DownloadStartedCallback());
 }
 
@@ -981,5 +1058,89 @@ void RenderMessageFilter::OnUpdateIsDelayed(const IPC::Message& msg) {
   // different message.
   render_widget_helper_->DidReceiveBackingStoreMsg(msg);
 }
+
+void RenderMessageFilter::OnAre3DAPIsBlocked(int render_view_id,
+                                             const GURL& top_origin_url,
+                                             ThreeDAPIType requester,
+                                             bool* blocked) {
+  GpuDataManagerImpl::DomainBlockStatus block_status =
+      GpuDataManagerImpl::GetInstance()->Are3DAPIsBlocked(top_origin_url);
+  *blocked = (block_status !=
+              GpuDataManagerImpl::DOMAIN_BLOCK_STATUS_NOT_BLOCKED);
+  if (*blocked) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&RaiseInfobarForBlocked3DContentOnUIThread,
+                   render_process_id_, render_view_id,
+                   top_origin_url, requester));
+  }
+}
+
+void RenderMessageFilter::OnDidLose3DContext(
+    const GURL& top_origin_url,
+    ThreeDAPIType /* unused */,
+    int arb_robustness_status_code) {
+#if defined(OS_MACOSX)
+    // TODO(kbr): this file indirectly includes npapi.h, which on Mac
+    // OS pulls in the system OpenGL headers. For some
+    // not-yet-investigated reason this breaks the build with the 10.6
+    // SDK but not 10.7. For now work around this in a way compatible
+    // with the Khronos headers.
+#ifndef GL_GUILTY_CONTEXT_RESET_ARB
+#define GL_GUILTY_CONTEXT_RESET_ARB 0x8253
+#endif
+#ifndef GL_INNOCENT_CONTEXT_RESET_ARB
+#define GL_INNOCENT_CONTEXT_RESET_ARB 0x8254
+#endif
+#ifndef GL_UNKNOWN_CONTEXT_RESET_ARB
+#define GL_UNKNOWN_CONTEXT_RESET_ARB 0x8255
+#endif
+
+#endif
+  GpuDataManagerImpl::DomainGuilt guilt;
+  switch (arb_robustness_status_code) {
+    case GL_GUILTY_CONTEXT_RESET_ARB:
+      guilt = GpuDataManagerImpl::DOMAIN_GUILT_KNOWN;
+      break;
+    case GL_UNKNOWN_CONTEXT_RESET_ARB:
+      guilt = GpuDataManagerImpl::DOMAIN_GUILT_UNKNOWN;
+      break;
+    default:
+      // Ignore lost contexts known to be innocent.
+      return;
+  }
+
+  GpuDataManagerImpl::GetInstance()->BlockDomainFrom3DAPIs(
+      top_origin_url, guilt);
+}
+
+#if defined(OS_WIN)
+void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
+                                                   const string16& str) {
+  // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
+  // Except that for True Type fonts,
+  // GetTextMetrics will not load the font in memory.
+  // The only way windows seem to load properly, it is to create a similar
+  // device (like the one in which we print), then do an ExtTextOut,
+  // as we do in the printing thread, which is sandboxed.
+  HDC hdc = CreateEnhMetaFile(NULL, NULL, NULL, NULL);
+  HFONT font_handle = CreateFontIndirect(&font);
+  DCHECK(NULL != font_handle);
+
+  HGDIOBJ old_font = SelectObject(hdc, font_handle);
+  DCHECK(NULL != old_font);
+
+  ExtTextOut(hdc, 0, 0, ETO_GLYPH_INDEX, 0, str.c_str(), str.length(), NULL);
+
+  SelectObject(hdc, old_font);
+  DeleteObject(font_handle);
+
+  HENHMETAFILE metafile = CloseEnhMetaFile(hdc);
+
+  if (metafile) {
+    DeleteEnhMetaFile(metafile);
+  }
+}
+#endif
 
 }  // namespace content

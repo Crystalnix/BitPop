@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
-#import "chrome/browser/ui/cocoa/image_utils.h"
 #include "grit/theme_resources.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -57,8 +56,8 @@ KeywordHintDecoration::~KeywordHintDecoration() {
 
 NSImage* KeywordHintDecoration::GetHintImage() {
   if (!hint_image_) {
-    hint_image_.reset([ResourceBundle::GetSharedInstance().
-        GetNativeImageNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB) retain]);
+    hint_image_.reset(ResourceBundle::GetSharedInstance().
+        GetNativeImageNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB).CopyNSImage());
   }
   return hint_image_;
 }
@@ -139,7 +138,8 @@ void KeywordHintDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
             fromRect:NSZeroRect  // Entire image
            operation:NSCompositeSourceOver
             fraction:1.0
-        neverFlipped:YES];
+      respectFlipped:YES
+               hints:nil];
   frame.origin.x += NSWidth(image_rect);
   frame.size.width -= NSWidth(image_rect);
 
@@ -148,10 +148,11 @@ void KeywordHintDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
     const CGFloat suffix_width =
         [hint_suffix_ sizeWithAttributes:attributes_].width;
 
-    // Right-justify the text within the remaining space, so it
-    // doesn't get too close to the image relative to a following
-    // decoration.
-    suffix_rect.origin.x = NSMaxX(suffix_rect) - suffix_width;
+    // Draw the text kHintImagePadding away from [tab] icon so that
+    // equal amount of space is maintained on either side of the icon.
+    // This also ensures that suffix text is at the same distance
+    // from [tab] icon in different web pages.
+    suffix_rect.origin.x += kHintImagePadding;
     DCHECK_GE(NSWidth(suffix_rect), suffix_width);
     [hint_suffix_ drawInRect:suffix_rect withAttributes:attributes_];
   }

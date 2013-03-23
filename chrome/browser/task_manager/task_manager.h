@@ -18,9 +18,11 @@
 #include "base/string16.h"
 #include "base/timer.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
+#include "content/public/common/gpu_memory_stats.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 
 class TaskManagerModel;
+class TaskManagerModelGpuDataManagerObserver;
 
 namespace base {
 class ProcessMetrics;
@@ -47,6 +49,7 @@ class URLRequest;
     def(RENDERER)        /* A normal WebContents renderer process. */ \
     def(EXTENSION)       /* An extension or app process. */ \
     def(NOTIFICATION)    /* A notification process. */ \
+    def(GUEST)           /* A browser plugin guest process. */ \
     def(PLUGIN)          /* A plugin process. */ \
     def(WORKER)          /* A web worker process. */ \
     def(NACL)            /* A NativeClient loader or broker process. */ \
@@ -79,29 +82,27 @@ class TaskManager {
     virtual base::ProcessHandle GetProcess() const = 0;
     virtual int GetUniqueChildProcessId() const = 0;
     virtual Type GetType() const = 0;
-    virtual int GetRoutingID() const { return 0; }
+    virtual int GetRoutingID() const;
 
-    virtual bool ReportsCacheStats() const { return false; }
-    virtual WebKit::WebCache::ResourceTypeStats GetWebCoreCacheStats() const {
-      return WebKit::WebCache::ResourceTypeStats();
-    }
+    virtual bool ReportsCacheStats() const;
+    virtual WebKit::WebCache::ResourceTypeStats GetWebCoreCacheStats() const;
 
-    virtual bool ReportsFPS() const { return false; }
-    virtual float GetFPS() const { return 0.0f; }
+    virtual bool ReportsFPS() const;
+    virtual float GetFPS() const;
 
-    virtual bool ReportsSqliteMemoryUsed() const { return false; }
-    virtual size_t SqliteMemoryUsedBytes() const { return 0; }
+    virtual bool ReportsSqliteMemoryUsed() const;
+    virtual size_t SqliteMemoryUsedBytes() const;
 
     // Return extension associated with the resource, or NULL
     // if not applicable.
-    virtual const extensions::Extension* GetExtension() const { return NULL; }
+    virtual const extensions::Extension* GetExtension() const;
 
-    virtual bool ReportsV8MemoryStats() const { return false; }
-    virtual size_t GetV8MemoryAllocated() const { return 0; }
-    virtual size_t GetV8MemoryUsed() const { return 0; }
+    virtual bool ReportsV8MemoryStats() const;
+    virtual size_t GetV8MemoryAllocated() const;
+    virtual size_t GetV8MemoryUsed() const;
 
     // Returns true if this resource can be inspected using developer tools.
-    virtual bool CanInspect() const { return false; }
+    virtual bool CanInspect() const;
 
     // Invokes or reveals developer tools window for this resource.
     virtual void Inspect() const {}
@@ -109,7 +110,7 @@ class TaskManager {
     // A helper function for ActivateProcess when selected resource refers
     // to a Tab or other window containing web contents.  Returns NULL by
     // default because not all resources have an associated web contents.
-    virtual content::WebContents* GetWebContents() const { return NULL; }
+    virtual content::WebContents* GetWebContents() const;
 
     // Whether this resource does report the network usage accurately.
     // This controls whether 0 or N/A is displayed when no bytes have been
@@ -134,7 +135,7 @@ class TaskManager {
 
     // Returns true if this resource is not visible to the user because it lives
     // in the background (e.g. extension background page, background contents).
-    virtual bool IsBackground() const { return false; }
+    virtual bool IsBackground() const;
 
     static const char* GetResourceTypeAsString(const Type type) {
       switch (type) {
@@ -314,6 +315,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   string16 GetResourceWebCoreImageCacheSize(int index) const;
   string16 GetResourceWebCoreScriptsCacheSize(int index) const;
   string16 GetResourceWebCoreCSSCacheSize(int index) const;
+  string16 GetResourceVideoMemory(int index) const;
   string16 GetResourceFPS(int index) const;
   string16 GetResourceSqliteMemoryUsed(int index) const;
   string16 GetResourceGoatsTeleported(int index) const;
@@ -337,6 +339,11 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // isn't a renderer.
   bool GetWebCoreCacheStats(int index,
                             WebKit::WebCache::ResourceTypeStats* result) const;
+
+  // Gets the GPU memory allocated of the given page.
+  bool GetVideoMemory(int index,
+                      size_t* video_memory,
+                      bool* has_duplicates) const;
 
   // Gets the fps of the given page. Return false if the resource for the given
   // row isn't a renderer.
@@ -439,6 +446,9 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
                  int routing_id,
                  float fps);
 
+  void NotifyVideoMemoryUsageStats(
+      const content::GPUVideoMemoryUsageStats& video_memory_usage_stats);
+
   void NotifyV8HeapStats(base::ProcessId renderer_id,
                          size_t v8_memory_allocated,
                          size_t v8_memory_used);
@@ -494,6 +504,8 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Updates the values for all rows.
   void Refresh();
 
+  void RefreshVideoMemoryUsageStats();
+
   void AddItem(TaskManager::Resource* resource, bool notify_table);
   void RemoveItem(TaskManager::Resource* resource);
 
@@ -503,6 +515,14 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // Called on the UI thread when some bytes are read.
   void BytesRead(BytesReadParam param);
+
+  void MultipleBytesRead(const std::vector<BytesReadParam>* params);
+
+  // Notifies the UI thread about all the bytes read. Allows for coalescing
+  // multiple bytes read into a single task for the UI thread. This is important
+  // for when downloading a lot of data on the IO thread, since posting a Task
+  // for each one is expensive.
+  void NotifyMultipleBytesRead();
 
   // Returns the network usage (in byte per second) that should be displayed for
   // the passed |resource|.  -1 means the information is not available for that
@@ -558,6 +578,15 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // A map that contains the CPU usage (in %) for a process since last refresh.
   CPUUsageMap cpu_usage_map_;
 
+  // A map that contains the video memory usage for a process
+  content::GPUVideoMemoryUsageStats video_memory_usage_stats_;
+  bool pending_video_memory_usage_stats_update_;
+
+  // An observer waiting for video memory usage stats updates from the GPU
+  // process
+  scoped_ptr<TaskManagerModelGpuDataManagerObserver>
+      video_memory_usage_stats_observer_;
+
   // A map that contains the private/shared memory usage of the process. We
   // cache this because the same APIs are called on linux and windows, and
   // because the linux call takes >10ms to complete. This cache is cleared on
@@ -582,6 +611,10 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // Resource identifier that is unique within single session.
   int last_unique_id_;
+
+  // Buffer for coalescing BytesReadParam so we don't have to post a task on
+  // each NotifyBytesRead() call.
+  std::vector<BytesReadParam> bytes_read_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(TaskManagerModel);
 };

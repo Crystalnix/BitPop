@@ -13,7 +13,6 @@
 #include "chrome/browser/automation/mock_tab_event_observer.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
@@ -104,7 +103,8 @@ class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
 
   // Returns the |AutomationTabHelper| for the first browser's first tab.
   AutomationTabHelper* tab_helper() {
-    return chrome::GetTabContentsAt(browser(), 0)->automation_tab_helper();
+    return AutomationTabHelper::FromWebContents(
+        chrome::GetWebContentsAt(browser(), 0));
   }
 
  protected:

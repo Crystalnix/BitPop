@@ -9,6 +9,7 @@
 #include "content/common/np_channel_base.h"
 #include "ipc/ipc_channel_handle.h"
 
+namespace content {
 class IsListeningFilter;
 class NPObjectBase;
 
@@ -77,5 +78,7 @@ class PluginChannelHost : public NPChannelBase {
 
   DISALLOW_COPY_AND_ASSIGN(PluginChannelHost);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_PLUGIN_CHANNEL_HOST_H_

@@ -66,6 +66,9 @@
 #define IDC_PRESENTATION_MODE           34039
 #define IDC_METRO_SNAP_ENABLE           34040
 #define IDC_METRO_SNAP_DISABLE          34041
+#define IDC_WIN8_DESKTOP_RESTART        34042
+#define IDC_WIN8_METRO_RESTART          34043
+#define IDC_TOGGLE_ASH_DESKTOP          34044
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -78,6 +81,7 @@
 #define IDC_ADVANCED_PRINT              35007
 #define IDC_CHROME_TO_MOBILE_PAGE       35008
 #define IDC_PRINT_TO_DESTINATION        35009
+#define IDC_BOOKMARK_PAGE_FROM_STAR     35010
 
 // When adding a new encoding to this list, be sure to append it to the
 // EncodingMenuController::kValidEncodingIds array in
@@ -124,6 +128,7 @@
 // Clipboard commands
 #define IDC_CUT                         36000
 #define IDC_COPY                        36001
+#define IDC_COPY_URL                    36002
 #define IDC_PASTE                       36003
 #define IDC_EDIT_MENU                   36004
 
@@ -185,6 +190,11 @@
 #define IDC_SHOW_AVATAR_MENU            40134
 #define IDC_EXTENSION_DISABLED_FIRST    40135
 #define IDC_EXTENSION_DISABLED_LAST     40235
+#define IDC_TOGGLE_REQUEST_TABLET_SITE  40236
+#define IDC_DEV_TOOLS_TOGGLE            40237
+#define IDC_EXTERNAL_EXTENSION_ALERT    40238
+#define IDC_RECENT_TABS_MENU            40239
+#define IDC_RECENT_TABS_NO_DEVICE_TABS  40240
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.
@@ -282,6 +292,9 @@
 #define IDC_CONTENT_CONTEXT_SPEECH_MENU 50158
 #define IDC_CONTENT_CONTEXT_SPEECH_START_SPEAKING 50159
 #define IDC_CONTENT_CONTEXT_SPEECH_STOP_SPEAKING 50160
+#define IDC_CONTENT_CONTEXT_INSPECTBACKGROUNDPAGE 50161
+#define IDC_CONTENT_CONTEXT_RELOAD_PACKAGED_APP 50162
+#define IDC_CONTENT_CONTEXT_RESTART_PACKAGED_APP 50163
 // Frame items.
 #define IDC_CONTENT_CONTEXT_RELOADFRAME 50170
 #define IDC_CONTENT_CONTEXT_VIEWFRAMESOURCE 50171

@@ -11,12 +11,14 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebBlobData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/blob/blob_data.h"
-#include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebBlobData;
 using WebKit::WebString;
 using WebKit::WebURL;
+
+namespace content {
 
 WebBlobRegistryImpl::WebBlobRegistryImpl(ChildThread* child_thread)
     : child_thread_(child_thread) {
@@ -42,7 +44,7 @@ void WebBlobRegistryImpl::registerBlobURL(
         if (data_item.data.size() == 0)
           break;
         if (data_item.data.size() < kLargeThresholdBytes) {
-          item.SetToData(data_item.data.data(), data_item.data.size());
+          item.SetToBytes(data_item.data.data(), data_item.data.size());
           child_thread_->Send(new BlobHostMsg_AppendBlobDataItem(url, item));
         } else {
           // We handle larger amounts of data via SharedMemory instead of
@@ -67,8 +69,8 @@ void WebBlobRegistryImpl::registerBlobURL(
       }
       case WebBlobData::Item::TypeFile:
         if (data_item.length) {
-          item.SetToFile(
-              webkit_glue::WebStringToFilePath(data_item.filePath),
+          item.SetToFilePathRange(
+              webkit_base::WebStringToFilePath(data_item.filePath),
               static_cast<uint64>(data_item.offset),
               static_cast<uint64>(data_item.length),
               base::Time::FromDoubleT(data_item.expectedModificationTime));
@@ -77,10 +79,22 @@ void WebBlobRegistryImpl::registerBlobURL(
         break;
       case WebBlobData::Item::TypeBlob:
         if (data_item.length) {
-          item.SetToBlob(
+          item.SetToBlobUrlRange(
               data_item.blobURL,
               static_cast<uint64>(data_item.offset),
               static_cast<uint64>(data_item.length));
+          child_thread_->Send(new BlobHostMsg_AppendBlobDataItem(url, item));
+        }
+        break;
+      case WebBlobData::Item::TypeURL:
+        if (data_item.length) {
+          // We only support filesystem URL as of now.
+          DCHECK(GURL(data_item.url).SchemeIsFileSystem());
+          item.SetToFileSystemUrlRange(
+              data_item.url,
+              static_cast<uint64>(data_item.offset),
+              static_cast<uint64>(data_item.length),
+              base::Time::FromDoubleT(data_item.expectedModificationTime));
           child_thread_->Send(new BlobHostMsg_AppendBlobDataItem(url, item));
         }
         break;
@@ -100,3 +114,5 @@ void WebBlobRegistryImpl::registerBlobURL(
 void WebBlobRegistryImpl::unregisterBlobURL(const WebURL& url) {
   child_thread_->Send(new BlobHostMsg_RemoveBlob(url));
 }
+
+}  // namespace content

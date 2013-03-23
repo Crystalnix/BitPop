@@ -7,13 +7,14 @@
  * everything needed for image editing.
  * @param {Viewport} viewport The viewport.
  * @param {ImageView} imageView The ImageView containing the images to edit.
+ * @param {ImageEditor.Prompt} prompt Prompt instance.
  * @param {Object} DOMContainers Various DOM containers required for the editor.
  * @param {Array.<ImageEditor.Mode>} modes Available editor modes.
  * @param {function} displayStringFunction String formatting function.
  * @constructor
  */
 function ImageEditor(
-    viewport, imageView, DOMContainers, modes, displayStringFunction) {
+    viewport, imageView, prompt, DOMContainers, modes, displayStringFunction) {
   this.rootContainer_ = DOMContainers.root;
   this.container_ = DOMContainers.image;
   this.modes_ = modes;
@@ -45,27 +46,12 @@ function ImageEditor(
       DOMContainers.mode, displayStringFunction,
       this.onOptionsChange.bind(this));
 
-  this.prompt_ = new ImageEditor.Prompt(
-      this.rootContainer_, displayStringFunction);
+  this.prompt_ = prompt;
 
   this.createToolButtons();
 
   this.commandQueue_ = null;
 }
-
-/**
- * Attach a resize listener to a window.
- *
- * @param {DOMWindow} window Window to track.
- */
-ImageEditor.prototype.trackWindow = function(window) {
-  if (window.resizeListener) {
-    // Make sure we do not leak the previous instance.
-    window.removeEventListener('resize', window.resizeListener, false);
-  }
-  window.resizeListener = this.resizeFrame.bind(this);
-  window.addEventListener('resize', window.resizeListener, false);
-};
 
 /**
  * @return {boolean} True if no user commands are to be accepted.
@@ -110,33 +96,25 @@ ImageEditor.prototype.onContentUpdate_ = function() {
 };
 
 /**
- * Request prefetch for an image.
- * @param {number} id The content id for caching.
- * @param {string} url Image url.
- */
-ImageEditor.prototype.prefetchImage = function(id, url) {
-  this.imageView_.prefetch(id, url);
-};
-
-/**
  * Open the editing session for a new image.
  *
- * @param {number} id The content id for caching.
  * @param {string} url Image url.
  * @param {object} metadata Metadata.
- * @param {number} slide Slide direction.
+ * @param {object} effect Transition effect object.
  * @param {function(function)} saveFunction Image save function.
- * @param {function} callback Completion callback.
+ * @param {function} displayCallback Display callback.
+ * @param {function} loadCallback Load callback.
  */
 ImageEditor.prototype.openSession = function(
-    id, url, metadata, slide, saveFunction, callback) {
+    url, metadata, effect, saveFunction, displayCallback, loadCallback) {
   if (this.commandQueue_)
     throw new Error('Session not closed');
 
   this.lockUI(true);
 
   var self = this;
-  this.imageView_.load(id, url, metadata, slide, function(loadType) {
+  this.imageView_.load(
+      url, metadata, effect, displayCallback, function(loadType, delay, error) {
     self.lockUI(false);
     self.commandQueue_ = new CommandQueue(
         self.container_.ownerDocument,
@@ -145,7 +123,7 @@ ImageEditor.prototype.openSession = function(
     self.commandQueue_.attachUI(
         self.getImageView(), self.getPrompt(), self.lockUI.bind(self));
     self.updateUndoRedo();
-    callback(loadType);
+    loadCallback(loadType, delay, error);
   });
 };
 
@@ -187,6 +165,13 @@ ImageEditor.prototype.executeWhenReady = function(callback) {
 };
 
 /**
+ * @return {boolean} True if undo queue is not empty.
+ */
+ImageEditor.prototype.canUndo = function() {
+  return this.commandQueue_ && this.commandQueue_.canUndo();
+};
+
+  /**
  * Undo the recently executed command.
  */
 ImageEditor.prototype.undo = function() {
@@ -232,14 +217,6 @@ ImageEditor.prototype.updateUndoRedo = function() {
  */
 ImageEditor.prototype.getCanvas = function() {
   return this.getImageView().getCanvas();
-};
-
-/**
- * Window resize handler.
- */
-ImageEditor.prototype.resizeFrame = function() {
-  this.getViewport().sizeByFrameAndFit(this.container_);
-  this.getViewport().repaint();
 };
 
 /**
@@ -440,9 +417,8 @@ ImageEditor.prototype.getMode = function() { return this.currentMode_ };
  * The user clicked on the mode button.
  *
  * @param {ImageEditor.Mode} mode The new mode.
- * @param {Event} event The event that caused the call.
  */
-ImageEditor.prototype.enterMode = function(mode, event) {
+ImageEditor.prototype.enterMode = function(mode) {
   if (this.isLocked()) return;
 
   if (this.currentMode_ == mode) {
@@ -457,19 +433,17 @@ ImageEditor.prototype.enterMode = function(mode, event) {
   // The above call could have caused a commit which might have initiated
   // an asynchronous command execution. Wait for it to complete, then proceed
   // with the mode set up.
-  this.commandQueue_.executeWhenReady(
-      this.setUpMode_.bind(this, mode, event));
+  this.commandQueue_.executeWhenReady(this.setUpMode_.bind(this, mode));
 };
 
 /**
  * Set up the new editing mode.
  *
  * @param {ImageEditor.Mode} mode The mode.
- * @param {Event} event The event that caused the call.
  * @private
  */
-ImageEditor.prototype.setUpMode_ = function(mode, event) {
-  this.currentTool_ = event.target;
+ImageEditor.prototype.setUpMode_ = function(mode) {
+  this.currentTool_ = mode.button_;
 
   ImageUtil.setAttribute(this.currentTool_, 'pressed', true);
 
@@ -527,6 +501,24 @@ ImageEditor.prototype.leaveModeGently = function() {
 };
 
 /**
+ * Enter the editor mode with the given name.
+ *
+ * @param {string} name Mode name.
+ * @private
+ */
+ImageEditor.prototype.enterModeByName_ = function(name) {
+  for (var i = 0; i != this.modes_.length; i++) {
+    var mode = this.modes_[i];
+    if (mode.name == name) {
+      if (!mode.button_.hasAttribute('disabled'))
+        this.enterMode(mode);
+      return;
+    }
+  }
+  console.error('Mode "' + name + '" not found.');
+};
+
+/**
  * Key down handler.
  * @param {Event} event The keydown event.
  * @return {boolean} True if handled.
@@ -548,12 +540,33 @@ ImageEditor.prototype.onKeyDown = function(event) {
       }
       break;
 
-    case 'Ctrl-Shift-U+005A':  // Ctrl+Shift-Z
+    case 'Ctrl-U+0059':  // Ctrl+Y
       if (this.commandQueue_.canRedo()) {
         this.redo();
         return true;
       }
       break;
+
+    case 'U+0041':  // 'a'
+      this.enterModeByName_('autofix');
+      return true;
+
+    case 'U+0042':  // 'b'
+      this.enterModeByName_('exposure');
+      return true;
+
+    case 'U+0043':  // 'c'
+      this.enterModeByName_('crop');
+      return true;
+
+    case 'U+004C':  // 'l'
+      this.enterModeByName_('rotate_left');
+      return true;
+
+    case 'U+0052':  // 'r'
+      this.enterModeByName_('rotate_right');
+      return true;
+
   }
   return false;
 };
@@ -838,8 +851,11 @@ ImageEditor.MouseControl.prototype.lockMouse_ = function(on) {
  * @private
  */
 ImageEditor.MouseControl.prototype.updateCursor_ = function(position) {
-  this.container_.setAttribute('cursor',
-      this.buffer_.getCursorStyle(position.x, position.y, !!this.dragHandler_));
+  var oldCursor = this.container_.getAttribute('cursor');
+  var newCursor = this.buffer_.getCursorStyle(
+      position.x, position.y, !!this.dragHandler_);
+  if (newCursor != oldCursor)  // Avoid flicker.
+    this.container_.setAttribute('cursor', newCursor);
 };
 
 /**
@@ -902,8 +918,7 @@ ImageEditor.Toolbar.prototype.addLabel = function(name) {
  */
 ImageEditor.Toolbar.prototype.addButton = function(
     name, handler, opt_class) {
-  var button = this.create_('div');
-  button.classList.add('button');
+  var button = this.create_('button');
   if (opt_class) button.classList.add(opt_class);
   button.textContent = this.displayStringFunction_(name);
   button.addEventListener('click', handler, false);

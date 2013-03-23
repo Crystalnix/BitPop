@@ -8,15 +8,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/time.h"
-#include "chrome/test/base/testing_profile.h"
 #include "chrome/browser/chromeos/contacts/contact.pb.h"
 #include "chrome/browser/chromeos/contacts/contact_store_observer.h"
 #include "chrome/browser/chromeos/contacts/contact_test_util.h"
 #include "chrome/browser/chromeos/contacts/fake_contact_database.h"
-#include "chrome/browser/chromeos/gdata/gdata_contacts_service_stub.h"
-#include "chrome/browser/chromeos/gdata/gdata_util.h"
+#include "chrome/browser/chromeos/contacts/gdata_contacts_service_stub.h"
+#include "chrome/browser/google_apis/time_util.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
+#include "net/base/network_change_notifier.h"
+#include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
@@ -55,10 +57,14 @@ class GoogleContactStoreTest : public testing::Test {
  protected:
   // testing::Test implementation.
   virtual void SetUp() OVERRIDE {
-    testing::Test::SetUp();
+    // Create a mock NetworkChangeNotifier so the store won't be notified about
+    // changes to the system's actual network state.
+    network_change_notifier_.reset(net::NetworkChangeNotifier::CreateMock());
+
     profile_.reset(new TestingProfile);
 
-    store_.reset(new GoogleContactStore(profile_.get()));
+    store_.reset(new GoogleContactStore(NULL,  // request_context_getter
+                                        profile_.get()));
     store_->AddObserver(&observer_);
 
     test_api_.reset(new GoogleContactStore::TestAPI(store_.get()));
@@ -66,7 +72,7 @@ class GoogleContactStoreTest : public testing::Test {
     db_ = new FakeContactDatabase;
     test_api_->SetDatabase(db_);
 
-    gdata_service_ = new gdata::GDataContactsServiceStub;
+    gdata_service_ = new GDataContactsServiceStub;
     test_api_->SetGDataService(gdata_service_);
   }
 
@@ -74,12 +80,13 @@ class GoogleContactStoreTest : public testing::Test {
   content::TestBrowserThread ui_thread_;
 
   TestContactStoreObserver observer_;
+  scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<GoogleContactStore> store_;
   scoped_ptr<GoogleContactStore::TestAPI> test_api_;
 
   FakeContactDatabase* db_;  // not owned
-  gdata::GDataContactsServiceStub* gdata_service_;  // not owned
+  GDataContactsServiceStub* gdata_service_;  // not owned
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GoogleContactStoreTest);
@@ -87,12 +94,12 @@ class GoogleContactStoreTest : public testing::Test {
 
 TEST_F(GoogleContactStoreTest, LoadFromDatabase) {
   // Store two contacts in the database.
-  const std::string kProviderId1 = "provider1";
-  const std::string kProviderId2 = "provider2";
+  const std::string kContactId1 = "contact1";
+  const std::string kContactId2 = "contact2";
   scoped_ptr<Contact> contact1(new Contact);
-  InitContact(kProviderId1, "1", false, contact1.get());
+  InitContact(kContactId1, "1", false, contact1.get());
   scoped_ptr<Contact> contact2(new Contact);
-  InitContact(kProviderId2, "2", false, contact2.get());
+  InitContact(kContactId2, "2", false, contact2.get());
   ContactPointers db_contacts;
   db_contacts.push_back(contact1.get());
   db_contacts.push_back(contact2.get());
@@ -111,20 +118,20 @@ TEST_F(GoogleContactStoreTest, LoadFromDatabase) {
   EXPECT_EQ(1, observer_.num_updates());
 
   // Check that we can also grab the contact via its ID.
-  const Contact* loaded_contact1 = store_->GetContactByProviderId(kProviderId1);
+  const Contact* loaded_contact1 = store_->GetContactById(kContactId1);
   ASSERT_TRUE(loaded_contact1);
   EXPECT_EQ(ContactToString(*contact1), ContactToString(*loaded_contact1));
 
   // We should get NULL if we request a nonexistent contact.
-  EXPECT_FALSE(store_->GetContactByProviderId("bogus_id"));
+  EXPECT_FALSE(store_->GetContactById("bogus_id"));
 }
 
 TEST_F(GoogleContactStoreTest, LoadFromGData) {
   // Store two contacts in the GData service.
   scoped_ptr<Contact> contact1(new Contact);
-  InitContact("provider1", "1", false, contact1.get());
+  InitContact("contact1", "1", false, contact1.get());
   scoped_ptr<Contact> contact2(new Contact);
-  InitContact("provider2", "2", false, contact2.get());
+  InitContact("contact2", "2", false, contact2.get());
   ContactPointers gdata_contacts;
   gdata_contacts.push_back(contact1.get());
   gdata_contacts.push_back(contact2.get());
@@ -141,16 +148,16 @@ TEST_F(GoogleContactStoreTest, LoadFromGData) {
 
   // The contacts should've been saved to the database, too.
   EXPECT_EQ(VarContactsToString(2, contact1.get(), contact2.get()),
-            ContactsToString(db_->contacts()));
+            ContactMapToString(db_->contacts()));
 }
 
 TEST_F(GoogleContactStoreTest, UpdateFromGData) {
   scoped_ptr<Contact> contact1(new Contact);
-  InitContact("provider1", "1", false, contact1.get());
+  InitContact("contact1", "1", false, contact1.get());
   scoped_ptr<Contact> contact2(new Contact);
-  InitContact("provider2", "2", false, contact2.get());
+  InitContact("contact2", "2", false, contact2.get());
   scoped_ptr<Contact> contact3(new Contact);
-  InitContact("provider3", "3", false, contact3.get());
+  InitContact("contact3", "3", false, contact3.get());
 
   // Store the first two contacts in the database.
   ContactPointers db_contacts;
@@ -183,18 +190,18 @@ TEST_F(GoogleContactStoreTest, UpdateFromGData) {
   // All three contacts should've been saved to the database.
   EXPECT_EQ(VarContactsToString(
                 3, contact1.get(), contact2.get(), contact3.get()),
-            ContactsToString(db_->contacts()));
+            ContactMapToString(db_->contacts()));
   EXPECT_EQ(3, db_->num_saved_contacts());
   EXPECT_TRUE(test_api_->update_scheduled());
 }
 
 TEST_F(GoogleContactStoreTest, FetchUpdatedContacts) {
   scoped_ptr<Contact> contact1(new Contact);
-  InitContact("provider1", "1", false, contact1.get());
+  InitContact("contact1", "1", false, contact1.get());
   scoped_ptr<Contact> contact2(new Contact);
-  InitContact("provider2", "2", false, contact2.get());
+  InitContact("contact2", "2", false, contact2.get());
   scoped_ptr<Contact> contact3(new Contact);
-  InitContact("provider3", "3", false, contact3.get());
+  InitContact("contact3", "3", false, contact3.get());
 
   ContactPointers kAllContacts;
   kAllContacts.push_back(contact1.get());
@@ -211,7 +218,8 @@ TEST_F(GoogleContactStoreTest, FetchUpdatedContacts) {
   ContactPointers loaded_contacts;
   store_->AppendContacts(&loaded_contacts);
   EXPECT_EQ(ContactsToString(kAllContacts), ContactsToString(loaded_contacts));
-  EXPECT_EQ(ContactsToString(kAllContacts), ContactsToString(db_->contacts()));
+  EXPECT_EQ(ContactsToString(kAllContacts),
+            ContactMapToString(db_->contacts()));
   EXPECT_EQ(static_cast<int>(kAllContacts.size()), db_->num_saved_contacts());
   EXPECT_TRUE(test_api_->update_scheduled());
   EXPECT_EQ(1, observer_.num_updates());
@@ -237,7 +245,8 @@ TEST_F(GoogleContactStoreTest, FetchUpdatedContacts) {
   loaded_contacts.clear();
   store_->AppendContacts(&loaded_contacts);
   EXPECT_EQ(ContactsToString(kAllContacts), ContactsToString(loaded_contacts));
-  EXPECT_EQ(ContactsToString(kAllContacts), ContactsToString(db_->contacts()));
+  EXPECT_EQ(ContactsToString(kAllContacts),
+            ContactMapToString(db_->contacts()));
   EXPECT_EQ(1, db_->num_saved_contacts());
   EXPECT_TRUE(test_api_->update_scheduled());
   EXPECT_EQ(1, observer_.num_updates());
@@ -255,7 +264,8 @@ TEST_F(GoogleContactStoreTest, FetchUpdatedContacts) {
   loaded_contacts.clear();
   store_->AppendContacts(&loaded_contacts);
   EXPECT_EQ(ContactsToString(kAllContacts), ContactsToString(loaded_contacts));
-  EXPECT_EQ(ContactsToString(kAllContacts), ContactsToString(db_->contacts()));
+  EXPECT_EQ(ContactsToString(kAllContacts),
+            ContactMapToString(db_->contacts()));
   EXPECT_EQ(1, db_->num_saved_contacts());
   EXPECT_TRUE(test_api_->update_scheduled());
   EXPECT_EQ(1, observer_.num_updates());
@@ -263,20 +273,20 @@ TEST_F(GoogleContactStoreTest, FetchUpdatedContacts) {
 
 TEST_F(GoogleContactStoreTest, DontReturnDeletedContacts) {
   // Tell GData to return a single deleted contact.
-  const std::string kProviderId = "provider";
+  const std::string kContactId = "contact";
   scoped_ptr<Contact> contact(new Contact);
-  InitContact(kProviderId, "1", true, contact.get());
+  InitContact(kContactId, "1", true, contact.get());
   ContactPointers gdata_contacts;
   gdata_contacts.push_back(contact.get());
   gdata_service_->SetContacts(gdata_contacts, base::Time());
 
   // The contact shouldn't be returned by AppendContacts() or
-  // GetContactByProviderId().
+  // GetContactById().
   store_->Init();
   ContactPointers loaded_contacts;
   store_->AppendContacts(&loaded_contacts);
   EXPECT_TRUE(loaded_contacts.empty());
-  EXPECT_FALSE(store_->GetContactByProviderId(kProviderId));
+  EXPECT_FALSE(store_->GetContactById(kContactId));
 }
 
 // Test that we do a full refresh from GData if enough time has passed since the
@@ -288,10 +298,10 @@ TEST_F(GoogleContactStoreTest, FullRefreshAfterThirtyDays) {
 
   base::Time kOldUpdateTime = kInitTime - base::TimeDelta::FromDays(31);
   scoped_ptr<Contact> contact1(new Contact);
-  InitContact("provider1", "1", false, contact1.get());
+  InitContact("contact1", "1", false, contact1.get());
   contact1->set_update_time(kOldUpdateTime.ToInternalValue());
   scoped_ptr<Contact> contact2(new Contact);
-  InitContact("provider2", "2", false, contact2.get());
+  InitContact("contact2", "2", false, contact2.get());
   contact2->set_update_time(kOldUpdateTime.ToInternalValue());
 
   // Put both contacts in the database, along with metadata saying that the last
@@ -350,7 +360,7 @@ TEST_F(GoogleContactStoreTest, FullRefreshAfterThirtyDays) {
 
 TEST_F(GoogleContactStoreTest, HandleDatabaseInitFailure) {
   scoped_ptr<Contact> contact1(new Contact);
-  InitContact("provider1", "1", false, contact1.get());
+  InitContact("contact1", "1", false, contact1.get());
 
   // Store a contact in the database but make initialization fail.
   ContactPointers db_contacts;
@@ -361,7 +371,7 @@ TEST_F(GoogleContactStoreTest, HandleDatabaseInitFailure) {
 
   // Create a second contact and tell the GData service to return it.
   scoped_ptr<Contact> contact2(new Contact);
-  InitContact("provider2", "2", false, contact2.get());
+  InitContact("contact2", "2", false, contact2.get());
   ContactPointers gdata_contacts;
   gdata_contacts.push_back(contact2.get());
   gdata_service_->SetContacts(gdata_contacts, base::Time());
@@ -375,6 +385,155 @@ TEST_F(GoogleContactStoreTest, HandleDatabaseInitFailure) {
   EXPECT_EQ(ContactsToString(gdata_contacts),
             ContactsToString(loaded_contacts));
   EXPECT_TRUE(test_api_->update_scheduled());
+}
+
+TEST_F(GoogleContactStoreTest, AvoidUpdatesWhenOffline) {
+  EXPECT_EQ(0, gdata_service_->num_download_requests());
+
+  // Notify the store that we're offline.  Init() shouldn't attempt an update
+  // and the update timer shouldn't be running.
+  test_api_->NotifyAboutNetworkStateChange(false);
+  store_->Init();
+  EXPECT_EQ(0, gdata_service_->num_download_requests());
+  EXPECT_FALSE(test_api_->update_scheduled());
+
+  // We should do an update and schedule further updates as soon as we go
+  // online.
+  gdata_service_->reset_stats();
+  test_api_->NotifyAboutNetworkStateChange(true);
+  EXPECT_EQ(1, gdata_service_->num_download_requests());
+  EXPECT_TRUE(test_api_->update_scheduled());
+
+  // If we call DoUpdate() to mimic the code path that's used for a timer-driven
+  // update while we're offline, we should again defer the update.
+  gdata_service_->reset_stats();
+  test_api_->NotifyAboutNetworkStateChange(false);
+  test_api_->DoUpdate();
+  EXPECT_EQ(0, gdata_service_->num_download_requests());
+
+  // When we're back online, the update should happen.
+  gdata_service_->reset_stats();
+  test_api_->NotifyAboutNetworkStateChange(true);
+  EXPECT_EQ(1, gdata_service_->num_download_requests());
+}
+
+TEST_F(GoogleContactStoreTest, DropDeletedContacts) {
+  // Tell the GData service to return a single contact.
+  scoped_ptr<Contact> contact1(new Contact);
+  InitContact("contact1", "1", false, contact1.get());
+  ContactPointers gdata_contacts;
+  gdata_contacts.push_back(contact1.get());
+  gdata_service_->SetContacts(gdata_contacts, base::Time());
+
+  // Check that the contact store loads it into memory and saves it to the
+  // database.
+  store_->Init();
+  EXPECT_EQ(0, gdata_service_->num_download_requests_with_wrong_timestamps());
+  EXPECT_EQ(base::Time::FromInternalValue(contact1->update_time()),
+            test_api_->last_contact_update_time());
+  EXPECT_EQ(VarContactsToString(1, contact1.get()),
+            ContactsToString(*test_api_->GetLoadedContacts()));
+  EXPECT_EQ(VarContactsToString(1, contact1.get()),
+            ContactMapToString(db_->contacts()));
+  EXPECT_EQ(contact1->update_time(),
+            db_->metadata().last_contact_update_time());
+  EXPECT_TRUE(test_api_->update_scheduled());
+
+  // Now tell the GData service to return a more-newly-updated, already deleted
+  // contact.
+  scoped_ptr<Contact> contact2(new Contact);
+  InitContact("contact2", "2", true, contact2.get());
+  contact2->set_update_time(
+      (base::Time::FromInternalValue(contact1->update_time()) +
+       base::TimeDelta::FromSeconds(5)).ToInternalValue());
+  gdata_contacts.clear();
+  gdata_contacts.push_back(contact2.get());
+  gdata_service_->SetContacts(
+      gdata_contacts,
+      base::Time::FromInternalValue(contact1->update_time()) +
+      base::TimeDelta::FromMilliseconds(1));
+
+  // The contact store should save the last update time from the deleted
+  // contact, but the contact itself shouldn't be loaded into memory or written
+  // to the database.
+  test_api_->DoUpdate();
+  EXPECT_EQ(0, gdata_service_->num_download_requests_with_wrong_timestamps());
+  EXPECT_EQ(base::Time::FromInternalValue(contact2->update_time()),
+            test_api_->last_contact_update_time());
+  EXPECT_EQ(VarContactsToString(1, contact1.get()),
+            ContactsToString(*test_api_->GetLoadedContacts()));
+  EXPECT_EQ(VarContactsToString(1, contact1.get()),
+            ContactMapToString(db_->contacts()));
+  EXPECT_EQ(contact2->update_time(),
+            db_->metadata().last_contact_update_time());
+
+  // Tell the GData service to report the first contact as having been deleted.
+  contact1->set_update_time(
+      (base::Time::FromInternalValue(contact2->update_time()) +
+       base::TimeDelta::FromSeconds(10)).ToInternalValue());
+  contact1->set_deleted(true);
+  gdata_contacts.clear();
+  gdata_contacts.push_back(contact1.get());
+  gdata_service_->SetContacts(
+      gdata_contacts,
+      base::Time::FromInternalValue(contact2->update_time()) +
+      base::TimeDelta::FromMilliseconds(1));
+
+  // The contact store should drop the first contact after another update.
+  test_api_->DoUpdate();
+  EXPECT_EQ(0, gdata_service_->num_download_requests_with_wrong_timestamps());
+  EXPECT_EQ(base::Time::FromInternalValue(contact1->update_time()),
+            test_api_->last_contact_update_time());
+  EXPECT_TRUE(test_api_->GetLoadedContacts()->empty());
+  EXPECT_TRUE(db_->contacts().empty());
+  EXPECT_EQ(contact1->update_time(),
+            db_->metadata().last_contact_update_time());
+}
+
+TEST_F(GoogleContactStoreTest, UseLastContactUpdateTimeFromMetadata) {
+  base::Time::Exploded kInitTimeExploded = { 2012, 3, 0, 1, 16, 34, 56, 123 };
+  base::Time kInitTime = base::Time::FromUTCExploded(kInitTimeExploded);
+
+  // Configure the metadata to say that a contact was updated one day before the
+  // current time.  We won't create a contact that actually contains this time,
+  // though; this mimics the situation where the most-recently-updated contact
+  // has been deleted and wasn't saved to the database.
+  base::Time kDeletedContactUpdateTime =
+      kInitTime - base::TimeDelta::FromDays(1);
+  UpdateMetadata db_metadata;
+  db_metadata.set_last_contact_update_time(
+      kDeletedContactUpdateTime.ToInternalValue());
+
+  // Create a non-deleted contact with an update time one day prior to the
+  // update time in the metadata.
+  base::Time kNonDeletedContactUpdateTime =
+      kDeletedContactUpdateTime - base::TimeDelta::FromDays(1);
+  scoped_ptr<Contact> non_deleted_contact(new Contact);
+  InitContact("contact", "1", false, non_deleted_contact.get());
+  non_deleted_contact->set_update_time(
+      kNonDeletedContactUpdateTime.ToInternalValue());
+
+  // Save the contact to the database.
+  ContactPointers db_contacts;
+  db_contacts.push_back(non_deleted_contact.get());
+  db_->SetContacts(db_contacts, db_metadata);
+
+  // Tell the GData service to expect the deleted contact's update time.
+  ContactPointers gdata_contacts;
+  gdata_contacts.push_back(non_deleted_contact.get());
+  gdata_service_->SetContacts(
+      gdata_contacts,
+      kDeletedContactUpdateTime + base::TimeDelta::FromMilliseconds(1));
+
+  test_api_->set_current_time(kInitTime);
+  store_->Init();
+  EXPECT_EQ(0, gdata_service_->num_download_requests_with_wrong_timestamps());
+  ContactPointers loaded_contacts;
+  store_->AppendContacts(&loaded_contacts);
+  EXPECT_EQ(ContactsToString(gdata_contacts),
+            ContactsToString(loaded_contacts));
+  EXPECT_TRUE(test_api_->update_scheduled());
+
 }
 
 }  // namespace test

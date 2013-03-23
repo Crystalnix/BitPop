@@ -15,9 +15,11 @@
 #include "net/udp/udp_server_socket.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/private/net_address_private_impl.h"
+#include "ppapi/shared_impl/private/udp_socket_private_impl.h"
 
-using content::BrowserThread;
 using ppapi::NetAddressPrivateImpl;
+
+namespace content {
 
 PepperUDPSocket::PepperUDPSocket(
     PepperMessageFilter* manager,
@@ -27,7 +29,9 @@ PepperUDPSocket::PepperUDPSocket(
     : manager_(manager),
       routing_id_(routing_id),
       plugin_dispatcher_id_(plugin_dispatcher_id),
-      socket_id_(socket_id) {
+      socket_id_(socket_id),
+      allow_address_reuse_(false),
+      allow_broadcast_(false) {
   DCHECK(manager);
 }
 
@@ -37,17 +41,31 @@ PepperUDPSocket::~PepperUDPSocket() {
     socket_->Close();
 }
 
+void PepperUDPSocket::AllowAddressReuse(bool value) {
+  allow_address_reuse_ = value;
+}
+
+void PepperUDPSocket::AllowBroadcast(bool value) {
+  allow_broadcast_ = value;
+}
+
 void PepperUDPSocket::Bind(const PP_NetAddress_Private& addr) {
   socket_.reset(new net::UDPServerSocket(NULL, net::NetLog::Source()));
 
-  net::IPEndPoint address;
+  net::IPAddressNumber address;
+  int port;
   if (!socket_.get() ||
-      !NetAddressPrivateImpl::NetAddressToIPEndPoint(addr, &address)) {
+      !NetAddressPrivateImpl::NetAddressToIPEndPoint(addr, &address, &port)) {
     SendBindACKError();
     return;
   }
 
-  int result = socket_->Listen(address);
+  if (allow_address_reuse_)
+    socket_->AllowAddressReuse();
+  if (allow_broadcast_)
+    socket_->AllowBroadcast();
+
+  int result = socket_->Listen(net::IPEndPoint(address, port));
 
   if (result == net::OK &&
       socket_->GetLocalAddress(&bound_address_) != net::OK) {
@@ -59,9 +77,14 @@ void PepperUDPSocket::Bind(const PP_NetAddress_Private& addr) {
 }
 
 void PepperUDPSocket::RecvFrom(int32_t num_bytes) {
-  if (recvfrom_buffer_.get()) {
+  if (recvfrom_buffer_.get() || num_bytes < 0) {
     SendRecvFromACKError();
     return;
+  }
+
+  if (num_bytes > ppapi::UDPSocketPrivateImpl::kMaxReadSize) {
+    NOTREACHED();
+    num_bytes = ppapi::UDPSocketPrivateImpl::kMaxReadSize;
   }
 
   recvfrom_buffer_ = new net::IOBuffer(num_bytes);
@@ -81,18 +104,23 @@ void PepperUDPSocket::SendTo(const std::string& data,
     return;
   }
 
-  net::IPEndPoint address;
-  if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(addr, &address)) {
+  net::IPAddressNumber address;
+  int port;
+  if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(addr, &address, &port)) {
     SendSendToACKError();
     return;
   }
 
   int data_size = data.size();
+  if (data_size > ppapi::UDPSocketPrivateImpl::kMaxWriteSize) {
+    NOTREACHED();
+    data_size = ppapi::UDPSocketPrivateImpl::kMaxWriteSize;
+  }
 
   sendto_buffer_ = new net::IOBuffer(data_size);
   memcpy(sendto_buffer_->data(), data.data(), data_size);
   int result = socket_->SendTo(
-      sendto_buffer_, data_size, address,
+      sendto_buffer_, data_size, net::IPEndPoint(address, port),
       base::Bind(&PepperUDPSocket::OnSendToCompleted, base::Unretained(this)));
 
   if (result != net::ERR_IO_PENDING)
@@ -120,7 +148,8 @@ void PepperUDPSocket::SendBindACKError() {
 void PepperUDPSocket::OnBindCompleted(int result) {
   PP_NetAddress_Private addr = NetAddressPrivateImpl::kInvalidNetAddress;
   if (result < 0 ||
-      !NetAddressPrivateImpl::IPEndPointToNetAddress(bound_address_,
+      !NetAddressPrivateImpl::IPEndPointToNetAddress(bound_address_.address(),
+                                                     bound_address_.port(),
                                                      &addr)) {
     SendBindACKError();
   } else {
@@ -136,8 +165,10 @@ void PepperUDPSocket::OnRecvFromCompleted(int result) {
   // to send back.
   PP_NetAddress_Private addr = NetAddressPrivateImpl::kInvalidNetAddress;
   if (result < 0 ||
-      !NetAddressPrivateImpl::IPEndPointToNetAddress(recvfrom_address_,
-                                                     &addr)) {
+      !NetAddressPrivateImpl::IPEndPointToNetAddress(
+          recvfrom_address_.address(),
+          recvfrom_address_.port(),
+          &addr)) {
     SendRecvFromACKError();
   } else {
     manager_->Send(new PpapiMsg_PPBUDPSocket_RecvFromACK(
@@ -160,3 +191,5 @@ void PepperUDPSocket::OnSendToCompleted(int result) {
 
   sendto_buffer_ = NULL;
 }
+
+}  // namespace content

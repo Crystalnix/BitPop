@@ -40,12 +40,33 @@ bool HasOnlySecureTokens(StringTokenizer& tokenizer, Extension::Type type) {
     std::string source = tokenizer.token();
     StringToLowerASCII(&source);
 
-    if (EndsWith(source, "*", true))
-      return false;
+    // Don't alow whitelisting of all hosts. This boils down to:
+    //   1. Maximum of 2 '*' characters.
+    //   2. Each '*' is either followed by a '.' or preceded by a ':'
+    int wildcards = 0;
+    size_t length = source.length();
+    for (size_t i = 0; i < length; ++i) {
+      if (source[i] == L'*') {
+        wildcards++;
+        if (wildcards > 2)
+          return false;
+
+        bool isWildcardPort = i > 0 && source[i - 1] == L':';
+        bool isWildcardSubdomain = i + 1 < length && source[i + 1] == L'.';
+        if (!isWildcardPort && !isWildcardSubdomain)
+          return false;
+      }
+    }
 
     // We might need to relax this whitelist over time.
     if (source == "'self'" ||
         source == "'none'" ||
+        source == "http://127.0.0.1" ||
+        LowerCaseEqualsASCII(source, "blob:") ||
+        LowerCaseEqualsASCII(source, "filesystem:") ||
+        LowerCaseEqualsASCII(source, "http://localhost") ||
+        StartsWithASCII(source, "http://127.0.0.1:", false) ||
+        StartsWithASCII(source, "http://localhost:", false) ||
         StartsWithASCII(source, "https://", true) ||
         StartsWithASCII(source, "chrome://", true) ||
         StartsWithASCII(source, "chrome-extension://", true) ||
@@ -55,7 +76,7 @@ bool HasOnlySecureTokens(StringTokenizer& tokenizer, Extension::Type type) {
 
     // crbug.com/146487
     if (type == Extension::TYPE_EXTENSION ||
-        type == Extension::TYPE_PACKAGED_APP) {
+        type == Extension::TYPE_LEGACY_PACKAGED_APP) {
       if (source == "'unsafe-eval'")
         continue;
     }
@@ -163,10 +184,9 @@ bool ContentSecurityPolicyIsSandboxed(
       if (token == kAllowSameOriginToken)
         return false;
 
-      // Platform apps don't allow navigation (and have a separate windowing
-      // API that should be used for popups)
+      // Platform apps don't allow navigation.
       if (type == Extension::TYPE_PLATFORM_APP) {
-        if (token == kAllowTopNavigation || token == kAllowPopups)
+        if (token == kAllowTopNavigation)
           return false;
       }
     }

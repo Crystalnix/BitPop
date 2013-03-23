@@ -50,18 +50,26 @@ function cloneShallow(object) {
  * Mock out the chrome.fileBrowserPrivate API for use in the harness.
  */
 chrome.fileBrowserPrivate = {
+  /**
+   * Used to distinguish the mock object from the real one.
+   */
+  mocked: true,
+
+  /**
+   * window.PERSISTENT is a little nicer but not yet supported by packaged apps.
+   */
+  FS_TYPE: window.TEMPORARY,
 
   /**
    * Return a normal HTML5 filesystem api, rather than the real local
    * filesystem.
    *
-   * You must start chrome with --allow-file-access-from-files and
-   * --unlimited-quota-for-files in order for this to work.
+   * If the test harness is on file: schema you must start chrome with
+   * --allow-file-access-from-files in order for this to work.
    */
   requestLocalFileSystem: function(callback) {
-    window.webkitRequestFileSystem(window.PERSISTENT, 16 * 1024 * 1024,
-                                   callback,
-                                   util.ferr('Error requesting filesystem'));
+    window.webkitRequestFileSystem(this.FS_TYPE,
+        16 * 1024 * 1024, callback, util.ferr('Error requesting filesystem'));
   },
 
   /**
@@ -110,7 +118,7 @@ chrome.fileBrowserPrivate = {
   /**
    * File system change notification.
    */
-  onFileChanged: new MockEventSource(),
+  onDirectoryChanged: new MockEventSource(),
 
   /**
    * File watchers.
@@ -123,12 +131,11 @@ chrome.fileBrowserPrivate = {
    * Returns common tasks for a given list of files.
    * @return {Array.<Object>} Array of task descriptors.
    */
-  getFileTasks: function(urlList, callback) {
+  getFileTasks: function(urlList, mimeTypes, callback) {
     if (urlList.length == 0)
       return callback([]);
 
-    // This is how File Manager gets the extension id.
-    var extensionId = chrome.extension.getURL('').split('/')[2];
+    var internalTaskPrefix = util.platform.getAppId() + '|file';
 
     if (!callback)
       throw new Error('Missing callback');
@@ -137,36 +144,48 @@ chrome.fileBrowserPrivate = {
         'R0lGODlhAQABAPABAP///wAAACH5BAEKAAAALAAAAAABAAEAAAICRAEAOw%3D%3D';
 
     var tasks = [
-      { taskId: extensionId + '|play',
+      { taskId: internalTaskPrefix + '|play',
         title: 'Listen',
         regexp: /\.(flac|m4a|mp3|oga|ogg|wav)$/i,
         iconUrl: emptyIcon
       },
-      { taskId: extensionId + '|mount-archive',
+      { taskId: internalTaskPrefix + '|mount-archive',
         title: 'Mount',
         regexp: /\.(rar|tar|tar.bz2|tar.gz|tbz|tbz2|tgz|zip)$/i,
         iconUrl: emptyIcon
       },
       {
-        taskId: extensionId + '|gallery',
+        taskId: internalTaskPrefix + '|gallery',
         title: 'View',
         regexp: /\.(bmp|gif|jpe?g|png|webp|3gp|avi|m4v|mov|mp4|mpeg4?|mpg4?|ogm|ogv|ogx|webm)$/i,
         iconUrl: emptyIcon
       },
       {
-        taskId: 'fake-extension-id|fake-item',
-        title: 'External action',
-        regexp: /\.(bmp|gif|jpe?g|png|webp|3gp|avi|m4v|mov|mp4|mpeg4?|mpg4?|ogm|ogv|ogx|webm)$/i,
-        iconUrl: 'images/icon16.png'
+        taskId: internalTaskPrefix + '|watch',
+        title: 'Watch',
+        regexp: /\.(3gp|avi|m4v|mov|mp4|mpeg4?|mpg4?|ogm|ogv|ogx|webm)$/i,
+        iconUrl: emptyIcon
       },
       {
-        taskId: extensionId + '|view-in-browser',
+        taskId: 'fake-extension-id|file|fake-item',
+        title: 'External action',
+        regexp: /\.(bmp|gif|jpe?g|png|webp|3gp|avi|m4v|mov|mp4|mpeg4?|mpg4?|ogm|ogv|ogx|webm)$/i,
+        iconUrl: 'chrome://theme/IDR_FILE_MANAGER_IMG_FILETYPE_GENERIC'
+      },
+      {
+        taskId: 'fake-extension-id|file|upload',
+        title: 'Upload video',
+        regexp: /\.(3gp|avi|m4v|mov|mp4|mpeg4?|mpg4?|ogm|ogv|ogx|webm)$/i,
+        iconUrl: 'chrome://theme/IDR_FILE_MANAGER_IMG_FILETYPE_VIDEO'
+      },
+      {
+        taskId: internalTaskPrefix + '|view-in-browser',
         title: 'View',
         regexp: /\.(html?|log|mht|mhtml|txt)$/i,
         iconUrl: emptyIcon
       },
       {
-        taskId: extensionId + '|view-pdf',
+        taskId: internalTaskPrefix + '|view-pdf',
         title: 'View',
         regexp: /\.pdf$/i,
         iconUrl: emptyIcon
@@ -182,8 +201,15 @@ chrome.fileBrowserPrivate = {
 
       for (var taskIndex = candidateTasks.length - 1; taskIndex >= 0;
            taskIndex--) {
-        if (candidateTasks[taskIndex].regexp.test(urlList[i]))
-          continue;
+        var task = candidateTasks[taskIndex];
+        var url = urlList[i];
+        if (task.regexp.test(url)) {
+          // For a single video only the video player should be applicable,
+          // for multiple videos or a mix of videos and images only the Gallery.
+          if (!FileType.isVideo(url) ||
+             ((task.title == 'Watch') == (urlList.length == 1)))
+            continue;
+        }
 
         // This task doesn't match this url, remove the task.
         candidateTasks.splice(taskIndex, 1);
@@ -249,7 +275,7 @@ chrome.fileBrowserPrivate = {
     }
   ],
 
-  fsRe_: new RegExp('^filesystem:[^/]*://[^/]*/persistent(.*)'),
+  fsRe_: new RegExp('^filesystem:[^/]*://[^/]*/(?:persistent|temporary)(.*)'),
 
   fileUrlToLocalPath_: function(fileUrl) {
     var match = chrome.fileBrowserPrivate.fsRe_.exec(fileUrl);
@@ -357,7 +383,7 @@ chrome.fileBrowserPrivate = {
 
   pinned_: {},
 
-  getGDataFileProperties: function(urls, callback) {
+  getDriveFileProperties: function(urls, callback) {
     var response = [];
     for (var i = 0; i != urls.length; i++) {
       var url = urls[i];
@@ -370,24 +396,24 @@ chrome.fileBrowserPrivate = {
     setTimeout(callback, 0, response);
   },
 
-  gdataPreferences_: {
+  preferences_: {
     driveEnabled: true,
     cellularDisabled: true,
     hostedFilesDisabled: false
   },
 
-  onGDataPreferencesChanged: new MockEventSource(),
+  onPreferencesChanged: new MockEventSource(),
 
-  getGDataPreferences: function(callback) {
+  getPreferences: function(callback) {
     setTimeout(callback, 0, cloneShallow(
         chrome.fileBrowserPrivate.gdataPreferences_));
   },
 
-  setGDataPreferences: function(preferences) {
+  setPreferences: function(preferences) {
     for (var prop in preferences) {
-      chrome.fileBrowserPrivate.gdataPreferences_[prop] = preferences[prop];
+      chrome.fileBrowserPrivate.preferences_[prop] = preferences[prop];
     }
-    chrome.fileBrowserPrivate.onGDataPreferencesChanged.notify();
+    chrome.fileBrowserPrivate.onPreferencesChanged.notify();
   },
 
   networkConnectionState_: {
@@ -407,7 +433,7 @@ chrome.fileBrowserPrivate = {
     chrome.fileBrowserPrivate.onNetworkConnectionChanged.notify();
   },
 
-  pinGDataFile: function(urls, on, callback) {
+  pinDriveFile: function(urls, on, callback) {
     for (var i = 0; i != urls.length; i++) {
       var url = urls[i];
       if (on) {
@@ -416,7 +442,7 @@ chrome.fileBrowserPrivate = {
         delete chrome.fileBrowserPrivate.pinned_[url];
       }
     }
-    chrome.fileBrowserPrivate.getGDataFileProperties(urls, callback);
+    chrome.fileBrowserPrivate.getDriveFileProperties(urls, callback);
   },
 
   toggleFullscreen: function() {
@@ -446,7 +472,7 @@ chrome.fileBrowserPrivate = {
 
       CHROMEOS_RELEASE_BOARD: 'stumpy',
 
-      GDATA_DIRECTORY_LABEL: 'Google Drive',
+      DRIVE_DIRECTORY_LABEL: 'Google Drive',
       ENABLE_GDATA: true,
       PDF_VIEW_ENABLED: true,
 
@@ -463,6 +489,13 @@ chrome.fileBrowserPrivate = {
       TYPE_COLUMN_LABEL: 'Type',
       DATE_COLUMN_LABEL: 'Date modified',
       PREVIEW_COLUMN_LABEL: 'Preview',
+
+      SHORTCUT_CTRL: 'Ctrl',
+      SHORTCUT_ALT: 'Alt',
+      SHORTCUT_SHIFT: 'Shift',
+      SHORTCUT_META: 'Meta',
+      SHORTCUT_SPACE: 'Space',
+      SHORTCUT_ENTER: 'Enter',
 
       ERROR_CREATING_FOLDER: 'Unable to create folder "$1". $2',
       ERROR_INVALID_CHARACTER: 'Invalid character: $1',
@@ -485,12 +518,14 @@ chrome.fileBrowserPrivate = {
 
       MOUNT_ARCHIVE: 'Open',
       FORMAT_DEVICE: 'Format device',
+      PHOTO_IMPORT_TITLE: 'Import media',
 
       ACTION_VIEW: 'View',
       ACTION_OPEN: 'Open',
       ACTION_WATCH: 'Watch',
       ACTION_LISTEN: 'Listen',
       INSTALL_CRX: 'Open',
+      SEND_TO_DRIVE: 'Send to Google Drive',
 
       CHANGE_DEFAULT_MENU_ITEM: 'Change default...',
       CHANGE_DEFAULT_CAPTION: 'Choose the default app for $1 files:',
@@ -518,7 +553,21 @@ chrome.fileBrowserPrivate = {
       GALLERY_UNSAVED_CHANGES: 'Changes are not saved yet.',
       GALLERY_READONLY_WARNING: '$1 is read only. Edited images will be saved in the Downloads folder.',
       GALLERY_IMAGE_ERROR: 'This file could not be displayed',
+      GALLERY_IMAGE_TOO_BIG_ERROR: 'This file is too large to be opened.',
       GALLERY_VIDEO_ERROR: 'This file could not be played',
+
+      GALLERY_ITEMS_SELECTED: '$1 items selected',
+      GALLERY_NO_IMAGES: 'No images in this directory.',
+      GALLERY_MOSAIC: 'Mosaic view',
+      GALLERY_SLIDE: 'Slide view',
+      GALLERY_SLIDESHOW: 'Slideshow',
+      GALLERY_DELETE: 'Delete',
+
+      GALLERY_OK_LABEL: 'OK',
+      GALLERY_CANCEL_LABEL: 'Cancel',
+      GALLERY_CONFIRM_DELETE_ONE: 'Are you sure you want to delete "$1"?',
+      GALLERY_CONFIRM_DELETE_SOME: 'Are you sure you want to delete $1 items?',
+
       AUDIO_ERROR: 'This file could not be played',
 
       CONFIRM_OVERWRITE_FILE: 'A file named "$1" already exists. Do you want to replace it?',
@@ -536,33 +585,38 @@ chrome.fileBrowserPrivate = {
       COPY_BUTTON_LABEL: 'Copy',
       CUT_BUTTON_LABEL: 'Cut',
 
+      OPEN_WITH_BUTTON_LABEL: 'Open with...',
+
       UNMOUNT_FAILED: 'Unable to eject: $1',
-      UNMOUNT_DEVICE_BUTTON_LABEL: 'Unmount',
-      FORMAT_DEVICE_BUTTON_LABEL: 'Format',
+      UNMOUNT_DEVICE_BUTTON_LABEL: 'Eject device',
+      CLOSE_ARCHIVE_BUTTON_LABEL: 'Close',
+      FORMAT_DEVICE_BUTTON_LABEL: 'Format device',
 
-      GDATA_MENU_HELP: 'Help',
-      GDATA_MOBILE_CONNECTION_OPTION: 'Do not use mobile data for sync',
-      GDATA_SHOW_HOSTED_FILES_OPTION: 'Show Google Docs files',
-      GDATA_CLEAR_LOCAL_CACHE: 'Clear local cache',
-      GDATA_WAITING_FOR_SPACE_INFO: 'Waiting for space info...',
-      GDATA_FAILED_SPACE_INFO: 'Failed to retrieve space info',
-      GDATA_BUY_MORE_SPACE: 'Buy more storage...',
-      GDATA_SPACE_AVAILABLE: '$1 left',
+      DRIVE_MENU_HELP: 'Help',
+      DRIVE_MOBILE_CONNECTION_OPTION: 'Do not use mobile data for sync',
+      DRIVE_SHOW_HOSTED_FILES_OPTION: 'Show Google Docs files',
+      DRIVE_CLEAR_LOCAL_CACHE: 'Clear local cache',
+      DRIVE_RELOAD: 'Reload',
+      DRIVE_WAITING_FOR_SPACE_INFO: 'Waiting for space info...',
+      DRIVE_FAILED_SPACE_INFO: 'Failed to retrieve space info',
+      DRIVE_BUY_MORE_SPACE: 'Buy more storage...',
+      DRIVE_VISIT_DRIVE_GOOGLE_COM: 'Go to drive.google.com...',
+      DRIVE_SPACE_AVAILABLE: '$1 left',
 
-      GDATA_BUY_MORE_SPACE_LINK: 'Buy more storage',
-      GDATA_SPACE_AVAILABLE_LONG: 'Google Drive space left: $1.',
+      DRIVE_BUY_MORE_SPACE_LINK: 'Buy more storage',
+      DRIVE_SPACE_AVAILABLE_LONG: 'Google Drive space left: $1.',
 
       OFFLINE_COLUMN_LABEL: 'Available offline',
-      GDATA_LOADING: 'Hang with us. We\'re fetching your files.',
-      GDATA_RETRY: 'Retry',
-      GDATA_LEARN_MORE: 'Learn more',
-      GDATA_CANNOT_REACH: '$1 cannot be reached at this time',
+      DRIVE_LOADING: 'Hang with us. We\'re fetching your files.',
+      DRIVE_RETRY: 'Retry',
+      DRIVE_LEARN_MORE: 'Learn more',
+      DRIVE_CANNOT_REACH: '$1 cannot be reached at this time',
 
-      GDATA_WELCOME_TITLE: 'Welcome to Google Drive!',
-      GDATA_WELCOME_TITLE_ALTERNATIVE: 'Get 100 GB free with Google Drive',
-      GDATA_WELCOME_TEXT_SHORT:
+      DRIVE_WELCOME_TITLE: 'Welcome to Google Drive!',
+      DRIVE_WELCOME_TITLE_ALTERNATIVE: 'Get 100 GB free with Google Drive',
+      DRIVE_WELCOME_TEXT_SHORT:
           'All files saved in this folder are backed up online automatically',
-      GDATA_WELCOME_TEXT_LONG:
+      DRIVE_WELCOME_TEXT_LONG:
           '<p><strong>Access files from everywhere, even offline.</strong> ' +
           'Files in Google Drive are up-to-date and available from any device.</p>' +
           '<p><strong>Keep your files safe.</strong> ' +
@@ -570,9 +624,9 @@ chrome.fileBrowserPrivate = {
           'safely stored in Google Drive .</p>' +
           '<p><strong>Share, create and collaborate</strong> ' +
           'on files with others all in one place .</p>',
-      GDATA_WELCOME_GET_STARTED: 'Get started',
-      GDATA_WELCOME_DISMISS: 'Dismiss',
-      GDATA_LOADING_PROGRESS: '$1 files fetched',
+      DRIVE_WELCOME_GET_STARTED: 'Get started',
+      DRIVE_WELCOME_DISMISS: 'Dismiss',
+      DRIVE_LOADING_PROGRESS: '$1 files fetched',
 
       OFFLINE_HEADER: 'You are offline',
       OFFLINE_MESSAGE: 'To save this file for offline use, get back online and<br>select the \'$1\' checkbox for this file.',
@@ -623,14 +677,14 @@ chrome.fileBrowserPrivate = {
       SELECT_SAVEAS_FILE_TITLE: 'Save file as',
 
       COMPUTING_SELECTION: 'Computing selection...',
-      ONE_FILE_SELECTED: 'One file selected, $1',
-      ONE_DIRECTORY_SELECTED: 'One folder selected',
-      MANY_FILES_SELECTED: '$1 files selected, $2',
+      MANY_FILES_SELECTED: '$1 files selected',
       MANY_DIRECTORIES_SELECTED: '$1 folders selected',
-      MANY_ENTRIES_SELECTED: '$1 items selected, $2',
+      MANY_ENTRIES_SELECTED: '$1 items selected',
+      CALCULATING_SIZE: 'Calculating size',
 
-      CONFIRM_DELETE_ONE: 'Are you sure you want to delete "$1"?',
-      CONFIRM_DELETE_SOME: 'Are you sure you want to delete $1 items?',
+      DELETED_MESSAGE: 'Deleted $1',
+      DELETED_MESSAGE_PLURAL: 'Deleted $1 items',
+      UNDO_DELETE: 'Undo',
 
       UNKNOWN_FILESYSTEM_WARNING: 'This device cannot be opened because its' +
           ' filesystem was not recognized.',
@@ -743,14 +797,16 @@ chrome.fileBrowserHandler = {
   onExecute: new MockEventSource()
 };
 
-/**
- * Mock object for |chrome.runtime|.
- */
-chrome.runtime = {
-  getBackgroundPage: function(callback) {
-    setTimeout(function() {callback(window);}, 0);
-  }
-};
+if (!chrome.runtime) {
+  /**
+   * Mock object for |chrome.runtime|.
+   */
+  chrome.runtime = {
+    getBackgroundPage: function(callback) {
+      setTimeout(function() {callback(window);}, 0);
+    }
+  };
+}
 
 /**
  * Mock object for |chrome.tabs|.
@@ -764,6 +820,18 @@ chrome.tabs = {
   },
   getCurrent: function(callback) {
     callback({id: 0});
+  }
+};
+
+/**
+ * Mock object for |chrome.windows|.
+ */
+chrome.windows = {
+  getCurrent: function(callback) {
+    var maximized = document.body.clientWidth == screen.availableWidth;
+    callback({
+      state: maximized ? 'maximized' : 'normal'
+    });
   }
 };
 
@@ -785,42 +853,30 @@ chrome.mediaPlayerPrivate = {
 
   onPlaylistChanged: new MockEventSource(),
 
-  play: function(urls, position) {
-    this.playlist_ = { items: urls, position: position };
+  onVideoLaunched: new MockEventSource(),
 
-    if (this.popup_) {
-      this.onPlaylistChanged.notify();
-      return;
-    }
+  onTogglePlayState: new MockEventSource(),
 
-    // Using global document is OK for the test harness.
-    this.popup_ = document.createElement('iframe');
-    this.popup_.scrolling = 'no';
-    this.popup_.style.cssText = 'position:absolute; border:none; z-index:10;' +
-        'width:280px; height:93px; right:10px; bottom:80px;' +
-        '-webkit-transition: height 200ms ease';
+  onNextTrack: new MockEventSource(),
 
-    document.body.appendChild(this.popup_);
-
-    this.popup_.onload = function() {
-      var win = this.popup_.contentWindow;
-      win.chrome = chrome;
-      win.AudioPlayer.load();
-    }.bind(this);
-
-    this.popup_.src = 'mediaplayer.html?no_auto_load';
-  },
+  onPrevTrack: new MockEventSource(),
 
   getPlaylist: function(callback) {
-    callback(this.playlist_);
+    callback(this.audioPlaylist_);
   },
 
-  setWindowHeight: function(height) {
-    this.popup_.style.height = height + 'px';
+  getVideoUrl: function(callback) {
+    callback(this.videoUrl_);
   },
 
-  closeWindow: function() {
-    this.popup_.parentNode.removeChild(this.popup_);
-    this.popup_ = null;
+  // Helper methods to call from the console.
+  playAudio: function(urls, position) {
+    this.audioPlaylist_ = { items: urls, position: position };
+    this.onPlaylistChanged.notify();
+  },
+
+  playVideo: function(url) {
+    this.videoUrl_ = url;
+    this.onVideoLaunched.notify();
   }
 };

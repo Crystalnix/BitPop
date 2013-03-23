@@ -10,12 +10,15 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
+class FindBar;
+
+namespace content {
+class WebContents;
+}
+
 namespace gfx {
 class Rect;
 }
-
-class FindBar;
-class TabContents;
 
 class FindBarController : public content::NotificationObserver {
  public:
@@ -49,13 +52,13 @@ class FindBarController : public content::NotificationObserver {
   void EndFindSession(SelectionAction selection_action,
                       ResultAction results_action);
 
-  // Accessor for the attached TabContents.
-  TabContents* tab_contents() const { return tab_contents_; }
+  // Accessor for the attached WebContents.
+  content::WebContents* web_contents() const { return web_contents_; }
 
-  // Changes the TabContents that this FindBar is attached to. This
+  // Changes the WebContents that this FindBar is attached to. This
   // occurs when the user switches tabs in the Browser window. |contents| can be
   // NULL.
-  void ChangeTabContents(TabContents* contents);
+  void ChangeWebContents(content::WebContents* contents);
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -73,7 +76,7 @@ class FindBarController : public content::NotificationObserver {
 
  private:
   // Sents an update to the find bar with the tab contents' current result. The
-  // tab_contents_ must be non-NULL before this call. Theis handles
+  // web_contents_ must be non-NULL before this call. Theis handles
   // de-flickering in addition to just calling the update function.
   void UpdateFindBarForCurrentResult();
 
@@ -88,8 +91,8 @@ class FindBarController : public content::NotificationObserver {
 
   scoped_ptr<FindBar> find_bar_;
 
-  // The TabContents we are currently associated with.  Can be NULL.
-  TabContents* tab_contents_;
+  // The WebContents we are currently associated with.  Can be NULL.
+  content::WebContents* web_contents_;
 
   // The last match count we reported to the user. This is used by
   // UpdateFindBarForCurrentResult to avoid flickering.

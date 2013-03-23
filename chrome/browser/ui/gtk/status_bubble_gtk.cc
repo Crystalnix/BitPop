@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/rounded_window.h"
-#include "chrome/browser/ui/gtk/slide_animator_gtk.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_source.h"
 #include "ui/base/animation/slide_animation.h"
@@ -43,10 +42,11 @@ const int kMousePadding = 20;
 StatusBubbleGtk::StatusBubbleGtk(Profile* profile)
     : theme_service_(GtkThemeService::GetFrom(profile)),
       padding_(NULL),
+      start_width_(0),
+      desired_width_(0),
       flip_horizontally_(false),
       y_offset_(0),
       download_shelf_is_visible_(false),
-      last_mouse_location_(0, 0),
       last_mouse_left_content_(false),
       ignore_next_left_content_(false) {
   InitWidgets();

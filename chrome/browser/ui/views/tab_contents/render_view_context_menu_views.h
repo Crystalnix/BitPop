@@ -9,6 +9,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/string16.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
+#include "content/public/common/context_menu_source_type.h"
 
 namespace gfx {
 class Point;
@@ -27,10 +28,12 @@ class RenderViewContextMenuViews : public RenderViewContextMenu {
 
   // Factory function to create an instance.
   static RenderViewContextMenuViews* Create(
-      content::WebContents* tab_contents,
+      content::WebContents* web_contents,
       const content::ContextMenuParams& params);
 
-  void RunMenuAt(views::Widget* parent, const gfx::Point& point);
+  void RunMenuAt(views::Widget* parent,
+                 const gfx::Point& point,
+                 content::ContextMenuSourceType type);
 
   void UpdateMenuItemStates();
 
@@ -41,7 +44,7 @@ class RenderViewContextMenuViews : public RenderViewContextMenu {
                               const string16& title) OVERRIDE;
 
  protected:
-  RenderViewContextMenuViews(content::WebContents* tab_contents,
+  RenderViewContextMenuViews(content::WebContents* web_contents,
                              const content::ContextMenuParams& params);
   // RenderViewContextMenu implementation.
   virtual void PlatformInit() OVERRIDE;

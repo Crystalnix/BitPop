@@ -117,21 +117,6 @@ class OmniboxTest(pyauto.PyUITest):
     self.OmniboxAcceptInput()
     self.assertEqual(title1, self.GetActiveTabTitle())
 
-  def testGoogleSearch(self):
-    """Verify Google search item in omnibox results."""
-    search_text = 'hello world'
-    verify_str = 'Google Search'
-    url_re = 'http://www.google.com/search\?.*q=hello\+world.*'
-    matches_description = test_utils.GetOmniboxMatchesFor(
-        self, search_text, attr_dict={'description': verify_str})
-    self.assertTrue(matches_description)
-    # There should be a least one entry with the description Google. Suggest
-    # results may end up having 'Google Search' in them, so use >=.
-    self.assertTrue(len(matches_description) >= 1)
-    item = matches_description[0]
-    self.assertTrue(re.search(url_re, item['destination_url']))
-    self.assertEqual('search-what-you-typed', item['type'])
-
   def testInlineAutoComplete(self):
     """Verify inline autocomplete for a pre-visited URL."""
     self.NavigateToURL('http://www.google.com')
@@ -350,181 +335,34 @@ class OmniboxTest(pyauto.PyUITest):
     matches = test_utils.GetOmniboxMatchesFor(self, search_string)
     self.assertTrue(verify_string in matches[-1]['contents'])
 
-  def _InstallAndVerifyApp(self, app_name):
-    """Installs a sample packaged app and verifies the install is successful.
 
-    Args:
-      app_name: The name of the app to be installed.
+class OmniboxLiveTest(pyauto.PyUITest):
+  """Test cases for the omnibox that hit live servers (such as Google)."""
 
-    Returns:
-      The string ID of the installed app.
-    """
-    app_crx_file = os.path.abspath(os.path.join(self.DataDir(),
-                                   'pyauto_private', 'apps', app_name))
-    return self.InstallExtension(app_crx_file)
+  def ExtraChromeFlags(self):
+    """Override default list of extra flags used in pyauto tests."""
+    # Force the suggest field trial group. This doesn't guarantee that there
+    # will be no experimental behaviour, but there's no other way to disable
+    # all suggest field trials at the moment. TODO(mpearson): Consider allowing
+    # the suggest_url to be overridden using a flag (so that we can omit the
+    # "sugexp=chrome,mod=<n>" CGI param), or provide some other way to turn off
+    # all suggest field trials.
+    return ['--force-fieldtrials=OmniboxSearchSuggest/10/']
 
-  def _VerifyOminiboxMatches(self, search_str, app_url, is_incognito):
-    """Verify app matches in omnibox.
-
-    Args:
-      search_str: Search keyword to find app matches.
-      app_url: Chrome app launch URL.
-      is_incognito: A boolean indicating if omnibox matches are from an
-                    incognito window.
-    """
-    def OminiboxMatchFound():
-      if is_incognito:
-        matches = test_utils.GetOmniboxMatchesFor(self, search_str, windex=2)
-      else:
-        matches = test_utils.GetOmniboxMatchesFor(self, search_str)
-      for x in matches:
-        if x['destination_url'] == app_url:
-          return True
-      return False
-    self.assertTrue(self.WaitUntil(OminiboxMatchFound),
-                    msg='Timed out waiting to verify omnibox matches.')
-
-  def _VerifyAppSearchCurrentWindow(self, app_name, search_str, app_url):
-    """Verify app can be searched and launched in omnibox of current window.
-
-    Args:
-      app_name: The name of an installed app.
-      search_str: The search string to find the app from auto suggest.
-      app_url: Chrome app launch URL.
-    """
-    # Assume current window is at index 0.
-    self._InstallAndVerifyApp(app_name)
-    # Get app match in omnibox of the current window.
-    self._VerifyOminiboxMatches(search_str, app_url, False)
-    # Launch app from omnibox and verify it succeeds.
-    self.OmniboxAcceptInput() # Blocks until the page loads.
-    self.assertTrue(re.search(app_url, self.GetActiveTabURL().spec()))
-
-  def _VerifyAppSearchIncognitoWindow(self, app_name, search_str, app_url):
-    """Verify app can be searched and launched in omnibox of incognito window.
-
-    Args:
-      app_name: The name of installed app.
-      search_str: The search string to find the app from auto suggest.
-      app_url: Chrome app launch URL.
-    """
-    # Assume current window is at index 0.
-    self._InstallAndVerifyApp(app_name)
-
-    # Get app matches in omnibox of the 3rd (incognito) window, assume
-    # pre-exist 1st window. We have to launch 2 incognito windows here,
-    # since there is an issue (crbug.com/99925) with app search in pyauto
-    # launched 1st incognito window on Mac.
-    # TODO(vivianz@): remove additional incognito window after issue 99925 is
-    # fixed.
-    self.RunCommand(pyauto.IDC_NEW_INCOGNITO_WINDOW)
-    self.WaitUntilOmniboxReadyHack(windex=1)
-    self.RunCommand(pyauto.IDC_NEW_INCOGNITO_WINDOW)
-    self.WaitUntilOmniboxReadyHack(windex=2)
-    # Get app match in omnibox of 3rd (incognito) window.
-    self._VerifyOminiboxMatches(search_str, app_url, True)
-    # Launch app from omnibox and verify it succeeds.
-    self.OmniboxAcceptInput(windex=2) # Blocks until the page loads.
-    self.assertTrue(re.search(app_url, self.GetActiveTabURL(2).spec()))
-
-  def _VerifyAppSearchNewTab(self, app_name, search_str, app_url):
-    """Verify app can be searched in new tab.
-
-    Args:
-      app_name: The name of installed app.
-      search_str: The search string to find the app from auto suggest.
-      app_url: Chrome app launch URL.
-    """
-    self._InstallAndVerifyApp(app_name)
-    # Get app matches in omnibox of the 2nd tab.
-    self.AppendTab(pyauto.GURL())
-    self._VerifyOminiboxMatches(search_str, app_url, False)
-
-  def testBasicAppSearch(self):
-    """Verify that we can search for installed apps."""
-    app_name = 'countdown.crx'
-    search_str = 'countdown'
-    app_url = 'chrome-extension:' \
-              '//aeabikdlfbfeihglecobdkdflahfgcpd/launchLocalPath.html'
-    self._VerifyAppSearchCurrentWindow(app_name, search_str, app_url)
-
-  def testAppNameWithSpaceSearch(self):
-    """Verify that we can search for apps with space in app name."""
-    app_name = 'cargo_bridge.crx'
-    search_str = 'Cargo Bridge'
-    app_url = 'http://webstore.limexgames.com/cargo_bridge'
-    self._VerifyAppSearchCurrentWindow(app_name, search_str, app_url)
-
-  def testAppNameWithNumberSearch(self):
-    """Verify that we can search for apps with number in app name."""
-    app_name = '3d_stunt_pilot.crx'
-    search_str = '3D Stunt Pilot'
-    app_url = 'chrome-extension://cjhglkpjpcechghgbkdfoofgbphpgjde/index.html'
-    self._VerifyAppSearchCurrentWindow(app_name, search_str, app_url)
-
-  def testAppComboNameWithSpecialCharSearch(self):
-    """Verify launch special character named app in regular window."""
-    app_name = 'atari_lunar_lander.crx'
-    search_str = 'Atari - Lunar Lander'
-    app_url = 'http://chrome.atari.com/lunarlander/'
-    self._VerifyAppSearchCurrentWindow(app_name, search_str, app_url)
-
-  def testAppSearchWithVeryLongAppName(self):
-    """Verify that we can search app with very long app name."""
-    app_name = '20_thing_I_learn_from_browser_and_web.crx'
-    search_str = '20 Things I Learned About Browsers & the Web'
-    app_url = 'http://www.20thingsilearned.com/'
-    self._VerifyAppSearchCurrentWindow(app_name, search_str, app_url)
-
-  def testIncognitoAppNameWithSpaceSearch(self):
-    """Verify search for apps with space in app name in incognito window."""
-    app_name = 'cargo_bridge.crx'
-    search_str = 'Cargo Bridge'
-    app_url = 'http://webstore.limexgames.com/cargo_bridge'
-    self._VerifyAppSearchIncognitoWindow(app_name, search_str, app_url)
-
-  def testIncognitoAppComboNameWithSpecialCharSearch(self):
-    """Verify launch special character named app in incognito window."""
-    app_name = 'atari_lunar_lander.crx'
-    search_str = 'Atari - Lunar Lander'
-    app_url = 'http://chrome.atari.com/lunarlander/'
-    self._VerifyAppSearchIncognitoWindow(app_name, search_str, app_url)
-
-  def testIncognitoAppSearchWithVeryLongAppName(self):
-    """Verify that we can launch app with very long app name."""
-    app_name = '20_thing_I_learn_from_browser_and_web.crx'
-    search_str = '20 Things I Learned About Browsers & the Web'
-    app_url = 'http://www.20thingsilearned.com/'
-    self._VerifyAppSearchIncognitoWindow(app_name, search_str, app_url)
-
-  def testRepeatedlyAppLaunchInTabs(self):
-    """Verify that we can repeatedly launch app in tabs."""
-    app_name = '3d_stunt_pilot.crx'
-    search_str = '3D Stunt Pilot'
-    app_url = 'chrome-extension://cjhglkpjpcechghgbkdfoofgbphpgjde/index.html'
-    self._VerifyAppSearchNewTab(app_name, search_str, app_url)
-    # Launch app twice and verify it succeeds.
-    self.OmniboxAcceptInput()
-    self.assertTrue(re.search(app_url, self.GetActiveTabURL().spec()))
-    self.AppendTab(pyauto.GURL())
-    self.SetOmniboxText(search_str)
-    self.OmniboxAcceptInput()
-    self.assertTrue(re.search(app_url, self.GetActiveTabURL().spec()))
-
-  def testEndPartAppNameSearchInNewTab(self):
-    """Verify that we can search app with partial app name (end part)."""
-    app_name = 'countdown.crx'
-    search_str = 'own'
-    app_url = 'chrome-extension:' \
-              '//aeabikdlfbfeihglecobdkdflahfgcpd/launchLocalPath.html'
-    self._VerifyAppSearchNewTab(app_name, search_str, app_url)
-
-  def testBeginningPartAppNameSearchInNewTab(self):
-    """Verify that we can search app with partial app name (beginning part)."""
-    app_name = 'cargo_bridge.crx'
-    search_str = 'Car'
-    app_url = 'http://webstore.limexgames.com/cargo_bridge'
-    self._VerifyAppSearchNewTab(app_name, search_str, app_url)
+  def testGoogleSearch(self):
+    """Verify Google search item in omnibox results."""
+    search_text = 'hello world'
+    verify_str = 'Google Search'
+    url_re = 'http://www.google.com/search\?.*q=hello\+world.*'
+    matches_description = test_utils.GetOmniboxMatchesFor(
+        self, search_text, attr_dict={'description': verify_str})
+    self.assertTrue(matches_description)
+    # There should be a least one entry with the description Google. Suggest
+    # results may end up having 'Google Search' in them, so use >=.
+    self.assertTrue(len(matches_description) >= 1)
+    item = matches_description[0]
+    self.assertTrue(re.search(url_re, item['destination_url']))
+    self.assertEqual('search-what-you-typed', item['type'])
 
 
 if __name__ == '__main__':

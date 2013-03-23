@@ -12,23 +12,31 @@
 #include "base/string_util.h"
 #include "base/test/test_timeouts.h"
 #include "build/build_config.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/test/test_renderer_host.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/test/gpu/test_switches.h"
-#include "media/audio/audio_manager.h"
 #include "net/base/net_util.h"
+#include "net/base/test_data_directory.h"
 #include "net/test/test_server.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -46,68 +54,61 @@ const char library_name[] = "ppapi_tests.plugin";
 const char library_name[] = "libppapi_tests.so";
 #endif
 
-// The large timeout was causing the cycle time for the whole test suite
-// to be too long when a tiny bug caused all tests to timeout.
-// http://crbug.com/108264
-static int kTimeoutMs = 90000;
-//static int kTimeoutMs = TestTimeouts::large_test_timeout_ms());
-
-bool IsAudioOutputAvailable() {
-  scoped_ptr<media::AudioManager> audio_manager(media::AudioManager::Create());
-  return audio_manager->HasAudioOutputDevices();
-}
-
 }  // namespace
 
-PPAPITestBase::TestFinishObserver::TestFinishObserver(
-    RenderViewHost* render_view_host,
-    base::TimeDelta timeout)
-    : finished_(false),
-      waiting_(false),
-      timeout_(timeout) {
-  registrar_.Add(this, content::NOTIFICATION_DOM_OPERATION_RESPONSE,
-                 content::Source<RenderViewHost>(render_view_host));
-  timer_.Start(FROM_HERE, timeout, this, &TestFinishObserver::OnTimeout);
+PPAPITestMessageHandler::PPAPITestMessageHandler() {
 }
 
-bool PPAPITestBase::TestFinishObserver::WaitForFinish() {
-  if (!finished_) {
-    waiting_ = true;
-    content::RunMessageLoop();
-    waiting_ = false;
-  }
-  return finished_;
+TestMessageHandler::MessageResponse PPAPITestMessageHandler::HandleMessage(
+    const std::string& json) {
+ std::string trimmed;
+ TrimString(json, "\"", &trimmed);
+ if (trimmed == "...") {
+   return CONTINUE;
+ } else {
+   message_ = trimmed;
+   return DONE;
+ }
 }
 
-void PPAPITestBase::TestFinishObserver::Observe(
+void PPAPITestMessageHandler::Reset() {
+  TestMessageHandler::Reset();
+  message_.clear();
+}
+
+PPAPITestBase::InfoBarObserver::InfoBarObserver() {
+  registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
+                 content::NotificationService::AllSources());
+}
+
+PPAPITestBase::InfoBarObserver::~InfoBarObserver() {
+  EXPECT_EQ(0u, expected_infobars_.size()) << "Missing an expected infobar";
+}
+
+void PPAPITestBase::InfoBarObserver::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(type == content::NOTIFICATION_DOM_OPERATION_RESPONSE);
-  content::Details<DomOperationNotificationDetails> dom_op_details(details);
-  // We might receive responses for other script execution, but we only
-  // care about the test finished message.
-  std::string response;
-  TrimString(dom_op_details->json, "\"", &response);
-  if (response == "...") {
-    timer_.Stop();
-    timer_.Start(FROM_HERE, timeout_, this, &TestFinishObserver::OnTimeout);
-  } else {
-    result_ = response;
-    finished_ = true;
-    if (waiting_)
-      MessageLoopForUI::current()->Quit();
-  }
+  ASSERT_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED, type);
+  InfoBarDelegate* info_bar_delegate =
+      content::Details<InfoBarAddedDetails>(details).ptr();
+  ConfirmInfoBarDelegate* confirm_info_bar_delegate =
+      info_bar_delegate->AsConfirmInfoBarDelegate();
+  ASSERT_TRUE(confirm_info_bar_delegate);
+
+  ASSERT_FALSE(expected_infobars_.empty()) << "Unexpected infobar";
+  if (expected_infobars_.front())
+    confirm_info_bar_delegate->Accept();
+  else
+    confirm_info_bar_delegate->Cancel();
+  expected_infobars_.pop_front();
+
+  // TODO(bauerb): We should close the infobar.
 }
 
-void PPAPITestBase::TestFinishObserver::Reset() {
-  finished_ = false;
-  waiting_ = false;
-  result_.clear();
-}
-
-void PPAPITestBase::TestFinishObserver::OnTimeout() {
-  MessageLoopForUI::current()->Quit();
+void PPAPITestBase::InfoBarObserver::ExpectInfoBarAndAccept(
+    bool should_accept) {
+  expected_infobars_.push_back(should_accept);
 }
 
 PPAPITestBase::PPAPITestBase() {
@@ -132,6 +133,12 @@ void PPAPITestBase::SetUpCommandLine(CommandLine* command_line) {
 
   // Smooth scrolling confuses the scrollbar test.
   command_line->AppendSwitch(switches::kDisableSmoothScrolling);
+}
+
+void PPAPITestBase::SetUpOnMainThread() {
+  // Always allow access to the PPAPI broker.
+  browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
+      CONTENT_SETTINGS_TYPE_PPAPI_BROKER, CONTENT_SETTING_ALLOW);
 }
 
 GURL PPAPITestBase::GetTestFileUrl(const std::string& test_case) {
@@ -166,14 +173,15 @@ void PPAPITestBase::RunTestAndReload(const std::string& test_case) {
 
 void PPAPITestBase::RunTestViaHTTP(const std::string& test_case) {
   FilePath document_root;
-  ASSERT_TRUE(GetHTTPDocumentRoot(&document_root));
+  ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&document_root));
   RunHTTPTestServer(document_root, test_case, "");
 }
 
 void PPAPITestBase::RunTestWithSSLServer(const std::string& test_case) {
   FilePath document_root;
-  ASSERT_TRUE(GetHTTPDocumentRoot(&document_root));
-  net::TestServer test_server(net::BaseTestServer::HTTPSOptions(),
+  ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&document_root));
+  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
+                              net::BaseTestServer::SSLOptions(),
                               document_root);
   ASSERT_TRUE(test_server.Start());
   uint16_t port = test_server.host_port_pair().port();
@@ -182,36 +190,25 @@ void PPAPITestBase::RunTestWithSSLServer(const std::string& test_case) {
 }
 
 void PPAPITestBase::RunTestWithWebSocketServer(const std::string& test_case) {
-  FilePath websocket_root_dir;
-  ASSERT_TRUE(
-      PathService::Get(content::DIR_LAYOUT_TESTS, &websocket_root_dir));
-  content::TestWebSocketServer server;
-  int port = server.UseRandomPort();
-  ASSERT_TRUE(server.Start(websocket_root_dir));
+  net::TestServer server(net::TestServer::TYPE_WS,
+                         net::TestServer::kLocalhost,
+                         net::GetWebSocketTestDataDirectory());
+  ASSERT_TRUE(server.Start());
+  uint16_t port = server.host_port_pair().port();
   FilePath http_document_root;
-  ASSERT_TRUE(GetHTTPDocumentRoot(&http_document_root));
+  ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&http_document_root));
   RunHTTPTestServer(http_document_root, test_case,
                     StringPrintf("websocket_port=%d", port));
 }
 
 void PPAPITestBase::RunTestIfAudioOutputAvailable(
     const std::string& test_case) {
-  if (IsAudioOutputAvailable()) {
-    RunTest(test_case);
-  } else {
-    LOG(WARNING) << "PPAPITest: " << test_case <<
-        " was not executed because there are no audio devices available.";
-  }
+  RunTest(test_case);
 }
 
 void PPAPITestBase::RunTestViaHTTPIfAudioOutputAvailable(
     const std::string& test_case) {
-  if (IsAudioOutputAvailable()) {
-    RunTestViaHTTP(test_case);
-  } else {
-    LOG(WARNING) << "PPAPITest: " << test_case <<
-        " was not executed because there are no audio devices available.";
-  }
+  RunTestViaHTTP(test_case);
 }
 
 std::string PPAPITestBase::StripPrefixes(const std::string& test_name) {
@@ -229,15 +226,15 @@ void PPAPITestBase::RunTestURL(const GURL& test_url) {
   // value of "..." means it's still working and we should continue to wait,
   // any other value indicates completion (in this case it will start with
   // "PASS" or "FAIL"). This keeps us from timing out on waits for long tests.
-  TestFinishObserver observer(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-      base::TimeDelta::FromMilliseconds(kTimeoutMs));
+  PPAPITestMessageHandler handler;
+  JavascriptTestObserver observer(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
+      &handler);
 
   ui_test_utils::NavigateToURL(browser(), test_url);
 
-  ASSERT_TRUE(observer.WaitForFinish()) << "Test timed out.";
-
-  EXPECT_STREQ("PASS", observer.result().c_str());
+  ASSERT_TRUE(observer.Run()) << handler.error_message();
+  EXPECT_STREQ("PASS", handler.message().c_str());
 }
 
 void PPAPITestBase::RunHTTPTestServer(
@@ -254,45 +251,6 @@ void PPAPITestBase::RunHTTPTestServer(
 
   GURL url = test_server.GetURL(query);
   RunTestURL(url);
-}
-
-bool PPAPITestBase::GetHTTPDocumentRoot(FilePath* document_root) {
-  // For HTTP tests, we use the output DIR to grab the generated files such
-  // as the NEXEs.
-  FilePath exe_dir = CommandLine::ForCurrentProcess()->GetProgram().DirName();
-  FilePath src_dir;
-  if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_dir))
-    return false;
-
-  // TestServer expects a path relative to source. So we must first
-  // generate absolute paths to SRC and EXE and from there generate
-  // a relative path.
-  if (!exe_dir.IsAbsolute()) file_util::AbsolutePath(&exe_dir);
-  if (!src_dir.IsAbsolute()) file_util::AbsolutePath(&src_dir);
-  if (!exe_dir.IsAbsolute())
-    return false;
-  if (!src_dir.IsAbsolute())
-    return false;
-
-  size_t match, exe_size, src_size;
-  std::vector<FilePath::StringType> src_parts, exe_parts;
-
-  // Determine point at which src and exe diverge, and create a relative path.
-  exe_dir.GetComponents(&exe_parts);
-  src_dir.GetComponents(&src_parts);
-  exe_size = exe_parts.size();
-  src_size = src_parts.size();
-  for (match = 0; match < exe_size && match < src_size; ++match) {
-    if (exe_parts[match] != src_parts[match])
-      break;
-  }
-  for (size_t tmp_itr = match; tmp_itr < src_size; ++tmp_itr) {
-    *document_root = document_root->Append(FILE_PATH_LITERAL(".."));
-  }
-  for (; match < exe_size; ++match) {
-    *document_root = document_root->Append(exe_parts[match]);
-  }
-  return true;
 }
 
 PPAPITest::PPAPITest() {
@@ -377,3 +335,7 @@ std::string PPAPINaClTestDisallowedSockets::BuildQuery(
                       test_case.c_str());
 }
 
+void PPAPIBrokerInfoBarTest::SetUpOnMainThread() {
+  // The default content setting for the PPAPI broker is ASK. We purposefully
+  // don't call PPAPITestBase::SetUpOnMainThread() to keep it that way.
+}

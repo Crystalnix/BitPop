@@ -8,8 +8,8 @@
 
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -84,7 +84,7 @@ TEST(ShellIntegrationTest, GetDesktopShortcutTemplate) {
   content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
   {
-    ScopedTempDir temp_dir;
+    base::ScopedTempDir temp_dir;
     ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
     MockEnvironment env;
@@ -99,7 +99,7 @@ TEST(ShellIntegrationTest, GetDesktopShortcutTemplate) {
   }
 
   {
-    ScopedTempDir temp_dir;
+    base::ScopedTempDir temp_dir;
     ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
     MockEnvironment env;
@@ -117,7 +117,7 @@ TEST(ShellIntegrationTest, GetDesktopShortcutTemplate) {
   }
 
   {
-    ScopedTempDir temp_dir;
+    base::ScopedTempDir temp_dir;
     ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
     MockEnvironment env;
@@ -358,7 +358,6 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
             web_app::GenerateApplicationNameFromURL(GURL(test_cases[i].url)),
             GURL(test_cases[i].url),
             "",
-            false,
             FilePath(),
             ASCIIToUTF16(test_cases[i].title),
             test_cases[i].icon_name,

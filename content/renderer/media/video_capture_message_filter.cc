@@ -7,6 +7,8 @@
 #include "content/common/media/video_capture_messages.h"
 #include "content/common/view_messages.h"
 
+namespace content {
+
 VideoCaptureMessageFilter::VideoCaptureMessageFilter()
     : last_device_id_(0),
       channel_(NULL) {
@@ -134,7 +136,7 @@ void VideoCaptureMessageFilter::OnBufferReceived(
 
 void VideoCaptureMessageFilter::OnDeviceStateChanged(
     int device_id,
-    video_capture::State state) {
+    VideoCaptureState state) {
   Delegate* delegate = NULL;
   if (delegates_.find(device_id) != delegates_.end())
     delegate = delegates_.find(device_id)->second;
@@ -159,3 +161,5 @@ void VideoCaptureMessageFilter::OnDeviceInfoReceived(
   }
   delegate->OnDeviceInfoReceived(params);
 }
+
+}  // namespace content

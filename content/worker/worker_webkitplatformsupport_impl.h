@@ -9,15 +9,15 @@
 #include "content/common/webkitplatformsupport_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebMimeRegistry.h"
 
-class WebFileSystemImpl;
-
 namespace WebKit {
 class WebFileUtilities;
 }
 
-class WorkerWebKitPlatformSupportImpl
-    : public content::WebKitPlatformSupportImpl,
-      public WebKit::WebMimeRegistry {
+namespace content {
+class WebFileSystemImpl;
+
+class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
+                                        public WebKit::WebMimeRegistry {
  public:
   WorkerWebKitPlatformSupportImpl();
   virtual ~WorkerWebKitPlatformSupportImpl();
@@ -47,7 +47,6 @@ class WorkerWebKitPlatformSupportImpl
       const WebKit::WebString& key, const WebKit::WebString& old_value,
       const WebKit::WebString& new_value, const WebKit::WebString& origin,
       const WebKit::WebURL& url, bool is_local_storage);
-  virtual WebKit::WebSharedWorkerRepository* sharedWorkerRepository();
 
   virtual WebKit::WebKitPlatformSupport::FileHandle databaseOpenFile(
       const WebKit::WebString& vfs_file_name, int desired_flags);
@@ -97,5 +96,7 @@ class WorkerWebKitPlatformSupportImpl
   scoped_ptr<WebFileSystemImpl> web_file_system_;
   scoped_ptr<WebKit::WebIDBFactory> web_idb_factory_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_WORKER_WORKER_WEBKITPLATFORMSUPPORT_IMPL_H_

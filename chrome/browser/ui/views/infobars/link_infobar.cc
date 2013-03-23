@@ -5,15 +5,16 @@
 #include "chrome/browser/ui/views/infobars/link_infobar.h"
 
 #include "base/logging.h"
+#include "chrome/browser/api/infobars/link_infobar_delegate.h"
 #include "chrome/browser/event_disposition.h"
-#include "chrome/browser/tab_contents/link_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 
 // LinkInfoBarDelegate --------------------------------------------------------
 
-InfoBar* LinkInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
-  return new LinkInfoBar(owner, this);
+InfoBar* LinkInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
+  return new LinkInfoBar(static_cast<InfoBarTabHelper*>(owner), this);
 }
 
 // LinkInfoBar ----------------------------------------------------------------

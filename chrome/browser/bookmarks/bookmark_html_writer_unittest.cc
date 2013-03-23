@@ -5,10 +5,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/i18n/time_formatting.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "base/string_util.h"
 #include "base/time.h"
@@ -16,6 +16,7 @@
 #include "chrome/browser/bookmarks/bookmark_html_writer.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/importer/firefox2_importer.h"
 #include "chrome/test/base/testing_profile.h"
@@ -115,7 +116,7 @@ class BookmarkHTMLWriterTest : public testing::Test {
               BookmarkEntryToString(entry));
   }
 
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   FilePath path_;
 };
 
@@ -194,10 +195,11 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
       model->bookmark_bar_node(), 0, f1_title);
   model->AddURLWithCreationTime(f1, 0, url1_title, url1, t1);
   HistoryServiceFactory::GetForProfile(&profile, Profile::EXPLICIT_ACCESS)->
-      AddPage(url1, history::SOURCE_BROWSED);
-  profile.GetFaviconService(Profile::EXPLICIT_ACCESS)->SetFavicon(url1,
-      url1_favicon, icon_data, history::FAVICON);
-  message_loop.RunAllPending();
+      AddPage(url1, base::Time::Now(), history::SOURCE_BROWSED);
+  FaviconServiceFactory::GetForProfile(
+      &profile, Profile::EXPLICIT_ACCESS)->SetFavicons(
+          url1, url1_favicon, history::FAVICON, gfx::Image(bitmap));
+  message_loop.RunUntilIdle();
   const BookmarkNode* f2 = model->AddFolder(f1, 1, f2_title);
   model->AddURLWithCreationTime(f2, 0, url2_title, url2, t2);
   model->AddURLWithCreationTime(model->bookmark_bar_node(),
@@ -218,10 +220,10 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   message_loop.Run();
 
   // Clear favicon so that it would be read from file.
-  std::vector<unsigned char> empty_data;
-  profile.GetFaviconService(Profile::EXPLICIT_ACCESS)->SetFavicon(url1,
-      url1_favicon, empty_data, history::FAVICON);
-  message_loop.RunAllPending();
+  FaviconServiceFactory::GetForProfile(
+      &profile, Profile::EXPLICIT_ACCESS)->SetFavicons(
+          url1, url1_favicon, history::FAVICON, gfx::Image());
+  message_loop.RunUntilIdle();
 
   // Read the bookmarks back in.
   std::vector<ProfileWriter::BookmarkEntry> parsed_bookmarks;

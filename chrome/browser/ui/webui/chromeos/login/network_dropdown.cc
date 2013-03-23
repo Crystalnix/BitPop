@@ -15,6 +15,7 @@
 #include "content/public/browser/web_ui.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace {
@@ -84,11 +85,11 @@ base::ListValue* NetworkMenuWebUI::ConvertMenuModel(ui::MenuModel* model) {
     base::DictionaryValue* item = new base::DictionaryValue();
     item->SetInteger("id", id);
     item->SetString("label", model->GetLabelAt(i));
-    gfx::ImageSkia icon;
+    gfx::Image icon;
     if (model->GetIconAt(i, &icon)) {
-      SkBitmap icon_bitmap = icon.GetRepresentation(
-          ui::GetScaleFactorFromScale(web_ui_->GetDeviceScale())).sk_bitmap();
-      item->SetString("icon", web_ui_util::GetImageDataUrl(icon_bitmap));
+      SkBitmap icon_bitmap = icon.ToImageSkia()->GetRepresentation(
+          web_ui_->GetDeviceScaleFactor()).sk_bitmap();
+      item->SetString("icon", web_ui_util::GetBitmapDataUrl(icon_bitmap));
     }
     if (id >= 0) {
       item->SetBoolean("enabled", model->IsEnabledAt(i));
@@ -126,7 +127,7 @@ NetworkDropdown::~NetworkDropdown() {
 }
 
 void NetworkDropdown::SetLastNetworkType(ConnectionType last_network_type) {
-  network_icon_->set_last_network_type(last_network_type);
+  // No longer implemented. TODO(stevenjb): Purge from JS.
 }
 
 void NetworkDropdown::OnItemChosen(int id) {
@@ -162,10 +163,10 @@ void NetworkDropdown::SetNetworkIconAndText() {
   string16 text;
   const gfx::ImageSkia icon_image = network_icon_->GetIconAndText(&text);
   SkBitmap icon_bitmap = icon_image.GetRepresentation(
-      ui::GetScaleFactorFromScale(web_ui_->GetDeviceScale())).sk_bitmap();
+      web_ui_->GetDeviceScaleFactor()).sk_bitmap();
   std::string icon_str =
-      icon_image.empty() ?
-          std::string() : web_ui_util::GetImageDataUrl(icon_bitmap);
+      icon_image.isNull() ?
+          std::string() : web_ui_util::GetBitmapDataUrl(icon_bitmap);
   base::StringValue title(text);
   base::StringValue icon(icon_str);
   web_ui_->CallJavascriptFunction("cr.ui.DropDown.updateNetworkTitle",

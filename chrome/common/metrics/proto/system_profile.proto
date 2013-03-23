@@ -11,7 +11,7 @@ option optimize_for = LITE_RUNTIME;
 
 package metrics;
 
-// Next tag: 12
+// Next tag: 14
 message SystemProfileProto {
   // The time when the client was compiled/linked, in seconds since the epoch.
   optional int64 build_timestamp = 1;
@@ -50,8 +50,10 @@ message SystemProfileProto {
   }
   optional Channel channel = 10;
 
-  // The date the user installed the browser, in seconds since the epoch.
-  optional int64 install_date = 3;
+  // The date the user enabled UMA, in seconds since the epoch.
+  // If the user has toggled the UMA enabled state multiple times, this will
+  // be the most recent date on which UMA was enabled.
+  optional int64 uma_enabled_date = 3;
 
   // The user's selected application locale, i.e. the user interface language.
   // The locale includes a language code and, possibly, also a country code,
@@ -65,6 +67,9 @@ message SystemProfileProto {
 
     // The version of the OS.  The meaning of this field is OS-dependent.
     optional string version = 2;
+
+    // The fingerprint of the build.  This field is used only on Android.
+    optional string fingerprint = 3;
   }
   optional OS os = 5;
 
@@ -98,6 +103,9 @@ message SystemProfileProto {
     optional int32 primary_screen_width = 6;
     optional int32 primary_screen_height = 7;
 
+    // The device scale factor of the primary screen.
+    optional float primary_screen_scale_factor = 12;
+
     // Information on the GPU
     message Graphics {
       // The GPU manufacturer's vendor id.
@@ -121,10 +129,36 @@ message SystemProfileProto {
         optional float overall_score = 3;
       }
       optional PerformanceStatistics performance_statistics = 5;
+      
+      // The GL_VENDOR string. An example of a gl_vendor string is 
+      // "Imagination Technologies". "" if we are not using OpenGL.
+      optional string gl_vendor = 6;
+      
+      // The GL_RENDERER string. An example of a gl_renderer string is 
+      // "PowerVR SGX 540". "" if we are not using OpenGL.
+      optional string gl_renderer = 7;
     }
     optional Graphics gpu = 8;
   }
   optional Hardware hardware = 6;
+
+  // Information about the network connection.
+  message Network {
+    // Set to true if there was a network change during the lifetime of the log.
+    optional bool connection_type_is_ambiguous = 1;
+
+    // See net::NetworkChangeNotifier::ConnectionType.
+    enum ConnectionType {
+      CONNECTION_UNKNOWN = 0;
+      CONNECTION_ETHERNET = 1;
+      CONNECTION_WIFI = 2;
+      CONNECTION_2G = 3;
+      CONNECTION_3G = 4;
+      CONNECTION_4G = 5;
+    }
+    optional ConnectionType connection_type = 2;
+  }
+  optional Network network = 13;
 
   // Information on the Google Update install that is managing this client.
   message GoogleUpdate {

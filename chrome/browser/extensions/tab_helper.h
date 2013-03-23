@@ -8,19 +8,17 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "chrome/browser/extensions/active_tab_permission_manager.h"
+#include "chrome/browser/extensions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/app_notify_channel_setup.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
-#include "chrome/browser/extensions/script_executor.h"
-#include "chrome/browser/extensions/webstore_inline_installer.h"
 #include "chrome/common/web_apps.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
-class TabContents;
 struct WebApplicationInfo;
 
 namespace content {
@@ -31,16 +29,17 @@ namespace extensions {
 class Extension;
 class LocationBarController;
 class ScriptBadgeController;
+class ScriptBubbleController;
 class ScriptExecutor;
 
 // Per-tab extension helper. Also handles non-extension apps.
 class TabHelper : public content::WebContentsObserver,
                   public ExtensionFunctionDispatcher::Delegate,
                   public ImageLoadingTracker::Observer,
-                  public WebstoreInlineInstaller::Delegate,
                   public AppNotifyChannelSetup::Delegate,
                   public base::SupportsWeakPtr<TabHelper>,
-                  public content::NotificationObserver {
+                  public content::NotificationObserver,
+                  public content::WebContentsUserData<TabHelper> {
  public:
   // Different types of action when web app info is available.
   // OnDidGetApplicationInfo uses this to dispatch calls.
@@ -50,11 +49,45 @@ class TabHelper : public content::WebContentsObserver,
     UPDATE_SHORTCUT   // Update icon for app shortcut.
   };
 
-  explicit TabHelper(TabContents* tab_contents);
+  // Observer base class for classes that need to be notified when content
+  // scripts and/or tabs.executeScript calls run on a page.
+  class ScriptExecutionObserver {
+   public:
+    // Map of extensions IDs to the executing script paths.
+    typedef std::map<std::string, std::set<std::string> > ExecutingScriptsMap;
+
+    // Automatically observes and unobserves |tab_helper| on construction
+    // and destruction. |tab_helper| must outlive |this|.
+    explicit ScriptExecutionObserver(TabHelper* tab_helper);
+    ScriptExecutionObserver();
+
+    // Called when script(s) have executed on a page.
+    //
+    // |executing_scripts_map| contains all extensions that are executing
+    // scripts, mapped to the paths for those scripts. This may be an empty set
+    // if the script has no path associated with it (e.g. in the case of
+    // tabs.executeScript).
+    virtual void OnScriptsExecuted(
+        const content::WebContents* web_contents,
+        const ExecutingScriptsMap& executing_scripts_map,
+        int32 on_page_id,
+        const GURL& on_url) = 0;
+
+   protected:
+    virtual ~ScriptExecutionObserver();
+
+    TabHelper* tab_helper_;
+  };
+
   virtual ~TabHelper();
 
-  // Copies the internal state from another TabHelper.
-  void CopyStateFrom(const TabHelper& source);
+  void AddScriptExecutionObserver(ScriptExecutionObserver* observer) {
+    script_execution_observers_.AddObserver(observer);
+  }
+
+  void RemoveScriptExecutionObserver(ScriptExecutionObserver* observer) {
+    script_execution_observers_.RemoveObserver(observer);
+  }
 
   void CreateApplicationShortcuts();
   bool CanCreateApplicationShortcuts() const;
@@ -95,24 +128,24 @@ class TabHelper : public content::WebContentsObserver,
   // Extension::EXTENSION_ICON_SMALLISH).
   SkBitmap* GetExtensionAppIcon();
 
-  TabContents* tab_contents() {
-    return tab_contents_;
-  }
-
   content::WebContents* web_contents() const {
     return content::WebContentsObserver::web_contents();
   }
 
   ScriptExecutor* script_executor() {
-    return &script_executor_;
+    return script_executor_.get();
   }
 
   LocationBarController* location_bar_controller() {
     return location_bar_controller_.get();
   }
 
-  ActiveTabPermissionManager* active_tab_permission_manager() {
-    return &active_tab_permission_manager_;
+  ActiveTabPermissionGranter* active_tab_permission_granter() {
+    return active_tab_permission_granter_.get();
+  }
+
+  ScriptBubbleController* script_bubble_controller() {
+    return script_bubble_controller_.get();
   }
 
   // Sets a non-extension app icon associated with WebContents and fires an
@@ -120,6 +153,9 @@ class TabHelper : public content::WebContentsObserver,
   void SetAppIcon(const SkBitmap& app_icon);
 
  private:
+  explicit TabHelper(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<TabHelper>;
+
   // content::WebContentsObserver overrides.
   virtual void RenderViewCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
@@ -127,6 +163,9 @@ class TabHelper : public content::WebContentsObserver,
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidCloneToNewWebContents(
+      content::WebContents* old_web_contents,
+      content::WebContents* new_web_contents) OVERRIDE;
 
   // ExtensionFunctionDispatcher::Delegate overrides.
   virtual extensions::WindowController* GetExtensionWindowController()
@@ -148,6 +187,10 @@ class TabHelper : public content::WebContentsObserver,
                             int return_route_id,
                             int callback_id);
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
+  void OnContentScriptsExecuting(
+      const ScriptExecutionObserver::ExecutingScriptsMap& extension_ids,
+      int32 page_id,
+      const GURL& on_url);
 
   // App extensions related methods:
 
@@ -163,12 +206,11 @@ class TabHelper : public content::WebContentsObserver,
                              const std::string& extension_id,
                              int index) OVERRIDE;
 
-  // WebstoreInlineInstaller::Delegate.
-  virtual void OnInlineInstallSuccess(int install_id,
-                                      int return_route_id) OVERRIDE;
-  virtual void OnInlineInstallFailure(int install_id,
-                                      int return_route_id,
-                                      const std::string& error) OVERRIDE;
+  // WebstoreStandaloneInstaller::Callback.
+  virtual void OnInlineInstallComplete(int install_id,
+                                       int return_route_id,
+                                       bool success,
+                                       const std::string& error);
 
   // AppNotifyChannelSetup::Delegate.
   virtual void AppNotifyChannelSetupComplete(
@@ -188,9 +230,9 @@ class TabHelper : public content::WebContentsObserver,
 
   // Data for app extensions ---------------------------------------------------
 
-  // Our observers. Declare at top so that it will outlive all other members,
-  // since they might add themselves as observers.
-  ObserverList<Observer> observers_;
+  // Our content script observers. Declare at top so that it will outlive all
+  // other members, since they might add themselves as observers.
+  ObserverList<ScriptExecutionObserver> script_execution_observers_;
 
   // If non-null this tab is an app tab and this is the extension the tab was
   // created for.
@@ -215,13 +257,13 @@ class TabHelper : public content::WebContentsObserver,
 
   content::NotificationRegistrar registrar_;
 
-  TabContents* tab_contents_;
-
-  ScriptExecutor script_executor_;
+  scoped_ptr<ScriptExecutor> script_executor_;
 
   scoped_ptr<LocationBarController> location_bar_controller_;
 
-  ActiveTabPermissionManager active_tab_permission_manager_;
+  scoped_ptr<ActiveTabPermissionGranter> active_tab_permission_granter_;
+
+  scoped_ptr<ScriptBubbleController> script_bubble_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(TabHelper);
 };

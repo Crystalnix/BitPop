@@ -10,30 +10,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/media/media_stream_extra_data.h"
+#include "content/renderer/media/media_stream_dependency_factory.h"
+#include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "third_party/libjingle/source/talk/app/webrtc/jsep.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebICECandidateDescriptor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamComponent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamDescriptor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamSourcesRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSessionDescriptionDescriptor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 
 namespace content {
-
-static MediaStreamImpl* GetMediaStreamImpl(WebKit::WebFrame* web_frame) {
-  RenderViewImpl* render_view = RenderViewImpl::FromWebView(web_frame->view());
-  if (!render_view)
-    return NULL;
-
-  // TODO(perkj): Avoid this cast?
-  return static_cast<MediaStreamImpl*>(render_view->userMediaClient());
-}
 
 static webrtc::MediaStreamInterface* GetNativeMediaStream(
     const WebKit::WebMediaStreamDescriptor& stream) {
@@ -83,9 +73,9 @@ static webrtc::MediaStreamTrackInterface* GetNativeMediaStreamTrack(
   return NULL;
 }
 
-MediaStreamCenter::MediaStreamCenter(
-    WebKit::WebMediaStreamCenterClient* client)
-    : client_(client) {
+MediaStreamCenter::MediaStreamCenter(WebKit::WebMediaStreamCenterClient* client,
+                                     MediaStreamDependencyFactory* factory)
+    : rtc_factory_(factory) {
 }
 
 void MediaStreamCenter::queryMediaStreamSources(
@@ -115,81 +105,21 @@ void MediaStreamCenter::didDisableMediaStreamTrack(
 void MediaStreamCenter::didStopLocalMediaStream(
     const WebKit::WebMediaStreamDescriptor& stream) {
   DVLOG(1) << "MediaStreamCenter::didStopLocalMediaStream";
-  WebKit::WebFrame* web_frame = WebKit::WebFrame::frameForCurrentContext();
-  if (!web_frame)
-    return;
-  MediaStreamImpl* ms_impl = GetMediaStreamImpl(web_frame);
-  if (ms_impl) {
-    ms_impl->StopLocalMediaStream(stream);
+  MediaStreamExtraData* extra_data =
+       static_cast<MediaStreamExtraData*>(stream.extraData());
+  if (!extra_data) {
+    NOTREACHED();
     return;
   }
 
-  NOTREACHED();
+  extra_data->OnLocalStreamStop();
 }
 
 void MediaStreamCenter::didCreateMediaStream(
     WebKit::WebMediaStreamDescriptor& stream) {
-  WebKit::WebFrame* web_frame = WebKit::WebFrame::frameForCurrentContext();
-  if (!web_frame)
+  if (!rtc_factory_)
     return;
-  MediaStreamImpl* ms_impl = GetMediaStreamImpl(web_frame);
-  if (ms_impl) {
-    ms_impl->CreateMediaStream(web_frame, &stream);
-    return;
-  }
-  NOTREACHED();
-}
-
-WebKit::WebString MediaStreamCenter::constructSDP(
-    const WebKit::WebICECandidateDescriptor& candidate) {
-  int m_line_index = -1;
-  if (!base::StringToInt(UTF16ToUTF8(candidate.label()), &m_line_index)) {
-    LOG(ERROR) << "Invalid candidate label: " << UTF16ToUTF8(candidate.label());
-    return WebKit::WebString();
-  }
-  // TODO(ronghuawu): Get sdp_mid from WebKit when is available.
-  const std::string sdp_mid;
-  scoped_ptr<webrtc::IceCandidateInterface> native_candidate(
-      webrtc::CreateIceCandidate(sdp_mid,
-                                 m_line_index,
-                                 UTF16ToUTF8(candidate.candidateLine())));
-  std::string sdp;
-  if (!native_candidate->ToString(&sdp))
-    LOG(ERROR) << "Could not create SDP string";
-  return UTF8ToUTF16(sdp);
-}
-
-WebKit::WebString MediaStreamCenter::constructSDP(
-    const WebKit::WebSessionDescriptionDescriptor& description) {
-  scoped_ptr<webrtc::SessionDescriptionInterface> native_desc(
-      webrtc::CreateSessionDescription(UTF16ToUTF8(description.initialSDP())));
-  if (!native_desc.get())
-    return WebKit::WebString();
-
-  for (size_t i = 0; i < description.numberOfAddedCandidates(); ++i) {
-    WebKit::WebICECandidateDescriptor candidate = description.candidate(i);
-    int m_line_index = -1;
-    if (!base::StringToInt(UTF16ToUTF8(candidate.label()), &m_line_index)) {
-      LOG(ERROR) << "Invalid candidate label: "
-                 << UTF16ToUTF8(candidate.label());
-      continue;
-    }
-    // TODO(ronghuawu): Get sdp_mid from WebKit when is available.
-    const std::string sdp_mid;
-    scoped_ptr<webrtc::IceCandidateInterface> native_candidate(
-        webrtc::CreateIceCandidate(sdp_mid,
-                                   m_line_index,
-                                   UTF16ToUTF8(candidate.candidateLine())));
-    if (!native_desc->AddCandidate(native_candidate.get())) {
-      LOG(ERROR) << "Failed to add candidate to SessionDescription.";
-      continue;
-    }
-  }
-
-  std::string sdp;
-  if (!native_desc->ToString(&sdp))
-    LOG(ERROR) << "Could not create SDP string";
-  return UTF8ToUTF16(sdp);
+  rtc_factory_->CreateNativeLocalMediaStream(&stream);
 }
 
 }  // namespace content

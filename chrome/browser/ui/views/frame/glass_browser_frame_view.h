@@ -25,6 +25,7 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
   // Overridden from BrowserNonClientFrameView:
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const OVERRIDE;
   virtual TabStripInsets GetTabStripInsets(bool restored) const OVERRIDE;
+  virtual int GetThemeBackgroundXInset() const OVERRIDE;
   virtual void UpdateThrobber(bool running) OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
 
@@ -34,15 +35,16 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
       const gfx::Rect& client_bounds) const OVERRIDE;
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
   virtual void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask)
-      OVERRIDE { }
-  virtual void ResetWindowControls() OVERRIDE { }
-  virtual void UpdateWindowIcon() OVERRIDE { }
+      OVERRIDE {}
+  virtual void ResetWindowControls() OVERRIDE {}
+  virtual void UpdateWindowIcon() OVERRIDE {}
+  virtual void UpdateWindowTitle() OVERRIDE {}
 
  protected:
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual bool HitTest(const gfx::Point& l) const OVERRIDE;
+  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
 
  private:
   // Returns the thickness of the border that makes up the window frame edges.

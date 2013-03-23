@@ -15,8 +15,9 @@ namespace {
 
 class ExtensionResourcesJob : public net::URLRequestFileJob {
  public:
-  explicit ExtensionResourcesJob(net::URLRequest* request)
-    : net::URLRequestFileJob(request, FilePath()),
+  ExtensionResourcesJob(net::URLRequest* request,
+                        net::NetworkDelegate* network_delegate)
+    : net::URLRequestFileJob(request, network_delegate, FilePath()),
       thread_id_(content::BrowserThread::UI) {
   }
 
@@ -62,7 +63,8 @@ class ExtensionResourceProtocolHandler
   virtual ~ExtensionResourceProtocolHandler() {}
 
   virtual net::URLRequestJob* MaybeCreateJob(
-      net::URLRequest* request) const OVERRIDE;
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExtensionResourceProtocolHandler);
@@ -71,8 +73,8 @@ class ExtensionResourceProtocolHandler
 // Creates URLRequestJobs for chrome-extension-resource:// URLs.
 net::URLRequestJob*
 ExtensionResourceProtocolHandler::MaybeCreateJob(
-    net::URLRequest* request) const {
-  return new ExtensionResourcesJob(request);
+    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
+  return new ExtensionResourcesJob(request, network_delegate);
 }
 
 }  // namespace

@@ -10,6 +10,9 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "ui/base/accelerators/platform_accelerator_gtk.h"
+#include "ui/base/events/event_conversion_gtk.h"
+#include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
 
 namespace {
 
@@ -135,7 +138,7 @@ const struct AcceleratorMapping {
   { GDK_u, IDC_VIEW_SOURCE, GDK_CONTROL_MASK },
   { GDK_i, IDC_DEV_TOOLS,
     GdkModifierType(GDK_CONTROL_MASK | GDK_SHIFT_MASK) },
-  { GDK_F12, IDC_DEV_TOOLS, GdkModifierType(0) },
+  { GDK_F12, IDC_DEV_TOOLS_TOGGLE, GdkModifierType(0) },
   { GDK_j, IDC_DEV_TOOLS_CONSOLE,
     GdkModifierType(GDK_CONTROL_MASK | GDK_SHIFT_MASK) },
   { GDK_c, IDC_DEV_TOOLS_INSPECT,
@@ -186,18 +189,20 @@ AcceleratorsGtk* AcceleratorsGtk::GetInstance() {
   return Singleton<AcceleratorsGtk>::get();
 }
 
-const ui::AcceleratorGtk* AcceleratorsGtk::GetPrimaryAcceleratorForCommand(
+const ui::Accelerator* AcceleratorsGtk::GetPrimaryAcceleratorForCommand(
     int command_id) {
-  AcceleratorGtkMap::const_iterator i(primary_accelerators_.find(command_id));
+  AcceleratorMap::const_iterator i(primary_accelerators_.find(command_id));
   return i != primary_accelerators_.end() ? &i->second : NULL;
 }
 
 AcceleratorsGtk::AcceleratorsGtk() {
   for (size_t i = 0; i < arraysize(kAcceleratorMap); ++i) {
     const AcceleratorMapping& entry = kAcceleratorMap[i];
-    ui::AcceleratorGtk accelerator(entry.keyval, entry.modifier_type);
-    all_accelerators_.push_back(std::make_pair(entry.command_id, accelerator));
 
+    ui::Accelerator accelerator = ui::AcceleratorForGdkKeyCodeAndModifier(
+        entry.keyval, entry.modifier_type);
+
+    all_accelerators_.push_back(std::make_pair(entry.command_id, accelerator));
     if (primary_accelerators_.find(entry.command_id) ==
         primary_accelerators_.end()) {
       primary_accelerators_[entry.command_id] = accelerator;

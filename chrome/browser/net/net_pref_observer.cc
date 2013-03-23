@@ -4,15 +4,12 @@
 
 #include "chrome/browser/net/net_pref_observer.h"
 
-#include "base/bind.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_manager.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
 #include "net/http/http_stream_factory.h"
 
 using content::BrowserThread;
@@ -26,33 +23,27 @@ NetPrefObserver::NetPrefObserver(PrefService* prefs,
   DCHECK(prefs);
   DCHECK(predictor);
 
+  base::Closure prefs_callback = base::Bind(&NetPrefObserver::ApplySettings,
+                                            base::Unretained(this));
   network_prediction_enabled_.Init(prefs::kNetworkPredictionEnabled, prefs,
-                                   this);
-  spdy_disabled_.Init(prefs::kDisableSpdy, prefs, this);
+                                   prefs_callback);
+  spdy_disabled_.Init(prefs::kDisableSpdy, prefs, prefs_callback);
 
-  ApplySettings(NULL);
+  ApplySettings();
 }
 
 NetPrefObserver::~NetPrefObserver() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void NetPrefObserver::Observe(int type,
-                              const content::NotificationSource& source,
-                              const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_PREF_CHANGED);
-
-  std::string* pref_name = content::Details<std::string>(details).ptr();
-  ApplySettings(pref_name);
-}
-
-void NetPrefObserver::ApplySettings(const std::string* pref_name) {
+void NetPrefObserver::ApplySettings() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   predictor_->EnablePredictor(*network_prediction_enabled_);
   if (prerender_manager_)
     prerender_manager_->set_enabled(*network_prediction_enabled_);
-  net::HttpStreamFactory::set_spdy_enabled(!*spdy_disabled_);
+  if (spdy_disabled_.IsManaged())
+    net::HttpStreamFactory::set_spdy_enabled(!*spdy_disabled_);
 }
 
 // static

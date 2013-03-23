@@ -21,9 +21,8 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line);
 // prerendering from Omnibox experiment.
 bool IsOmniboxEnabled(Profile* profile);
 
-// Returns true iff the user has opted in or has been opted into the speculative
-// resource prefetching learning experiment.
-bool IsSpeculativeResourcePrefetchingLearningEnabled(Profile* profile);
+// Returns true iff the Prerender Local Predictor is enabled.
+bool IsLocalPredictorEnabled();
 
 }  // namespace prerender
 

@@ -4,12 +4,14 @@
 
 #include "chrome/browser/ui/views/location_bar/zoom_view.h"
 
-#include "chrome/browser/ui/views/browser_dialogs.h"
-#include "chrome/browser/ui/views/location_bar/zoom_bubble_view.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/ui/views/location_bar/zoom_bubble_view.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/size.h"
@@ -17,44 +19,28 @@
 ZoomView::ZoomView(ToolbarModel* toolbar_model,
                    LocationBarView::Delegate* location_bar_delegate)
     : toolbar_model_(toolbar_model),
-      location_bar_delegate_(location_bar_delegate),
-      zoom_icon_state_(ZoomController::NONE),
-      zoom_percent_(100) {
+      location_bar_delegate_(location_bar_delegate) {
   set_accessibility_focusable(true);
+  Update(NULL);
+  TouchableLocationBarView::Init(this);
 }
 
 ZoomView::~ZoomView() {
 }
 
-void ZoomView::SetZoomIconState(ZoomController::ZoomIconState zoom_icon_state) {
-  if (zoom_icon_state == zoom_icon_state_)
-    return;
-
-  zoom_icon_state_ = zoom_icon_state;
-  Update();
-}
-
-void ZoomView::SetZoomIconTooltipPercent(int zoom_percent) {
-  if (zoom_percent == zoom_percent_)
-    return;
-
-  zoom_percent_ = zoom_percent;
-  Update();
-}
-
-void ZoomView::Update() {
-  if (toolbar_model_->input_in_progress() ||
-      zoom_icon_state_ == ZoomController::NONE) {
+void ZoomView::Update(ZoomController* zoom_controller) {
+  if (!zoom_controller || zoom_controller->IsAtDefaultZoom() ||
+      toolbar_model_->GetInputInProgress()) {
     SetVisible(false);
     ZoomBubbleView::CloseBubble();
-  } else {
-    SetVisible(true);
-    SetTooltipText(
-        l10n_util::GetStringFUTF16Int(IDS_TOOLTIP_ZOOM, zoom_percent_));
-    SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-        zoom_icon_state_ == ZoomController::ZOOM_PLUS_ICON ?
-        IDR_ZOOM_PLUS : IDR_ZOOM_MINUS));
+    return;
   }
+
+  SetTooltipText(l10n_util::GetStringFUTF16Int(IDS_TOOLTIP_ZOOM,
+      zoom_controller->zoom_percent()));
+  SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      zoom_controller->GetResourceForZoomLevel()));
+  SetVisible(true);
 }
 
 void ZoomView::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -67,24 +53,38 @@ bool ZoomView::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
   return !ZoomBubbleView::IsShowing() && ImageView::GetTooltipText(p, tooltip);
 }
 
-bool ZoomView::OnMousePressed(const views::MouseEvent& event) {
+bool ZoomView::OnMousePressed(const ui::MouseEvent& event) {
   // Do nothing until mouse is released.
   return true;
 }
 
-void ZoomView::OnMouseReleased(const views::MouseEvent& event) {
-  if (event.IsOnlyLeftMouseButton() && HitTest(event.location())) {
-    ZoomBubbleView::ShowBubble(
-        this, location_bar_delegate_->GetTabContents(), false);
+void ZoomView::OnMouseReleased(const ui::MouseEvent& event) {
+  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location()))
+    ActivateBubble();
+}
+
+bool ZoomView::OnKeyPressed(const ui::KeyEvent& event) {
+  if (event.key_code() != ui::VKEY_SPACE &&
+      event.key_code() != ui::VKEY_RETURN) {
+    return false;
+  }
+
+  ActivateBubble();
+  return true;
+}
+
+void ZoomView::OnGestureEvent(ui::GestureEvent* event) {
+  if (event->type() == ui::ET_GESTURE_TAP) {
+    ActivateBubble();
+    event->SetHandled();
   }
 }
 
-bool ZoomView::OnKeyPressed(const views::KeyEvent& event) {
-  if (event.key_code() != ui::VKEY_SPACE &&
-      event.key_code() != ui::VKEY_RETURN)
-    return false;
+int ZoomView::GetBuiltInHorizontalPadding() const {
+  return GetBuiltInHorizontalPaddingImpl();
+}
 
+void ZoomView::ActivateBubble() {
   ZoomBubbleView::ShowBubble(
-      this, location_bar_delegate_->GetTabContents(), false);
-  return true;
+      this, location_bar_delegate_->GetWebContents(), false);
 }

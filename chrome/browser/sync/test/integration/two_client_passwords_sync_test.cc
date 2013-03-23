@@ -24,7 +24,7 @@ using passwords_helper::SetDecryptionPassphrase;
 using passwords_helper::SetEncryptionPassphrase;
 using passwords_helper::UpdateLogin;
 
-using webkit::forms::PasswordForm;
+using content::PasswordForm;
 
 static const char* kValidPassphrase = "passphrase!";
 static const char* kAnotherValidPassphrase = "another passphrase!";
@@ -229,15 +229,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, Merge) {
   ASSERT_TRUE(AllProfilesContainSamePasswordForms());
 }
 
-// This test is disabled on MAC. See bug http://crbug.com/135336
-#if defined(OS_MACOSX)
-#define MAYBE_SetPassphraseAndThenSetupSync \
-    DISABLED_SetPassphraseAndThenSetupSync
-#else
-#define MAYBE_SetPassphraseAndThenSetupSync SetPassphraseAndThenSetupSync
-#endif
+// This test is flaky. See bug http://crbug.com/135336
 IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest,
-                       MAYBE_SetPassphraseAndThenSetupSync) {
+                       DISABLED_SetPassphraseAndThenSetupSync) {
   ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
 
   ASSERT_TRUE(GetClient(0)->SetupSync());

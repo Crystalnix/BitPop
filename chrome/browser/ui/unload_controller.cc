@@ -7,7 +7,6 @@
 #include "base/message_loop.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
@@ -85,7 +84,7 @@ bool UnloadController::TabsNeedBeforeUnloadFired() {
   if (tabs_needing_before_unload_fired_.empty()) {
     for (int i = 0; i < browser_->tab_count(); ++i) {
       content::WebContents* contents =
-          chrome::GetTabContentsAt(browser_, i)->web_contents();
+          browser_->tab_strip_model()->GetWebContentsAt(i);
       if (contents->NeedToFireBeforeUnload())
         tabs_needing_before_unload_fired_.insert(contents);
     }
@@ -114,19 +113,20 @@ void UnloadController::Observe(int type,
 ////////////////////////////////////////////////////////////////////////////////
 // UnloadController, TabStripModelObserver implementation:
 
-void UnloadController::TabInsertedAt(TabContents* contents,
+void UnloadController::TabInsertedAt(content::WebContents* contents,
                                      int index,
                                      bool foreground) {
   TabAttachedImpl(contents);
 }
 
-void UnloadController::TabDetachedAt(TabContents* contents, int index) {
+void UnloadController::TabDetachedAt(content::WebContents* contents,
+                                     int index) {
   TabDetachedImpl(contents);
 }
 
 void UnloadController::TabReplacedAt(TabStripModel* tab_strip_model,
-                                     TabContents* old_contents,
-                                     TabContents* new_contents,
+                                     content::WebContents* old_contents,
+                                     content::WebContents* new_contents,
                                      int index) {
   TabDetachedImpl(old_contents);
   TabAttachedImpl(new_contents);
@@ -141,22 +141,21 @@ void UnloadController::TabStripEmpty() {
 ////////////////////////////////////////////////////////////////////////////////
 // UnloadController, private:
 
-void UnloadController::TabAttachedImpl(TabContents* contents) {
+void UnloadController::TabAttachedImpl(content::WebContents* contents) {
   // If the tab crashes in the beforeunload or unload handler, it won't be
   // able to ack. But we know we can close it.
   registrar_.Add(
       this,
       content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
-      content::Source<content::WebContents>(contents->web_contents()));
+      content::Source<content::WebContents>(contents));
 }
 
-void UnloadController::TabDetachedImpl(TabContents* contents) {
+void UnloadController::TabDetachedImpl(content::WebContents* contents) {
   if (is_attempting_to_close_browser_)
-    ClearUnloadState(contents->web_contents(), false);
-  registrar_.Remove(
-      this,
-      content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
-      content::Source<content::WebContents>(contents->web_contents()));
+    ClearUnloadState(contents, false);
+  registrar_.Remove(this,
+                    content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
+                    content::Source<content::WebContents>(contents));
 }
 
 void UnloadController::ProcessPendingTabs() {

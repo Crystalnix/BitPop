@@ -21,12 +21,11 @@
 #include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/native_widget_types.h"
 
-class BaseDownloadItemModel;
 class Browser;
 class CustomDrawButton;
 class DownloadItemGtk;
+class DownloadItemModel;
 class GtkThemeService;
-class SlideAnimatorGtk;
 
 namespace content {
 class PageNavigator;
@@ -70,7 +69,7 @@ class DownloadShelfGtk : public DownloadShelf,
 
  protected:
   // DownloadShelf implementation.
-  virtual void DoAddDownload(BaseDownloadItemModel* download_model) OVERRIDE;
+  virtual void DoAddDownload(DownloadItemModel* download_model) OVERRIDE;
   virtual void DoShow() OVERRIDE;
   virtual void DoClose() OVERRIDE;
 

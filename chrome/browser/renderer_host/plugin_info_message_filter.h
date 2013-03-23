@@ -10,15 +10,17 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/public/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "chrome/browser/prefs/pref_member.h"
 #include "chrome/common/content_settings.h"
 #include "content/public/browser/browser_message_filter.h"
 
+struct ChromeViewHostMsg_GetPluginInfo_Output;
 struct ChromeViewHostMsg_GetPluginInfo_Status;
 class GURL;
 class HostContentSettingsMap;
 class PluginFinder;
+class PluginMetadata;
 class Profile;
 
 namespace content {
@@ -27,9 +29,6 @@ class ResourceContext;
 
 namespace webkit {
 struct WebPluginInfo;
-namespace npapi {
-class PluginGroup;
-}
 }
 
 // This class filters out incoming IPC messages requesting plug-in information.
@@ -48,7 +47,7 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
     void DecidePluginStatus(
         const GetPluginInfo_Params& params,
         const webkit::WebPluginInfo& plugin,
-        PluginFinder* plugin_finder,
+        const PluginMetadata* plugin_metadata,
         ChromeViewHostMsg_GetPluginInfo_Status* status) const;
     bool FindEnabledPlugin(int render_view_id,
                            const GURL& url,
@@ -56,7 +55,8 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
                            const std::string& mime_type,
                            ChromeViewHostMsg_GetPluginInfo_Status* status,
                            webkit::WebPluginInfo* plugin,
-                           std::string* actual_mime_type) const;
+                           std::string* actual_mime_type,
+                           scoped_ptr<PluginMetadata>* plugin_metadata) const;
     void GetPluginContentSetting(const webkit::WebPluginInfo& plugin,
                                  const GURL& policy_url,
                                  const GURL& plugin_url,
@@ -98,12 +98,6 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
   void PluginsLoaded(const GetPluginInfo_Params& params,
                      IPC::Message* reply_msg,
                      const std::vector<webkit::WebPluginInfo>& plugins);
-
-  void GotPluginFinder(const GetPluginInfo_Params& params,
-                       IPC::Message* reply_msg,
-                       const webkit::WebPluginInfo& plugin,
-                       const std::string& actual_mime_type,
-                       PluginFinder* plugin_finder);
 
   Context context_;
 

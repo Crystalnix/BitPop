@@ -163,10 +163,6 @@ cr.define('ntp', function() {
       }
 
       document.addEventListener('keydown', this.onDocKeyDown_.bind(this));
-      // Prevent touch events from triggering any sort of native scrolling.
-      document.addEventListener('touchmove', function(e) {
-        e.preventDefault();
-      }, true);
 
       this.tilePages = this.pageList.getElementsByClassName('tile-page');
       this.appsPages = this.pageList.getElementsByClassName('apps-page');
@@ -176,11 +172,19 @@ cr.define('ntp', function() {
       this.cardSlider = new cr.ui.CardSlider(this.sliderFrame, this.pageList,
           this.sliderFrame.offsetWidth);
 
+      // Prevent touch events from triggering any sort of native scrolling if
+      // there are multiple cards in the slider frame.
+      var cardSlider = this.cardSlider;
+      cardSliderFrame.addEventListener('touchmove', function(e) {
+        if (cardSlider.cardCount <= 1)
+          return;
+        e.preventDefault();
+      }, true);
+
       // Handle mousewheel events anywhere in the card slider, so that wheel
       // events on the page switchers will still scroll the page.
       // This listener must be added before the card slider is initialized,
       // because it needs to be called before the card slider's handler.
-      var cardSlider = this.cardSlider;
       cardSliderFrame.addEventListener('mousewheel', function(e) {
         if (cardSlider.currentCardValue.handleMouseWheel(e)) {
           e.preventDefault();  // Prevent default scroll behavior.
@@ -508,8 +512,11 @@ cr.define('ntp', function() {
         this.appendTilePage(tempPage, pageName, true);
       }
 
-      if (ntp.getCurrentlyDraggingTile().firstChild.canBeRemoved())
+      if (ntp.getCurrentlyDraggingTile().firstChild.canBeRemoved()) {
         $('footer').classList.add('showing-trash-mode');
+        $('footer-menu-container').style.minWidth = $('trash').offsetWidth -
+            $('chrome-web-store-link').offsetWidth + 'px';
+      }
 
       document.documentElement.classList.add('dragging-mode');
     },
@@ -532,6 +539,7 @@ cr.define('ntp', function() {
       }
 
       $('footer').classList.remove('showing-trash-mode');
+      $('footer-menu-container').style.minWidth = '';
       document.documentElement.classList.remove('dragging-mode');
     },
 
@@ -550,7 +558,8 @@ cr.define('ntp', function() {
 
     /**
      * Adjusts the size and position of the page switchers according to the
-     * layout of the current card.
+     * layout of the current card, and updates the aria-label attributes of
+     * the page switchers.
      */
     updatePageSwitchers: function() {
       if (!this.pageSwitcherStart || !this.pageSwitcherEnd)
@@ -583,6 +592,10 @@ cr.define('ntp', function() {
       pageSwitcherRight.style.top = offsetTop;
       pageSwitcherLeft.style.paddingBottom = offsetTop;
       pageSwitcherRight.style.paddingBottom = offsetTop;
+
+      // Update the aria-label attributes of the two page switchers.
+      this.pageSwitcherStart.updateButtonAccessibleLabel(this.dotList.dots);
+      this.pageSwitcherEnd.updateButtonAccessibleLabel(this.dotList.dots);
     },
 
     /**

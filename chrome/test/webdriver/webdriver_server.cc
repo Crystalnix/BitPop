@@ -59,6 +59,7 @@
 #include "chrome/test/webdriver/webdriver_dispatch.h"
 #include "chrome/test/webdriver/webdriver_logging.h"
 #include "chrome/test/webdriver/webdriver_session_manager.h"
+#include "chrome/test/webdriver/webdriver_switches.h"
 #include "chrome/test/webdriver/webdriver_util.h"
 #include "third_party/mongoose/mongoose.h"
 
@@ -259,7 +260,7 @@ int RunChromeDriver() {
       return 1;
     }
   }
-  if (cmd_line->HasSwitch("enable-keep-alive"))
+  if (cmd_line->HasSwitch(kEnableKeepAlive))
     enable_keep_alive = true;
 
   bool logging_success = InitWebDriverLogging(log_path, kAllLogLevel);
@@ -305,13 +306,15 @@ int RunChromeDriver() {
 
   // The tests depend on parsing the first line ChromeDriver outputs,
   // so all other logging should happen after this.
-  std::cout << "Started ChromeDriver" << std::endl
-            << "port=" << port << std::endl
-            << "version=" << chrome::kChromeVersion << std::endl;
-  if (logging_success)
-    std::cout << "log=" << FileLog::Get()->path().value() << std::endl;
-  else
-    std::cout << "Log file could not be created" << std::endl;
+  if (!cmd_line->HasSwitch("silent")) {
+    std::cout << "Started ChromeDriver" << std::endl
+              << "port=" << port << std::endl
+              << "version=" << chrome::kChromeVersion << std::endl;
+    if (logging_success)
+      std::cout << "log=" << FileLog::Get()->path().value() << std::endl;
+    else
+      std::cout << "Log file could not be created" << std::endl;
+  }
 
   // Run until we receive command to shutdown.
   // Don't call mg_stop because mongoose will hang if clients are still

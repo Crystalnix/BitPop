@@ -31,7 +31,7 @@ namespace policy {
 namespace {
 
 // Maximum filters per policy. Filters over this index are ignored.
-const size_t kMaxFiltersPerPolicy = 100;
+const size_t kMaxFiltersPerPolicy = 1000;
 
 const char* kStandardSchemes[] = {
   "http",
@@ -278,8 +278,10 @@ URLBlacklistManager::URLBlacklistManager(PrefService* pref_service)
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   pref_change_registrar_.Init(pref_service_);
-  pref_change_registrar_.Add(prefs::kUrlBlacklist, this);
-  pref_change_registrar_.Add(prefs::kUrlWhitelist, this);
+  base::Closure callback = base::Bind(&URLBlacklistManager::ScheduleUpdate,
+                                      base::Unretained(this));
+  pref_change_registrar_.Add(prefs::kUrlBlacklist, callback);
+  pref_change_registrar_.Add(prefs::kUrlWhitelist, callback);
 
   // Start enforcing the policies without a delay when they are present at
   // startup.
@@ -295,19 +297,6 @@ void URLBlacklistManager::ShutdownOnUIThread() {
 }
 
 URLBlacklistManager::~URLBlacklistManager() {
-}
-
-void URLBlacklistManager::Observe(int type,
-                                  const content::NotificationSource& source,
-                                  const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(type == chrome::NOTIFICATION_PREF_CHANGED);
-  PrefService* prefs = content::Source<PrefService>(source).ptr();
-  DCHECK(prefs == pref_service_);
-  std::string* pref_name = content::Details<std::string>(details).ptr();
-  DCHECK(*pref_name == prefs::kUrlBlacklist ||
-         *pref_name == prefs::kUrlWhitelist);
-  ScheduleUpdate();
 }
 
 void URLBlacklistManager::ScheduleUpdate() {

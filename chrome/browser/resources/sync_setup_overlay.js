@@ -24,6 +24,17 @@ cr.define('options', function() {
   // True if the synced account uses 'encrypt everything'.
   var useEncryptEverything_ = false;
 
+  // True if the support for keystore encryption is enabled. Controls whether
+  // the new unified encryption UI is displayed instead of the old encryption
+  // ui (where passphrase and encrypted types could be set independently of
+  // each other).
+  var keystoreEncryptionEnabled_ = false;
+
+  // The last email address that this profile was connected to.  If the profile
+  // was never connected this is an empty string.  Otherwise it is a normalized
+  // email address.
+  var lastEmailAddress_ = '';
+
   /**
    * SyncSetupOverlay class
    * Encapsulated handling of the 'Sync Setup' overlay page.
@@ -54,6 +65,10 @@ cr.define('options', function() {
       $('google-option').onchange = $('explicit-option').onchange = function() {
         self.onPassphraseRadioChanged_();
       };
+      $('basic-encryption-option').onchange =
+          $('full-encryption-option').onchange = function() {
+        self.onEncryptionRadioChanged_();
+      }
       $('choose-datatypes-cancel').onclick =
           $('sync-setup-cancel').onclick =
           $('confirm-everything-cancel').onclick =
@@ -72,6 +87,7 @@ cr.define('options', function() {
         chrome.send('SyncSetupStopSyncing');
         self.closeOverlay_();
       };
+      $('different-email').innerHTML = loadTimeData.getString('differentEmail');
     },
 
     showOverlay_: function() {
@@ -82,14 +98,14 @@ cr.define('options', function() {
       OptionsPage.closeOverlay();
     },
 
-    /** @inheritDoc */
+    /** @override */
     didShowPage: function() {
       var forceLogin = document.location.hash == '#forceLogin';
       var result = JSON.stringify({'forceLogin': forceLogin});
       chrome.send('SyncSetupAttachHandler', [result]);
     },
 
-    /** @inheritDoc */
+    /** @override */
     didClosePage: function() {
       chrome.send('SyncSetupDidClosePage');
     },
@@ -123,6 +139,11 @@ cr.define('options', function() {
 
     onPassphraseRadioChanged_: function() {
       var visible = this.getPassphraseRadioCheckedValue_() == 'explicit';
+      $('sync-custom-passphrase').hidden = !visible;
+    },
+
+    onEncryptionRadioChanged_: function() {
+      var visible = $('full-encryption-option').checked;
       $('sync-custom-passphrase').hidden = !visible;
     },
 
@@ -163,8 +184,10 @@ cr.define('options', function() {
       mismatchError.hidden = true;
 
       var f = $('choose-data-types-form');
-      if (this.getPassphraseRadioCheckedValue_() != 'explicit' ||
-          $('google-option').disabled) {
+      if ((this.getPassphraseRadioCheckedValue_() != 'explicit' ||
+           $('google-option').disabled) &&
+          (!$('full-encryption-option').checked ||
+           $('basic-encryption-option').disabled)) {
         return true;
       }
 
@@ -194,6 +217,11 @@ cr.define('options', function() {
       }
 
       var encryptAllData = this.getEncryptionRadioCheckedValue_() == 'all';
+      if (!encryptAllData &&
+          $('full-encryption-option').checked &&
+          this.keystoreEncryptionEnabled_) {
+        encryptAllData = true;
+      }
 
       var usePassphrase;
       var customPassphrase;
@@ -210,8 +238,10 @@ cr.define('options', function() {
         // the passphrase and finish configuration. If the user has enabled
         // encrypted datatypes, the PSS will prompt again specifying that the
         // passphrase failed.
-      } else if (!$('google-option').disabled &&
-                 this.getPassphraseRadioCheckedValue_() == 'explicit') {
+      } else if ((!$('google-option').disabled &&
+                  this.getPassphraseRadioCheckedValue_() == 'explicit') ||
+                 (!$('basic-encryption-option').disabled &&
+                  $('full-encryption-option').checked)) {
         // The user is setting a custom passphrase for the first time.
         if (!this.checkPassphraseMatch_())
           return;
@@ -357,6 +387,14 @@ cr.define('options', function() {
       } else {
         $('encrypt-sensitive-option').checked = true;
       }
+
+      if (!args.encryptAllData && !args.usePassphrase) {
+        $('basic-encryption-option').checked = true;
+      } else {
+        $('full-encryption-option').checked = true;
+        $('full-encryption-option').disabled = true;
+        $('basic-encryption-option').disabled = true;
+      }
     },
 
     setPassphraseRadios_: function(args) {
@@ -405,6 +443,7 @@ cr.define('options', function() {
         // customize data types page.
         var syncAllDataTypes = args.syncAllDataTypes;
         this.usePassphrase_ = args.usePassphrase;
+        this.keystoreEncryptionEnabled_ = args.keystoreEncryptionEnabled;
         if (args.showSyncEverythingPage == false || this.usePassphrase_ ||
             syncAllDataTypes == false || args.showPassphrase) {
           this.showCustomizePage_(args, syncAllDataTypes);
@@ -417,7 +456,6 @@ cr.define('options', function() {
     showSpinner_: function() {
       this.resetPage_('sync-setup-spinner');
       $('sync-setup-spinner').hidden = false;
-      this.setThrobbersVisible_(true);
     },
 
     showTimeoutPage_: function() {
@@ -447,6 +485,9 @@ cr.define('options', function() {
         $('sync-custom-passphrase').hidden = true;
       }
 
+      if (!this.useEncryptEverything_ && !this.usePassphrase_)
+        $('basic-encryption-option').checked = true;
+
       $('confirm-everything-ok').focus();
     },
 
@@ -464,6 +505,10 @@ cr.define('options', function() {
       $('use-default-link').hidden = true;
       $('sync-custom-passphrase-container').hidden = true;
       $('sync-existing-passphrase-container').hidden = false;
+
+      // Hide the selection options within the new encryption section when
+      // prompting for a passphrase.
+      $('sync-new-encryption-section-container').hidden = true;
 
       $('normal-body').hidden = true;
       $('google-passphrase-needed-body').hidden = true;
@@ -491,6 +536,18 @@ cr.define('options', function() {
       $('customize-sync-preferences').hidden = false;
 
       $('sync-custom-passphrase-container').hidden = false;
+
+      if (this.keystoreEncryptionEnabled_) {
+        $('customize-sync-encryption').hidden = true;
+        $('sync-custom-passphrase-options').hidden = true;
+        $('sync-new-encryption-section-container').hidden = false;
+        $('customize-sync-encryption-new').hidden = false;
+      } else {
+        $('customize-sync-encryption').hidden = false;
+        $('sync-custom-passphrase-options').hidden = false;
+        $('customize-sync-encryption-new').hidden = true;
+      }
+
       $('sync-existing-passphrase-container').hidden = true;
 
       // If the user has selected the 'Customize' page on initial set up, it's
@@ -516,10 +573,6 @@ cr.define('options', function() {
       }
     },
 
-    attach_: function() {
-      chrome.send('SyncSetupAttachHandler');
-    },
-
     /**
      * Shows the appropriate sync setup page.
      * @param {string} page A page of the sync setup to show.
@@ -537,6 +590,16 @@ cr.define('options', function() {
         children[i].hidden = true;
 
       this.setInputElementsDisabledState_(false);
+
+      // If new passphrase bodies are present, overwrite the existing ones.
+      if (args && args.enterPassphraseBody != undefined)
+        $('normal-body').innerHTML = args.enterPassphraseBody;
+      if (args && args.enterGooglePassphraseBody != undefined) {
+        $('google-passphrase-needed-body').innerHTML =
+            args.enterGooglePassphraseBody;
+      }
+      if (args && args.fullEncryptionBody != undefined)
+        $('full-encryption-body').innerHTML = args.fullEncryptionBody;
 
       // NOTE: Because both showGaiaLogin_() and showConfigure_() change the
       // focus, we need to ensure that the overlay container and dialog aren't
@@ -694,6 +757,7 @@ cr.define('options', function() {
       $('sync-setup-login').hidden = false;
       this.allowEmptyPassword_ = false;
       this.captchaChallengeActive_ = false;
+      this.lastEmailAddress_ = args.lastEmailAddress;
 
       var f = $('gaia-login-form');
       var email = $('gaia-email');
@@ -759,6 +823,7 @@ cr.define('options', function() {
       $('errormsg-0-email').hidden = true;
       $('errormsg-0-password').hidden = true;
       $('errormsg-1-password').hidden = true;
+      $('errormsg-different-email').hidden = true;
       $('errormsg-0-connection').hidden = true;
       $('errormsg-0-access-code').hidden = true;
       $('errormsg-0-otp').hidden = true;
@@ -791,6 +856,8 @@ cr.define('options', function() {
     },
 
     setErrorVisibility_: function() {
+      var errormsgDifferentEmail = $('errormsg-different-email');
+      var isErrormsgDifferentEmailHidden = errormsgDifferentEmail.hidden;
       this.resetErrorVisibility_();
       var f = $('gaia-login-form');
       var email = $('gaia-email');
@@ -798,6 +865,19 @@ cr.define('options', function() {
       if (!email.value) {
         $('errormsg-0-email').hidden = false;
         this.setBlurbError_();
+        return false;
+      }
+      // If email is different from last email, and we have not already warned
+      // the user, tell them now.  Otherwise proceed as usual. When comparing
+      // email ids, use @gmail.com as the domain if not provided.
+      function normalized_email(id) {
+        return ((id.indexOf('@') != -1) ? id : id + '@gmail.com');
+      }
+      if (this.lastEmailAddress_.length > 0 &&
+          normalized_email(email.value) !=
+              normalized_email(this.lastEmailAddress_) &&
+          isErrormsgDifferentEmailHidden) {
+        errormsgDifferentEmail.hidden = false;
         return false;
       }
       // Don't enforce password being non-blank when checking access code (it

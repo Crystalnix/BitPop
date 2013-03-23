@@ -201,11 +201,11 @@ TEST(ObserverListTest, BasicTest) {
 
   FOR_EACH_OBSERVER(Foo, observer_list, Observe(10));
 
-  EXPECT_EQ(a.total, 20);
-  EXPECT_EQ(b.total, -20);
-  EXPECT_EQ(c.total, 0);
-  EXPECT_EQ(d.total, -10);
-  EXPECT_EQ(e.total, 0);
+  EXPECT_EQ(20, a.total);
+  EXPECT_EQ(-20, b.total);
+  EXPECT_EQ(0, c.total);
+  EXPECT_EQ(-10, d.total);
+  EXPECT_EQ(0, e.total);
 }
 
 TEST(ObserverListThreadSafeTest, BasicTest) {
@@ -223,19 +223,19 @@ TEST(ObserverListThreadSafeTest, BasicTest) {
   observer_list->AddObserver(&b);
 
   observer_list->Notify(&Foo::Observe, 10);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 
   observer_list->AddObserver(&evil);
   observer_list->AddObserver(&c);
   observer_list->AddObserver(&d);
 
   observer_list->Notify(&Foo::Observe, 10);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 
-  EXPECT_EQ(a.total, 20);
-  EXPECT_EQ(b.total, -20);
-  EXPECT_EQ(c.total, 0);
-  EXPECT_EQ(d.total, -10);
+  EXPECT_EQ(20, a.total);
+  EXPECT_EQ(-20, b.total);
+  EXPECT_EQ(0, c.total);
+  EXPECT_EQ(-10, d.total);
 }
 
 TEST(ObserverListThreadSafeTest, RemoveObserver) {
@@ -253,10 +253,10 @@ TEST(ObserverListThreadSafeTest, RemoveObserver) {
   observer_list->RemoveObserver(&b);
 
   observer_list->Notify(&Foo::Observe, 10);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 
-  EXPECT_EQ(a.total, 0);
-  EXPECT_EQ(b.total, 0);
+  EXPECT_EQ(0, a.total);
+  EXPECT_EQ(0, b.total);
 
   observer_list->AddObserver(&a);
 
@@ -264,10 +264,10 @@ TEST(ObserverListThreadSafeTest, RemoveObserver) {
   observer_list->RemoveObserver(&b);
 
   observer_list->Notify(&Foo::Observe, 10);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 
-  EXPECT_EQ(a.total, 10);
-  EXPECT_EQ(b.total, 0);
+  EXPECT_EQ(10, a.total);
+  EXPECT_EQ(0, b.total);
 }
 
 TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
@@ -286,7 +286,7 @@ TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
     observer_list->AddObserver(&c);
 
     observer_list->Notify(&Foo::Observe, 10);
-    loop.RunAllPending();
+    loop.RunUntilIdle();
 
     EXPECT_EQ(0, a.total);
     EXPECT_EQ(0, b.total);
@@ -300,7 +300,7 @@ TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
 
     // Notify again.
     observer_list->Notify(&Foo::Observe, 20);
-    loop.RunAllPending();
+    loop.RunUntilIdle();
 
     EXPECT_EQ(20, a.total);
     EXPECT_EQ(0, b.total);
@@ -314,7 +314,7 @@ TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
   MessageLoop loop;
   observer_list->AddObserver(&b);
   observer_list->Notify(&Foo::Observe, 30);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 
   EXPECT_EQ(20, a.total);
   EXPECT_EQ(30, b.total);
@@ -359,7 +359,7 @@ TEST(ObserverListThreadSafeTest, RemoveMultipleObservers) {
   a.AddFooToRemove(&b);
 
   observer_list->Notify(&Foo::Observe, 1);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 }
 
 // A test driver for a multi-threaded notification loop.  Runs a number
@@ -399,7 +399,7 @@ static void ThreadSafeObserverHarness(int num_threads,
 
     observer_list->Notify(&Foo::Observe, 10);
 
-    loop.RunAllPending();
+    loop.RunUntilIdle();
   }
 
   for (int index = 0; index < num_threads; index++) {
@@ -464,7 +464,7 @@ TEST(ObserverListThreadSafeTest, Existing) {
   observer_list->AddObserver(&b);
 
   observer_list->Notify(&Foo::Observe, 1);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 
   EXPECT_TRUE(b.added);
   // B's adder should not have been notified because it was added during
@@ -473,7 +473,7 @@ TEST(ObserverListThreadSafeTest, Existing) {
 
   // Notify again to make sure b's adder is notified.
   observer_list->Notify(&Foo::Observe, 1);
-  loop.RunAllPending();
+  loop.RunUntilIdle();
   EXPECT_EQ(1, b.adder.total);
 }
 

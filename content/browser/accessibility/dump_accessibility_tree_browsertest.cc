@@ -156,7 +156,7 @@ void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
 
   // Load the page.
   WindowedNotificationObserver tree_updated_observer(
-      NOTIFICATION_RENDER_VIEW_HOST_ACCESSIBILITY_TREE_UPDATED,
+      NOTIFICATION_ACCESSIBILITY_LOAD_COMPLETE,
       NotificationService::AllSources());
   string16 html_contents16;
   html_contents16 = UTF8ToUTF16(html_contents);
@@ -236,12 +236,30 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunTest(FILE_PATH_LITERAL("aria-application.html"));
 }
 
+// Broken by http://trac.webkit.org/137512
+// Tracked in http://crbug.com/165838
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       DISABLED_AccessibilityAriaCombobox) {
+  RunTest(FILE_PATH_LITERAL("aria-combobox.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaMenu) {
+  RunTest(FILE_PATH_LITERAL("aria-menu.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAWithImg) {
   RunTest(FILE_PATH_LITERAL("a-with-img.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityButtonNameCalc) {
   RunTest(FILE_PATH_LITERAL("button-name-calc.html"));
+}
+
+// TODO(dmazzoni): rebaseline and enable after this WebKit change is rolled:
+// https://bugs.webkit.org/show_bug.cgi?id=96323
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       DISABLED_AccessibilityCanvas) {
+  RunTest(FILE_PATH_LITERAL("canvas.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
@@ -258,6 +276,10 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
     AccessibilityContenteditableDescendants
 #endif
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityDiv) {
+  RunTest(FILE_PATH_LITERAL("div.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
                        MAYBE_AccessibilityContenteditableDescendants) {
   RunTest(FILE_PATH_LITERAL("contenteditable-descendants.html"));
@@ -267,13 +289,44 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityFooter) {
   RunTest(FILE_PATH_LITERAL("footer.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityForm) {
+  RunTest(FILE_PATH_LITERAL("form.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityHR) {
+  RunTest(FILE_PATH_LITERAL("hr.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputRange) {
+  RunTest(FILE_PATH_LITERAL("input-range.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
                        AccessibilityInputTextNameCalc) {
   RunTest(FILE_PATH_LITERAL("input-text-name-calc.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityLabel) {
+  RunTest(FILE_PATH_LITERAL("label.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityListMarkers) {
   RunTest(FILE_PATH_LITERAL("list-markers.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityP) {
+  RunTest(FILE_PATH_LITERAL("p.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilitySpinButton) {
+  RunTest(FILE_PATH_LITERAL("spinbutton.html"));
+}
+
+// TODO(dmazzoni): rebaseline and enable after this WebKit change is rolled:
+// https://bugs.webkit.org/show_bug.cgi?id=96323
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       DISABLED_AccessibilityToggleButton) {
+  RunTest(FILE_PATH_LITERAL("togglebutton.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityUl) {

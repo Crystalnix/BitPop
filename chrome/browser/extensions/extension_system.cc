@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/extension_system.h"
 
+#include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
@@ -12,21 +13,25 @@
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/extensions/api/alarms/alarm_manager.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
+#include "chrome/browser/extensions/api/messaging/message_service.h"
+#include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_devtools_manager.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/browser/extensions/extension_navigation_observer.h"
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/extensions/extension_pref_value_map_factory.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/extensions/extension_warning_badge_service.h"
+#include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/lazy_background_task_queue.h"
 #include "chrome/browser/extensions/management_policy.h"
-#include "chrome/browser/extensions/message_service.h"
+#include "chrome/browser/extensions/navigation_observer.h"
+#include "chrome/browser/extensions/shell_window_geometry_cache.h"
+#include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/user_script_master.h"
@@ -36,10 +41,15 @@
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#endif
 
 using content::BrowserThread;
 
@@ -50,10 +60,9 @@ namespace extensions {
 //
 
 ExtensionSystem::ExtensionSystem() {
-  // In lieu of a way for Feature to check whether it's running on the browser
-  // process, tell it.
-  // See http://crbug.com/126535.
-  Feature::SetChannelCheckingEnabled(true);
+  // Only set if it hasn't already been set (e.g. by a test).
+  if (Feature::GetCurrentChannel() == Feature::GetDefaultChannel())
+    Feature::SetCurrentChannel(chrome::VersionInfo::GetChannel());
 }
 
 ExtensionSystem::~ExtensionSystem() {
@@ -79,38 +88,41 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
   bool extensions_disabled =
       profile_->GetPrefs()->GetBoolean(prefs::kDisableExtensions) ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableExtensions);
-  extension_prefs_.reset(new ExtensionPrefs(
+  extension_prefs_ = ExtensionPrefs::Create(
       profile_->GetPrefs(),
       profile_->GetPath().AppendASCII(ExtensionService::kInstallDirectoryName),
-      ExtensionPrefValueMapFactory::GetForProfile(profile_)));
-  extension_prefs_->Init(extensions_disabled);
+      ExtensionPrefValueMapFactory::GetForProfile(profile_),
+      extensions_disabled);
+  lazy_background_task_queue_.reset(new LazyBackgroundTaskQueue(profile_));
+  event_router_.reset(new EventRouter(profile_, extension_prefs_.get()));
 
   state_store_.reset(new StateStore(
       profile_,
       profile_->GetPath().AppendASCII(ExtensionService::kStateStoreName)));
+
+  shell_window_geometry_cache_.reset(new ShellWindowGeometryCache(
+      profile_, extension_prefs_.get()));
+
+  blacklist_.reset(new Blacklist(extension_prefs_.get()));
+
+  standard_management_policy_provider_.reset(
+      new StandardManagementPolicyProvider(extension_prefs_.get()));
 }
 
 void ExtensionSystemImpl::Shared::RegisterManagementPolicyProviders() {
-  DCHECK(extension_prefs_.get());
-  management_policy_->RegisterProvider(extension_prefs_.get());
-}
-
-void ExtensionSystemImpl::Shared::InitInfoMap() {
-  // The ExtensionInfoMap needs to be created before the
-  // ExtensionProcessManager.
-  extension_info_map_ = new ExtensionInfoMap();
+  DCHECK(standard_management_policy_provider_.get());
+  management_policy_->RegisterProvider(
+      standard_management_policy_provider_.get());
 }
 
 void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
 
-  lazy_background_task_queue_.reset(new LazyBackgroundTaskQueue(profile_));
   message_service_.reset(new MessageService(lazy_background_task_queue_.get()));
-  extension_event_router_.reset(new EventRouter(profile_));
-  extension_navigation_observer_.reset(
-      new ExtensionNavigationObserver(profile_));
+  navigation_observer_.reset(new NavigationObserver(profile_));
 
-  ExtensionErrorReporter::Init(true);  // allow noisy errors.
+  bool allow_noisy_errors = !command_line->HasSwitch(switches::kNoErrorDialogs);
+  ExtensionErrorReporter::Init(allow_noisy_errors);
 
   user_script_master_ = new UserScriptMaster(profile_);
 
@@ -126,6 +138,7 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
       CommandLine::ForCurrentProcess(),
       profile_->GetPath().AppendASCII(ExtensionService::kInstallDirectoryName),
       extension_prefs_.get(),
+      blacklist_.get(),
       autoupdate_enabled,
       extensions_enabled));
 
@@ -136,7 +149,13 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
     RegisterManagementPolicyProviders();
   }
 
-  extension_service_->component_loader()->AddDefaultComponentExtensions();
+  bool skip_session_extensions = false;
+#if defined(OS_CHROMEOS)
+  // Skip loading session extensions if we are not in a user session.
+  skip_session_extensions = !chromeos::UserManager::Get()->IsUserLoggedIn();
+#endif
+  extension_service_->component_loader()->AddDefaultComponentExtensions(
+      skip_session_extensions);
   if (command_line->HasSwitch(switches::kLoadComponentExtension)) {
     CommandLine::StringType path_list = command_line->GetSwitchValueNative(
         switches::kLoadComponentExtension);
@@ -164,10 +183,9 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
       StringTokenizerT<CommandLine::StringType,
           CommandLine::StringType::const_iterator> t(path_list,
                                                      FILE_PATH_LITERAL(","));
-      scoped_refptr<UnpackedInstaller> installer =
-          UnpackedInstaller::Create(extension_service_.get());
       while (t.GetNext()) {
-        installer->LoadFromCommandLine(FilePath(t.token()));
+        UnpackedInstaller::Create(extension_service_.get())->
+            LoadFromCommandLine(FilePath(t.token()));
       }
     }
   }
@@ -184,22 +202,39 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   // initialized (see issue 40144). Now that bookmarks aren't imported and
   // the event routers need to be initialized for every profile individually,
   // initialize them with the extension service.
-  // If this profile is being created as part of the import process, never
-  // initialize the event routers. If import is going to run in a separate
-  // process (the profile itself is on the main process), wait for import to
-  // finish before initializing the routers.
-  if (!command_line->HasSwitch(switches::kImport) &&
-      !command_line->HasSwitch(switches::kImportFromFile)) {
-    if (g_browser_process->profile_manager()->will_import()) {
-      extension_service_->InitEventRoutersAfterImport();
-    } else {
-      extension_service_->InitEventRouters();
-    }
+  // If import is going to run in a separate process (the profile itself is on
+  // the main process), wait for import to finish before initializing the
+  // routers.
+  CHECK(!ProfileManager::IsImportProcess(*command_line));
+  if (g_browser_process->profile_manager()->will_import()) {
+    extension_service_->InitEventRoutersAfterImport();
+  } else {
+    extension_service_->InitEventRouters();
   }
+
+  extension_warning_service_.reset(new ExtensionWarningService(profile_));
+  extension_warning_badge_service_.reset(
+      new ExtensionWarningBadgeService(profile_));
+  extension_warning_service_->AddObserver(
+      extension_warning_badge_service_.get());
+}
+
+void ExtensionSystemImpl::Shared::Shutdown() {
+  if (extension_warning_service_.get()) {
+    extension_warning_service_->RemoveObserver(
+        extension_warning_badge_service_.get());
+  }
+  if (extension_service_.get())
+    extension_service_->Shutdown();
 }
 
 StateStore* ExtensionSystemImpl::Shared::state_store() {
   return state_store_.get();
+}
+
+ShellWindowGeometryCache* ExtensionSystemImpl::Shared::
+    shell_window_geometry_cache() {
+  return shell_window_geometry_cache_.get();
 }
 
 ExtensionService* ExtensionSystemImpl::Shared::extension_service() {
@@ -215,6 +250,8 @@ UserScriptMaster* ExtensionSystemImpl::Shared::user_script_master() {
 }
 
 ExtensionInfoMap* ExtensionSystemImpl::Shared::info_map() {
+  if (!extension_info_map_)
+    extension_info_map_ = new ExtensionInfoMap();
   return extension_info_map_.get();
 }
 
@@ -228,7 +265,15 @@ MessageService* ExtensionSystemImpl::Shared::message_service() {
 }
 
 EventRouter* ExtensionSystemImpl::Shared::event_router() {
-  return extension_event_router_.get();
+  return event_router_.get();
+}
+
+ExtensionWarningService* ExtensionSystemImpl::Shared::warning_service() {
+  return extension_warning_service_.get();
+}
+
+Blacklist* ExtensionSystemImpl::Shared::blacklist() {
+  return blacklist_.get();
 }
 
 //
@@ -236,8 +281,7 @@ EventRouter* ExtensionSystemImpl::Shared::event_router() {
 //
 
 ExtensionSystemImpl::ExtensionSystemImpl(Profile* profile)
-    : profile_(profile),
-      extension_devtools_manager_(NULL) {
+    : profile_(profile) {
   shared_ = ExtensionSystemSharedFactory::GetForProfile(profile);
 
   if (profile->IsOffTheRecord()) {
@@ -261,13 +305,9 @@ void ExtensionSystemImpl::InitForRegularProfile(bool extensions_enabled) {
   if (user_script_master() || extension_service())
     return;  // Already initialized.
 
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(
-      switches::kEnableExtensionTimelineApi)) {
-    extension_devtools_manager_ = new ExtensionDevToolsManager(profile_);
-  }
-
-  shared_->InitInfoMap();
+  // The ExtensionInfoMap needs to be created before the
+  // ExtensionProcessManager.
+  shared_->info_map();
 
   extension_process_manager_.reset(ExtensionProcessManager::Create(profile_));
   alarm_manager_.reset(new AlarmManager(profile_, &base::Time::Now));
@@ -307,12 +347,6 @@ UserScriptMaster* ExtensionSystemImpl::user_script_master() {
   return shared_->user_script_master();
 }
 
-ExtensionDevToolsManager* ExtensionSystemImpl::devtools_manager() {
-  // TODO(mpcomplete): in incognito, figure out whether we should
-  // return the original profile's version.
-  return extension_devtools_manager_.get();
-}
-
 ExtensionProcessManager* ExtensionSystemImpl::process_manager() {
   return extension_process_manager_.get();
 }
@@ -323,6 +357,10 @@ AlarmManager* ExtensionSystemImpl::alarm_manager() {
 
 StateStore* ExtensionSystemImpl::state_store() {
   return shared_->state_store();
+}
+
+ShellWindowGeometryCache* ExtensionSystemImpl::shell_window_geometry_cache() {
+  return shared_->shell_window_geometry_cache();
 }
 
 ExtensionInfoMap* ExtensionSystemImpl::info_map() {
@@ -357,6 +395,14 @@ ApiResourceManager<Socket>* ExtensionSystemImpl::socket_manager() {
 ApiResourceManager<UsbDeviceResource>*
 ExtensionSystemImpl::usb_device_resource_manager() {
   return usb_device_resource_manager_.get();
+}
+
+ExtensionWarningService* ExtensionSystemImpl::warning_service() {
+  return shared_->warning_service();
+}
+
+Blacklist* ExtensionSystemImpl::blacklist() {
+  return shared_->blacklist();
 }
 
 void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(

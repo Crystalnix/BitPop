@@ -6,7 +6,6 @@
 
 #include <ole2.h>
 #include <intshcut.h>
-#include <pstore.h>
 #include <shlobj.h>
 #include <urlhist.h>
 #include <wininet.h>
@@ -25,10 +24,10 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_co_mem.h"
-#include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/importer/pstore_declarations.h"
 #include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_util.h"
@@ -38,10 +37,10 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/common/password_form.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/forms/password_form.h"
 
 namespace {
 
@@ -415,9 +414,6 @@ void IEImporter::StartImport(const importer::SourceProfile& source_profile,
 
   bridge_->NotifyStarted();
 
-  // Some IE settings (such as Protected Storage) are obtained via COM APIs.
-  base::win::ScopedCOMInitializer com_initializer;
-
   if ((items & importer::HOME_PAGE) && !cancelled())
     ImportHomepage();  // Doesn't have a UI item.
   // The order here is important!
@@ -609,7 +605,7 @@ void IEImporter::ImportPasswordsIE6() {
       continue;
     }
 
-    webkit::forms::PasswordForm form;
+    content::PasswordForm form;
     GURL::Replacements rp;
     rp.ClearUsername();
     rp.ClearPassword();
@@ -831,7 +827,13 @@ void IEImporter::ParseFavoritesFolder(
     GURL url = ReadURLFromInternetShortcut(url_locator);
     if (!url.is_valid())
       continue;
-
+    // Skip default bookmarks. go.microsoft.com redirects to
+    // search.microsoft.com, and http://go.microsoft.com/fwlink/?LinkId=XXX,
+    // which URLs IE has as default, to some another sites.
+    // We expect that users will never themselves create bookmarks having this
+    // hostname.
+    if (url.host() == "go.microsoft.com")
+      continue;
     // Read favicon.
     UpdateFaviconMap(*it, url, url_locator, &favicon_map);
 

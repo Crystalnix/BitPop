@@ -6,12 +6,12 @@
 #define CHROME_BROWSER_UI_BROWSER_FINDER_H_
 
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "ui/gfx/native_widget_types.h"
 
 class Profile;
 
 namespace contents {
-class NavigationController;
 class WebContents;
 }
 
@@ -25,21 +25,35 @@ namespace browser {
 // browser->profile()->GetOriginalProfile(). This has the effect of matching
 // against both non-incognito and incognito profiles. If
 // |match_original_profiles| is false, only an exact match may be returned.
-Browser* FindTabbedBrowser(Profile* profile, bool match_original_profiles);
+// |type| refers to the host desktop the returned browser should belong to.
+Browser* FindTabbedBrowser(Profile* profile,
+                           bool match_original_profiles,
+                           chrome::HostDesktopType type);
+
+// Deprecated. Call FindOrCreateTabbedBrowser and pass a desktop type instead.
+Browser* FindOrCreateTabbedBrowserDeprecated(Profile* profile);
 
 // Returns the first tabbed browser matching |profile|. If there is no tabbed
-// browser a new one is created and returned. If a new browser is created it is
-// not made visible.
-Browser* FindOrCreateTabbedBrowser(Profile* profile);
+// browser a new one is created and returned for the desktop specified by
+// |type|. If a new browser is created it is not made visible.
+Browser* FindOrCreateTabbedBrowser(Profile* profile,
+                                   chrome::HostDesktopType type);
 
-// Find an existing browser window with any type. See comment above for
-// additional information.
-Browser* FindAnyBrowser(Profile* profile, bool match_original_profiles);
+}  // namespace browser
 
-// Find an existing browser window with the provided profile. Searches in the
-// order of last activation. Only browsers that have been active can be
-// returned. Returns NULL if no such browser currently exists.
-Browser* FindBrowserWithProfile(Profile* profile);
+namespace chrome {
+
+// Finds an existing browser window of any kind.
+// |type| refers to the host desktop the returned browser should belong to.
+Browser* FindAnyBrowser(Profile* profile,
+                        bool match_original_profiles,
+                        HostDesktopType type);
+
+// Find an existing browser window with the provided profile and hosted in the
+// given desktop. Searches in the order of last activation. Only browsers that
+// have been active can be returned. Returns NULL if no such browser currently
+// exists.
+Browser* FindBrowserWithProfile(Profile* profile, HostDesktopType type);
 
 // Find an existing browser with the provided ID. Returns NULL if no such
 // browser currently exists.
@@ -52,10 +66,30 @@ Browser* FindBrowserWithWindow(gfx::NativeWindow window);
 // |web_contents| must not be NULL.
 Browser* FindBrowserWithWebContents(const content::WebContents* web_contents);
 
-// Identical in behavior to BrowserList::GetLastActive(), except that the most
-// recently open browser owned by |profile| is returned. If none exist, returns
-// NULL.  WARNING: see warnings in BrowserList::GetLastActive().
-Browser* FindLastActiveWithProfile(Profile* profile);
+// Finds the host desktop type for the web_contents passed in.
+HostDesktopType FindHostDesktopTypeForWebContents(
+    const content::WebContents* web_contents);
+
+// Returns the Browser object owned by |profile| on the given desktop type
+// whose window was most recently active. If no such Browsers exist, returns
+// NULL.
+//
+// WARNING: this is NULL until a browser becomes active. If during startup
+// a browser does not become active (perhaps the user launches Chrome, then
+// clicks on another app before the first browser window appears) then this
+// returns NULL.
+// WARNING #2: this will always be NULL in unit tests run on the bots.
+Browser* FindLastActiveWithProfile(Profile* profile, HostDesktopType type);
+
+// Returns the Browser object on the given desktop type whose window was most
+// recently active. If no such Browsers exist, returns NULL.
+//
+// WARNING: this is NULL until a browser becomes active. If during startup
+// a browser does not become active (perhaps the user launches Chrome, then
+// clicks on another app before the first browser window appears) then this
+// returns NULL.
+// WARNING #2: this will always be NULL in unit tests run on the bots.
+Browser* FindLastActiveWithHostDesktopType(HostDesktopType type);
 
 // Returns the number of browsers with the Profile |profile|.
 size_t GetBrowserCount(Profile* profile);
@@ -63,6 +97,6 @@ size_t GetBrowserCount(Profile* profile);
 // Returns the number of tabbed browsers with the Profile |profile|.
 size_t GetTabbedBrowserCount(Profile* profile);
 
-}  // namespace browser
+}  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_BROWSER_FINDER_H_

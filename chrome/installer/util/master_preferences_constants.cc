@@ -10,6 +10,7 @@ namespace master_preferences {
   const char kAutoLaunchChrome[] = "auto_launch_chrome";
   const char kChrome[] = "chrome";
   const char kChromeAppHost[] = "app_host";
+  const char kChromeAppLauncher[] = "app_launcher";
   const char kChromeFrame[] = "chrome_frame";
   const char kChromeFrameReadyMode[] = "ready_mode";
   const char kChromeShortcutIconIndex[] = "chrome_shortcut_icon_index";
@@ -26,6 +27,9 @@ namespace master_preferences {
   const char kDistroShowWelcomePage[] = "show_welcome_page";
   const char kDistroSkipFirstRunPref[] = "skip_first_run_ui";
   const char kDistroSuppressFirstRunBubble[] = "suppress_first_run_bubble";
+  const char kDoNotCreateDesktopShortcut[] = "do_not_create_desktop_shortcut";
+  const char kDoNotCreateQuickLaunchShortcut[] =
+      "do_not_create_quick_launch_shortcut";
   const char kDoNotLaunchChrome[] = "do_not_launch_chrome";
   const char kDoNotRegisterForUpdateLaunch[] =
       "do_not_register_for_update_launch";

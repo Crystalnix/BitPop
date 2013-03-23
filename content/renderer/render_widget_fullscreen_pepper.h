@@ -15,8 +15,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 #include "webkit/plugins/ppapi/fullscreen_container.h"
 
-class WebGraphicsContext3DCommandBufferImpl;
-
 namespace webkit {
 namespace ppapi {
 
@@ -25,13 +23,16 @@ class PluginInstance;
 }  // namespace ppapi
 }  // namespace webkit
 
+namespace content {
+class WebGraphicsContext3DCommandBufferImpl;
+
 // A RenderWidget that hosts a fullscreen pepper plugin. This provides a
 // FullscreenContainer that the plugin instance can callback into to e.g.
 // invalidate rects.
 class RenderWidgetFullscreenPepper :
     public RenderWidgetFullscreen,
     public webkit::ppapi::FullscreenContainer,
-    public content::PepperParentContextProvider,
+    public PepperParentContextProvider,
     public WebGraphicsContext3DSwapBuffersClient {
  public:
   static RenderWidgetFullscreenPepper* Create(
@@ -53,7 +54,8 @@ class RenderWidgetFullscreenPepper :
   virtual void DidChangeCursor(const WebKit::WebCursorInfo& cursor) OVERRIDE;
   virtual webkit::ppapi::PluginDelegate::PlatformContext3D*
       CreateContext3D() OVERRIDE;
-  virtual MouseLockDispatcher* GetMouseLockDispatcher() OVERRIDE;
+  virtual void ReparentContext(
+      webkit::ppapi::PluginDelegate::PlatformContext3D*) OVERRIDE;
 
   // IPC::Listener implementation. This overrides the implementation
   // in RenderWidgetFullscreen.
@@ -64,6 +66,10 @@ class RenderWidgetFullscreenPepper :
 
   // Could be NULL when this widget is closing.
   webkit::ppapi::PluginInstance* plugin() const { return plugin_; }
+
+  MouseLockDispatcher* mouse_lock_dispatcher() const {
+    return mouse_lock_dispatcher_.get();
+  }
 
  protected:
   RenderWidgetFullscreenPepper(webkit::ppapi::PluginInstance* plugin,
@@ -80,7 +86,8 @@ class RenderWidgetFullscreenPepper :
       const gfx::Rect& paint_bounds,
       TransportDIB** dib,
       gfx::Rect* location,
-      gfx::Rect* clip) OVERRIDE;
+      gfx::Rect* clip,
+      float* scale_factor) OVERRIDE;
   virtual void OnResize(const gfx::Size& new_size,
                         const gfx::Rect& resizer_rect,
                         bool is_fullscreen) OVERRIDE;
@@ -123,5 +130,7 @@ class RenderWidgetFullscreenPepper :
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetFullscreenPepper);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_RENDER_WIDGET_FULLSCREEN_PEPPER_H_

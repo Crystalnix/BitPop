@@ -7,12 +7,16 @@
 
 #include "base/compiler_specific.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 
 class PrintPreviewUI;
-class TabContents;
 struct PrintHostMsg_DidGetPreviewPageCount_Params;
 struct PrintHostMsg_DidPreviewDocument_Params;
 struct PrintHostMsg_DidPreviewPage_Params;
+
+namespace content {
+class WebContents;
+}
 
 namespace gfx {
 class Rect;
@@ -22,25 +26,22 @@ namespace printing {
 
 struct PageSizeMargins;
 
-// TabContents offloads print preview message handling to
-// PrintPreviewMessageHandler. This object has the same life time as the
-// TabContents that owns it.
-class PrintPreviewMessageHandler : public content::WebContentsObserver {
+// Manages the print preview handling for a WebContents.
+class PrintPreviewMessageHandler
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<PrintPreviewMessageHandler> {
  public:
-  explicit PrintPreviewMessageHandler(content::WebContents* web_contents);
   virtual ~PrintPreviewMessageHandler();
 
   // content::WebContentsObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void NavigateToPendingEntry(const GURL& url,
-      content::NavigationController::ReloadType reload_type) OVERRIDE;
 
  private:
-  // Gets the print preview tab associated with the WebContents being observed.
-  TabContents* GetPrintPreviewTab();
+  explicit PrintPreviewMessageHandler(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<PrintPreviewMessageHandler>;
 
-  // Helper function to return the TabContents for web_contents().
-  TabContents* tab_contents();
+  // Gets the print preview tab associated with the WebContents being observed.
+  content::WebContents* GetPrintPreviewTab();
 
   // Gets the PrintPreviewUI associated with the WebContents being observed.
   PrintPreviewUI* GetPrintPreviewUI();

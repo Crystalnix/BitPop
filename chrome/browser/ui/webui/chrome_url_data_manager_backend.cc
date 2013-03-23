@@ -40,15 +40,9 @@ using content::BrowserThread;
 
 namespace {
 
-// X-WebKit-CSP is our development name for Content-Security-Policy.
-// TODO(tsepez) rename when Content-security-policy is done.
 // TODO(tsepez) remove unsafe-eval when bidichecker_packaged.js fixed.
-// TODO(tsepez) chrome-extension: permits the ChromeVox screen reader
-//     extension to function on these pages.  Remove it when the extension
-//     is updated to stop injecting script into the pages.
 const char kChromeURLContentSecurityPolicyHeaderBase[] =
-    "X-WebKit-CSP: script-src chrome://resources "
-    "chrome-extension://mndnfokpggljbaajbnioimlmbfngpief "
+    "Content-Security-Policy: script-src chrome://resources "
     "'self' 'unsafe-eval'; ";
 
 // TODO(tsepez) The following should be replaced with a centralized table.
@@ -161,6 +155,10 @@ class ChromeURLXFrameOptionsExceptionSet
     insert(chrome::kChromeUIHistoryFrameHost);
     insert(chrome::kChromeUISettingsFrameHost);
     insert(chrome::kChromeUIUberFrameHost);
+#if defined(OS_CHROMEOS)
+    // chrome://terms page is embedded in iframe to chrome://oobe.
+    insert(chrome::kChromeUITermsHost);
+#endif
   }
 };
 
@@ -211,6 +209,7 @@ class URLRequestChromeJob : public net::URLRequestJob,
                             public base::SupportsWeakPtr<URLRequestChromeJob> {
  public:
   URLRequestChromeJob(net::URLRequest* request,
+                      net::NetworkDelegate* network_delegate,
                       ChromeURLDataManagerBackend* backend);
 
   // net::URLRequestJob implementation.
@@ -272,8 +271,9 @@ class URLRequestChromeJob : public net::URLRequestJob,
 };
 
 URLRequestChromeJob::URLRequestChromeJob(net::URLRequest* request,
+                                         net::NetworkDelegate* network_delegate,
                                          ChromeURLDataManagerBackend* backend)
-    : net::URLRequestJob(request, request->context()->network_delegate()),
+    : net::URLRequestJob(request, network_delegate),
       data_offset_(0),
       pending_buf_size_(0),
       allow_caching_(true),
@@ -411,7 +411,8 @@ class ChromeProtocolHandler
   ~ChromeProtocolHandler();
 
   virtual net::URLRequestJob* MaybeCreateJob(
-      net::URLRequest* request) const OVERRIDE;
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
 
  private:
   // These members are owned by ProfileIOData, which owns this ProtocolHandler.
@@ -427,11 +428,11 @@ ChromeProtocolHandler::ChromeProtocolHandler(
 ChromeProtocolHandler::~ChromeProtocolHandler() {}
 
 net::URLRequestJob* ChromeProtocolHandler::MaybeCreateJob(
-    net::URLRequest* request) const {
+    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
   DCHECK(request);
 
   // Fall back to using a custom handler
-  return new URLRequestChromeJob(request, backend_);
+  return new URLRequestChromeJob(request, network_delegate, backend_);
 }
 
 }  // namespace
@@ -559,16 +560,8 @@ void ChromeURLDataManagerBackend::DataAvailable(RequestID request_id,
 
 namespace {
 
-bool ShouldLoadFromDisk() {
 #if defined(DEBUG_DEVTOOLS)
-  return true;
-#else
-  return CommandLine::ForCurrentProcess()->
-             HasSwitch(switches::kDebugDevToolsFrontend);
-#endif
-}
-
-bool IsSupportedURL(const GURL& url, FilePath* path) {
+bool IsSupportedDevToolsURL(const GURL& url, FilePath* path) {
   if (!url.SchemeIs(chrome::kChromeDevToolsScheme))
     return false;
 
@@ -599,14 +592,8 @@ bool IsSupportedURL(const GURL& url, FilePath* path) {
     return false;
 
   FilePath inspector_dir;
-
-#if defined(DEBUG_DEVTOOLS)
   if (!PathService::Get(chrome::DIR_INSPECTOR, &inspector_dir))
     return false;
-#else
-  inspector_dir = CommandLine::ForCurrentProcess()->
-                      GetSwitchValuePath(switches::kDebugDevToolsFrontend);
-#endif
 
   if (inspector_dir.empty())
     return false;
@@ -614,44 +601,52 @@ bool IsSupportedURL(const GURL& url, FilePath* path) {
   *path = inspector_dir.AppendASCII(relative_path);
   return true;
 }
+#endif  // defined(DEBUG_DEVTOOLS)
 
 class DevToolsJobFactory
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  explicit DevToolsJobFactory(ChromeURLDataManagerBackend* backend);
+  DevToolsJobFactory(ChromeURLDataManagerBackend* backend,
+                     net::NetworkDelegate* network_delegate);
   virtual ~DevToolsJobFactory();
 
   virtual net::URLRequestJob* MaybeCreateJob(
-      net::URLRequest* request) const OVERRIDE;
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
 
  private:
-  // |backend_| is owned by ProfileIOData, which owns this ProtocolHandler.
+  // |backend_| and |network_delegate_| are owned by ProfileIOData, which owns
+  // this ProtocolHandler.
   ChromeURLDataManagerBackend* const backend_;
+  net::NetworkDelegate* network_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsJobFactory);
 };
 
-DevToolsJobFactory::DevToolsJobFactory(ChromeURLDataManagerBackend* backend)
-    : backend_(backend) {
+DevToolsJobFactory::DevToolsJobFactory(ChromeURLDataManagerBackend* backend,
+                                       net::NetworkDelegate* network_delegate)
+    : backend_(backend),
+      network_delegate_(network_delegate) {
   DCHECK(backend_);
 }
 
 DevToolsJobFactory::~DevToolsJobFactory() {}
 
 net::URLRequestJob*
-DevToolsJobFactory::MaybeCreateJob(net::URLRequest* request) const {
-  if (ShouldLoadFromDisk()) {
-    FilePath path;
-    if (IsSupportedURL(request->url(), &path))
-      return new net::URLRequestFileJob(request, path);
-  }
-
-  return new URLRequestChromeJob(request, backend_);
+DevToolsJobFactory::MaybeCreateJob(
+    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
+#if defined(DEBUG_DEVTOOLS)
+  FilePath path;
+  if (IsSupportedDevToolsURL(request->url(), &path))
+    return new net::URLRequestFileJob(request, network_delegate, path);
+#endif
+  return new URLRequestChromeJob(request, network_delegate, backend_);
 }
 
 }  // namespace
 
 net::URLRequestJobFactory::ProtocolHandler*
-CreateDevToolsProtocolHandler(ChromeURLDataManagerBackend* backend) {
-  return new DevToolsJobFactory(backend);
+CreateDevToolsProtocolHandler(ChromeURLDataManagerBackend* backend,
+                              net::NetworkDelegate* network_delegate) {
+  return new DevToolsJobFactory(backend, network_delegate);
 }

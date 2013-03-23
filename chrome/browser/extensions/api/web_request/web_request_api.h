@@ -19,7 +19,8 @@
 #include "chrome/browser/extensions/api/web_request/web_request_permissions.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "chrome/common/chrome_version_info.h"
+#include "extensions/common/url_pattern_set.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/completion_callback.h"
 #include "net/base/network_delegate.h"
@@ -84,7 +85,7 @@ class ExtensionWebRequestEventRouter
     // unexpected).
     bool InitFromValue(const base::DictionaryValue& value, std::string* error);
 
-    URLPatternSet urls;
+    extensions::URLPatternSet urls;
     std::vector<ResourceType::Type> types;
     int tab_id;
     int window_id;
@@ -99,6 +100,7 @@ class ExtensionWebRequestEventRouter
       RESPONSE_HEADERS = 1<<1,
       BLOCKING = 1<<2,
       ASYNC_BLOCKING = 1<<3,
+      REQUEST_BODY = 1<<4,
     };
 
     static bool InitFromValue(const base::ListValue& value,
@@ -179,7 +181,7 @@ class ExtensionWebRequestEventRouter
       ExtensionInfoMap* extension_info_map,
       net::URLRequest* request,
       const net::CompletionCallback& callback,
-      net::HttpResponseHeaders* original_response_headers,
+      const net::HttpResponseHeaders* original_response_headers,
       scoped_refptr<net::HttpResponseHeaders>* override_response_headers);
 
   // Dispatches the OnAuthRequired event to any extensions whose filters match
@@ -308,6 +310,7 @@ class ExtensionWebRequestEventRouter
       int tab_id,
       int window_id,
       ResourceType::Type resource_type,
+      bool is_async_request,
       bool is_request_from_extension,
       int* extra_info_spec,
       std::vector<const ExtensionWebRequestEventRouter::EventListener*>*
@@ -344,7 +347,7 @@ class ExtensionWebRequestEventRouter
       const std::string& event_name,
       net::URLRequest* request,
       extensions::RequestStage request_stage,
-      net::HttpResponseHeaders* original_response_headers);
+      const net::HttpResponseHeaders* original_response_headers);
 
   // Called when the RulesRegistry is ready to unblock a request that was
   // waiting for said event.
@@ -370,6 +373,9 @@ class ExtensionWebRequestEventRouter
   // Returns the matching cross profile (the regular profile if |profile| is
   // OTR and vice versa).
   void* GetCrossProfile(void* profile) const;
+
+  // Returns true if |request| was already signaled to some event handlers.
+  bool WasSignaled(const net::URLRequest& request) const;
 
   // A map for each profile that maps an event name to a set of extensions that
   // are listening to that event.
@@ -434,7 +440,7 @@ class WebRequestHandlerBehaviorChanged : public SyncIOThreadExtensionFunction {
       QuotaLimitHeuristics* heuristics) const OVERRIDE;
   // Handle quota exceeded gracefully: Only warn the user but still execute the
   // function.
-  virtual void OnQuotaExceeded() OVERRIDE;
+  virtual void OnQuotaExceeded(const std::string& error) OVERRIDE;
   virtual bool RunImpl() OVERRIDE;
 };
 

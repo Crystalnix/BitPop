@@ -8,7 +8,7 @@
 #include <windows.h>
 #include <string>
 
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
@@ -16,8 +16,8 @@
 #include "chrome_frame/chrome_tab.h"
 #include "chrome_frame/test/chrome_frame_test_utils.h"
 #include "chrome_frame/test/test_server.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 // Specifies the invocation method for CF.
 class CFInvocation {
@@ -238,10 +238,11 @@ class ChromeFrameTestWithWebServer : public testing::Test {
   static FilePath chrome_user_data_dir_;
 
   // The user data directory used for Chrome instances.
-  static ScopedTempDir temp_dir_;
+  static base::ScopedTempDir temp_dir_;
 
   // The web server from which we serve the web!
   static chrome_frame_test::TimedMsgLoop* loop_;
+  static std::string local_address_;
   static testing::StrictMock<MockWebServerListener>* listener_mock_;
   static testing::StrictMock<MockWebServer>* server_mock_;
 
@@ -253,7 +254,8 @@ class ChromeFrameTestWithWebServer : public testing::Test {
 // SimpleWebServer class.
 class SimpleWebServerTest {
  public:
-  explicit SimpleWebServerTest(int port) : server_(port), port_(port) {
+  SimpleWebServerTest(const std::string& address, int port)
+      : server_(address, port), port_(port) {
   }
 
   ~SimpleWebServerTest() {
@@ -271,7 +273,8 @@ class SimpleWebServerTest {
   }
 
   std::wstring FormatHttpPath(const wchar_t* document_path) {
-    return base::StringPrintf(L"http://localhost:%i/%ls", port_,
+    return base::StringPrintf(L"http://%ls:%i/%ls",
+                              ASCIIToWide(server_.host()).c_str(), port_,
                               document_path);
   }
 

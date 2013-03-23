@@ -11,16 +11,15 @@
 #include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
+#include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/cookies_tree_model.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
 #include "chrome/browser/ui/constrained_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/cookie_info_view.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -54,9 +53,9 @@
 namespace chrome {
 
 // Declared in browser_dialogs.h so others don't have to depend on our header.
-void ShowCollectedCookiesDialog(TabContents* tab_contents) {
+void ShowCollectedCookiesDialog(content::WebContents* web_contents) {
   // Deletes itself on close.
-  new CollectedCookiesViews(tab_contents);
+  new CollectedCookiesViews(web_contents);
 }
 
 }  // namespace chrome
@@ -183,8 +182,8 @@ class InfobarView : public views::View {
 ///////////////////////////////////////////////////////////////////////////////
 // CollectedCookiesViews, public:
 
-CollectedCookiesViews::CollectedCookiesViews(TabContents* tab_contents)
-    : tab_contents_(tab_contents),
+CollectedCookiesViews::CollectedCookiesViews(content::WebContents* web_contents)
+    : web_contents_(web_contents),
       allowed_label_(NULL),
       blocked_label_(NULL),
       allowed_cookies_tree_(NULL),
@@ -192,13 +191,14 @@ CollectedCookiesViews::CollectedCookiesViews(TabContents* tab_contents)
       block_allowed_button_(NULL),
       allow_blocked_button_(NULL),
       for_session_blocked_button_(NULL),
+      cookie_info_view_(NULL),
       infobar_(NULL),
       status_changed_(false) {
   TabSpecificContentSettings* content_settings =
-      tab_contents->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents);
   registrar_.Add(this, chrome::NOTIFICATION_COLLECTED_COOKIES_SHOWN,
                  content::Source<TabSpecificContentSettings>(content_settings));
-  window_ = new ConstrainedWindowViews(tab_contents, this);
+  window_ = new ConstrainedWindowViews(web_contents, this);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -223,7 +223,8 @@ void CollectedCookiesViews::DeleteDelegate() {
 
 bool CollectedCookiesViews::Cancel() {
   if (status_changed_) {
-    InfoBarTabHelper* infobar_helper = tab_contents_->infobar_tab_helper();
+    InfoBarTabHelper* infobar_helper =
+        InfoBarTabHelper::FromWebContents(web_contents_);
     infobar_helper->AddInfoBar(
         new CollectedCookiesInfoBarDelegate(infobar_helper));
   }
@@ -235,11 +236,19 @@ views::View* CollectedCookiesViews::GetContentsView() {
   return this;
 }
 
+ui::ModalType CollectedCookiesViews::GetModalType() const {
+#if defined(USE_ASH)
+  return ui::MODAL_TYPE_CHILD;
+#else
+  return views::WidgetDelegate::GetModalType();
+#endif
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // CollectedCookiesViews, views::ButtonListener implementation:
 
 void CollectedCookiesViews::ButtonPressed(views::Button* sender,
-                                          const views::Event& event) {
+                                          const ui::Event& event) {
   if (sender == block_allowed_button_)
     AddContentException(allowed_cookies_tree_, CONTENT_SETTING_BLOCK);
   else if (sender == allow_blocked_button_)
@@ -335,7 +344,7 @@ void CollectedCookiesViews::Init() {
 
 views::View* CollectedCookiesViews::CreateAllowedPane() {
   TabSpecificContentSettings* content_settings =
-      tab_contents_->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents_);
 
   // Create the controls that go into the pane.
   allowed_label_ = new views::Label(l10n_util::GetStringUTF16(
@@ -387,9 +396,11 @@ views::View* CollectedCookiesViews::CreateAllowedPane() {
 
 views::View* CollectedCookiesViews::CreateBlockedPane() {
   TabSpecificContentSettings* content_settings =
-      tab_contents_->content_settings();
+      TabSpecificContentSettings::FromWebContents(web_contents_);
 
-  PrefService* prefs = tab_contents_->profile()->GetPrefs();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
+  PrefService* prefs = profile->GetPrefs();
 
   // Create the controls that go into the pane.
   blocked_label_ = new views::Label(
@@ -398,7 +409,7 @@ views::View* CollectedCookiesViews::CreateBlockedPane() {
               IDS_COLLECTED_COOKIES_BLOCKED_THIRD_PARTY_BLOCKING_ENABLED :
               IDS_COLLECTED_COOKIES_BLOCKED_COOKIES_LABEL));
   blocked_label_->SetMultiLine(true);
-  blocked_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  blocked_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   const LocalSharedObjectsContainer& blocked_data =
       content_settings->blocked_local_shared_objects();
   blocked_cookies_tree_model_ = blocked_data.CreateCookiesTreeModel();
@@ -505,7 +516,8 @@ void CollectedCookiesViews::AddContentException(views::TreeView* tree_view,
                                                 ContentSetting setting) {
   CookieTreeHostNode* host_node =
       static_cast<CookieTreeHostNode*>(tree_view->GetSelectedNode());
-  Profile* profile = tab_contents_->profile();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
   host_node->CreateContentException(
       CookieSettings::Factory::GetForProfile(profile), setting);
   infobar_->UpdateVisibility(true, setting, host_node->GetTitle());
@@ -519,6 +531,6 @@ void CollectedCookiesViews::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_COLLECTED_COOKIES_SHOWN);
+  DCHECK_EQ(chrome::NOTIFICATION_COLLECTED_COOKIES_SHOWN, type);
   window_->CloseConstrainedWindow();
 }

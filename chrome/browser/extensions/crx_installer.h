@@ -17,14 +17,20 @@
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/string_ordinal.h"
 #include "chrome/common/web_apps.h"
+#include "sync/api/string_ordinal.h"
 
 class ExtensionService;
+class ExtensionServiceTest;
 class SkBitmap;
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace extensions {
 class ExtensionUpdaterTest;
+class RequirementsChecker;
 
 // This class installs a crx file into a profile.
 //
@@ -49,6 +55,11 @@ class ExtensionUpdaterTest;
 // installer->set_foo();
 // installer->set_bar();
 // installer->InstallCrx(...);
+//
+// Installation is aborted if the extension service learns that Chrome is
+// terminating during the install. We can't listen for the app termination
+// notification here in this class because it can be destroyed on any thread
+// and won't safely be able to clean up UI thread notification listeners.
 class CrxInstaller
     : public SandboxedUnpackerClient,
       public ExtensionInstallPrompt::Delegate {
@@ -161,8 +172,16 @@ class CrxInstaller
     off_store_install_allow_reason_ = reason;
   }
 
-  void set_page_ordinal(const StringOrdinal& page_ordinal) {
+  void set_page_ordinal(const syncer::StringOrdinal& page_ordinal) {
     page_ordinal_ = page_ordinal;
+  }
+
+  void set_error_on_unsupported_requirements(bool val) {
+    error_on_unsupported_requirements_ = val;
+  }
+
+  void set_install_wait_for_idle(bool val) {
+    install_wait_for_idle_ = val;
   }
 
   bool did_handle_successfully() const { return did_handle_successfully_; }
@@ -170,6 +189,7 @@ class CrxInstaller
   Profile* profile() { return profile_; }
 
  private:
+  friend class ::ExtensionServiceTest;
   friend class ExtensionUpdaterTest;
   friend class ExtensionCrxInstallerTest;
 
@@ -182,7 +202,8 @@ class CrxInstaller
   void ConvertUserScriptOnFileThread();
 
   // Converts the source web app to an extension.
-  void ConvertWebAppOnFileThread(const WebApplicationInfo& web_app);
+  void ConvertWebAppOnFileThread(const WebApplicationInfo& web_app,
+                                 const FilePath& install_directory);
 
   // Called after OnUnpackSuccess as a last check to see whether the install
   // should complete.
@@ -199,6 +220,12 @@ class CrxInstaller
   // whitelisted.
   bool CanSkipConfirmation();
 
+  // Called on the UI thread to start the requirements check on the extension.
+  void CheckRequirements();
+
+  // Runs on the UI thread. Callback from RequirementsChecker.
+  void OnRequirementsChecked(std::vector<std::string> requirement_errors);
+
   // Runs on the UI thread. Confirms with the user (via ExtensionInstallPrompt)
   // that it is OK to install this extension.
   void ConfirmInstall();
@@ -213,6 +240,12 @@ class CrxInstaller
   void ReportSuccessFromFileThread();
   void ReportSuccessFromUIThread();
   void NotifyCrxInstallComplete(const Extension* extension);
+
+  // Deletes temporary directory and crx file if needed.
+  void CleanupTempFiles();
+
+  // Creates sequenced task runner for extension install file I/O operations.
+  scoped_refptr<base::SequencedTaskRunner> CreateSequencedTaskRunner();
 
   // The file we're installing.
   FilePath source_file_;
@@ -244,7 +277,7 @@ class CrxInstaller
 
   // If non-NULL, contains the expected version of the extension we're
   // installing.  Important for external sources, where claiming the wrong
-  // version could cause unnessisary unpacking of an extension at every
+  // version could cause unnecessary unpacking of an extension at every
   // restart.
   scoped_ptr<Version> expected_version_;
 
@@ -270,7 +303,7 @@ class CrxInstaller
   scoped_refptr<const Extension> extension_;
 
   // The ordinal of the NTP apps page |extension_| will be shown on.
-  StringOrdinal page_ordinal_;
+  syncer::StringOrdinal page_ordinal_;
 
   // A parsed copy of the unmodified original manifest, before any
   // transformations like localization have taken place.
@@ -338,6 +371,23 @@ class CrxInstaller
 
   // Whether we should record an oauth2 grant upon successful install.
   bool record_oauth2_grant_;
+
+  // Whether we should produce an error if the manifest declares requirements
+  // that are not met. If false and there is an unmet requirement, the install
+  // will continue but the extension will be distabled.
+  bool error_on_unsupported_requirements_;
+
+  scoped_ptr<RequirementsChecker> requirements_checker_;
+
+  bool has_requirement_errors_;
+
+  bool install_wait_for_idle_;
+
+  // Sequenced task runner where file I/O operations will be performed.
+  scoped_refptr<base::SequencedTaskRunner> installer_task_runner_;
+
+  // Used to show the install dialog.
+  ExtensionInstallPrompt::ShowDialogCallback show_dialog_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CrxInstaller);
 };

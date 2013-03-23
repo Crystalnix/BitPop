@@ -141,7 +141,7 @@ class UnloadTest : public InProcessBrowserTest {
   }
 
   void NavigateToNolistenersFileTwice() {
-    GURL url(URLRequestMockHTTPJob::GetMockUrl(
+    GURL url(content::URLRequestMockHTTPJob::GetMockUrl(
         FilePath(FILE_PATH_LITERAL("title2.html"))));
     ui_test_utils::NavigateToURL(browser(), url);
     CheckTitle("Title Of Awesomeness");
@@ -153,7 +153,7 @@ class UnloadTest : public InProcessBrowserTest {
   // load is purposely async to test the case where the user loads another
   // page without waiting for the first load to complete.
   void NavigateToNolistenersFileTwiceAsync() {
-    GURL url(URLRequestMockHTTPJob::GetMockUrl(
+    GURL url(content::URLRequestMockHTTPJob::GetMockUrl(
         FilePath(FILE_PATH_LITERAL("title2.html"))));
     ui_test_utils::NavigateToURLWithDisposition(browser(), url, CURRENT_TAB, 0);
     ui_test_utils::NavigateToURL(browser(), url);
@@ -215,8 +215,10 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteUnloadSync) {
 // Navigate to a page with an infinite beforeunload handler.
 // Then two two async crosssite requests to ensure
 // we don't get confused and think we're closing the tab.
-// This test is flaky on the valgrind UI bots. http://crbug.com/39057
-IN_PROC_BROWSER_TEST_F(UnloadTest, CrossSiteInfiniteBeforeUnloadAsync) {
+// This test is flaky on the valgrind UI bots. http://crbug.com/39057 and
+// http://crbug.com/86469
+IN_PROC_BROWSER_TEST_F(UnloadTest,
+                       DISABLED_CrossSiteInfiniteBeforeUnloadAsync) {
   // Tests makes no sense in single-process mode since the renderer is hung.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return;
@@ -331,7 +333,7 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteUnload) {
 
 // Tests closing the browser with a beforeunload handler that hangs.
 // If this flakes, use http://crbug.com/78803 and http://crbug.com/86469
-IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteBeforeUnload) {
+IN_PROC_BROWSER_TEST_F(UnloadTest, DISABLED_BrowserCloseInfiniteBeforeUnload) {
   // Tests makes no sense in single-process mode since the renderer is hung.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return;
@@ -352,8 +354,9 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteUnloadAlert) {
 
 // Tests closing the browser with a beforeunload handler that hangs then
 // pops up an alert.
-// If this flakes, use http://crbug.com/78803.
-IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseInfiniteBeforeUnloadAlert) {
+// If this flakes, use http://crbug.com/78803 and http://crbug.com/86469.
+IN_PROC_BROWSER_TEST_F(UnloadTest,
+                       DISABLED_BrowserCloseInfiniteBeforeUnloadAlert) {
   // Tests makes no sense in single-process mode since the renderer is hung.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return;
@@ -392,7 +395,8 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseTabWhenOtherTabHasListener) {
   content::WindowedNotificationObserver load_stop_observer(
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
-  content::SimulateMouseClick(chrome::GetActiveWebContents(browser()));
+  content::SimulateMouseClick(chrome::GetActiveWebContents(browser()), 0,
+      WebKit::WebMouseEvent::ButtonLeft);
   observer.Wait();
   load_stop_observer.Wait();
   CheckTitle("popup");

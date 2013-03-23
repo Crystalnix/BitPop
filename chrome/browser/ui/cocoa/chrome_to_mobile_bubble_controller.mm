@@ -14,6 +14,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/text/bytes_formatting.h"
@@ -87,6 +88,15 @@ void ChromeToMobileBubbleNotificationBridge::OnSendComplete(bool success) {
   // Instruct the service to delete the snapshot file.
   service_->DeleteSnapshot(snapshotPath_);
 
+  BrowserWindowController* controller = [BrowserWindowController
+      browserWindowControllerForWindow:self.parentWindow];
+  [controller chromeToMobileBubbleWindowWillClose];
+
+  // Restore the Action Box icon when the bubble closes.
+  LocationBarViewMac* locationBar = [controller locationBarBridge];
+  if (locationBar)
+    locationBar->ResetActionBoxIcon();
+
   // We caught a close so we don't need to observe further notifications.
   bridge_.reset(NULL);
   [progressAnimation_ stopAnimation];
@@ -98,7 +108,6 @@ void ChromeToMobileBubbleNotificationBridge::OnSendComplete(bool success) {
 // Override -[BaseBubbleController showWindow:] to set up UI elements.
 - (void)showWindow:(id)sender {
   DCHECK(service_->HasMobiles());
-  service_->LogMetric(ChromeToMobileService::BUBBLE_SHOWN);
 
   // Force load the NIB.
   NSWindow* window = [self window];
@@ -140,15 +149,22 @@ void ChromeToMobileBubbleNotificationBridge::OnSendComplete(bool success) {
     [window setFrame:windowFrame display:YES animate:NO];
   }
 
-  // Get the anchor point for the bubble in screen coordinates.
-  BrowserWindowController* controller = [BrowserWindowController
-      browserWindowControllerForWindow:self.parentWindow];
-  if ([controller isKindOfClass:[BrowserWindowController class]]) {
-    LocationBarViewMac* locationBar = [controller locationBarBridge];
-    NSPoint bubblePoint = locationBar->GetChromeToMobileBubblePoint();
-    [self setAnchorPoint:[self.parentWindow convertBaseToScreen:bubblePoint]];
+  LocationBarViewMac* locationBar = [[BrowserWindowController
+      browserWindowControllerForWindow:self.parentWindow] locationBarBridge];
+  if (locationBar) {
+    // Get the anchor point for the bubble in screen coordinates.
+    NSPoint bubblePoint = locationBar->GetActionBoxAnchorPoint();
+    bubblePoint = [self.parentWindow convertBaseToScreen:bubblePoint];
+    [self.bubble setArrowLocation:info_bubble::kNoArrow];
+    [self.bubble setCornerFlags:info_bubble::kRoundedBottomCorners];
+    [self.bubble setAlignment:info_bubble::kAlignRightEdgeToAnchorEdge];
+    [window setContentSize:self.bubble.frame.size];
+    [window setContentView:self.bubble];
+    [self setAnchorPoint:bubblePoint];
+
+    // Show the lit Chrome To Mobile icon while the bubble is open.
+    locationBar->SetActionBoxIcon(IDR_MOBILE_LIT);
   }
-  [self.bubble setArrowLocation:info_bubble::kTopRight];
 
   // Initialize the checkbox to send an offline copy.
   NSString* sendCopyString =
@@ -164,9 +180,6 @@ void ChromeToMobileBubbleNotificationBridge::OnSendComplete(bool success) {
 
   // Generate the MHTML snapshot now to report its size in the bubble.
   service_->GenerateSnapshot(browser_, bridge_->AsWeakPtr());
-
-  // Request a mobile device list update.
-  service_->RequestMobileListUpdate();
 
   [super showWindow:sender];
 }
@@ -187,7 +200,7 @@ void ChromeToMobileBubbleNotificationBridge::OnSendComplete(bool success) {
 
   const DictionaryValue* mobile = NULL;
   if (mobiles->GetDictionary(selected_index, &mobile)) {
-    service_->SendToMobile(*mobile,
+    service_->SendToMobile(mobile,
         ([sendCopy_ state] == NSOnState) ? snapshotPath_ : FilePath(),
         browser_, bridge_->AsWeakPtr());
   } else {
@@ -211,12 +224,10 @@ void ChromeToMobileBubbleNotificationBridge::OnSendComplete(bool success) {
   snapshotPath_ = path;
   NSString* text = nil;
   if (bytes > 0) {
-    service_->LogMetric(ChromeToMobileService::SNAPSHOT_GENERATED);
     [sendCopy_ setEnabled:YES];
     text = l10n_util::GetNSStringF(IDS_CHROME_TO_MOBILE_BUBBLE_SEND_COPY,
                                    ui::FormatBytes(bytes));
   } else {
-    service_->LogMetric(ChromeToMobileService::SNAPSHOT_ERROR);
     text = l10n_util::GetNSString(IDS_CHROME_TO_MOBILE_BUBBLE_SEND_COPY_FAILED);
   }
   [sendCopy_ setTitle:text];

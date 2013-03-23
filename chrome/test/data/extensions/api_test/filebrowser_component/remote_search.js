@@ -67,6 +67,15 @@ function verifyDirectoryAccessible(entry,
   readNext();
 }
 
+function verifySearchResult(entries, nextFeed, expectedNextFeed) {
+  chrome.test.assertTrue(!!entries);
+  chrome.test.assertEq(2, entries.length);
+  chrome.test.assertEq(expectedNextFeed, nextFeed);
+
+  chrome.test.assertEq('/drive/Folder', entries[0].entry.fullPath);
+  chrome.test.assertEq('/drive/Folder/File.aBc', entries[1].entry.fullPath);
+}
+
 chrome.test.runTests([
   function loadFileSystem() {
   chrome.fileBrowserPrivate.requestLocalFileSystem(
@@ -77,21 +86,32 @@ chrome.test.runTests([
       });
   },
   function driveSearch() {
-    chrome.fileBrowserPrivate.searchGData('foo', '',
+    var params = {
+        'query': 'foo',
+        'sharedWithMe': false,
+        'nextFeed': ''
+    };
+
+    chrome.fileBrowserPrivate.searchDrive(
+        params,
         function(entries, nextFeed) {
-          chrome.test.assertTrue(!!entries);
-          chrome.test.assertEq(2, entries.length);
-          chrome.test.assertEq('', nextFeed);
+          verifySearchResult(entries, nextFeed, 'https://next_feed/');
+          var nextParams = {
+              'query': 'foo',
+              'sharedWithMe': false,
+              'nextFeed': nextFeed
+          };
+          chrome.fileBrowserPrivate.searchDrive(
+              nextParams,
+              function(entries, nextFeed) {
+                verifySearchResult(entries, nextFeed, '');
 
-          chrome.test.assertEq('/drive/Folder',
-                               entries[0].fullPath);
-          chrome.test.assertEq('/drive/Folder/File.aBc',
-                               entries[1].fullPath);
+                var directoryVerifier = verifyDirectoryAccessible.bind(null,
+                    entries[0].entry, 1, chrome.test.succeed, errorCallback);
 
-         var directoryVerifier = verifyDirectoryAccessible.bind(null,
-             entries[0], 1, chrome.test.succeed, errorCallback);
-
-         verifyFileAccessible(entries[1], directoryVerifier, errorCallback);
+                verifyFileAccessible(entries[1].entry, directoryVerifier,
+                                     errorCallback);
+              });
         });
   }
 ]);

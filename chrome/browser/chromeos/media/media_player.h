@@ -7,28 +7,21 @@
 
 #include <vector>
 
-#include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
 class Browser;
-class FilePath;
 class GURL;
-class Profile;
 
-class MediaPlayer : public content::NotificationObserver {
+class MediaPlayer {
  public:
   typedef std::vector<GURL> UrlVector;
 
   virtual ~MediaPlayer();
 
-  // Sets the mediaplayer window height.
-  void SetWindowHeight(int height);
+  // Adjusts the mediaplayer window height.
+  void AdjustWindowHeight(int height_diff);
 
   // Forces the mediaplayer window to be closed.
   void CloseWindow();
@@ -59,37 +52,26 @@ class MediaPlayer : public content::NotificationObserver {
   // called from the mediaplayer itself for example.
   void NotifyPlaylistChanged();
 
-  // Used to detect when the mediaplayer is closed.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // Getter for the singleton.
   static MediaPlayer* GetInstance();
 
  private:
+  friend class MediaPlayerBrowserTest;
   friend struct DefaultSingletonTraits<MediaPlayer>;
 
   // The current playlist of urls.
   UrlVector current_playlist_;
+
   // The position into the current_playlist_ of the currently playing item.
   int current_position_;
 
-  bool pending_playback_request_;
-
   MediaPlayer();
 
-  GURL GetMediaPlayerUrl() const;
+  static GURL GetMediaPlayerUrl();
 
-  // Browser containing the Mediaplayer.  Used to force closes. This is
-  // created by the PopupMediaplayer call, and is NULLed out when the window
-  // is closed.
-  Browser* mediaplayer_browser_;
+  // Browser containing the Mediaplayer.
+  static Browser* GetBrowser();
 
-  // Used to register for events on the windows, like to listen for closes.
-  content::NotificationRegistrar registrar_;
-
-  friend class MediaPlayerBrowserTest;
   DISALLOW_COPY_AND_ASSIGN(MediaPlayer);
 };
 

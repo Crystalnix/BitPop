@@ -12,16 +12,19 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/storage_partition.h"
 #include "webkit/quota/quota_manager.h"
 
 using content::BrowserThread;
+using content::BrowserContext;
 
 // static
 BrowsingDataQuotaHelper* BrowsingDataQuotaHelper::Create(Profile* profile) {
   return new BrowsingDataQuotaHelperImpl(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-      content::BrowserContext::GetQuotaManager(profile));
+      BrowserContext::GetDefaultStoragePartition(profile)->GetQuotaManager());
 }
 
 void BrowsingDataQuotaHelperImpl::StartFetching(
@@ -122,7 +125,7 @@ void BrowsingDataQuotaHelperImpl::GetHostUsage(const std::string& host,
   quota_manager_->GetHostUsage(
       host, type,
       base::Bind(&BrowsingDataQuotaHelperImpl::GotHostUsage,
-                 weak_factory_.GetWeakPtr()));
+                 weak_factory_.GetWeakPtr(), host, type));
 }
 
 void BrowsingDataQuotaHelperImpl::GotHostUsage(const std::string& host,
@@ -172,7 +175,5 @@ void BrowsingDataQuotaHelperImpl::OnComplete() {
 
 void BrowsingDataQuotaHelperImpl::DidRevokeHostQuota(
     quota::QuotaStatusCode status_unused,
-    const std::string& host_unused,
-    quota::StorageType type_unused,
     int64 quota_unused) {
 }

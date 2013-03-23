@@ -8,7 +8,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/managed_mode.h"
+#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_util.h"
@@ -19,7 +19,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
-#import "chrome/browser/ui/cocoa/image_utils.h"
 #import "chrome/browser/ui/cocoa/menu_controller.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
@@ -92,9 +91,6 @@ const CGFloat kMenuYOffsetAdjust = 1.0;
   if ((self = [super init])) {
     browser_ = browser;
 
-    // This view's single child view is a button with the same size and width as
-    // the parent. Set it to automatically resize to the size of this view and
-    // to scale the image.
     scoped_nsobject<NSButton> button(
         [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 20, 20)]);
     [button setButtonType:NSMomentaryLightButton];
@@ -133,8 +129,9 @@ const CGFloat kMenuYOffsetAdjust = 1.0;
     [self setView:button];
 
     if (browser_->profile()->IsOffTheRecord()) {
-      [self setImage:[self compositeImageWithShadow:
-          gfx::GetCachedImageWithName(@"otr_icon.pdf")]];
+      ResourceBundle& bundle = ResourceBundle::GetSharedInstance();
+      NSImage* otrIcon = bundle.GetNativeImageNamed(IDR_OTR_ICON).ToNSImage();
+      [self setImage:[self compositeImageWithShadow:otrIcon]];
       [self setButtonEnabled:NO];
     } else {
       [self setButtonEnabled:YES];
@@ -241,7 +238,8 @@ const CGFloat kMenuYOffsetAdjust = 1.0;
            fromRect:NSZeroRect
           operation:NSCompositeSourceOver
            fraction:1.0
-       neverFlipped:YES];
+     respectFlipped:YES
+              hints:nil];
 
   [destination unlockFocus];
 

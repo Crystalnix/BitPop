@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/message_loop.h"
+#include "base/test/values_test_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rule.h"
@@ -28,55 +29,55 @@ TEST(WebRequestConditionTest, CreateCondition) {
   std::string error;
   scoped_ptr<WebRequestCondition> result;
 
-  DictionaryValue invalid_condition;
-  invalid_condition.SetString("invalid", "foobar");
-  invalid_condition.SetString(keys::kInstanceTypeKey,
-                              keys::kRequestMatcherType);
-
-  DictionaryValue invalid_condition2;
-  invalid_condition2.Set(keys::kUrlKey, new ListValue);
-  invalid_condition2.SetString(keys::kInstanceTypeKey,
-                               keys::kRequestMatcherType);
-
-  ListValue* resource_type_list = new ListValue();
-  resource_type_list->Append(Value::CreateStringValue("main_frame"));
-  DictionaryValue* url_filter = new DictionaryValue();
-  url_filter->SetString(keys2::kHostSuffixKey, "example.com");
-  DictionaryValue valid_condition;
-  valid_condition.Set(keys::kResourceTypeKey, resource_type_list);
-  valid_condition.Set(keys::kUrlKey, url_filter);
-  valid_condition.SetString(keys::kInstanceTypeKey,
-                            keys::kRequestMatcherType);
 
   // Test wrong condition name passed.
   error.clear();
-  result = WebRequestCondition::Create(matcher.condition_factory(),
-                                       invalid_condition, &error);
+  result = WebRequestCondition::Create(
+      matcher.condition_factory(),
+      *base::test::ParseJson(
+          "{ \"invalid\": \"foobar\", \n"
+          "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+          "}"),
+      &error);
   EXPECT_FALSE(error.empty());
   EXPECT_FALSE(result.get());
 
   // Test wrong datatype in host_suffix.
   error.clear();
-  result = WebRequestCondition::Create(matcher.condition_factory(),
-                                       invalid_condition2, &error);
+  result = WebRequestCondition::Create(
+      matcher.condition_factory(),
+      *base::test::ParseJson(
+          "{ \n"
+          "  \"url\": [], \n"
+          "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+          "}"),
+      &error);
   EXPECT_FALSE(error.empty());
   EXPECT_FALSE(result.get());
 
   // Test success (can we support multiple criteria?)
   error.clear();
-  result = WebRequestCondition::Create(matcher.condition_factory(),
-                                       valid_condition, &error);
+  result = WebRequestCondition::Create(
+      matcher.condition_factory(),
+      *base::test::ParseJson(
+          "{ \n"
+          "  \"resourceType\": [\"main_frame\"], \n"
+          "  \"url\": { \"hostSuffix\": \"example.com\" }, \n"
+          "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+          "}"),
+      &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(result.get());
 
-  TestURLRequestContext context;
-  TestURLRequest match_request(GURL("http://www.example.com"), NULL, &context);
+  net::TestURLRequestContext context;
+  net::TestURLRequest match_request(
+      GURL("http://www.example.com"), NULL, &context);
   content::ResourceRequestInfo::AllocateForTesting(&match_request,
       ResourceType::MAIN_FRAME, NULL, -1, -1);
   EXPECT_TRUE(result->IsFulfilled(
       WebRequestRule::RequestData(&match_request, ON_BEFORE_REQUEST)));
 
-  TestURLRequest wrong_resource_type(
+  net::TestURLRequest wrong_resource_type(
       GURL("https://www.example.com"), NULL, &context);
   content::ResourceRequestInfo::AllocateForTesting(&wrong_resource_type,
       ResourceType::SUB_FRAME, NULL, -1, -1);
@@ -89,35 +90,31 @@ TEST(WebRequestConditionTest, CreateConditionSet) {
   MessageLoop message_loop(MessageLoop::TYPE_IO);
   URLMatcher matcher;
 
-  ListValue* http_scheme_list = new ListValue();
-  http_scheme_list->Append(Value::CreateStringValue("http"));
-  DictionaryValue* http_url_filter = new DictionaryValue();
-  http_url_filter->SetString(keys2::kHostSuffixKey, "example.com");
-  http_url_filter->Set(keys2::kSchemesKey, http_scheme_list);
-  DictionaryValue http_condition;
-  http_condition.SetString(keys::kInstanceTypeKey, keys::kRequestMatcherType);
-  http_condition.Set(keys::kUrlKey, http_url_filter);
-
-  ListValue* https_scheme_list = new ListValue();
-  https_scheme_list->Append(Value::CreateStringValue("https"));
-  DictionaryValue* https_url_filter = new DictionaryValue();
-  https_url_filter->SetString(keys2::kHostSuffixKey, "example.com");
-  https_url_filter->SetString(keys2::kHostPrefixKey, "www");
-  https_url_filter->Set(keys2::kSchemesKey, https_scheme_list);
-  DictionaryValue https_condition;
-  https_condition.SetString(keys::kInstanceTypeKey, keys::kRequestMatcherType);
-  https_condition.Set(keys::kUrlKey, https_url_filter);
-
   WebRequestConditionSet::AnyVector conditions;
 
   linked_ptr<json_schema_compiler::any::Any> condition1 = make_linked_ptr(
       new json_schema_compiler::any::Any);
-  condition1->Init(http_condition);
+  condition1->Init(*base::test::ParseJson(
+      "{ \n"
+      "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+      "  \"url\": { \n"
+      "    \"hostSuffix\": \"example.com\", \n"
+      "    \"schemes\": [\"http\"], \n"
+      "  }, \n"
+      "}"));
   conditions.push_back(condition1);
 
   linked_ptr<json_schema_compiler::any::Any> condition2 = make_linked_ptr(
       new json_schema_compiler::any::Any);
-  condition2->Init(https_condition);
+  condition2->Init(*base::test::ParseJson(
+      "{ \n"
+      "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+      "  \"url\": { \n"
+      "    \"hostSuffix\": \"example.com\", \n"
+      "    \"hostPrefix\": \"www\", \n"
+      "    \"schemes\": [\"https\"], \n"
+      "  }, \n"
+      "}"));
   conditions.push_back(condition2);
 
   // Test insertion
@@ -140,8 +137,8 @@ TEST(WebRequestConditionTest, CreateConditionSet) {
   // Test that the result is correct and matches http://www.example.com and
   // https://www.example.com
   GURL http_url("http://www.example.com");
-  TestURLRequestContext context;
-  TestURLRequest http_request(http_url, NULL, &context);
+  net::TestURLRequestContext context;
+  net::TestURLRequest http_request(http_url, NULL, &context);
   url_match_ids = matcher.MatchURL(http_url);
   for (std::set<URLMatcherConditionSet::ID>::iterator i = url_match_ids.begin();
        i != url_match_ids.end(); ++i) {
@@ -153,7 +150,7 @@ TEST(WebRequestConditionTest, CreateConditionSet) {
 
   GURL https_url("https://www.example.com");
   url_match_ids = matcher.MatchURL(https_url);
-  TestURLRequest https_request(https_url, NULL, &context);
+  net::TestURLRequest https_request(https_url, NULL, &context);
   number_matches = 0;
   for (std::set<URLMatcherConditionSet::ID>::iterator i = url_match_ids.begin();
        i != url_match_ids.end(); ++i) {
@@ -166,7 +163,7 @@ TEST(WebRequestConditionTest, CreateConditionSet) {
   // Check that both, hostPrefix and hostSuffix are evaluated.
   GURL https_foo_url("https://foo.example.com");
   url_match_ids = matcher.MatchURL(https_foo_url);
-  TestURLRequest https_foo_request(https_foo_url, NULL, &context);
+  net::TestURLRequest https_foo_request(https_foo_url, NULL, &context);
   number_matches = 0;
   for (std::set<URLMatcherConditionSet::ID>::iterator i = url_match_ids.begin();
        i != url_match_ids.end(); ++i) {
@@ -183,25 +180,16 @@ TEST(WebRequestConditionTest, TestPortFilter) {
   MessageLoop message_loop(MessageLoop::TYPE_IO);
   URLMatcher matcher;
 
-  // Allow 80;1000-1010.
-  ListValue* port_range = new ListValue();
-  port_range->Append(Value::CreateIntegerValue(1000));
-  port_range->Append(Value::CreateIntegerValue(1010));
-  ListValue* port_ranges = new ListValue();
-  port_ranges->Append(Value::CreateIntegerValue(80));
-  port_ranges->Append(port_range);
-
-  DictionaryValue* url_filter = new DictionaryValue();
-  url_filter->Set(keys2::kPortsKey, port_ranges);
-  url_filter->SetString(keys2::kHostSuffixKey, "example.com");
-
-  DictionaryValue condition;
-  condition.SetString(keys::kInstanceTypeKey, keys::kRequestMatcherType);
-  condition.Set(keys::kUrlKey, url_filter);
-
   linked_ptr<json_schema_compiler::any::Any> any_condition =
       make_linked_ptr(new json_schema_compiler::any::Any);
-  any_condition->Init(condition);
+  any_condition->Init(*base::test::ParseJson(
+      "{ \n"
+      "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+      "  \"url\": { \n"
+      "    \"ports\": [80, [1000, 1010]], \n"  // Allow 80;1000-1010.
+      "    \"hostSuffix\": \"example.com\", \n"
+      "  }, \n"
+      "}"));
   WebRequestConditionSet::AnyVector conditions;
   conditions.push_back(any_condition);
 
@@ -223,25 +211,57 @@ TEST(WebRequestConditionTest, TestPortFilter) {
 
   // Test various URLs.
   GURL http_url("http://www.example.com");
-  TestURLRequestContext context;
-  TestURLRequest http_request(http_url, NULL, &context);
+  net::TestURLRequestContext context;
+  net::TestURLRequest http_request(http_url, NULL, &context);
   url_match_ids = matcher.MatchURL(http_url);
   ASSERT_EQ(1u, url_match_ids.size());
 
   GURL http_url_80("http://www.example.com:80");
-  TestURLRequest http_request_80(http_url_80, NULL, &context);
+  net::TestURLRequest http_request_80(http_url_80, NULL, &context);
   url_match_ids = matcher.MatchURL(http_url_80);
   ASSERT_EQ(1u, url_match_ids.size());
 
   GURL http_url_1000("http://www.example.com:1000");
-  TestURLRequest http_request_1000(http_url_1000, NULL, &context);
+  net::TestURLRequest http_request_1000(http_url_1000, NULL, &context);
   url_match_ids = matcher.MatchURL(http_url_1000);
   ASSERT_EQ(1u, url_match_ids.size());
 
   GURL http_url_2000("http://www.example.com:2000");
-  TestURLRequest http_request_2000(http_url_2000, NULL, &context);
+  net::TestURLRequest http_request_2000(http_url_2000, NULL, &context);
   url_match_ids = matcher.MatchURL(http_url_2000);
   ASSERT_EQ(0u, url_match_ids.size());
+}
+
+// Create a condition with two attributes: one on the request header and one on
+// the response header. The Create() method should fail and complain that it is
+// impossible that both conditions are fulfilled at the same time.
+TEST(WebRequestConditionTest, ConditionsWithConflictingStages) {
+  // Necessary for TestURLRequest.
+  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  URLMatcher matcher;
+
+  std::string error;
+  scoped_ptr<WebRequestCondition> result;
+
+  DictionaryValue condition_value;
+  condition_value.SetString(keys::kInstanceTypeKey, keys::kRequestMatcherType);
+
+
+  // Test error on incompatible application stages for involved attributes.
+  error.clear();
+  result = WebRequestCondition::Create(
+      matcher.condition_factory(),
+      *base::test::ParseJson(
+          "{ \n"
+          "  \"instanceType\": \"declarativeWebRequest.RequestMatcher\", \n"
+          // Pass a JS array with one empty object to each of the header
+          // filters.
+          "  \"requestHeaders\": [{}], \n"
+          "  \"responseHeaders\": [{}], \n"
+          "}"),
+      &error);
+  EXPECT_FALSE(error.empty());
+  EXPECT_FALSE(result.get());
 }
 
 }  // namespace extensions

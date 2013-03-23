@@ -5,10 +5,13 @@
 #include "chrome/browser/performance_monitor/performance_monitor.h"
 
 #include <set>
+#include <vector>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/process_util.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/worker_pool.h"
 #include "base/time.h"
@@ -16,26 +19,37 @@
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/performance_monitor/constants.h"
-#include "chrome/browser/performance_monitor/database.h"
 #include "chrome/browser/performance_monitor/performance_monitor_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/test/base/chrome_process_util.h"
+#include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "net/url_request/url_request.h"
 
 using content::BrowserThread;
 using extensions::Extension;
 
 namespace {
+const uint32 kAccessFlags = base::kProcessAccessDuplicateHandle |
+                            base::kProcessAccessQueryInformation |
+                            base::kProcessAccessTerminate |
+                            base::kProcessAccessWaitForTermination;
+
+bool g_started_initialization = false;
 
 std::string TimeToString(base::Time time) {
   int64 time_int64 = time.ToInternalValue();
@@ -50,11 +64,35 @@ bool StringToTime(std::string time, base::Time* output) {
   return true;
 }
 
+// Try to get the URL for the RenderViewHost if the host does not correspond to
+// an incognito profile (we don't store URLs from incognito sessions). Returns
+// true if url has been populated, and false otherwise.
+bool MaybeGetURLFromRenderView(const content::RenderViewHost* view,
+                               std::string* url) {
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderViewHost(view);
+
+  if (Profile::FromBrowserContext(
+          web_contents->GetBrowserContext())->IsOffTheRecord()) {
+    return false;
+  }
+
+  *url = web_contents->GetURL().spec();
+  return true;
+}
+
 }  // namespace
 
 namespace performance_monitor {
 
-PerformanceMonitor::PerformanceMonitor() : database_(NULL) {
+bool PerformanceMonitor::initialized_ = false;
+
+PerformanceMonitor::PerformanceDataForIOThread::PerformanceDataForIOThread()
+    : network_bytes_read(0) {
+}
+
+PerformanceMonitor::PerformanceMonitor() : database_(NULL),
+                                           metrics_map_(new MetricsMap) {
 }
 
 PerformanceMonitor::~PerformanceMonitor() {
@@ -76,6 +114,13 @@ PerformanceMonitor* PerformanceMonitor::GetInstance() {
 }
 
 void PerformanceMonitor::Start() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Avoid responding to multiple calls to Start().
+  if (g_started_initialization)
+    return;
+
+  g_started_initialization = true;
   util::PostTaskToDatabaseThreadAndReply(
       FROM_HERE,
       base::Bind(&PerformanceMonitor::InitOnBackgroundThread,
@@ -87,6 +132,14 @@ void PerformanceMonitor::Start() {
 void PerformanceMonitor::InitOnBackgroundThread() {
   CHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
   database_ = Database::Create(database_path_);
+
+  // Initialize the io thread's performance data to the value in the database;
+  // if there isn't a recording in the database, the value stays at 0.
+  Metric metric;
+  if (database_->GetRecentStatsForActivityAndMetric(METRIC_NETWORK_BYTES_READ,
+                                                    &metric)) {
+    performance_data_for_io_thread_.network_bytes_read = metric.value;
+  }
 }
 
 void PerformanceMonitor::FinishInit() {
@@ -99,8 +152,26 @@ void PerformanceMonitor::FinishInit() {
       base::Bind(&PerformanceMonitor::CheckForVersionUpdateOnBackgroundThread,
                  base::Unretained(this)));
 
+  int gather_interval_in_seconds = kDefaultGatherIntervalInSeconds;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kPerformanceMonitorGathering) &&
+      !CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kPerformanceMonitorGathering).empty()) {
+    int specified_interval = 0;
+    if (!base::StringToInt(
+            CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                switches::kPerformanceMonitorGathering),
+            &specified_interval) || specified_interval <= 0) {
+      LOG(ERROR) << "Invalid value for switch: '"
+                 << switches::kPerformanceMonitorGathering
+                 << "'; please use an integer greater than 0.";
+    } else {
+      gather_interval_in_seconds = specified_interval;
+    }
+  }
+
   timer_.Start(FROM_HERE,
-               base::TimeDelta::FromMinutes(kGatherIntervalInMinutes),
+               base::TimeDelta::FromSeconds(gather_interval_in_seconds),
                this,
                &PerformanceMonitor::DoTimedCollections);
 
@@ -140,6 +211,10 @@ void PerformanceMonitor::RegisterForNotifications() {
   // Profiles (for unclean exit)
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_ADDED,
       content::NotificationService::AllSources());
+
+  // Page load times
+  registrar_.Add(this, content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
 }
 
 // We check if profiles exited cleanly initialization time in case they were
@@ -151,7 +226,7 @@ void PerformanceMonitor::CheckForUncleanExits() {
 
   for (std::vector<Profile*>::const_iterator iter = profiles.begin();
        iter != profiles.end(); ++iter) {
-    if (!(*iter)->DidLastSessionExitCleanly()) {
+    if ((*iter)->GetLastSessionExitType() == Profile::EXIT_CRASHED) {
       BrowserThread::PostBlockingPoolSequencedTask(
           Database::kDatabaseSequenceToken,
           FROM_HERE,
@@ -222,15 +297,9 @@ void PerformanceMonitor::AddEventOnBackgroundThread(scoped_ptr<Event> event) {
   database_->AddEvent(*event.get());
 }
 
-void PerformanceMonitor::GetStateValueOnBackgroundThread(
-    const std::string& key,
-    const StateValueCallback& callback) {
-  CHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::string state_value = database_->GetStateValue(key);
-
-  BrowserThread::PostTask(BrowserThread::UI,
-                          FROM_HERE,
-                          base::Bind(callback, state_value));
+void PerformanceMonitor::AddMetricOnBackgroundThread(const Metric& metric) {
+  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  database_->AddMetric(metric);
 }
 
 void PerformanceMonitor::NotifyInitialized() {
@@ -238,6 +307,90 @@ void PerformanceMonitor::NotifyInitialized() {
       chrome::NOTIFICATION_PERFORMANCE_MONITOR_INITIALIZED,
       content::Source<PerformanceMonitor>(this),
       content::NotificationService::NoDetails());
+
+  initialized_ = true;
+}
+
+void PerformanceMonitor::GatherStatisticsOnBackgroundThread() {
+  CHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Because the CPU usage is gathered as an average since the last time the
+  // function was called, while the memory usage is gathered as an instantaneous
+  // usage, the CPU usage is gathered before the metrics map is wiped.
+  GatherCPUUsageOnBackgroundThread();
+  UpdateMetricsMapOnBackgroundThread();
+  GatherMemoryUsageOnBackgroundThread();
+}
+
+void PerformanceMonitor::GatherCPUUsageOnBackgroundThread() {
+  if (metrics_map_->size()) {
+    double cpu_usage = 0;
+    for (MetricsMap::const_iterator iter = metrics_map_->begin();
+         iter != metrics_map_->end(); ++iter) {
+      cpu_usage += iter->second->GetCPUUsage();
+    }
+
+    database_->AddMetric(Metric(METRIC_CPU_USAGE,
+                                base::Time::Now(),
+                                cpu_usage));
+  }
+}
+
+void PerformanceMonitor::GatherMemoryUsageOnBackgroundThread() {
+  size_t private_memory_sum = 0;
+  size_t shared_memory_sum = 0;
+  for (MetricsMap::const_iterator iter = metrics_map_->begin();
+       iter != metrics_map_->end(); ++iter) {
+    size_t private_memory = 0;
+    size_t shared_memory = 0;
+    if (iter->second->GetMemoryBytes(&private_memory, &shared_memory)) {
+      private_memory_sum += private_memory;
+      shared_memory_sum += shared_memory;
+    } else {
+      LOG(WARNING) << "GetMemoryBytes returned NULL (platform-specific error)";
+    }
+  }
+
+  database_->AddMetric(Metric(METRIC_PRIVATE_MEMORY_USAGE,
+                              base::Time::Now(),
+                              static_cast<double>(private_memory_sum)));
+  database_->AddMetric(Metric(METRIC_SHARED_MEMORY_USAGE,
+                              base::Time::Now(),
+                              static_cast<double>(shared_memory_sum)));
+}
+
+void PerformanceMonitor::UpdateMetricsMapOnBackgroundThread() {
+  MetricsMap* new_map = new MetricsMap;
+
+  base::ProcessId browser_pid = base::GetCurrentProcId();
+  ChromeProcessList chrome_processes(GetRunningChromeProcesses(browser_pid));
+  for (ChromeProcessList::const_iterator pid_iter = chrome_processes.begin();
+       pid_iter != chrome_processes.end(); ++pid_iter) {
+    base::ProcessHandle handle;
+    if (base::OpenProcessHandleWithAccess(*pid_iter, kAccessFlags, &handle)) {
+      // If we were already watching this process, transfer it to the new map.
+      if (ContainsKey(*metrics_map_, handle)) {
+        (*new_map)[handle] = (*metrics_map_)[handle];
+        continue;
+      }
+
+      // Otherwise, gather information and prime the CPU usage to be gathered.
+#if defined (OS_MACOSX)
+      linked_ptr<base::ProcessMetrics> process_metrics(
+          base::ProcessMetrics::CreateProcessMetrics(
+              handle, content::BrowserChildProcessHost::GetPortProvider()));
+#else
+      linked_ptr<base::ProcessMetrics> process_metrics(
+          base::ProcessMetrics::CreateProcessMetrics(handle));
+#endif
+
+      process_metrics->GetCPUUsage();
+
+      (*new_map)[handle] = process_metrics;
+    }
+  }
+
+  metrics_map_.reset(new_map);
 }
 
 void PerformanceMonitor::UpdateLiveProfiles() {
@@ -272,6 +425,47 @@ void PerformanceMonitor::UpdateLiveProfilesHelper(
 
 void PerformanceMonitor::DoTimedCollections() {
   UpdateLiveProfiles();
+
+  BrowserThread::PostBlockingPoolSequencedTask(
+      Database::kDatabaseSequenceToken,
+      FROM_HERE,
+      base::Bind(&PerformanceMonitor::GatherStatisticsOnBackgroundThread,
+                 base::Unretained(this)));
+
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&PerformanceMonitor::CallInsertIOData,
+                 base::Unretained(this)));
+}
+
+void PerformanceMonitor::CallInsertIOData() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  BrowserThread::PostBlockingPoolSequencedTask(
+      Database::kDatabaseSequenceToken,
+      FROM_HERE,
+      base::Bind(&PerformanceMonitor::InsertIOData,
+                 base::Unretained(this),
+                 performance_data_for_io_thread_));
+}
+
+void PerformanceMonitor::InsertIOData(
+    const PerformanceDataForIOThread& performance_data_for_io_thread) {
+  CHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  database_->AddMetric(
+      Metric(METRIC_NETWORK_BYTES_READ,
+             base::Time::Now(),
+             static_cast<double>(
+                 performance_data_for_io_thread.network_bytes_read)));
+}
+
+void PerformanceMonitor::BytesReadOnIOThread(const net::URLRequest& request,
+                                             const int bytes_read) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if (initialized_ && !request.url().SchemeIsFile())
+    performance_data_for_io_thread_.network_bytes_read += bytes_read;
 }
 
 void PerformanceMonitor::Observe(int type,
@@ -279,99 +473,68 @@ void PerformanceMonitor::Observe(int type,
                                  const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
-      const Extension* extension = content::Details<Extension>(details).ptr();
-      AddEvent(util::CreateExtensionInstallEvent(base::Time::Now(),
-                                                 extension->id(),
-                                                 extension->name(),
-                                                 extension->url().spec(),
-                                                 extension->location(),
-                                                 extension->VersionString(),
-                                                 extension->description()));
+      AddExtensionEvent(EVENT_EXTENSION_INSTALL,
+                        content::Details<Extension>(details).ptr());
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_ENABLED: {
-      const Extension* extension = content::Details<Extension>(details).ptr();
-      AddEvent(util::CreateExtensionEnableEvent(base::Time::Now(),
-                                                extension->id(),
-                                                extension->name(),
-                                                extension->url().spec(),
-                                                extension->location(),
-                                                extension->VersionString(),
-                                                extension->description()));
+      AddExtensionEvent(EVENT_EXTENSION_ENABLE,
+                        content::Details<Extension>(details).ptr());
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
       const extensions::UnloadedExtensionInfo* info =
           content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
-      const Extension* extension = info->extension;
-      AddEvent(util::CreateExtensionUnloadEvent(base::Time::Now(),
-                                                extension->id(),
-                                                extension->name(),
-                                                extension->url().spec(),
-                                                extension->location(),
-                                                extension->VersionString(),
-                                                extension->description(),
-                                                info->reason));
+
+      // Check if the extension was unloaded because it was disabled.
+      if (info->reason == extension_misc::UNLOAD_REASON_DISABLE) {
+        AddExtensionEvent(EVENT_EXTENSION_DISABLE,
+                          info->extension);
+      }
       break;
     }
     case chrome::NOTIFICATION_CRX_INSTALLER_DONE: {
       const extensions::CrxInstaller* installer =
           content::Source<extensions::CrxInstaller>(source).ptr();
+      const extensions::Extension* extension =
+          content::Details<Extension>(details).ptr();
 
-      // Check if the reason for the install was due to an extension update.
-      if (installer->install_cause() != extension_misc::INSTALL_CAUSE_UPDATE)
-        break;
-
-      const Extension* extension = content::Details<Extension>(details).ptr();
-      AddEvent(util::CreateExtensionUpdateEvent(base::Time::Now(),
-                                                extension->id(),
-                                                extension->name(),
-                                                extension->url().spec(),
-                                                extension->location(),
-                                                extension->VersionString(),
-                                                extension->description()));
+      // Check if the reason for the install was due to a successful
+      // extension update. |extension| is NULL in case of install failure.
+      if (extension &&
+          installer->install_cause() == extension_misc::INSTALL_CAUSE_UPDATE) {
+        AddExtensionEvent(EVENT_EXTENSION_UPDATE, extension);
+      }
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      const Extension* extension = content::Details<Extension>(details).ptr();
-      AddEvent(util::CreateExtensionUninstallEvent(base::Time::Now(),
-                                                   extension->id(),
-                                                   extension->name(),
-                                                   extension->url().spec(),
-                                                   extension->location(),
-                                                   extension->VersionString(),
-                                                   extension->description()));
+      AddExtensionEvent(EVENT_EXTENSION_UNINSTALL,
+                        content::Details<Extension>(details).ptr());
       break;
     }
     case content::NOTIFICATION_RENDERER_PROCESS_HANG: {
-      content::WebContents* contents =
-          content::Source<content::WebContents>(source).ptr();
-      AddEvent(util::CreateRendererFreezeEvent(base::Time::Now(),
-                                               contents->GetURL().spec()));
+      std::string url;
+      content::RenderWidgetHost* widget =
+          content::Source<content::RenderWidgetHost>(source).ptr();
+      if (widget->IsRenderView()) {
+        content::RenderViewHost* view = content::RenderViewHost::From(widget);
+        MaybeGetURLFromRenderView(view, &url);
+      }
+      AddEvent(util::CreateRendererFailureEvent(base::Time::Now(),
+                                                EVENT_RENDERER_HANG,
+                                                url));
       break;
     }
     case content::NOTIFICATION_RENDERER_PROCESS_CLOSED: {
-      content::RenderProcessHost::RendererClosedDetails closed_details =
+      AddRendererClosedEvent(
+          content::Source<content::RenderProcessHost>(source).ptr(),
           *content::Details<content::RenderProcessHost::RendererClosedDetails>(
-              details).ptr();
-
-      // We only care if this is an invalid termination.
-      if (closed_details.status == base::TERMINATION_STATUS_NORMAL_TERMINATION
-          || closed_details.status == base::TERMINATION_STATUS_STILL_RUNNING)
-        break;
-
-      // Determine the type of crash.
-      EventType type =
-          closed_details.status == base::TERMINATION_STATUS_PROCESS_WAS_KILLED ?
-          EVENT_KILLED_BY_OS_CRASH : EVENT_RENDERER_CRASH;
-
-      AddEvent(util::CreateCrashEvent(base::Time::Now(),
-                                      type));
+              details).ptr());
       break;
     }
     case chrome::NOTIFICATION_PROFILE_ADDED: {
       Profile* profile = content::Source<Profile>(source).ptr();
-      if (!profile->DidLastSessionExitCleanly()) {
+      if (profile->GetLastSessionExitType() == Profile::EXIT_CRASHED) {
         BrowserThread::PostBlockingPoolSequencedTask(
             Database::kDatabaseSequenceToken,
             FROM_HERE,
@@ -382,11 +545,88 @@ void PerformanceMonitor::Observe(int type,
       }
       break;
     }
+    case content::NOTIFICATION_LOAD_STOP: {
+      const content::LoadNotificationDetails* load_details =
+          content::Details<content::LoadNotificationDetails>(details).ptr();
+      if (!load_details)
+        break;
+      BrowserThread::PostBlockingPoolSequencedTask(
+          Database::kDatabaseSequenceToken,
+          FROM_HERE,
+          base::Bind(
+              &PerformanceMonitor::AddMetricOnBackgroundThread,
+              base::Unretained(this),
+              Metric(METRIC_PAGE_LOAD_TIME,
+                     base::Time::Now(),
+                     static_cast<double>(
+                         load_details->load_time.ToInternalValue()))));
+      break;
+    }
     default: {
       NOTREACHED();
       break;
     }
   }
+}
+
+void PerformanceMonitor::AddExtensionEvent(EventType type,
+                                              const Extension* extension) {
+  DCHECK(type == EVENT_EXTENSION_INSTALL ||
+         type == EVENT_EXTENSION_UNINSTALL ||
+         type == EVENT_EXTENSION_UPDATE ||
+         type == EVENT_EXTENSION_ENABLE ||
+         type == EVENT_EXTENSION_DISABLE);
+  AddEvent(util::CreateExtensionEvent(type,
+                                      base::Time::Now(),
+                                      extension->id(),
+                                      extension->name(),
+                                      extension->url().spec(),
+                                      extension->location(),
+                                      extension->VersionString(),
+                                      extension->description()));
+}
+
+void PerformanceMonitor::AddRendererClosedEvent(
+    content::RenderProcessHost* host,
+    const content::RenderProcessHost::RendererClosedDetails& details) {
+  // We only care if this is an invalid termination.
+  if (details.status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
+      details.status == base::TERMINATION_STATUS_STILL_RUNNING)
+    return;
+
+  // Determine the type of crash.
+  EventType type =
+      details.status == base::TERMINATION_STATUS_PROCESS_WAS_KILLED ?
+      EVENT_RENDERER_KILLED : EVENT_RENDERER_CRASH;
+
+  content::RenderProcessHost::RenderWidgetHostsIterator iter =
+      host->GetRenderWidgetHostsIterator();
+
+  // A RenderProcessHost may contain multiple render views - for each valid
+  // render view, extract the url, and append it to the string, comma-separating
+  // the entries.
+  std::string url_list;
+  for (; !iter.IsAtEnd(); iter.Advance()) {
+    const content::RenderWidgetHost* widget = iter.GetCurrentValue();
+    DCHECK(widget);
+    if (!widget || !widget->IsRenderView())
+      continue;
+
+    content::RenderViewHost* view =
+        content::RenderViewHost::From(
+            const_cast<content::RenderWidgetHost*>(widget));
+
+    std::string url;
+    if (!MaybeGetURLFromRenderView(view, &url))
+      continue;
+
+    if (!url_list.empty())
+      url_list += ", ";
+
+    url_list += url;
+  }
+
+  AddEvent(util::CreateRendererFailureEvent(base::Time::Now(), type, url_list));
 }
 
 }  // namespace performance_monitor

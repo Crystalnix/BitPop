@@ -24,6 +24,7 @@
 #include "content/public/common/content_switches.h"
 #include "media/base/android/media_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
+#include "ui/android/ui_jni_registrar.h"
 #include "jni/LibraryLoader_jni.h"
 #include "ui/gfx/android/gfx_jni_registrar.h"
 
@@ -51,7 +52,7 @@ static jboolean LibraryLoadedOnMainThread(JNIEnv* env, jclass clazz,
                        logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
                        logging::DONT_LOCK_LOG_FILE,
                        logging::DELETE_OLD_LOG_FILE,
-                       logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+                       logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
   // To view log output with IDs and timestamps use "adb logcat -v threadtime".
   logging::SetLogItems(false,    // Process ID
                        false,    // Thread ID
@@ -64,6 +65,9 @@ static jboolean LibraryLoadedOnMainThread(JNIEnv* env, jclass clazz,
     return JNI_FALSE;
 
   if (!net::android::RegisterJni(env))
+    return JNI_FALSE;
+
+  if (!ui::RegisterJni(env))
     return JNI_FALSE;
 
   if (!content::android::RegisterCommonJni(env))

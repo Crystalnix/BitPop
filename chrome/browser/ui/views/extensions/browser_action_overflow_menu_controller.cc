@@ -6,6 +6,8 @@
 
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -13,7 +15,6 @@
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_action.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
@@ -23,10 +24,12 @@
 
 BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     BrowserActionsContainer* owner,
+    Browser* browser,
     views::MenuButton* menu_button,
     const std::vector<BrowserActionView*>& views,
     int start_index)
     : owner_(owner),
+      browser_(browser),
       observer_(NULL),
       menu_button_(menu_button),
       menu_(NULL),
@@ -40,16 +43,16 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
   size_t command_id = 1;  // Menu id 0 is reserved, start with 1.
   for (size_t i = start_index; i < views_->size(); ++i) {
     BrowserActionView* view = (*views_)[i];
-    scoped_ptr<gfx::Canvas> canvas(view->GetIconWithBadge());
     menu_->AppendMenuItemWithIcon(
         command_id,
         UTF8ToUTF16(view->button()->extension()->name()),
-        canvas->ExtractImageRep());
+        view->GetIconWithBadge());
 
     // Set the tooltip for this item.
     string16 tooltip = UTF8ToUTF16(
-        view->button()->extension()->browser_action()->GetTitle(
-            owner_->GetCurrentTabId()));
+        extensions::ExtensionActionManager::Get(owner_->profile())->
+        GetBrowserAction(*view->button()->extension())->
+        GetTitle(owner_->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
 
     ++command_id;
@@ -108,7 +111,7 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
     return false;
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_contents =
-      new ExtensionContextMenuModel(extension, owner_->browser());
+      new ExtensionContextMenuModel(extension, browser_, owner_);
   views::MenuModelAdapter context_menu_model_adapter(
       context_menu_contents.get());
   views::MenuRunner context_menu_runner(
@@ -118,7 +121,8 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
   // This blocks until the user choses something or dismisses the menu.
   ignore_result(context_menu_runner.RunMenuAt(menu_button_->GetWidget(),
       NULL, gfx::Rect(p, gfx::Size()), views::MenuItemView::TOPLEFT,
-      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED));
+      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED |
+      views::MenuRunner::CONTEXT_MENU));
 
   // The user is done with the context menu, so we can close the underlying
   // menu.
@@ -155,7 +159,7 @@ bool BrowserActionOverflowMenuController::CanDrop(
 
 int BrowserActionOverflowMenuController::GetDropOperation(
     views::MenuItemView* item,
-    const views::DropTargetEvent& event,
+    const ui::DropTargetEvent& event,
     DropPosition* position) {
   // Don't allow dropping from the BrowserActionContainer into slot 0 of the
   // overflow menu since once the move has taken place the item you are dragging
@@ -176,7 +180,7 @@ int BrowserActionOverflowMenuController::GetDropOperation(
 int BrowserActionOverflowMenuController::OnPerformDrop(
     views::MenuItemView* menu,
     DropPosition position,
-    const views::DropTargetEvent& event) {
+    const ui::DropTargetEvent& event) {
   BrowserActionDragData drop_data;
   if (!drop_data.Read(event.data()))
     return ui::DragDropTypes::DRAG_NONE;

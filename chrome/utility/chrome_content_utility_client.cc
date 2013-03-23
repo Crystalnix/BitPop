@@ -7,11 +7,11 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/importer/external_process_importer_bridge.h"
 #include "chrome/browser/importer/importer.h"
 #include "chrome/browser/importer/profile_import_process_messages.h"
 #include "chrome/common/child_process_logging.h"
@@ -22,17 +22,18 @@
 #include "chrome/common/extensions/unpacker.h"
 #include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/web_resource/web_resource_unpacker.h"
+#include "chrome/common/zip.h"
 #include "chrome/utility/profile_import_handler.h"
 #include "content/public/utility/utility_thread.h"
 #include "printing/backend/print_backend.h"
 #include "printing/page_range.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/rect.h"
 #include "webkit/glue/image_decoder.h"
 
 #if defined(OS_WIN)
-#include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/win/iat_patch_function.h"
 #include "base/win/scoped_handle.h"
@@ -83,9 +84,16 @@ bool ChromeContentUtilityClient::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_DecodeImageBase64, OnDecodeImageBase64)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RenderPDFPagesToMetafile,
                         OnRenderPDFPagesToMetafile)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RobustJPEGDecodeImage,
+                        OnRobustJPEGDecodeImage)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_ParseJSON, OnParseJSON)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_GetPrinterCapsAndDefaults,
                         OnGetPrinterCapsAndDefaults)
+
+#if defined(OS_CHROMEOS)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_CreateZipFile, OnCreateZipFile)
+#endif  // defined(OS_CHROMEOS)
+
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -183,6 +191,34 @@ void ChromeContentUtilityClient::OnDecodeImageBase64(
 
   OnDecodeImage(decoded_vector);
 }
+
+#if defined(OS_CHROMEOS)
+void ChromeContentUtilityClient::OnCreateZipFile(
+    const FilePath& src_dir,
+    const std::vector<FilePath>& src_relative_paths,
+    const base::FileDescriptor& dest_fd) {
+  bool succeeded = true;
+
+  // Check sanity of source relative paths. Reject if path is absolute or
+  // contains any attempt to reference a parent directory ("../" tricks).
+  for (std::vector<FilePath>::const_iterator iter = src_relative_paths.begin();
+      iter != src_relative_paths.end(); ++iter) {
+    if (iter->IsAbsolute() || iter->ReferencesParent()) {
+      succeeded = false;
+      break;
+    }
+  }
+
+  if (succeeded)
+    succeeded = zip::ZipFiles(src_dir, src_relative_paths, dest_fd.fd);
+
+  if (succeeded)
+    Send(new ChromeUtilityHostMsg_CreateZipFile_Succeeded());
+  else
+    Send(new ChromeUtilityHostMsg_CreateZipFile_Failed());
+  content::UtilityThread::Get()->ReleaseProcessIfNeeded();
+}
+#endif  // defined(OS_CHROMEOS)
 
 void ChromeContentUtilityClient::OnRenderPDFPagesToMetafile(
     base::PlatformFile pdf_file,
@@ -357,6 +393,22 @@ bool ChromeContentUtilityClient::RenderPDFToWinMetafile(
 }
 #endif  // defined(OS_WIN)
 
+void ChromeContentUtilityClient::OnRobustJPEGDecodeImage(
+    const std::vector<unsigned char>& encoded_data) {
+  // Our robust jpeg decoding is using IJG libjpeg.
+  if (gfx::JPEGCodec::JpegLibraryVariant() == gfx::JPEGCodec::IJG_LIBJPEG) {
+    scoped_ptr<SkBitmap> decoded_image(gfx::JPEGCodec::Decode(
+        &encoded_data[0], encoded_data.size()));
+    if (!decoded_image.get() || decoded_image->empty()) {
+      Send(new ChromeUtilityHostMsg_DecodeImage_Failed());
+    } else {
+      Send(new ChromeUtilityHostMsg_DecodeImage_Succeeded(*decoded_image));
+    }
+  } else {
+    Send(new ChromeUtilityHostMsg_DecodeImage_Failed());
+  }
+  content::UtilityThread::Get()->ReleaseProcessIfNeeded();
+}
 
 void ChromeContentUtilityClient::OnParseJSON(const std::string& json) {
   int error_code;

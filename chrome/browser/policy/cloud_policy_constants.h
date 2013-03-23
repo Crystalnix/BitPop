@@ -33,6 +33,7 @@ extern const char kValueUserAffiliationNone[];
 // Policy type strings for the policy_type field in PolicyFetchRequest.
 extern const char kChromeDevicePolicyType[];
 extern const char kChromeUserPolicyType[];
+extern const char kChromePublicAccountPolicyType[];
 
 // These codes are sent in the |error_code| field of PolicyFetchResponse.
 enum PolicyFetchStatus {
@@ -77,7 +78,7 @@ enum DeviceManagementStatus {
   // Service error: The device id used for registration is already taken.
   DM_STATUS_SERVICE_DEVICE_ID_CONFLICT,
   // Service error: The licenses have expired or have been exhausted.
-  DM_STATUS_MISSING_LICENSES,
+  DM_STATUS_SERVICE_MISSING_LICENSES,
   // Service error: Policy not found. Error code defined by the DM folks.
   DM_STATUS_SERVICE_POLICY_NOT_FOUND = 902,
 };

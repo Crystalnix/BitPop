@@ -57,7 +57,8 @@ void AboutTcmallocOutputs::DumpToHTMLTable(std::string* data) {
 }
 
 TcmallocInternalsRequestJob::TcmallocInternalsRequestJob(
-    net::URLRequest* request) : net::URLRequestSimpleJob(request) {
+    net::URLRequest* request, net::NetworkDelegate* network_delegate)
+    : net::URLRequestSimpleJob(request, network_delegate) {
 }
 
 #if defined(USE_TCMALLOC)
@@ -72,8 +73,8 @@ void RequestTcmallocStatsFromChildRenderProcesses() {
 void AboutTcmalloc(std::string* data) {
   data->append("<!DOCTYPE html>\n<html>\n<head>\n");
   data->append(
-      "<meta http-equiv=\"X-WebKit-CSP\" content=\"object-src 'none'; "
-      "script-src 'none' 'unsafe-eval'\">");
+      "<meta http-equiv=\"Content-Security-Policy\" "
+      "content=\"object-src 'none'; script-src 'none' 'unsafe-eval'\">");
   data->append("<title>tcmalloc stats</title>");
   data->append("</head><body>");
 

@@ -1,7 +1,6 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 menu {
   -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, .50);
@@ -66,7 +65,7 @@ menu > :not(hr)[selected]:active {
   color: #fff;
 }
 
-menu > [checked]:before {
+menu > [checked]::before {
   content: url('../images/checkbox_black.png');
   display: inline-block;
   height: 9px;
@@ -79,6 +78,16 @@ menu > [checked] {
   -webkit-padding-start: 0;
 }
 
-menu > [selected][checked]:active:before {
+menu > [selected][checked]:active::before {
   content: url('../images/checkbox_white.png');
+}
+
+/* TODO(zvorygin) menu > [shortcutText]::after - this selector is much better,
+ * but it's buggy in current webkit revision, so I have to use [showShortcuts].
+ */
+menu[showShortcuts] > ::after {
+  -webkit-padding-start: 30px;
+  color: #999;
+  content: attr(shortcutText);
+  float: right;
 }

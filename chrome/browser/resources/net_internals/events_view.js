@@ -72,6 +72,9 @@ var EventsView = (function() {
     $(EventsView.SORT_BY_DESCRIPTION_ID).addEventListener(
         'click', this.sortByDescription_.bind(this), true);
 
+    new MouseOverHelp(EventsView.FILTER_HELP_ID,
+                      EventsView.FILTER_HELP_HOVER_ID);
+
     // Sets sort order and filter.
     this.setFilter_('');
 
@@ -85,6 +88,8 @@ var EventsView = (function() {
   EventsView.TBODY_ID = 'events-view-source-list-tbody';
   EventsView.FILTER_INPUT_ID = 'events-view-filter-input';
   EventsView.FILTER_COUNT_ID = 'events-view-filter-count';
+  EventsView.FILTER_HELP_ID = 'events-view-filter-help';
+  EventsView.FILTER_HELP_HOVER_ID = 'events-view-filter-help-hover';
   EventsView.SELECT_ALL_ID = 'events-view-select-all';
   EventsView.SORT_BY_ID_ID = 'events-view-sort-by-id';
   EventsView.SORT_BY_SOURCE_TYPE_ID = 'events-view-sort-by-source';
@@ -138,9 +143,9 @@ var EventsView = (function() {
     },
 
     /**
-     * Updates text in the details view when security stripping is toggled.
+     * Updates text in the details view when privacy stripping is toggled.
      */
-    onSecurityStrippingChanged: function() {
+    onPrivacyStrippingChanged: function() {
       this.invalidateDetailsView_();
     },
 
@@ -285,9 +290,23 @@ var EventsView = (function() {
           var filterInfo = this.parseDirective_(filterText, directive);
           if (filterInfo == null)
             break;
-          if (!filter[directive])
-            filter[directive] = [];
-          filter[directive].push(filterInfo.parameter);
+
+          // Split parameters around commas and remove empty elements.
+          var parameters = filterInfo.parameter.split(',');
+          parameters = parameters.filter(function(string) {
+              return string.length > 0;
+          });
+
+          // If there's already a matching filter, take the intersection.
+          // This behavior primarily exists for tests.  It is not correct
+          // when one of the 'type' filters is a partial match.
+          if (filter[directive]) {
+            parameters = parameters.filter(function(string) {
+                return filter[directive].indexOf(string) != -1;
+            });
+          }
+
+          filter[directive] = parameters;
           filterText = filterInfo.remainingText;
         }
       }

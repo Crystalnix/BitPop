@@ -4,9 +4,13 @@
 
 #include "chrome/browser/extensions/app_shortcut_manager.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
+#include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -17,28 +21,44 @@
 #include "skia/ext/image_operations.h"
 #include "ui/base/resource/resource_bundle.h"
 
-using extensions::Extension;
+#if defined(OS_WIN)
+#include "chrome/browser/extensions/app_host_installer_win.h"
+#include "chrome/installer/util/browser_distribution.h"
+#endif
+
+namespace extensions {
 
 namespace {
-// Allow tests to disable shortcut creation, to prevent developers' desktops
-// becoming overrun with shortcuts.
-bool disable_shortcut_creation_for_tests = false;
 
 #if defined(OS_MACOSX)
 const int kDesiredSizes[] = {16, 32, 128, 256, 512};
 #else
 const int kDesiredSizes[] = {32};
 #endif
+
+ShellIntegration::ShortcutInfo ShortcutInfoForExtensionAndProfile(
+    const Extension* extension, Profile* profile) {
+  ShellIntegration::ShortcutInfo shortcut_info;
+  web_app::UpdateShortcutInfoForApp(*extension, profile, &shortcut_info);
+  shortcut_info.create_in_applications_menu = true;
+  shortcut_info.create_in_quick_launch_bar = true;
+  shortcut_info.create_on_desktop = true;
+  return shortcut_info;
+}
+
 }  // namespace
 
 AppShortcutManager::AppShortcutManager(Profile* profile)
     : profile_(profile),
-      tracker_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      tracker_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
                  content::Source<Profile>(profile_));
 }
+
+AppShortcutManager::~AppShortcutManager() {}
 
 void AppShortcutManager::OnImageLoaded(const gfx::Image& image,
                                        const std::string& extension_id,
@@ -57,7 +77,7 @@ void AppShortcutManager::OnImageLoaded(const gfx::Image& image,
     shortcut_info_.favicon = image;
   }
 
-  web_app::CreateShortcut(profile_->GetPath(), shortcut_info_);
+  web_app::UpdateAllShortcuts(shortcut_info_);
 }
 
 void AppShortcutManager::Observe(int type,
@@ -68,18 +88,29 @@ void AppShortcutManager::Observe(int type,
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       const Extension* extension = content::Details<const Extension>(
           details).ptr();
-      if (!disable_shortcut_creation_for_tests &&
-          extension->is_platform_app() &&
-          extension->location() != Extension::LOAD) {
-        InstallApplicationShortcuts(extension);
+      if (extension->is_platform_app() &&
+          extension->location() != Extension::COMPONENT) {
+#if defined(OS_WIN)
+        if (BrowserDistribution::GetDistribution()->AppHostIsSupported() &&
+            extensions::AppHostInstaller::GetInstallWithLauncher()) {
+          scoped_refptr<Extension> extension_ref(const_cast<Extension*>(
+              extension));
+          extensions::AppHostInstaller::EnsureAppHostInstalled(
+              base::Bind(&AppShortcutManager::OnAppHostInstallationComplete,
+                         weak_factory_.GetWeakPtr(), extension_ref));
+        } else {
+          UpdateApplicationShortcuts(extension);
+        }
+#else
+        UpdateApplicationShortcuts(extension);
+#endif
       }
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      std::string extension_id =
-          content::Details<const Extension>(details).ptr()->id();
-      if (!disable_shortcut_creation_for_tests)
-        web_app::DeleteAllShortcuts(profile_->GetPath(), extension_id);
+      const Extension* extension = content::Details<const Extension>(
+          details).ptr();
+      DeleteApplicationShortcuts(extension);
       break;
     }
     default:
@@ -88,32 +119,33 @@ void AppShortcutManager::Observe(int type,
 #endif
 }
 
-// static
-void AppShortcutManager::SetShortcutCreationDisabledForTesting(bool disabled) {
-  disable_shortcut_creation_for_tests = disabled;
+#if defined(OS_WIN)
+void AppShortcutManager::OnAppHostInstallationComplete(
+    scoped_refptr<Extension> extension, bool app_host_install_success) {
+  if (!app_host_install_success) {
+    // Do not create shortcuts if App Host fails to install.
+    LOG(ERROR) << "Application Runtime installation failed.";
+    return;
+  }
+  UpdateApplicationShortcuts(extension);
 }
+#endif
 
-void AppShortcutManager::InstallApplicationShortcuts(
+void AppShortcutManager::UpdateApplicationShortcuts(
     const Extension* extension) {
-  shortcut_info_.extension_id = extension->id();
-  shortcut_info_.url = GURL(extension->launch_web_url());
-  shortcut_info_.title = UTF8ToUTF16(extension->name());
-  shortcut_info_.description = UTF8ToUTF16(extension->description());
-  shortcut_info_.extension_path = extension->path();
-  shortcut_info_.is_platform_app = extension->is_platform_app();
-  shortcut_info_.create_in_applications_menu = true;
-  shortcut_info_.create_in_quick_launch_bar = true;
-  shortcut_info_.create_on_desktop = true;
-  shortcut_info_.profile_path = profile_->GetPath();
+  shortcut_info_ = ShortcutInfoForExtensionAndProfile(extension, profile_);
 
-  std::vector<ImageLoadingTracker::ImageInfo> info_list;
+  std::vector<ImageLoadingTracker::ImageRepresentation> info_list;
   for (size_t i = 0; i < arraysize(kDesiredSizes); ++i) {
     int size = kDesiredSizes[i];
     ExtensionResource resource = extension->GetIconResource(
         size, ExtensionIconSet::MATCH_EXACTLY);
     if (!resource.empty()) {
-      info_list.push_back(
-          ImageLoadingTracker::ImageInfo(resource, gfx::Size(size, size)));
+      info_list.push_back(ImageLoadingTracker::ImageRepresentation(
+          resource,
+          ImageLoadingTracker::ImageRepresentation::RESIZE_WHEN_LARGER,
+          gfx::Size(size, size),
+          ui::SCALE_FACTOR_100P));
     }
   }
 
@@ -130,8 +162,11 @@ void AppShortcutManager::InstallApplicationShortcuts(
       resource = extension->GetIconResource(
           size, ExtensionIconSet::MATCH_SMALLER);
     }
-    info_list.push_back(
-        ImageLoadingTracker::ImageInfo(resource, gfx::Size(size, size)));
+    info_list.push_back(ImageLoadingTracker::ImageRepresentation(
+        resource,
+        ImageLoadingTracker::ImageRepresentation::RESIZE_WHEN_LARGER,
+        gfx::Size(size, size),
+        ui::SCALE_FACTOR_100P));
   }
 
   // |icon_resources| may still be empty at this point, in which case LoadImage
@@ -139,3 +174,12 @@ void AppShortcutManager::InstallApplicationShortcuts(
   // immediately.
   tracker_.LoadImages(extension, info_list, ImageLoadingTracker::DONT_CACHE);
 }
+
+void AppShortcutManager::DeleteApplicationShortcuts(
+    const Extension* extension) {
+  ShellIntegration::ShortcutInfo delete_info =
+      ShortcutInfoForExtensionAndProfile(extension, profile_);
+  web_app::DeleteAllShortcuts(delete_info);
+}
+
+}  // namespace extensions

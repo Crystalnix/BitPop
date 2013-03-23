@@ -72,8 +72,10 @@ const int Predictor::kMaxSpeculativeResolveQueueDelayMs =
     (kExpectedResolutionTimeMs * Predictor::kTypicalSpeculativeGroupSize) /
     Predictor::kMaxSpeculativeParallelResolves;
 
-static int g_max_queueing_delay_ms = 0;
-static size_t g_max_parallel_resolves = 0u;
+static int g_max_queueing_delay_ms =
+    Predictor::kMaxSpeculativeResolveQueueDelayMs;
+static size_t g_max_parallel_resolves =
+    Predictor::kMaxSpeculativeParallelResolves;
 
 // A version number for prefs that are saved. This should be incremented when
 // we change the format so that we discard old data.
@@ -178,6 +180,13 @@ void Predictor::InitNetworkPredictor(PrefService* user_prefs,
   base::ListValue* referral_list =
       static_cast<base::ListValue*>(user_prefs->GetList(
           prefs::kDnsPrefetchingHostReferralList)->DeepCopy());
+
+  // Now that we have the statistics in memory, wipe them from the Preferences
+  // file. They will be serialized back on a clean shutdown. This way we only
+  // have to worry about clearing our in-memory state when Clearing Browsing
+  // Data.
+  user_prefs->ClearPref(prefs::kDnsPrefetchingStartupList);
+  user_prefs->ClearPref(prefs::kDnsPrefetchingHostReferralList);
 
   BrowserThread::PostTask(
       BrowserThread::IO,

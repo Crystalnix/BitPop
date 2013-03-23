@@ -13,11 +13,11 @@
 #include "chrome/browser/extensions/pending_extension_info.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
+#include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/string_ordinal.h"
-#include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
+#include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using extensions::Extension;
@@ -71,7 +71,8 @@ std::string SyncExtensionHelper::InstallExtension(
     return "";
   }
   profile->GetExtensionService()->OnExtensionInstalled(
-      extension, extension->UpdatesFromGallery(), StringOrdinal());
+      extension, syncer::StringOrdinal(), false /* no requirement errors */,
+      false /* don't wait for idle to install */);
   return extension->id();
 }
 
@@ -139,8 +140,7 @@ bool SyncExtensionHelper::IsExtensionPendingInstallForSync(
   return info->is_from_sync();
 }
 
-void SyncExtensionHelper::InstallExtensionsPendingForSync(
-    Profile* profile, Extension::Type type) {
+void SyncExtensionHelper::InstallExtensionsPendingForSync(Profile* profile) {
   // TODO(akalin): Mock out the servers that the extensions auto-update
   // mechanism talk to so as to more closely match what actually happens.
   // Background networking will need to be re-enabled for extensions tests.
@@ -166,7 +166,12 @@ void SyncExtensionHelper::InstallExtensionsPendingForSync(
                     << " (profile = " << profile->GetDebugName() << ")";
       continue;
     }
-    InstallExtension(profile, iter2->second, type);
+    TypeMap::const_iterator iter3 = id_to_type_.find(*iter);
+    if (iter3 == id_to_type_.end()) {
+      ADD_FAILURE() << "Could not get type for id " << *iter
+                    << " (profile = " << profile->GetDebugName() << ")";
+    }
+    InstallExtension(profile, iter2->second, iter3->second);
   }
 }
 
@@ -276,11 +281,21 @@ scoped_refptr<Extension> CreateExtension(
       source.Set(extension_manifest_keys::kTheme, new DictionaryValue());
       break;
     case Extension::TYPE_HOSTED_APP:
-    case Extension::TYPE_PACKAGED_APP:
+    case Extension::TYPE_LEGACY_PACKAGED_APP:
       source.Set(extension_manifest_keys::kApp, new DictionaryValue());
       source.SetString(extension_manifest_keys::kLaunchWebURL,
                        "http://www.example.com");
       break;
+    case Extension::TYPE_PLATFORM_APP: {
+      source.Set(extension_manifest_keys::kApp, new DictionaryValue());
+      source.Set(extension_manifest_keys::kPlatformAppBackground,
+                 new DictionaryValue());
+      ListValue* scripts = new ListValue();
+      scripts->AppendString("main.js");
+      source.Set(extension_manifest_keys::kPlatformAppBackgroundScripts,
+                 scripts);
+      break;
+    }
     default:
       ADD_FAILURE();
       return NULL;
@@ -288,8 +303,11 @@ scoped_refptr<Extension> CreateExtension(
   const FilePath sub_dir = FilePath().AppendASCII(name);
   FilePath extension_dir;
   if (!file_util::PathExists(base_dir) &&
-      !file_util::CreateDirectory(base_dir) &&
-      !file_util::CreateTemporaryDirInDir(
+      !file_util::CreateDirectory(base_dir)) {
+    ADD_FAILURE();
+    return NULL;
+  }
+  if (!file_util::CreateTemporaryDirInDir(
           base_dir, sub_dir.value(), &extension_dir)) {
     ADD_FAILURE();
     return NULL;
@@ -352,5 +370,6 @@ scoped_refptr<Extension> SyncExtensionHelper::GetExtension(
            << name << ", id = " << expected_id;
   (it->second)[name] = extension;
   id_to_name_[expected_id] = name;
+  id_to_type_[expected_id] = type;
   return extension;
 }

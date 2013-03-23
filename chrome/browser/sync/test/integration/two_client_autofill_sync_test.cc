@@ -4,6 +4,8 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/autofill_profile.h"
+#include "chrome/browser/autofill/credit_card.h"
+#include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/autofill_helper.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
@@ -16,6 +18,7 @@ using autofill_helper::AddProfile;
 using autofill_helper::CreateAutofillProfile;
 using autofill_helper::GetAllKeys;
 using autofill_helper::GetAllProfiles;
+using autofill_helper::GetPersonalDataManager;
 using autofill_helper::KeysMatch;
 using autofill_helper::ProfilesMatch;
 using autofill_helper::PROFILE_FRASIER;
@@ -24,6 +27,7 @@ using autofill_helper::PROFILE_MARION;
 using autofill_helper::PROFILE_NULL;
 using autofill_helper::RemoveKey;
 using autofill_helper::RemoveProfile;
+using autofill_helper::SetCreditCards;
 using autofill_helper::UpdateProfile;
 using bookmarks_helper::AddFolder;
 using bookmarks_helper::AddURL;
@@ -212,7 +216,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, SameProfileWithConflict) {
 
   AutofillProfile profile0 = CreateAutofillProfile(PROFILE_HOMER);
   AutofillProfile profile1 = CreateAutofillProfile(PROFILE_HOMER);
-  profile1.SetInfo(PHONE_HOME_WHOLE_NUMBER, ASCIIToUTF16("1234567890"));
+  profile1.SetRawInfo(PHONE_HOME_WHOLE_NUMBER, ASCIIToUTF16("1234567890"));
 
   AddProfile(0, profile0);
   AddProfile(1, profile1);
@@ -311,7 +315,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, UpdateFields) {
 }
 
 // TCM ID - 3628299.
-IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, ConflictingFields) {
+// This test is flaky on all platforms.  See crbug.com/152551.
+IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, DISABLED_ConflictingFields) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   AddProfile(0, CreateAutofillProfile(PROFILE_HOMER));
@@ -446,4 +451,25 @@ IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, ExceedsMaxLength) {
   MakeABookmarkChange(0);
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
   ASSERT_FALSE(ProfilesMatch(0, 1));
+}
+
+// Test credit cards don't sync.
+IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, NoCreditCardSync) {
+  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+
+  AddProfile(0, CreateAutofillProfile(PROFILE_HOMER));
+
+  CreditCard card;
+  card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("6011111111111117"));
+  std::vector<CreditCard> credit_cards;
+  credit_cards.push_back(card);
+  SetCreditCards(0, &credit_cards);
+
+  MakeABookmarkChange(0);
+  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
+  ASSERT_TRUE(ProfilesMatch(0, 1));
+  ASSERT_EQ(1U, GetAllProfiles(0).size());
+
+  PersonalDataManager* pdm = GetPersonalDataManager(1);
+  ASSERT_EQ(0U, pdm->credit_cards().size());
 }

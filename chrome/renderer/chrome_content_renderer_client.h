@@ -14,14 +14,18 @@
 #include "content/public/renderer/content_renderer_client.h"
 
 class ChromeRenderProcessObserver;
-class ExtensionDispatcher;
 class ExtensionSet;
 class RendererNetPredictor;
 class SpellCheck;
 class SpellCheckProvider;
 class VisitedLinkSlave;
 
-struct ChromeViewHostMsg_GetPluginInfo_Status;
+struct ChromeViewHostMsg_GetPluginInfo_Output;
+
+namespace extensions {
+class Dispatcher;
+class Extension;
+}
 
 namespace media {
 class AudioRendererSink;
@@ -37,9 +41,10 @@ class PhishingClassifierFilter;
 
 namespace webkit {
 struct WebPluginInfo;
-namespace npapi {
-class PluginGroup;
 }
+
+namespace WebKit {
+class WebSecurityOrigin;
 }
 
 namespace chrome {
@@ -53,6 +58,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
   virtual void SetNumberOfViews(int number_of_views) OVERRIDE;
   virtual SkBitmap* GetSadPluginBitmap() OVERRIDE;
+  virtual SkBitmap* GetSadWebViewBitmap() OVERRIDE;
   virtual std::string GetDefaultEncoding() OVERRIDE;
   virtual bool OverrideCreatePlugin(
       content::RenderView* render_view,
@@ -81,13 +87,15 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       webkit_media::MediaStreamClient* media_stream_client,
       media::MediaLog* media_log) OVERRIDE;
   virtual bool RunIdleHandlerWhenWidgetsHidden() OVERRIDE;
-  virtual bool AllowPopup(const GURL& creator) OVERRIDE;
+  virtual bool AllowPopup() OVERRIDE;
   virtual bool ShouldFork(WebKit::WebFrame* frame,
                           const GURL& url,
                           bool is_initial_navigation,
                           bool* send_referrer) OVERRIDE;
   virtual bool WillSendRequest(WebKit::WebFrame* frame,
+                               content::PageTransition transition_type,
                                const GURL& url,
+                               const GURL& first_party_for_cookies,
                                GURL* new_url) OVERRIDE;
   virtual bool ShouldPumpEventsDuringCookieMessage() OVERRIDE;
   virtual void DidCreateScriptContext(WebKit::WebFrame* frame,
@@ -122,7 +130,11 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   bool IsOtherExtensionWithWebRequestInstalled();
 
   // For testing.
-  void SetExtensionDispatcher(ExtensionDispatcher* extension_dispatcher);
+  void SetExtensionDispatcher(extensions::Dispatcher* extension_dispatcher);
+
+  // Sets a new |spellcheck|. Used for low-mem restart and testing only.
+  // Takes ownership of |spellcheck|.
+  void SetSpellcheck(SpellCheck* spellcheck);
 
   // Called in low-memory conditions to dump the memory used by the spellchecker
   // and start over.
@@ -131,18 +143,17 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual void RegisterPPAPIInterfaceFactories(
       webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager) OVERRIDE;
 
-  SpellCheck* spellcheck() const { return spellcheck_.get(); }
-
   WebKit::WebPlugin* CreatePlugin(
       content::RenderView* render_view,
       WebKit::WebFrame* frame,
       const WebKit::WebPluginParams& params,
-      const ChromeViewHostMsg_GetPluginInfo_Status& status,
-      const webkit::WebPluginInfo& plugin,
-      const std::string& actual_mime_type);
+      const ChromeViewHostMsg_GetPluginInfo_Output& output);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ChromeContentRendererClientTest, NaClRestriction);
+
+  const extensions::Extension* GetExtension(
+      const WebKit::WebSecurityOrigin& origin) const;
 
   // Returns true if the frame is navigating to an URL either into or out of an
   // extension app's extent.
@@ -162,7 +173,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                             WebKit::WebPluginParams* params);
 
   scoped_ptr<ChromeRenderProcessObserver> chrome_observer_;
-  scoped_ptr<ExtensionDispatcher> extension_dispatcher_;
+  scoped_ptr<extensions::Dispatcher> extension_dispatcher_;
   scoped_ptr<RendererNetPredictor> net_predictor_;
   scoped_ptr<SpellCheck> spellcheck_;
   scoped_ptr<VisitedLinkSlave> visited_link_slave_;

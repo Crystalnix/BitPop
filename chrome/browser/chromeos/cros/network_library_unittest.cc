@@ -5,22 +5,26 @@
 #include <cert.h>
 #include <pk11pub.h>
 
-#include <vector>
 #include <string>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/cros/onc_network_parser.h"
 #include "chrome/common/chrome_paths.h"
+#include "chromeos/network/onc/onc_certificate_importer.h"
+#include "chromeos/network/onc/onc_constants.h"
+#include "chromeos/network/onc/onc_utils.h"
 #include "crypto/nss_util.h"
-#include "net/base/cert_database.h"
 #include "net/base/crypto_module.h"
+#include "net/base/nss_cert_database.h"
 #include "net/base/x509_certificate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,16 +35,12 @@ namespace chromeos {
 
 namespace {
 
-int32 GetPrefixLength(std::string netmask) {
-  return NetworkIPConfig(std::string(), IPCONFIG_TYPE_UNKNOWN, std::string(),
-      netmask, std::string(), std::string()).GetPrefixLength();
-}
-
 // Have to do a stub here because MOCK can't handle closure arguments.
 class StubEnrollmentDelegate : public EnrollmentDelegate {
  public:
-  explicit StubEnrollmentDelegate(OncNetworkParser* parser)
-    : did_enroll(false), correct_args(false), parser_(parser) {}
+  explicit StubEnrollmentDelegate()
+      : did_enroll(false),
+        correct_args(false) {}
 
   void Enroll(const std::vector<std::string>& uri_list,
               const base::Closure& closure) {
@@ -50,20 +50,12 @@ class StubEnrollmentDelegate : public EnrollmentDelegate {
     if (uri_list == expected_uri_list)
       correct_args = true;
 
-    scoped_refptr<net::X509Certificate> certificate0(
-        parser_->ParseCertificate(0));
-    scoped_refptr<net::X509Certificate> certificate1(
-        parser_->ParseCertificate(1));
-
-    if (certificate0.get() && certificate1.get()) {
-      did_enroll = true;
-      closure.Run();
-    }
+    did_enroll = true;
+    closure.Run();
   }
 
   bool did_enroll;
   bool correct_args;
-  OncNetworkParser* parser_;
 };
 
 void WifiNetworkConnectCallback(NetworkLibrary* cros, WifiNetwork* wifi) {
@@ -75,54 +67,6 @@ void VirtualNetworkConnectCallback(NetworkLibrary* cros, VirtualNetwork* vpn) {
 }
 
 }  // namespace
-
-TEST(NetworkLibraryTest, NetmaskToPrefixlen) {
-  // Valid netmasks
-  EXPECT_EQ(32, GetPrefixLength("255.255.255.255"));
-  EXPECT_EQ(31, GetPrefixLength("255.255.255.254"));
-  EXPECT_EQ(30, GetPrefixLength("255.255.255.252"));
-  EXPECT_EQ(29, GetPrefixLength("255.255.255.248"));
-  EXPECT_EQ(28, GetPrefixLength("255.255.255.240"));
-  EXPECT_EQ(27, GetPrefixLength("255.255.255.224"));
-  EXPECT_EQ(26, GetPrefixLength("255.255.255.192"));
-  EXPECT_EQ(25, GetPrefixLength("255.255.255.128"));
-  EXPECT_EQ(24, GetPrefixLength("255.255.255.0"));
-  EXPECT_EQ(23, GetPrefixLength("255.255.254.0"));
-  EXPECT_EQ(22, GetPrefixLength("255.255.252.0"));
-  EXPECT_EQ(21, GetPrefixLength("255.255.248.0"));
-  EXPECT_EQ(20, GetPrefixLength("255.255.240.0"));
-  EXPECT_EQ(19, GetPrefixLength("255.255.224.0"));
-  EXPECT_EQ(18, GetPrefixLength("255.255.192.0"));
-  EXPECT_EQ(17, GetPrefixLength("255.255.128.0"));
-  EXPECT_EQ(16, GetPrefixLength("255.255.0.0"));
-  EXPECT_EQ(15, GetPrefixLength("255.254.0.0"));
-  EXPECT_EQ(14, GetPrefixLength("255.252.0.0"));
-  EXPECT_EQ(13, GetPrefixLength("255.248.0.0"));
-  EXPECT_EQ(12, GetPrefixLength("255.240.0.0"));
-  EXPECT_EQ(11, GetPrefixLength("255.224.0.0"));
-  EXPECT_EQ(10, GetPrefixLength("255.192.0.0"));
-  EXPECT_EQ(9, GetPrefixLength("255.128.0.0"));
-  EXPECT_EQ(8, GetPrefixLength("255.0.0.0"));
-  EXPECT_EQ(7, GetPrefixLength("254.0.0.0"));
-  EXPECT_EQ(6, GetPrefixLength("252.0.0.0"));
-  EXPECT_EQ(5, GetPrefixLength("248.0.0.0"));
-  EXPECT_EQ(4, GetPrefixLength("240.0.0.0"));
-  EXPECT_EQ(3, GetPrefixLength("224.0.0.0"));
-  EXPECT_EQ(2, GetPrefixLength("192.0.0.0"));
-  EXPECT_EQ(1, GetPrefixLength("128.0.0.0"));
-  EXPECT_EQ(0, GetPrefixLength("0.0.0.0"));
-  // Invalid netmasks
-  EXPECT_EQ(-1, GetPrefixLength("255.255.255"));
-  EXPECT_EQ(-1, GetPrefixLength("255.255.255.255.255"));
-  EXPECT_EQ(-1, GetPrefixLength("255.255.255.255.0"));
-  EXPECT_EQ(-1, GetPrefixLength("255.255.255.256"));
-  EXPECT_EQ(-1, GetPrefixLength("255.255.255.1"));
-  EXPECT_EQ(-1, GetPrefixLength("255.255.240.255"));
-  EXPECT_EQ(-1, GetPrefixLength("255.0.0.255"));
-  EXPECT_EQ(-1, GetPrefixLength("255.255.255.FF"));
-  EXPECT_EQ(-1, GetPrefixLength("255,255,255,255"));
-  EXPECT_EQ(-1, GetPrefixLength("255 255 255 255"));
-}
 
 TEST(NetworkLibraryTest, DecodeNonAsciiSSID) {
 
@@ -191,21 +135,11 @@ class NetworkLibraryStubTest : public testing::Test {
  public:
   NetworkLibraryStubTest() : cros_(NULL) {}
 
-  static void SetUpTestCase() {
-    // Ideally, we'd open a test DB for each test case, and close it
-    // again, removing the temp dir, but unfortunately, there's a
-    // bug in NSS that prevents this from working, so we just open
-    // it once, and empty it for each test case.  Here's the bug:
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=588269
-    ASSERT_TRUE(crypto::OpenTestNSSDB());
-    // There is no matching TearDownTestCase call to close the test NSS DB
-    // because that would leave NSS in a potentially broken state for further
-    // tests, due to https://bugzilla.mozilla.org/show_bug.cgi?id=588269
-  }
-
  protected:
   virtual void SetUp() {
-    slot_ = cert_db_.GetPublicModule();
+    ASSERT_TRUE(test_nssdb_.is_open());
+
+    slot_ = net::NSSCertDatabase::GetInstance()->GetPublicModule();
     cros_ = CrosLibrary::Get()->GetNetworkLibrary();
     ASSERT_TRUE(cros_) << "GetNetworkLibrary() Failed!";
 
@@ -218,16 +152,31 @@ class NetworkLibraryStubTest : public testing::Test {
     EXPECT_EQ(0U, ListCertsInSlot(slot_->os_module_handle()).size());
   }
 
-  virtual void GetTestData(const std::string& filename, std::string* contents) {
+  virtual void GetTestData(const std::string& filename,
+                           scoped_ptr<base::ListValue>* certificates,
+                           scoped_ptr<base::ListValue>* network_configs) {
       FilePath path;
-      std::string error;
       PathService::Get(chrome::DIR_TEST_DATA, &path);
       path = path.AppendASCII("chromeos").AppendASCII("cros").Append(filename);
-      ASSERT_TRUE(contents != NULL);
       ASSERT_TRUE(file_util::PathExists(path))
         << "Couldn't find test data file " << path.value();
-      ASSERT_TRUE(file_util::ReadFileToString(path, contents))
+      std::string contents;
+      ASSERT_TRUE(file_util::ReadFileToString(path, &contents))
         << "Unable to read test data file " << path.value();
+
+      scoped_ptr<base::DictionaryValue> root =
+          onc::ReadDictionaryFromJson(contents);
+      CHECK(root.get() != NULL) << "ONC is not a valid JSON dictionary.";
+
+      base::ListValue* certificates_ptr;
+      CHECK(root->GetListWithoutPathExpansion(onc::kCertificates,
+                                              &certificates_ptr));
+      certificates->reset(certificates_ptr->DeepCopy());
+
+      base::ListValue* network_configs_ptr;
+      CHECK(root->GetListWithoutPathExpansion(onc::kNetworkConfigurations,
+                                              &network_configs_ptr));
+      network_configs->reset(network_configs_ptr->DeepCopy());
   }
 
   ScopedStubCrosEnabler cros_stub_;
@@ -253,14 +202,14 @@ class NetworkLibraryStubTest : public testing::Test {
     bool ok = true;
     net::CertificateList certs = ListCertsInSlot(slot);
     for (size_t i = 0; i < certs.size(); ++i) {
-      if (!cert_db_.DeleteCertAndKey(certs[i]))
+      if (!net::NSSCertDatabase::GetInstance()->DeleteCertAndKey(certs[i]))
         ok = false;
     }
     return ok;
   }
 
-  net::CertDatabase cert_db_;
   scoped_refptr<net::CryptoModule> slot_;
+  crypto::ScopedTestNSSDB test_nssdb_;
 };
 
 // Default stub state:
@@ -349,18 +298,24 @@ TEST_F(NetworkLibraryStubTest, NetworkConnectWifi) {
 
 TEST_F(NetworkLibraryStubTest, NetworkConnectOncWifi) {
   // Import a wireless network via loading an ONC file.
-  std::string test_blob;
-  GetTestData("cert-pattern.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs;
+  scoped_ptr<base::ListValue> certificates;
+  GetTestData("cert-pattern.onc", &certificates, &network_configs);
+
+  onc::CertificateImporter importer(onc::ONC_SOURCE_USER_IMPORT,
+                                    false /* don't allow webtrust */);
+  EXPECT_EQ(onc::CertificateImporter::IMPORT_OK,
+            importer.ParseAndStoreCertificates(*certificates));
+
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
   ASSERT_TRUE(parser.parse_error().empty());
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(2, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
   EXPECT_EQ(CLIENT_CERT_TYPE_PATTERN, network->client_cert_type());
 
-  StubEnrollmentDelegate* enrollment_delegate =
-      new StubEnrollmentDelegate(&parser);
+  StubEnrollmentDelegate* enrollment_delegate = new StubEnrollmentDelegate();
 
   network->SetEnrollmentDelegate(enrollment_delegate);
   EXPECT_FALSE(enrollment_delegate->did_enroll);
@@ -380,18 +335,24 @@ TEST_F(NetworkLibraryStubTest, NetworkConnectOncWifi) {
 
 TEST_F(NetworkLibraryStubTest, NetworkConnectOncVPN) {
   // Import a wireless network via loading an ONC file.
-  std::string test_blob;
-  GetTestData("cert-pattern-vpn.onc", &test_blob);
-  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  scoped_ptr<base::ListValue> network_configs;
+  scoped_ptr<base::ListValue> certificates;
+  GetTestData("cert-pattern-vpn.onc", &certificates, &network_configs);
+
+  onc::CertificateImporter importer(onc::ONC_SOURCE_USER_IMPORT,
+                                    false /* don't allow webtrust */);
+  EXPECT_EQ(onc::CertificateImporter::IMPORT_OK,
+            importer.ParseAndStoreCertificates(*certificates));
+
+  OncNetworkParser parser(*network_configs,
+                          onc::ONC_SOURCE_USER_IMPORT);
   ASSERT_TRUE(parser.parse_error().empty());
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  EXPECT_EQ(2, parser.GetCertificatesSize());
   scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
   EXPECT_EQ(CLIENT_CERT_TYPE_PATTERN, network->client_cert_type());
 
-  StubEnrollmentDelegate* enrollment_delegate =
-      new StubEnrollmentDelegate(&parser);
+  StubEnrollmentDelegate* enrollment_delegate = new StubEnrollmentDelegate();
 
   network->SetEnrollmentDelegate(enrollment_delegate);
   EXPECT_FALSE(enrollment_delegate->did_enroll);

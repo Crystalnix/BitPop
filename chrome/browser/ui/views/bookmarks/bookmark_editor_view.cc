@@ -17,12 +17,14 @@
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/common/pref_names.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "net/base/net_util.h"
+#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/text_button.h"
@@ -35,6 +37,7 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_client_view.h"
 
 using views::GridLayout;
 
@@ -195,12 +198,12 @@ void BookmarkEditorView::ContentsChanged(views::Textfield* sender,
 }
 
 bool BookmarkEditorView::HandleKeyEvent(views::Textfield* sender,
-                                        const views::KeyEvent& key_event) {
+                                        const ui::KeyEvent& key_event) {
     return false;
 }
 
 void BookmarkEditorView::ButtonPressed(views::Button* sender,
-                                       const views::Event& event) {
+                                       const ui::Event& event) {
   DCHECK_EQ(new_folder_button_.get(), sender);
   NewFolder();
 }
@@ -239,7 +242,7 @@ void BookmarkEditorView::ExecuteCommand(int command_id) {
     if (node->value != 0) {
       const BookmarkNode* b_node = bb_model_->GetNodeByID(node->value);
       if (!b_node->empty() &&
-          !bookmark_utils::ConfirmDeleteBookmarkNode(b_node,
+          !chrome::ConfirmDeleteBookmarkNode(b_node,
             GetWidget()->GetNativeWindow())) {
         // The folder is not empty and the user didn't confirm.
         return;
@@ -248,7 +251,7 @@ void BookmarkEditorView::ExecuteCommand(int command_id) {
     }
     tree_model_->Remove(node->parent(), node);
   } else {
-    DCHECK(command_id == IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM);
+    DCHECK_EQ(IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM, command_id);
     NewFolder();
   }
 }
@@ -272,7 +275,7 @@ void BookmarkEditorView::Close() {
 
 void BookmarkEditorView::ShowContextMenuForView(views::View* source,
                                                 const gfx::Point& point) {
-  DCHECK(source == tree_view_);
+  DCHECK_EQ(tree_view_, source);
   if (!tree_view_->GetSelectedNode())
     return;
   running_menu_for_root_ =
@@ -284,7 +287,8 @@ void BookmarkEditorView::ShowContextMenuForView(views::View* source,
 
   if (context_menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
         NULL, gfx::Rect(point, gfx::Size()), views::MenuItemView::TOPRIGHT,
-        views::MenuRunner::HAS_MNEMONICS) == views::MenuRunner::MENU_DELETED)
+        views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+        views::MenuRunner::MENU_DELETED)
     return;
 }
 
@@ -521,10 +525,10 @@ BookmarkEditorView::EditorNode* BookmarkEditorView::CreateRootNode() {
   const BookmarkNode* bb_root_node = bb_model_->root_node();
   CreateNodes(bb_root_node, root_node);
   DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 3);
-  DCHECK(bb_root_node->GetChild(0)->type() == BookmarkNode::BOOKMARK_BAR);
-  DCHECK(bb_root_node->GetChild(1)->type() == BookmarkNode::OTHER_NODE);
+  DCHECK_EQ(BookmarkNode::BOOKMARK_BAR, bb_root_node->GetChild(0)->type());
+  DCHECK_EQ(BookmarkNode::OTHER_NODE, bb_root_node->GetChild(1)->type());
   if (root_node->child_count() == 3)
-    DCHECK(bb_root_node->GetChild(2)->type() == BookmarkNode::MOBILE);
+    DCHECK_EQ(BookmarkNode::MOBILE, bb_root_node->GetChild(2)->type());
   return root_node;
 }
 

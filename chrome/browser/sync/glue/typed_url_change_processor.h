@@ -10,7 +10,6 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
 #include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/typed_url_model_associator.h"
@@ -58,6 +57,7 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   // sync API model -> WebDataService change application.
   virtual void ApplyChangesFromSyncModel(
       const syncer::BaseTransaction* trans,
+      int64 model_version,
       const syncer::ImmutableChangeRecordList& changes) OVERRIDE;
 
   // Commit changes here, after we've released the transaction lock to avoid
@@ -66,7 +66,6 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
 
  protected:
   virtual void StartImpl(Profile* profile) OVERRIDE;
-  virtual void StopImpl() OVERRIDE;
 
  private:
   friend class ScopedStopObserving<TypedUrlChangeProcessor>;
@@ -101,8 +100,6 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   history::HistoryBackend* history_backend_;
 
   content::NotificationRegistrar notification_registrar_;
-
-  bool observing_;  // True when we should observe notifications.
 
   MessageLoop* expected_loop_;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,8 +39,7 @@ bool PrefixLess(const std::pair<SBPrefix,size_t>& a,
 
 namespace safe_browsing {
 
-PrefixSet::PrefixSet(const std::vector<SBPrefix>& sorted_prefixes)
-    : checksum_(0) {
+PrefixSet::PrefixSet(const std::vector<SBPrefix>& sorted_prefixes) {
   if (sorted_prefixes.size()) {
     // Estimate the resulting vector sizes.  There will be strictly
     // more than |min_runs| entries in |index_|, but there generally
@@ -53,13 +52,6 @@ PrefixSet::PrefixSet(const std::vector<SBPrefix>& sorted_prefixes)
     SBPrefix prev_prefix = sorted_prefixes[0];
     size_t run_length = 0;
     index_.push_back(std::make_pair(prev_prefix, deltas_.size()));
-
-    // Used to build a checksum from the data used to construct the
-    // structures.  Since the data is a bunch of uniform hashes, it
-    // seems reasonable to just xor most of it in, rather than trying
-    // to use a more complicated algorithm.
-    uint32 checksum = static_cast<uint32>(sorted_prefixes[0]);
-    checksum ^= static_cast<uint32>(deltas_.size());
 
     for (size_t i = 1; i < sorted_prefixes.size(); ++i) {
       // Skip duplicates.
@@ -75,12 +67,9 @@ PrefixSet::PrefixSet(const std::vector<SBPrefix>& sorted_prefixes)
       // New index ref if the delta doesn't fit, or if too many
       // consecutive deltas have been encoded.
       if (delta != static_cast<unsigned>(delta16) || run_length >= kMaxRun) {
-        checksum ^= static_cast<uint32>(sorted_prefixes[i]);
-        checksum ^= static_cast<uint32>(deltas_.size());
         index_.push_back(std::make_pair(sorted_prefixes[i], deltas_.size()));
         run_length = 0;
       } else {
-        checksum ^= static_cast<uint32>(delta16);
         // Continue the run of deltas.
         deltas_.push_back(delta16);
         DCHECK_EQ(static_cast<unsigned>(deltas_.back()), delta);
@@ -89,8 +78,6 @@ PrefixSet::PrefixSet(const std::vector<SBPrefix>& sorted_prefixes)
 
       prev_prefix = sorted_prefixes[i];
     }
-    checksum_ = checksum;
-    DCHECK(CheckChecksum());
 
     // Send up some memory-usage stats.  Bits because fractional bytes
     // are weird.
@@ -105,8 +92,7 @@ PrefixSet::PrefixSet(const std::vector<SBPrefix>& sorted_prefixes)
 }
 
 PrefixSet::PrefixSet(std::vector<std::pair<SBPrefix,size_t> > *index,
-                     std::vector<uint16> *deltas)
-    : checksum_(0) {
+                     std::vector<uint16> *deltas) {
   DCHECK(index && deltas);
   index_.swap(*index);
   deltas_.swap(*deltas);
@@ -207,22 +193,26 @@ PrefixSet* PrefixSet::LoadFile(const FilePath& filter_name) {
   // Read the index vector.  Herb Sutter indicates that vectors are
   // guaranteed to be contiuguous, so reading to where element 0 lives
   // is valid.
-  index.resize(header.index_size);
-  read = fread(&(index[0]), sizeof(index[0]), index.size(), file.get());
-  if (read != index.size())
-    return NULL;
-  base::MD5Update(&context,
-                  base::StringPiece(reinterpret_cast<char*>(&(index[0])),
-                                    index_bytes));
+  if (header.index_size) {
+    index.resize(header.index_size);
+    read = fread(&(index[0]), sizeof(index[0]), index.size(), file.get());
+    if (read != index.size())
+      return NULL;
+    base::MD5Update(&context,
+                    base::StringPiece(reinterpret_cast<char*>(&(index[0])),
+                                      index_bytes));
+  }
 
   // Read vector of deltas.
-  deltas.resize(header.deltas_size);
-  read = fread(&(deltas[0]), sizeof(deltas[0]), deltas.size(), file.get());
-  if (read != deltas.size())
-    return NULL;
-  base::MD5Update(&context,
-                  base::StringPiece(reinterpret_cast<char*>(&(deltas[0])),
-                                    deltas_bytes));
+  if (header.deltas_size) {
+    deltas.resize(header.deltas_size);
+    read = fread(&(deltas[0]), sizeof(deltas[0]), deltas.size(), file.get());
+    if (read != deltas.size())
+      return NULL;
+    base::MD5Update(&context,
+                    base::StringPiece(reinterpret_cast<char*>(&(deltas[0])),
+                                      deltas_bytes));
+  }
 
   base::MD5Digest calculated_digest;
   base::MD5Final(&calculated_digest, &context);
@@ -270,23 +260,29 @@ bool PrefixSet::WriteFile(const FilePath& filter_name) const {
 
   // As for reads, the standard guarantees the ability to access the
   // contents of the vector by a pointer to an element.
-  const size_t index_bytes = sizeof(index_[0]) * index_.size();
-  written = fwrite(&(index_[0]), sizeof(index_[0]), index_.size(), file.get());
-  if (written != index_.size())
-    return false;
-  base::MD5Update(&context,
-                  base::StringPiece(reinterpret_cast<const char*>(&(index_[0])),
-                                    index_bytes));
+  if (index_.size()) {
+    const size_t index_bytes = sizeof(index_[0]) * index_.size();
+    written = fwrite(&(index_[0]), sizeof(index_[0]), index_.size(),
+                     file.get());
+    if (written != index_.size())
+      return false;
+    base::MD5Update(&context,
+                    base::StringPiece(
+                        reinterpret_cast<const char*>(&(index_[0])),
+                        index_bytes));
+  }
 
-  const size_t deltas_bytes = sizeof(deltas_[0]) * deltas_.size();
-  written = fwrite(&(deltas_[0]), sizeof(deltas_[0]), deltas_.size(),
-                   file.get());
-  if (written != deltas_.size())
-    return false;
-  base::MD5Update(&context,
-                  base::StringPiece(
-                      reinterpret_cast<const char*>(&(deltas_[0])),
-                      deltas_bytes));
+  if (deltas_.size()) {
+    const size_t deltas_bytes = sizeof(deltas_[0]) * deltas_.size();
+    written = fwrite(&(deltas_[0]), sizeof(deltas_[0]), deltas_.size(),
+                     file.get());
+    if (written != deltas_.size())
+      return false;
+    base::MD5Update(&context,
+                    base::StringPiece(
+                        reinterpret_cast<const char*>(&(deltas_[0])),
+                        deltas_bytes));
+  }
 
   base::MD5Digest digest;
   base::MD5Final(&digest, &context);
@@ -298,72 +294,6 @@ bool PrefixSet::WriteFile(const FilePath& filter_name) const {
   file.reset();
 
   return true;
-}
-
-size_t PrefixSet::IndexBinFor(size_t target_index) const {
-  // The items in |index_| have the logical index of each previous
-  // item in |index_| plus the count of deltas between the items.
-  // Since the indices into |deltas_| are absolute, the logical index
-  // is then the sum of the two indices.
-  size_t lo = 0;
-  size_t hi = index_.size();
-
-  // Binary search because linear search was too slow (really, the
-  // unit test sucked).  Inline because the elements can't be compared
-  // in isolation (their position matters).
-  while (hi - lo > 1) {
-    const size_t i = (lo + hi) / 2;
-
-    if (target_index < i + index_[i].second) {
-      DCHECK_LT(i, hi);  // Always making progress.
-      hi = i;
-    } else {
-      DCHECK_GT(i, lo);  // Always making progress.
-      lo = i;
-    }
-  }
-  return lo;
-}
-
-size_t PrefixSet::GetSize() const {
-  return index_.size() + deltas_.size();
-}
-
-bool PrefixSet::IsDeltaAt(size_t target_index) const {
-  CHECK_LT(target_index, GetSize());
-
-  const size_t i = IndexBinFor(target_index);
-  return target_index > i + index_[i].second;
-}
-
-uint16 PrefixSet::DeltaAt(size_t target_index) const {
-  CHECK_LT(target_index, GetSize());
-
-  // Find the |index_| entry which contains |target_index|.
-  const size_t i = IndexBinFor(target_index);
-
-  // Exactly on the |index_| entry means no delta.
-  CHECK_GT(target_index, i + index_[i].second);
-
-  // -i backs out the |index_| entries, -1 gets the delta that lead to
-  // the value at |target_index|.
-  CHECK_LT(target_index - i - 1, deltas_.size());
-  return deltas_[target_index - i - 1];
-}
-
-bool PrefixSet::CheckChecksum() const {
-  uint32 checksum = 0;
-
-  for (size_t ii = 0; ii < index_.size(); ++ii) {
-    checksum ^= static_cast<uint32>(index_[ii].first);
-    checksum ^= static_cast<uint32>(index_[ii].second);
-  }
-
-  for (size_t di = 0; di < deltas_.size(); ++di) {
-    checksum ^= static_cast<uint32>(deltas_[di]);
-  }
-
-  return checksum == checksum_;
 }
 
 }  // namespace safe_browsing

@@ -10,12 +10,14 @@
 
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
-#include "chrome/common/extensions/url_pattern.h"
-#include "chrome/common/extensions/url_pattern_set.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/common/url_pattern.h"
+#include "extensions/common/url_pattern_set.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using extensions::URLPatternSet;
 
 namespace {
 
@@ -35,8 +37,8 @@ bool RcdBetterThan(const std::string& a, const std::string& b) {
 // Names of API modules that can be used without listing it in the
 // permissions section of the manifest.
 const char* kNonPermissionModuleNames[] = {
-  "app",
   "browserAction",
+  "commands",
   "devtools",
   "events",
   "extension",
@@ -47,8 +49,10 @@ const char* kNonPermissionModuleNames[] = {
   "permissions",
   "runtime",
   "scriptBadge",
+  "tabs",
   "test",
-  "types"
+  "types",
+  "windows"
 };
 const size_t kNumNonPermissionModuleNames =
     arraysize(kNonPermissionModuleNames);
@@ -57,11 +61,13 @@ const size_t kNumNonPermissionModuleNames =
 // without asking for the module permission. In other words, functions you can
 // use with no permissions specified.
 const char* kNonPermissionFunctionNames[] = {
+  "app.getDetails",
+  "app.getDetailsForFrame",
+  "app.getIsInstalled",
+  "app.install",
+  "app.installState",
+  "app.runningState",
   "management.getPermissionWarningsByManifest",
-  "tabs.create",
-  "tabs.onRemoved",
-  "tabs.remove",
-  "tabs.update",
 };
 const size_t kNumNonPermissionFunctionNames =
     arraysize(kNonPermissionFunctionNames);
@@ -128,10 +134,7 @@ PermissionSet* PermissionSet::CreateDifference(
   const PermissionSet* set2_safe = (set2 == NULL) ? empty : set2;
 
   APIPermissionSet apis;
-  std::set_difference(set1_safe->apis().begin(), set1_safe->apis().end(),
-                      set2_safe->apis().begin(), set2_safe->apis().end(),
-                      std::insert_iterator<APIPermissionSet>(
-                          apis, apis.begin()));
+  APIPermissionSet::Difference(set1_safe->apis(), set2_safe->apis(), &apis);
 
   URLPatternSet explicit_hosts;
   URLPatternSet::CreateDifference(set1_safe->explicit_hosts(),
@@ -155,10 +158,8 @@ PermissionSet* PermissionSet::CreateIntersection(
   const PermissionSet* set2_safe = (set2 == NULL) ? empty : set2;
 
   APIPermissionSet apis;
-  std::set_intersection(set1_safe->apis().begin(), set1_safe->apis().end(),
-                        set2_safe->apis().begin(), set2_safe->apis().end(),
-                        std::insert_iterator<APIPermissionSet>(
-                            apis, apis.begin()));
+  APIPermissionSet::Intersection(set1_safe->apis(), set2_safe->apis(), &apis);
+
   URLPatternSet explicit_hosts;
   URLPatternSet::CreateIntersection(set1_safe->explicit_hosts(),
                                     set2_safe->explicit_hosts(),
@@ -181,10 +182,7 @@ PermissionSet* PermissionSet::CreateUnion(
   const PermissionSet* set2_safe = (set2 == NULL) ? empty : set2;
 
   APIPermissionSet apis;
-  std::set_union(set1_safe->apis().begin(), set1_safe->apis().end(),
-                 set2_safe->apis().begin(), set2_safe->apis().end(),
-                 std::insert_iterator<APIPermissionSet>(
-                     apis, apis.begin()));
+  APIPermissionSet::Union(set1_safe->apis(), set2_safe->apis(), &apis);
 
   URLPatternSet explicit_hosts;
   URLPatternSet::CreateUnion(set1_safe->explicit_hosts(),
@@ -199,6 +197,23 @@ PermissionSet* PermissionSet::CreateUnion(
   return new PermissionSet(apis, explicit_hosts, scriptable_hosts);
 }
 
+// static
+PermissionSet* PermissionSet::ExcludeNotInManifestPermissions(
+    const PermissionSet* set) {
+  if (!set)
+    return new PermissionSet();
+
+  APIPermissionSet apis;
+  for (APIPermissionSet::const_iterator i = set->apis().begin();
+       i != set->apis().end(); ++i) {
+    if (!i->ManifestEntryForbidden())
+      apis.insert(i->Clone());
+  }
+
+  return new PermissionSet(
+      apis, set->explicit_hosts(), set->scriptable_hosts());
+}
+
 bool PermissionSet::operator==(
     const PermissionSet& rhs) const {
   return apis_ == rhs.apis_ &&
@@ -211,9 +226,8 @@ bool PermissionSet::Contains(const PermissionSet& set) const {
   if (set.IsEmpty())
     return true;
 
-  if (!std::includes(apis_.begin(), apis_.end(),
-                     set.apis().begin(), set.apis().end()))
-    return false;
+  if (!apis_.Contains(set.apis()))
+      return false;
 
   if (!explicit_hosts().Contains(set.explicit_hosts()))
     return false;
@@ -225,25 +239,12 @@ bool PermissionSet::Contains(const PermissionSet& set) const {
 }
 
 std::set<std::string> PermissionSet::GetAPIsAsStrings() const {
-  PermissionsInfo* info = PermissionsInfo::GetInstance();
   std::set<std::string> apis_str;
   for (APIPermissionSet::const_iterator i = apis_.begin();
        i != apis_.end(); ++i) {
-    APIPermission* permission = info->GetByID(*i);
-    if (permission)
-      apis_str.insert(permission->name());
+    apis_str.insert(i->name());
   }
   return apis_str;
-}
-
-std::set<std::string> PermissionSet::
-    GetAPIsWithAnyAccessAsStrings() const {
-  std::set<std::string> result = GetAPIsAsStrings();
-  for (size_t i = 0; i < kNumNonPermissionModuleNames; ++i)
-    result.insert(kNonPermissionModuleNames[i]);
-  for (size_t i = 0; i < kNumNonPermissionFunctionNames; ++i)
-    result.insert(GetPermissionName(kNonPermissionFunctionNames[i]));
-  return result;
 }
 
 bool PermissionSet::HasAnyAccessToAPI(
@@ -340,8 +341,21 @@ bool PermissionSet::IsEmpty() const {
 }
 
 bool PermissionSet::HasAPIPermission(
-    APIPermission::ID permission) const {
-  return apis().find(permission) != apis().end();
+    APIPermission::ID id) const {
+  return apis().find(id) != apis().end();
+}
+
+bool PermissionSet::CheckAPIPermission(APIPermission::ID permission) const {
+  return CheckAPIPermissionWithParam(permission, NULL);
+}
+
+bool PermissionSet::CheckAPIPermissionWithParam(
+    APIPermission::ID permission,
+    const APIPermission::CheckParam* param) const {
+  APIPermissionSet::const_iterator iter = apis().find(permission);
+  if (iter == apis().end())
+    return false;
+  return iter->Check(param);
 }
 
 bool PermissionSet::HasAccessToFunction(
@@ -355,17 +369,26 @@ bool PermissionSet::HasAccessToFunction(
       return true;
   }
 
-  std::string permission_name = GetPermissionName(function_name);
-  APIPermission* permission =
-      PermissionsInfo::GetInstance()->GetByName(permission_name);
-  if (permission && apis_.count(permission->id()))
-    return true;
-
-  for (size_t i = 0; i < kNumNonPermissionModuleNames; ++i) {
-    if (permission_name == kNonPermissionModuleNames[i]) {
+  // Search for increasingly smaller substrings of |function_name| to see if we
+  // find a matching permission or non-permission module name. E.g. for
+  // "a.b.c", we'll search on "a.b.c", then "a.b", and finally "a".
+  std::string name = function_name;
+  size_t lastdot;
+  do {
+    const APIPermissionInfo* permission =
+        PermissionsInfo::GetInstance()->GetByName(name);
+    if (permission && apis_.count(permission->id()))
       return true;
+
+    for (size_t i = 0; i < kNumNonPermissionModuleNames; ++i) {
+      if (name == kNonPermissionModuleNames[i]) {
+        return true;
+      }
     }
-  }
+    lastdot = name.find_last_of("./");
+    if (lastdot != std::string::npos)
+      name = std::string(name, 0, lastdot);
+  } while (lastdot != std::string::npos);
 
   return false;
 }
@@ -394,11 +417,9 @@ bool PermissionSet::HasEffectiveAccessToAllHosts() const {
       return true;
   }
 
-  PermissionsInfo* info = PermissionsInfo::GetInstance();
   for (APIPermissionSet::const_iterator i = apis().begin();
        i != apis().end(); ++i) {
-    APIPermission* permission = info->GetByID(*i);
-    if (permission->implies_full_url_access())
+    if (i->info()->implies_full_url_access())
       return true;
   }
   return false;
@@ -410,11 +431,9 @@ bool PermissionSet::HasEffectiveAccessToURL(
 }
 
 bool PermissionSet::HasEffectiveFullAccess() const {
-  PermissionsInfo* info = PermissionsInfo::GetInstance();
   for (APIPermissionSet::const_iterator i = apis().begin();
        i != apis().end(); ++i) {
-    APIPermission* permission = info->GetByID(*i);
-    if (permission->implies_full_access())
+    if (i->info()->implies_full_access())
       return true;
   }
   return false;
@@ -503,10 +522,6 @@ void PermissionSet::InitImplicitPermissions() {
   // The fileBrowserHandler permission implies the internal version as well.
   if (apis_.find(APIPermission::kFileBrowserHandler) != apis_.end())
     apis_.insert(APIPermission::kFileBrowserHandlerInternal);
-
-  // mediaGalleriesRead implies the mediaGalleries permission.
-  if (apis_.find(APIPermission::kMediaGalleriesRead) != apis_.end())
-    apis_.insert(APIPermission::kMediaGalleries);
 }
 
 void PermissionSet::InitImplicitExtensionPermissions(
@@ -539,14 +554,14 @@ void PermissionSet::InitEffectiveHosts() {
 std::set<PermissionMessage>
     PermissionSet::GetSimplePermissionMessages() const {
   std::set<PermissionMessage> messages;
-  PermissionsInfo* info = PermissionsInfo::GetInstance();
-  for (APIPermissionSet::const_iterator i = apis_.begin();
-       i != apis_.end(); ++i) {
+  for (APIPermissionSet::const_iterator permission_it = apis_.begin();
+       permission_it != apis_.end(); ++permission_it) {
     DCHECK_GT(PermissionMessage::kNone,
               PermissionMessage::kUnknown);
-    APIPermission* perm = info->GetByID(*i);
-    if (perm && perm->message_id() > PermissionMessage::kNone)
-      messages.insert(perm->GetMessage_());
+    if (permission_it->HasMessages()) {
+      PermissionMessages new_messages = permission_it->GetMessages();
+      messages.insert(new_messages.begin(), new_messages.end());
+    }
   }
   return messages;
 }

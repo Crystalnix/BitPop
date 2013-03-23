@@ -12,7 +12,7 @@
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/cookies_tree_model.h"
+#include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/canonical_cookie.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -25,8 +25,6 @@ const char kKeyTitle[] = "title";
 const char kKeyIcon[] = "icon";
 const char kKeyType[] = "type";
 const char kKeyHasChildren[] = "hasChildren";
-
-const char kKeyAppId[] = "appId";
 
 const char kKeyAppsProtectingThis[] = "appsProtectingThis";
 const char kKeyName[] = "name";
@@ -98,7 +96,6 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
   switch (node.GetDetailedInfo().node_type) {
     case CookieTreeNode::DetailedInfo::TYPE_HOST: {
       dict->SetString(kKeyType, "origin");
-      dict->SetString(kKeyAppId, node.GetDetailedInfo().app_id);
 #if defined(OS_MACOSX)
       dict->SetString(kKeyIcon, "chrome://theme/IDR_BOOKMARK_BAR_FOLDER");
 #endif

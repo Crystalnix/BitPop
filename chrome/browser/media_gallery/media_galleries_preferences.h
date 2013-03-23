@@ -5,7 +5,8 @@
 #ifndef CHROME_BROWSER_MEDIA_GALLERY_MEDIA_GALLERIES_PREFERENCES_H_
 #define CHROME_BROWSER_MEDIA_GALLERY_MEDIA_GALLERIES_PREFERENCES_H_
 
-#include <list>
+#include <map>
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -20,56 +21,95 @@ namespace base {
 class DictionaryValue;
 }
 
+namespace extensions {
+class Extension;
+class ExtensionPrefs;
+}
+
+namespace chrome {
+
 typedef uint64 MediaGalleryPrefId;
+const MediaGalleryPrefId kInvalidMediaGalleryPrefId = 0;
 
 struct MediaGalleryPermission {
   MediaGalleryPrefId pref_id;
   bool has_permission;
 };
 
-struct MediaGallery {
-  MediaGallery();
-  ~MediaGallery();
+struct MediaGalleryPrefInfo {
+  enum Type {
+    kAutoDetected,  // Auto added to the list of galleries.
+    kUserAdded,     // Explicitly added by the user.
+    kBlackListed,   // Auto added but then removed by the user.
+    kInvalidType,
+  };
 
-  // The ID that uniquely, persistently identifies the gallery.
-  uint64 id;
+  MediaGalleryPrefInfo();
+  ~MediaGalleryPrefInfo();
 
-  // The directory where the gallery is located, relative to the base path
-  // for the device.
-  FilePath path;
+  // The absolute path of the gallery.
+  FilePath AbsolutePath() const;
 
-  // The base path of the device.
-  FilePath base_path;
-
-  // A string which identifies the device that the gallery lives on.
-  std::string identifier;
+  // The ID that identifies this gallery in this Profile.
+  MediaGalleryPrefId pref_id;
 
   // The user-visible name of this gallery.
   string16 display_name;
+
+  // A string which uniquely and persistently identifies the device that the
+  // gallery lives on.
+  std::string device_id;
+
+  // The root of the gallery, relative to the root of the device.
+  FilePath path;
+
+  // The type of gallery.
+  Type type;
 };
 
-// A class to manage the media galleries that the user has added, explicitly or
-// otherwise. There is one registry per user profile.
-// TODO(estade): should MediaFileSystemRegistry be merged into this class?
+typedef std::map<MediaGalleryPrefId, MediaGalleryPrefInfo>
+    MediaGalleriesPrefInfoMap;
+typedef std::set<MediaGalleryPrefId> MediaGalleryPrefIdSet;
+
+// A class to manage the media gallery preferences.  There is one instance per
+// user profile.
 class MediaGalleriesPreferences : public ProfileKeyedService {
  public:
-  typedef std::list<MediaGallery> MediaGalleries;
-
   explicit MediaGalleriesPreferences(Profile* profile);
   virtual ~MediaGalleriesPreferences();
 
-  // Builds |remembered_galleries_| from the persistent store.
-  void InitFromPrefs();
+  // Lookup a media gallery and fill in information about it and return true.
+  // If the media gallery does not already exist, fill in as much of the
+  // MediaGalleryPrefInfo struct as we can and return false.
+  // TODO(vandebo) figure out if we want this to be async, in which case:
+  // void LookUpGalleryByPath(FilePath&path, callback(const MediaGalleryInfo&))
+  bool LookUpGalleryByPath(const FilePath& path,
+                           MediaGalleryPrefInfo* gallery) const;
 
-  // Teaches the registry about a new gallery defined by |path| (which should
-  // be a directory).
-  void AddGalleryByPath(const FilePath& path);
+  MediaGalleryPrefIdSet LookUpGalleriesByDeviceId(
+      const std::string& device_id) const;
+
+  // Teaches the registry about a new gallery.
+  MediaGalleryPrefId AddGallery(const std::string& device_id,
+                                const string16& display_name,
+                                const FilePath& relative_path,
+                                bool user_added);
+
+  // Teach the registry about a user added registry simply from the path.
+  MediaGalleryPrefId AddGalleryByPath(const FilePath& path);
 
   // Removes the gallery identified by |id| from the store.
-  void ForgetGalleryById(uint64 id);
+  void ForgetGalleryById(MediaGalleryPrefId id);
 
-  const MediaGalleries& remembered_galleries() const {
-    return remembered_galleries_;
+  MediaGalleryPrefIdSet GalleriesForExtension(
+      const extensions::Extension& extension) const;
+
+  void SetGalleryPermissionForExtension(const extensions::Extension& extension,
+                                        MediaGalleryPrefId pref_id,
+                                        bool has_permission);
+
+  const MediaGalleriesPrefInfoMap& known_galleries() const {
+    return known_galleries_;
   }
 
   // ProfileKeyedService implementation:
@@ -77,18 +117,35 @@ class MediaGalleriesPreferences : public ProfileKeyedService {
 
   static void RegisterUserPrefs(PrefService* prefs);
 
-  // Returns true if the media gallery UI is turned on.
-  static bool UserInteractionIsEnabled();
+  // Returns true if the media gallery preferences system has ever been used
+  // for this profile. To be exact, it checks if a gallery has ever been added
+  // (including defaults).
+  static bool APIHasBeenUsed(Profile* profile);
 
  private:
+  typedef std::map<std::string /*device id*/, MediaGalleryPrefIdSet>
+      DeviceIdPrefIdsMap;
+
+  // Populates the default galleries if this is a fresh profile.
+  void MaybeAddDefaultGalleries();
+
+  // Builds |remembered_galleries_| from the persistent store.
+  void InitFromPrefs();
+
   // The profile that owns |this|.
   Profile* profile_;
 
   // An in-memory cache of known galleries.
-  // TODO(estade): either actually use this, or remove it.
-  MediaGalleries remembered_galleries_;
+  MediaGalleriesPrefInfoMap known_galleries_;
+
+  // A mapping from device id to the set of gallery pref ids on that device.
+  DeviceIdPrefIdsMap device_map_;
+
+  extensions::ExtensionPrefs* GetExtensionPrefs() const;
 
   DISALLOW_COPY_AND_ASSIGN(MediaGalleriesPreferences);
 };
+
+}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERY_MEDIA_GALLERIES_PREFERENCES_H_

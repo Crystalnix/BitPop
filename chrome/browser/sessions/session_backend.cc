@@ -244,12 +244,16 @@ void SessionBackend::AppendCommands(
 }
 
 void SessionBackend::ReadLastSessionCommands(
-    scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request) {
-  if (request->canceled())
+    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const BaseSessionService::InternalGetCommandsCallback& callback) {
+  if (is_canceled.Run())
     return;
+
   Init();
-  ReadLastSessionCommandsImpl(&(request->commands));
-  request->ForwardResult(request->handle(), request);
+
+  ScopedVector<SessionCommand> commands;
+  ReadLastSessionCommandsImpl(&(commands.get()));
+  callback.Run(commands.Pass());
 }
 
 bool SessionBackend::ReadLastSessionCommandsImpl(
@@ -294,15 +298,6 @@ void SessionBackend::MoveCurrentSessionToLastSession() {
   ResetFile();
 }
 
-void SessionBackend::ReadCurrentSessionCommands(
-    scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request) {
-  if (request->canceled())
-    return;
-  Init();
-  ReadCurrentSessionCommandsImpl(&(request->commands));
-  request->ForwardResult(request->handle(), request);
-}
-
 bool SessionBackend::ReadCurrentSessionCommandsImpl(
     std::vector<SessionCommand*>* commands) {
   Init();
@@ -343,15 +338,16 @@ bool SessionBackend::AppendCommandsToFile(net::FileStream* file,
       }
     }
   }
-  file->Flush();
+  file->FlushSync();
   return true;
 }
 
 SessionBackend::~SessionBackend() {
   if (current_session_file_.get()) {
-    // Close() performs file IO. crbug.com/112512.
+    // Destructor performs file IO because file is open in sync mode.
+    // crbug.com/112512.
     base::ThreadRestrictions::ScopedAllowIO allow_io;
-    current_session_file_->CloseSync();
+    current_session_file_.reset();
   }
 }
 

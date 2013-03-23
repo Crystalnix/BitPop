@@ -48,7 +48,7 @@
         {
           'target_name': 'gcapi_test',
           'type': 'executable',
-          'dependencies': [   
+          'dependencies': [
             'common',
             'gcapi_dll',
             'gcapi_lib',
@@ -74,10 +74,12 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            'installer/upgrade_test.gyp:alternate_version_generator_lib',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
             '../build/temp_gyp/googleurl.gyp:googleurl',
+            '../chrome/chrome.gyp:chrome_version_resources',
             '../content/content.gyp:content_common',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
@@ -88,8 +90,8 @@
           'sources': [
             'installer/setup/compat_checks_unittest.cc',
             'installer/setup/setup_constants.cc',
-            'installer/util/channel_info_unittest.cc',
             'installer/util/callback_work_item_unittest.cc',
+            'installer/util/channel_info_unittest.cc',
             'installer/util/copy_reg_key_work_item_unittest.cc',
             'installer/util/copy_tree_work_item_unittest.cc',
             'installer/util/create_dir_work_item_unittest.cc',
@@ -104,10 +106,12 @@
             'installer/util/google_chrome_distribution_unittest.cc',
             'installer/util/google_update_settings_unittest.cc',
             'installer/util/install_util_unittest.cc',
-            'installer/util/installation_validator_unittest.cc',
             'installer/util/installation_validation_helper.cc',
             'installer/util/installation_validation_helper.h',
+            'installer/util/installation_validator_unittest.cc',
             'installer/util/installer_state_unittest.cc',
+            'installer/util/installer_util_test_common.cc',
+            'installer/util/installer_util_test_common.h',
             'installer/util/installer_util_unittests.rc',
             'installer/util/installer_util_unittests_resource.h',
             'installer/util/language_selector_unittest.cc',
@@ -115,9 +119,9 @@
             'installer/util/lzma_util_unittest.cc',
             'installer/util/master_preferences_unittest.cc',
             'installer/util/move_tree_work_item_unittest.cc',
-            'installer/util/product_unittest.h',
-            'installer/util/product_unittest.cc',
             'installer/util/product_state_unittest.cc',
+            'installer/util/product_unittest.cc',
+            'installer/util/product_unittest.h',
             'installer/util/registry_key_backup_unittest.cc',
             'installer/util/registry_test_data.cc',
             'installer/util/registry_test_data.h',
@@ -127,6 +131,7 @@
             'installer/util/shell_util_unittest.cc',
             'installer/util/wmi_unittest.cc',
             'installer/util/work_item_list_unittest.cc',
+            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/other_version.rc',
           ],
           'msvs_settings': {
             'VCManifestTool': {
@@ -161,6 +166,7 @@
                          '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings',
                          '<(branding)',],
               'message': 'Generating resources from <(RULE_INPUT_PATH)',
+              'msvs_cygwin_shell': 1,
             },
           ],
           'sources': [
@@ -204,7 +210,7 @@
           },
           'defines': [
               '<@(nacl_win64_defines)',
-          ], 
+          ],
               'dependencies': [
               '<(DEPTH)/base/base.gyp:base_nacl_win64',
           ],
@@ -261,11 +267,11 @@
             'installer_util',
             'installer_util_strings',
             '../base/base.gyp:base',
+            '../breakpad/breakpad.gyp:breakpad_handler',
             '../build/temp_gyp/googleurl.gyp:googleurl',
-            '../chrome/chrome.gyp:common_constants',
+            '../chrome/common_constants.gyp:common_constants',
             '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
             '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-            '../breakpad/breakpad.gyp:breakpad_handler',
             '../rlz/rlz.gyp:rlz_lib',
             '../third_party/zlib/zlib.gyp:zlib',
           ],
@@ -361,6 +367,7 @@
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
               ],
+              'msvs_cygwin_shell': 1,
             },
           ],
           'conditions': [
@@ -388,6 +395,15 @@
                  'branding_dir': 'app/theme/chromium',
                  'branding_dir_100': 'app/theme/default_100_percent/chromium',
               },
+            }],
+            ['use_aura==1', {
+              'dependencies!': [
+                '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
+                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
+              ],
+              'defines': [
+                'OMIT_CHROME_FRAME',
+              ],
             }],
           ],
         },
@@ -464,6 +480,7 @@
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
               ],
+              'msvs_cygwin_shell': 1,
             },
           ],
         },
@@ -632,6 +649,24 @@
           ],
         },
         {
+          # 'asan' is a developer, testing-only package, so it shouldn't be
+          # included in the 'linux_packages_all' collection.
+          'target_name': 'linux_packages_asan',
+          'suppress_wildcard': 1,
+          'type': 'none',
+          'dependencies': [
+            'linux_packages_asan_deb',
+          ],
+          # ChromeOS doesn't care about RPM packages.
+          'conditions': [
+            ['chromeos==0', {
+              'dependencies': [
+                'linux_packages_asan_rpm',
+              ],
+            }],
+          ],
+        },
+        {
           # 'trunk' is a developer, testing-only package, so it shouldn't be
           # included in the 'linux_packages_all' collection.
           'target_name': 'linux_packages_trunk',
@@ -699,6 +734,34 @@
         },
         # TODO(mmoss) gyp looping construct would be handy here ...
         # These package actions are the same except for the 'channel' variable.
+        {
+          'target_name': 'linux_packages_asan_deb',
+          'suppress_wildcard': 1,
+          'type': 'none',
+          'dependencies': [
+            'chrome',
+            'linux_installer_configs',
+          ],
+          'actions': [
+            {
+              'variables': {
+                'channel': 'asan',
+              },
+              'action_name': 'deb_packages_<(channel)',
+              'process_outputs_as_sources': 1,
+              'inputs': [
+                '<(deb_build)',
+                '<@(packaging_files_binaries)',
+                '<@(packaging_files_common)',
+                '<@(packaging_files_deb)',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+              ],
+              'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
+            },
+          ],
+        },
         {
           'target_name': 'linux_packages_trunk_deb',
           'suppress_wildcard': 1,
@@ -808,6 +871,35 @@
                 '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
+            },
+          ],
+        },
+        {
+          'target_name': 'linux_packages_asan_rpm',
+          'suppress_wildcard': 1,
+          'type': 'none',
+          'dependencies': [
+            'chrome',
+            'linux_installer_configs',
+          ],
+          'actions': [
+            {
+              'variables': {
+                'channel': 'asan',
+              },
+              'action_name': 'rpm_packages_<(channel)',
+              'process_outputs_as_sources': 1,
+              'inputs': [
+                '<(rpm_build)',
+                '<(PRODUCT_DIR)/installer/rpm/chrome.spec.template',
+                '<@(packaging_files_binaries)',
+                '<@(packaging_files_common)',
+                '<@(packaging_files_rpm)',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+              ],
+              'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
           ],
         },
@@ -1076,7 +1168,7 @@
         {
           'target_name': 'gcapi_example',
           'type': 'executable',
-          'dependencies': [   
+          'dependencies': [
             'gcapi_lib',
           ],
           'include_dirs': [

@@ -21,12 +21,20 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/native_theme/native_theme.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/render_text.h"
+#include "ui/native_theme/native_theme.h"
+
+#if defined(OS_WIN)
+#include "ui/native_theme/native_theme_win.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/native_theme/native_theme_aura.h"
+#endif
 
 namespace {
 
@@ -134,18 +142,30 @@ OmniboxResultView::OmniboxResultView(
 OmniboxResultView::~OmniboxResultView() {
 }
 
-// static
-SkColor OmniboxResultView::GetColor(ResultViewState state, ColorKind kind) {
+SkColor OmniboxResultView::GetColor(
+    ResultViewState state,
+    ColorKind kind) const {
+  const ui::NativeTheme* theme = GetNativeTheme();
+#if defined(OS_WIN)
+  if (theme == ui::NativeThemeWin::instance()) {
+    static bool win_initialized = false;
+    static SkColor win_colors[NUM_STATES][NUM_KINDS];
+    if (!win_initialized) {
+      win_colors[NORMAL][BACKGROUND] = color_utils::GetSysSkColor(COLOR_WINDOW);
+      win_colors[SELECTED][BACKGROUND] =
+          color_utils::GetSysSkColor(COLOR_HIGHLIGHT);
+      win_colors[NORMAL][TEXT] = color_utils::GetSysSkColor(COLOR_WINDOWTEXT);
+      win_colors[SELECTED][TEXT] =
+          color_utils::GetSysSkColor(COLOR_HIGHLIGHTTEXT);
+      CommonInitColors(theme, win_colors);
+      win_initialized = true;
+    }
+    return win_colors[state][kind];
+  }
+#endif
   static bool initialized = false;
   static SkColor colors[NUM_STATES][NUM_KINDS];
   if (!initialized) {
-#if defined(OS_WIN)
-    colors[NORMAL][BACKGROUND] = color_utils::GetSysSkColor(COLOR_WINDOW);
-    colors[SELECTED][BACKGROUND] = color_utils::GetSysSkColor(COLOR_HIGHLIGHT);
-    colors[NORMAL][TEXT] = color_utils::GetSysSkColor(COLOR_WINDOWTEXT);
-    colors[SELECTED][TEXT] = color_utils::GetSysSkColor(COLOR_HIGHLIGHTTEXT);
-#elif defined(USE_AURA)
-    const ui::NativeTheme* theme = ui::NativeTheme::instance();
     colors[SELECTED][BACKGROUND] = theme->GetSystemColor(
         ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused);
     colors[NORMAL][BACKGROUND] = theme->GetSystemColor(
@@ -153,39 +173,9 @@ SkColor OmniboxResultView::GetColor(ResultViewState state, ColorKind kind) {
     colors[NORMAL][URL] = SkColorSetARGB(0xff, 0x00, 0x99, 0x33);
     colors[SELECTED][URL] = SkColorSetARGB(0xff, 0x00, 0x66, 0x22);
     colors[HOVERED][URL] = SkColorSetARGB(0xff, 0x00, 0x66, 0x22);
-#else
-    // TODO(beng): source from theme provider.
-    colors[NORMAL][BACKGROUND] = SK_ColorWHITE;
-    colors[SELECTED][BACKGROUND] = SK_ColorBLUE;
-    colors[NORMAL][TEXT] = SK_ColorBLACK;
-    colors[SELECTED][TEXT] = SK_ColorWHITE;
-#endif
-    colors[HOVERED][BACKGROUND] =
-        color_utils::AlphaBlend(colors[SELECTED][BACKGROUND],
-                                colors[NORMAL][BACKGROUND], 64);
-    colors[HOVERED][TEXT] = colors[NORMAL][TEXT];
-    for (int i = 0; i < NUM_STATES; ++i) {
-#if defined(USE_AURA)
-      colors[i][TEXT] =
-          color_utils::AlphaBlend(SK_ColorBLACK, colors[i][BACKGROUND], 0xdd);
-      colors[i][DIMMED_TEXT] =
-          color_utils::AlphaBlend(SK_ColorBLACK, colors[i][BACKGROUND], 0xbb);
-#else
-      colors[i][DIMMED_TEXT] =
-          color_utils::AlphaBlend(colors[i][TEXT], colors[i][BACKGROUND], 128);
-      colors[i][URL] = color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
-                                                     colors[i][BACKGROUND]);
-#endif
-
-      // TODO(joi): Programmatically draw the dropdown border using
-      // this color as well. (Right now it's drawn as black with 25%
-      // alpha.)
-      colors[i][DIVIDER] =
-          color_utils::AlphaBlend(colors[i][TEXT], colors[i][BACKGROUND], 0x34);
-    }
+    CommonInitColors(theme, colors);
     initialized = true;
   }
-
   return colors[state][kind];
 }
 
@@ -263,6 +253,39 @@ int OmniboxResultView::GetTextHeight() const {
 }
 
 // static
+void OmniboxResultView::CommonInitColors(const ui::NativeTheme* theme,
+                                         SkColor colors[][NUM_KINDS]) {
+  colors[HOVERED][BACKGROUND] =
+      color_utils::AlphaBlend(colors[SELECTED][BACKGROUND],
+                              colors[NORMAL][BACKGROUND], 64);
+  colors[HOVERED][TEXT] = colors[NORMAL][TEXT];
+#if defined(USE_AURA)
+  const bool is_aura = theme == ui::NativeThemeAura::instance();
+#else
+  const bool is_aura = false;
+#endif
+  for (int i = 0; i < NUM_STATES; ++i) {
+    if (is_aura) {
+      colors[i][TEXT] =
+          color_utils::AlphaBlend(SK_ColorBLACK, colors[i][BACKGROUND], 0xdd);
+      colors[i][DIMMED_TEXT] =
+          color_utils::AlphaBlend(SK_ColorBLACK, colors[i][BACKGROUND], 0xbb);
+    } else {
+      colors[i][DIMMED_TEXT] =
+          color_utils::AlphaBlend(colors[i][TEXT], colors[i][BACKGROUND], 128);
+      colors[i][URL] = color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+                                                     colors[i][BACKGROUND]);
+    }
+
+    // TODO(joi): Programmatically draw the dropdown border using
+    // this color as well. (Right now it's drawn as black with 25%
+    // alpha.)
+    colors[i][DIVIDER] =
+        color_utils::AlphaBlend(colors[i][TEXT], colors[i][BACKGROUND], 0x34);
+  }
+}
+
+// static
 bool OmniboxResultView::SortRunsLogically(const RunData& lhs,
                                           const RunData& rhs) {
   return lhs.run_start < rhs.run_start;
@@ -277,10 +300,10 @@ bool OmniboxResultView::SortRunsVisually(const RunData& lhs,
 // static
 int OmniboxResultView::default_icon_size_ = 0;
 
-const SkBitmap* OmniboxResultView::GetIcon() const {
-  const SkBitmap* bitmap = model_->GetIconIfExtensionMatch(model_index_);
-  if (bitmap)
-    return bitmap;
+gfx::ImageSkia OmniboxResultView::GetIcon() const {
+  const gfx::Image image = model_->GetIconIfExtensionMatch(model_index_);
+  if (!image.IsEmpty())
+    return image.AsImageSkia();
 
   int icon = match_.starred ?
       IDR_OMNIBOX_STAR : AutocompleteMatch::TypeToIcon(match_.type);
@@ -303,7 +326,7 @@ const SkBitmap* OmniboxResultView::GetIcon() const {
         break;
     }
   }
-  return ui::ResourceBundle::GetSharedInstance().GetBitmapNamed(icon);
+  return *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(icon);
 }
 
 const gfx::ImageSkia* OmniboxResultView::GetKeywordIcon() const {
@@ -396,8 +419,7 @@ int OmniboxResultView::DrawString(
 
       render_texts.push_back(gfx::RenderText::CreateInstance());
       current_data->render_text = render_texts.back();
-      current_data->render_text->SetFontList(
-          gfx::FontList(*current_data->font));
+      current_data->render_text->SetFont(*current_data->font);
       current_data->render_text->SetText(current_data->text);
 
       gfx::StyleRange style_range;
@@ -532,7 +554,7 @@ void OmniboxResultView::Elide(Runs* runs, int remaining_width) const {
             (on_first_classification ||
              (prior_classification->font == &normal_font_))) {
           j->font = &normal_font_;
-          j->render_text->SetFontList(gfx::FontList(*j->font));
+          j->render_text->SetFont(*j->font);
         }
 
         j->render_text->SetText(elided_text);
@@ -561,12 +583,12 @@ void OmniboxResultView::Elide(Runs* runs, int remaining_width) const {
 }
 
 void OmniboxResultView::Layout() {
-  const SkBitmap* icon = GetIcon();
+  const gfx::ImageSkia icon = GetIcon();
 
   icon_bounds_.SetRect(edge_item_padding_ +
-      ((icon->width() == default_icon_size_) ?
+      ((icon.width() == default_icon_size_) ?
           0 : LocationBarView::kIconInternalPadding),
-      (height() - icon->height()) / 2, icon->width(), icon->height());
+      (height() - icon.height()) / 2, icon.width(), icon.height());
 
   int text_x = edge_item_padding_ + default_icon_size_ + item_padding_;
   int text_height = GetTextHeight();
@@ -605,7 +627,7 @@ void OmniboxResultView::OnPaint(gfx::Canvas* canvas) {
   if (!match_.associated_keyword.get() ||
       keyword_icon_->x() > icon_bounds_.right()) {
     // Paint the icon.
-    canvas->DrawImageInt(*GetIcon(), GetMirroredXForRect(icon_bounds_),
+    canvas->DrawImageInt(GetIcon(), GetMirroredXForRect(icon_bounds_),
                          icon_bounds_.y());
 
     // Paint the text.

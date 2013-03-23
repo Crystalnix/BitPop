@@ -14,6 +14,8 @@ extern const wchar_t kChromeUpgradeCode[];
 // The GUID Google Update uses to keep track of Google Update self-upgrades.
 extern const wchar_t kGoogleUpdateUpgradeCode[];
 
+extern const wchar_t kGoogleUpdateSetupExe[];
+
 extern const wchar_t kRegPathClients[];
 
 // The difference between ClientState and ClientStateMedium is that the former
@@ -30,6 +32,7 @@ extern const wchar_t kRegPathGoogleUpdate[];
 extern const wchar_t kRegCommandsKey[];
 
 extern const wchar_t kRegApField[];
+extern const wchar_t kRegAutoRunOnOSUpgradeField[];
 extern const wchar_t kRegBrandField[];
 extern const wchar_t kRegBrowserField[];
 extern const wchar_t kRegCFEndTempOptOutCmdField[];
@@ -55,6 +58,7 @@ extern const wchar_t kRegNameField[];
 extern const wchar_t kRegOemInstallField[];
 extern const wchar_t kRegOldVersionField[];
 extern const wchar_t kRegOopcrashesField[];
+extern const wchar_t kRegPathField[];
 extern const wchar_t kRegRLZBrandField[];
 extern const wchar_t kRegRLZReactivationBrandField[];
 extern const wchar_t kRegReferralField[];

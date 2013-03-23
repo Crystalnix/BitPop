@@ -21,7 +21,7 @@ SystemSettingsProvider::SystemSettingsProvider(
   system::TimezoneSettings *timezone_settings =
       system::TimezoneSettings::GetInstance();
   timezone_settings->AddObserver(this);
-  timezone_value_.reset(base::Value::CreateStringValue(
+  timezone_value_.reset(new base::StringValue(
       timezone_settings->GetCurrentTimezoneID()));
 }
 
@@ -60,14 +60,9 @@ bool SystemSettingsProvider::HandlesSetting(const std::string& path) const {
   return path == kSystemTimezone;
 }
 
-void SystemSettingsProvider::Reload() {
-  // TODO(pastarmovj): We can actually cache the timezone here to make returning
-  // it faster.
-}
-
 void SystemSettingsProvider::TimezoneChanged(const icu::TimeZone& timezone) {
   // Fires system setting change notification.
-  timezone_value_.reset(base::Value::CreateStringValue(
+  timezone_value_.reset(new base::StringValue(
       system::TimezoneSettings::GetTimezoneID(timezone)));
   NotifyObservers(kSystemTimezone);
 }

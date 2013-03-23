@@ -13,21 +13,21 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/panels/native_panel.h"
-#include "chrome/browser/ui/panels/panel_manager.h"
+#include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
 #include "chrome/browser/ui/panels/test_panel_active_state_observer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/panels/test_panel_mouse_watcher.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/string_ordinal.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/web_contents_tester.h"
+#include "sync/api/string_ordinal.h"
 
 #if defined(OS_LINUX)
 #include "chrome/browser/ui/browser_window.h"
@@ -36,7 +36,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
 #endif
 
@@ -180,11 +179,6 @@ void MockDisplaySettingsProviderImpl::SetDesktopBarThickness(
   OnAutoHidingDesktopBarChanged();
 }
 
-bool ExistsPanel(Panel* panel) {
-  std::vector<Panel*> panels = PanelManager::GetInstance()->panels();
-  return std::find(panels.begin(), panels.end(), panel) != panels.end();
-}
-
 }  // namespace
 
 const FilePath::CharType* BasePanelBrowserTest::kTestDir =
@@ -193,9 +187,6 @@ const FilePath::CharType* BasePanelBrowserTest::kTestDir =
 BasePanelBrowserTest::BasePanelBrowserTest()
     : InProcessBrowserTest(),
       mock_display_settings_enabled_(true) {
-#if defined(OS_MACOSX)
-  FindBarBridge::disable_animations_during_testing_ = true;
-#endif
 }
 
 BasePanelBrowserTest::~BasePanelBrowserTest() {
@@ -237,6 +228,11 @@ void BasePanelBrowserTest::SetUpOnMainThread() {
 
   PanelManager::shorten_time_intervals_for_testing();
 
+  // Simulate the mouse movement so that tests are not affected by actual mouse
+  // events.
+  PanelMouseWatcher* mouse_watcher = new TestPanelMouseWatcher();
+  panel_manager->SetMouseWatcherForTesting(mouse_watcher);
+
   // This is needed so the subsequently created panels can be activated.
   // On a Mac, it transforms background-only test process into foreground one.
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
@@ -265,24 +261,28 @@ void BasePanelBrowserTest::WaitForWindowSizeAvailable(Panel* panel) {
 void BasePanelBrowserTest::WaitForBoundsAnimationFinished(Panel* panel) {
   scoped_ptr<NativePanelTesting> panel_testing(
       CreateNativePanelTesting(panel));
-  content::WindowedNotificationObserver signal(
-      chrome::NOTIFICATION_PANEL_BOUNDS_ANIMATIONS_FINISHED,
-      content::Source<Panel>(panel));
-  if (!panel_testing->IsAnimatingBounds())
-    return;
-  signal.Wait();
-  EXPECT_TRUE(!panel_testing->IsAnimatingBounds());
+  // Sometimes there are several animations in sequence due to content
+  // auto resizing. Wait for all animations to finish.
+  while (panel_testing->IsAnimatingBounds()) {
+    content::WindowedNotificationObserver signal(
+        chrome::NOTIFICATION_PANEL_BOUNDS_ANIMATIONS_FINISHED,
+        content::Source<Panel>(panel));
+    if (!panel_testing->IsAnimatingBounds())
+      return;
+    signal.Wait();
+  }
 }
 
-void BasePanelBrowserTest::WaitForExpansionStateChanged(
-    Panel* panel, Panel::ExpansionState expansion_state) {
-  content::WindowedNotificationObserver signal(
-      chrome::NOTIFICATION_PANEL_CHANGED_EXPANSION_STATE,
-      content::Source<Panel>(panel));
-  if (panel->expansion_state() == expansion_state)
-    return;
-  signal.Wait();
-  EXPECT_EQ(expansion_state, panel->expansion_state());
+BasePanelBrowserTest::CreatePanelParams::CreatePanelParams(
+    const std::string& name,
+    const gfx::Rect& bounds,
+    ActiveState show_flag)
+    : name(name),
+      bounds(bounds),
+      show_flag(show_flag),
+      wait_for_fully_created(true),
+      expected_active_state(show_flag),
+      create_mode(PanelManager::CREATE_AS_DOCKED) {
 }
 
 Panel* BasePanelBrowserTest::CreatePanelWithParams(
@@ -291,7 +291,7 @@ Panel* BasePanelBrowserTest::CreatePanelWithParams(
   // Opening panels on a Mac causes NSWindowController of the Panel window
   // to be autoreleased. We need a pool drained after it's done so the test
   // can close correctly. The NSWindowController of the Panel window controls
-  // lifetime of the Browser object so we want to release it as soon as
+  // lifetime of the Panel object so we want to release it as soon as
   // possible. In real Chrome, this is done by message pump.
   // On non-Mac platform, this is an empty class.
   base::mac::ScopedNSAutoreleasePool autorelease_pool;
@@ -303,7 +303,8 @@ Panel* BasePanelBrowserTest::CreatePanelWithParams(
 
   PanelManager* manager = PanelManager::GetInstance();
   Panel* panel = manager->CreatePanel(params.name, browser()->profile(),
-                                      params.url, params.bounds.size());
+                                      params.url, params.bounds,
+                                      params.create_mode);
 
   if (!params.url.is_empty())
     observer.Wait();
@@ -322,7 +323,7 @@ Panel* BasePanelBrowserTest::CreatePanelWithParams(
   }
 
   if (params.wait_for_fully_created) {
-    MessageLoopForUI::current()->RunAllPending();
+    MessageLoopForUI::current()->RunUntilIdle();
 
 #if defined(OS_LINUX)
     // On bots, we might have a simple window manager which always activates new
@@ -367,17 +368,17 @@ Panel* BasePanelBrowserTest::CreatePanel(const std::string& panel_name) {
 Panel* BasePanelBrowserTest::CreateDockedPanel(const std::string& name,
                                                const gfx::Rect& bounds) {
   Panel* panel = CreatePanelWithBounds(name, bounds);
-  EXPECT_EQ(PanelStrip::DOCKED, panel->panel_strip()->type());
+  EXPECT_EQ(PanelCollection::DOCKED, panel->collection()->type());
   return panel;
 }
 
 Panel* BasePanelBrowserTest::CreateDetachedPanel(const std::string& name,
                                                  const gfx::Rect& bounds) {
   Panel* panel = CreatePanelWithBounds(name, bounds);
-  panel->manager()->MovePanelToStrip(panel,
-                                     PanelStrip::DETACHED,
-                                     PanelStrip::DEFAULT_POSITION);
-  EXPECT_EQ(PanelStrip::DETACHED, panel->panel_strip()->type());
+  panel->manager()->MovePanelToCollection(panel,
+                                          PanelCollection::DETACHED,
+                                          PanelCollection::DEFAULT_POSITION);
+  EXPECT_EQ(PanelCollection::DETACHED, panel->collection()->type());
   // The panel is first created as docked panel, which ignores the specified
   // origin in |bounds|. We need to reposition the panel after it becomes
   // detached.
@@ -390,12 +391,6 @@ Panel* BasePanelBrowserTest::CreateDetachedPanel(const std::string& name,
 NativePanelTesting* BasePanelBrowserTest::CreateNativePanelTesting(
     Panel* panel) {
   return panel->native_panel()->CreateNativePanelTesting();
-}
-
-void BasePanelBrowserTest::CreateTestTabContents(Browser* browser) {
-  TabContents* tab_contents = new TabContents(
-      WebContentsTester::CreateTestWebContents(browser->profile(), NULL));
-  chrome::AddTab(browser, tab_contents, content::PAGE_TRANSITION_LINK);
 }
 
 scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
@@ -419,7 +414,9 @@ scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
   EXPECT_TRUE(extension.get());
   EXPECT_STREQ("", error.c_str());
   browser()->profile()->GetExtensionService()->
-      OnExtensionInstalled(extension.get(), false, StringOrdinal());
+      OnExtensionInstalled(extension.get(), syncer::StringOrdinal(),
+                           false /* no requirement errors */,
+                           false /* don't wait for idle */);
   return extension;
 }
 

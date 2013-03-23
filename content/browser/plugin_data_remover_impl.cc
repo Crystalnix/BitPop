@@ -4,6 +4,8 @@
 
 #include "content/browser/plugin_data_remover_impl.h"
 
+#include <limits>
+
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -12,20 +14,20 @@
 #include "base/version.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
-#include "content/browser/renderer_host/pepper/pepper_file_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_flash_file_host.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/plugin_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/pepper_plugin_info.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "webkit/plugins/npapi/plugin_group.h"
+#include "webkit/plugins/npapi/plugin_utils.h"
+#include "webkit/plugins/plugin_constants.h"
 
 namespace content {
 
 namespace {
 
-const char kFlashMimeType[] = "application/x-shockwave-flash";
 // The minimum Flash Player version that implements NPP_ClearSiteData.
 const char kMinFlashVersion[] = "10.3";
 const int64 kRemovalTimeoutMs = 10000;
@@ -44,12 +46,12 @@ void PluginDataRemover::GetSupportedPlugins(
   bool allow_wildcard = false;
   std::vector<webkit::WebPluginInfo> plugins;
   PluginService::GetInstance()->GetPluginInfoArray(
-      GURL(), kFlashMimeType, allow_wildcard, &plugins, NULL);
+      GURL(), kFlashPluginSwfMimeType, allow_wildcard, &plugins, NULL);
   Version min_version(kMinFlashVersion);
   for (std::vector<webkit::WebPluginInfo>::iterator it = plugins.begin();
        it != plugins.end(); ++it) {
     Version version;
-    webkit::npapi::PluginGroup::CreateVersionFromString(it->version, &version);
+    webkit::npapi::CreateVersionFromString(it->version, &version);
     if (version.IsValid() && min_version.CompareTo(version) == -1)
       supported_plugins->push_back(*it);
   }
@@ -163,6 +165,7 @@ class PluginDataRemoverImpl::Context
 
   virtual void OnPpapiChannelOpened(
       const IPC::ChannelHandle& channel_handle,
+      base::ProcessId  /* peer_pid */,
       int /* child_id */) OVERRIDE {
     if (!channel_handle.name.empty())
       ConnectToChannel(channel_handle, true);
@@ -198,6 +201,23 @@ class PluginDataRemoverImpl::Context
   friend class base::DeleteHelper<Context>;
   virtual ~Context() {}
 
+  IPC::Message* CreatePpapiClearSiteDataMsg(uint64 max_age) {
+    FilePath profile_path =
+        PepperFlashFileHost::GetDataDirName(browser_context_path_);
+    // TODO(vtl): This "duplicates" logic in webkit/plugins/ppapi/file_path.cc
+    // (which prepends the plugin name to the relative part of the path
+    // instead, with the absolute, profile-dependent part being enforced by
+    // the browser).
+#if defined(OS_WIN)
+    FilePath plugin_data_path =
+        profile_path.Append(FilePath(UTF8ToUTF16(plugin_name_)));
+#else
+    FilePath plugin_data_path = profile_path.Append(FilePath(plugin_name_));
+#endif  // defined(OS_WIN)
+    return new PpapiMsg_ClearSiteData(0u, plugin_data_path, std::string(),
+                                      kClearAllData, max_age);
+  }
+
   // Connects the client side of a newly opened plug-in channel.
   void ConnectToChannel(const IPC::ChannelHandle& handle, bool is_ppapi) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -220,20 +240,7 @@ class PluginDataRemoverImpl::Context
 
     IPC::Message* msg;
     if (is_ppapi) {
-      FilePath profile_path =
-          PepperFileMessageFilter::GetDataDirName(browser_context_path_);
-      // TODO(vtl): This "duplicates" logic in webkit/plugins/ppapi/file_path.cc
-      // (which prepends the plugin name to the relative part of the path
-      // instead, with the absolute, profile-dependent part being enforced by
-      // the browser).
-#if defined(OS_WIN)
-      FilePath plugin_data_path =
-          profile_path.Append(FilePath(UTF8ToUTF16(plugin_name_)));
-#else
-      FilePath plugin_data_path = profile_path.Append(FilePath(plugin_name_));
-#endif
-      msg = new PpapiMsg_ClearSiteData(0u, plugin_data_path, std::string(),
-                                       kClearAllData, max_age);
+      msg = CreatePpapiClearSiteDataMsg(max_age);
     } else {
       msg = new PluginMsg_ClearSiteData(std::string(), kClearAllData, max_age);
     }
@@ -293,7 +300,7 @@ class PluginDataRemoverImpl::Context
 
 
 PluginDataRemoverImpl::PluginDataRemoverImpl(BrowserContext* browser_context)
-    : mime_type_(kFlashMimeType),
+    : mime_type_(kFlashPluginSwfMimeType),
       browser_context_(browser_context) {
 }
 

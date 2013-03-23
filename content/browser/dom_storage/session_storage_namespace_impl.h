@@ -10,17 +10,21 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/session_storage_namespace.h"
 
-class DOMStorageContextImpl;
-
 namespace dom_storage {
 class DomStorageSession;
 }
 
+namespace content {
+class DOMStorageContextImpl;
+
 class SessionStorageNamespaceImpl
-    : NON_EXPORTED_BASE(public content::SessionStorageNamespace) {
+    : NON_EXPORTED_BASE(public SessionStorageNamespace) {
  public:
   // Constructs a |SessionStorageNamespaceImpl| and allocates new IDs for it.
-  explicit SessionStorageNamespaceImpl(DOMStorageContextImpl* context);
+  //
+  // The CONTENT_EXPORT allows TestRenderViewHost to instantiate these.
+  CONTENT_EXPORT explicit SessionStorageNamespaceImpl(
+      DOMStorageContextImpl* context);
 
   // Constructs a |SessionStorageNamespaceImpl| by cloning
   // |namespace_to_clone|. Allocates new IDs for it.
@@ -32,12 +36,14 @@ class SessionStorageNamespaceImpl
   SessionStorageNamespaceImpl(DOMStorageContextImpl* context,
                               const std::string& persistent_id);
 
-  // content::SessionStorageNamespace implementation.
+  // SessionStorageNamespace implementation.
   virtual int64 id() const OVERRIDE;
   virtual const std::string& persistent_id() const OVERRIDE;
   virtual void SetShouldPersist(bool should_persist) OVERRIDE;
+  virtual bool should_persist() const OVERRIDE;
 
   SessionStorageNamespaceImpl* Clone();
+  bool IsFromContext(DOMStorageContextImpl* context);
 
  private:
   explicit SessionStorageNamespaceImpl(dom_storage::DomStorageSession* clone);
@@ -47,5 +53,7 @@ class SessionStorageNamespaceImpl
 
   DISALLOW_COPY_AND_ASSIGN(SessionStorageNamespaceImpl);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_DOM_STORAGE_SESSION_STORAGE_NAMESPACE_IMPL_H_

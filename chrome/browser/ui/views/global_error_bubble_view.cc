@@ -65,7 +65,10 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
     : BubbleDelegateView(anchor_view, location),
       browser_(browser),
       error_(error) {
-  DCHECK(error_);
+  // Compensate for built-in vertical padding in the anchor view's image.
+  set_anchor_insets(
+      gfx::Insets(kAnchorVerticalInset, 0, kAnchorVerticalInset, 0));
+
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   int resource_id = error_->GetBubbleViewIconResourceID();
   scoped_ptr<views::ImageView> image_view(new views::ImageView());
@@ -74,14 +77,14 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
   string16 title_string(error_->GetBubbleViewTitle());
   scoped_ptr<views::Label> title_label(new views::Label(title_string));
   title_label->SetMultiLine(true);
-  title_label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label->SetFont(title_label->font().DeriveFont(1));
 
   string16 message_string(error_->GetBubbleViewMessage());
   views::Label* message_label = new views::Label(message_string);
   message_label->SetMultiLine(true);
   message_label->SizeToFit(kMaxBubbleViewWidth);
-  message_label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  message_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   string16 accept_string(error_->GetBubbleViewAcceptButtonLabel());
   scoped_ptr<views::TextButton> accept_button(
@@ -145,14 +148,8 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
 GlobalErrorBubbleView::~GlobalErrorBubbleView() {
 }
 
-gfx::Rect GlobalErrorBubbleView::GetAnchorRect() {
-  gfx::Rect rect(views::BubbleDelegateView::GetAnchorRect());
-  rect.Inset(0, anchor_view() ? kAnchorVerticalInset : 0);
-  return rect;
-}
-
 void GlobalErrorBubbleView::ButtonPressed(views::Button* sender,
-                                          const views::Event& event) {
+                                          const ui::Event& event) {
   if (error_) {
     if (sender->tag() == TAG_ACCEPT_BUTTON)
       error_->BubbleViewAcceptButtonPressed(browser_);

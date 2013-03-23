@@ -71,50 +71,6 @@ class PyUITestBase : public UITestBase {
 
   // AutomationProxy methods
 
-  // Returns bookmark bar visibility state.
-  bool GetBookmarkBarVisibility();
-
-  // Returns true if the bookmark bar is visible in the detached state.
-  bool IsBookmarkBarDetached();
-
-  // Returns bookmark bar animation state.  Warning: timing issues may
-  // change this return value unexpectedly.
-  bool IsBookmarkBarAnimating();
-
-  // Wait for the bookmark bar animation to complete.
-  // If |wait_for_open| is true, wait for it to open.
-  // If |wait_for_open| is false, wait for it to close.
-  bool WaitForBookmarkBarVisibilityChange(bool wait_for_open,
-                                          int window_index = 0);
-
-  // Get the bookmarks as a JSON string.  Internal method.
-  std::string _GetBookmarksAsJSON(int window_index = 0);
-
-  // Editing of the bookmark model.  Bookmarks are referenced by id.
-  // The id is a std::wstring, not an int64, for convenience, since
-  // the python side gets IDs converted from a JSON representation
-  // (which "extracts" into a string, not an int).  Since IDs are
-  // grabbed from the current model (and not generated), a conversion
-  // is unnecessary.  URLs are strings and not GURLs for a similar reason.
-  // Bookmark or group (folder) creation:
-  bool AddBookmarkGroup(std::wstring& parent_id, int index,
-                        std::wstring& title, int window_index = 0);
-  bool AddBookmarkURL(std::wstring& parent_id, int index,
-                      std::wstring& title, std::wstring& url,
-                      int window_index = 0);
-  // Bookmark editing:
-  bool ReparentBookmark(std::wstring& id, std::wstring& new_parent_id,
-                        int index, int window_index = 0);
-  bool SetBookmarkTitle(std::wstring& id, std::wstring& title,
-                        int window_index = 0);
-  bool SetBookmarkURL(std::wstring& id, std::wstring& url,
-                      int window_index = 0);
-  // Finally, bookmark deletion:
-  bool RemoveBookmark(std::wstring& id, int window_index = 0);
-
-  // Get a handle to browser window at the given index, or NULL on failure.
-  scoped_refptr<BrowserProxy> GetBrowserWindow(int window_index);
-
   // Meta-methods.  Generic pattern of passing args and response as
   // JSON dict to avoid future use of the SWIG interface and
   // automation proxy additions.  Returns response as JSON dict.
@@ -131,22 +87,6 @@ class PyUITestBase : public UITestBase {
   std::string GetCookie(const GURL& cookie_url, int window_index = 0,
                         int tab_index = 0);
 
-  base::TimeDelta action_max_timeout() const {
-    return TestTimeouts::action_max_timeout();
-  }
-
-  int action_max_timeout_ms() const {
-    return action_max_timeout().InMilliseconds();
-  }
-
-  base::TimeDelta large_test_timeout() const {
-    return TestTimeouts::large_test_timeout();
-  }
-
-  int large_test_timeout_ms() const {
-    return large_test_timeout().InMilliseconds();
-  }
-
  protected:
   // Gets the automation proxy and checks that it exists.
   virtual AutomationProxy* automation() const OVERRIDE;
@@ -157,15 +97,13 @@ class PyUITestBase : public UITestBase {
   // Create JSON error responses.
   void ErrorResponse(const std::string& error_string,
                      const std::string& request,
+                     bool is_timeout,
                      std::string* response);
   void RequestFailureResponse(
       const std::string& request,
       const base::TimeDelta& duration,
       const base::TimeDelta& timeout,
       std::string* response);
-
-  // Gets the current state of the bookmark bar. Returns false if it failed.
-  bool GetBookmarkBarState(bool* visible, bool* detached, int window_index = 0);
 
   // Enables PostTask to main thread.
   // Should be shared across multiple instances of PyUITestBase so that this

@@ -11,6 +11,7 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/prefs/json_pref_store.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "build/build_config.h"
@@ -24,13 +25,12 @@
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_pref_store.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/proxy_service_factory.h"
-#include "chrome/browser/plugin_prefs.h"
+#include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
@@ -41,7 +41,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/json_pref_store.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -49,10 +48,15 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/transport_security_state.h"
 #include "net/http/http_server_properties.h"
 #include "webkit/database/database_tracker.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#endif
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/preferences.h"
@@ -93,6 +97,10 @@ void OffTheRecordProfileImpl::Init() {
 
   DCHECK_NE(IncognitoModePrefs::DISABLED,
             IncognitoModePrefs::GetAvailability(profile_->GetPrefs()));
+
+#if defined(OS_ANDROID)
+  UseSystemProxy();
+#endif  // defined(OS_ANDROID)
 
   // TODO(oshima): Remove the need to eagerly initialize the request context
   // getter. chromeos::OnlineAttempt is illegally trying to access this
@@ -157,6 +165,22 @@ void OffTheRecordProfileImpl::InitHostZoomMap() {
                  content::Source<HostZoomMap>(parent_host_zoom_map));
 }
 
+#if defined(OS_ANDROID)
+void OffTheRecordProfileImpl::UseSystemProxy() {
+  // Force the use of the system-assigned proxy when off the record.
+  const char kProxyMode[] = "mode";
+  const char kProxyServer[] = "server";
+  const char kProxyBypassList[] = "bypass_list";
+  const char kProxyPacUrl[] = "pac_url";
+  DictionaryPrefUpdate update(prefs_, prefs::kProxy);
+  DictionaryValue* dict = update.Get();
+  dict->SetString(kProxyMode, ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
+  dict->SetString(kProxyPacUrl, "");
+  dict->SetString(kProxyServer, "");
+  dict->SetString(kProxyBypassList, "");
+}
+#endif  // defined(OS_ANDROID)
+
 std::string OffTheRecordProfileImpl::GetProfileName() {
   // Incognito profile should not return the profile name.
   return std::string();
@@ -164,6 +188,11 @@ std::string OffTheRecordProfileImpl::GetProfileName() {
 
 FilePath OffTheRecordProfileImpl::GetPath() {
   return profile_->GetPath();
+}
+
+scoped_refptr<base::SequencedTaskRunner>
+OffTheRecordProfileImpl::GetIOTaskRunner() {
+  return profile_->GetIOTaskRunner();
 }
 
 bool OffTheRecordProfileImpl::IsOffTheRecord() const {
@@ -187,27 +216,8 @@ Profile* OffTheRecordProfileImpl::GetOriginalProfile() {
   return profile_;
 }
 
-VisitedLinkMaster* OffTheRecordProfileImpl::GetVisitedLinkMaster() {
-  // We don't provide access to the VisitedLinkMaster when we're OffTheRecord
-  // because we don't want to leak the sites that the user has visited before.
-  return NULL;
-}
-
 ExtensionService* OffTheRecordProfileImpl::GetExtensionService() {
   return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
-extensions::UserScriptMaster* OffTheRecordProfileImpl::GetUserScriptMaster() {
-  return extensions::ExtensionSystem::Get(this)->user_script_master();
-}
-
-ExtensionProcessManager*
-    OffTheRecordProfileImpl::GetExtensionProcessManager() {
-  return extensions::ExtensionSystem::Get(this)->process_manager();
-}
-
-extensions::EventRouter* OffTheRecordProfileImpl::GetExtensionEventRouter() {
-  return extensions::ExtensionSystem::Get(this)->event_router();
 }
 
 ExtensionSpecialStoragePolicy*
@@ -219,26 +229,9 @@ GAIAInfoUpdateService* OffTheRecordProfileImpl::GetGAIAInfoUpdateService() {
   return NULL;
 }
 
-HistoryService* OffTheRecordProfileImpl::GetHistoryService(
-    ServiceAccessType sat) {
-  if (sat == EXPLICIT_ACCESS)
-    return profile_->GetHistoryService(sat);
-
-  NOTREACHED() << "This profile is OffTheRecord";
-  return NULL;
-}
-
-HistoryService* OffTheRecordProfileImpl::GetHistoryServiceWithoutCreating() {
-  return profile_->GetHistoryServiceWithoutCreating();
-}
-
-FaviconService* OffTheRecordProfileImpl::GetFaviconService(
-    ServiceAccessType sat) {
-  if (sat == EXPLICIT_ACCESS)
-    return profile_->GetFaviconService(sat);
-
-  NOTREACHED() << "This profile is OffTheRecord";
-  return NULL;
+policy::ManagedModePolicyProvider*
+    OffTheRecordProfileImpl::GetManagedModePolicyProvider() {
+  return profile_->GetManagedModePolicyProvider();
 }
 
 policy::PolicyService* OffTheRecordProfileImpl::GetPolicyService() {
@@ -265,33 +258,29 @@ net::URLRequestContextGetter* OffTheRecordProfileImpl::GetRequestContext() {
 net::URLRequestContextGetter*
     OffTheRecordProfileImpl::GetRequestContextForRenderProcess(
         int renderer_child_id) {
-  if (GetExtensionService()) {
-    const extensions::Extension* installed_app = GetExtensionService()->
-        GetInstalledAppForRenderer(renderer_child_id);
-    if (installed_app != NULL && installed_app->is_storage_isolated()) {
-      return GetRequestContextForIsolatedApp(installed_app->id());
-    }
-  }
-
   content::RenderProcessHost* rph = content::RenderProcessHost::FromID(
       renderer_child_id);
-  if (rph && rph->IsGuest()) {
-    // For guest processes (used by the browser tag), we need to isolate the
-    // storage.
-    // TODO(nasko): Until we have proper storage partitions, create a
-    // non-persistent context using the RPH's id.
-    std::string id("guest-");
-    id.append(base::IntToString(renderer_child_id));
-    return GetRequestContextForIsolatedApp(id);
-  }
+  return rph->GetStoragePartition()->GetURLRequestContext();
+}
 
+net::URLRequestContextGetter*
+    OffTheRecordProfileImpl::GetMediaRequestContext() {
+  // In OTR mode, media request context is the same as the original one.
   return GetRequestContext();
 }
 
 net::URLRequestContextGetter*
-    OffTheRecordProfileImpl::GetRequestContextForMedia() {
+    OffTheRecordProfileImpl::GetMediaRequestContextForRenderProcess(
+        int renderer_child_id) {
   // In OTR mode, media request context is the same as the original one.
-  return io_data_.GetMainRequestContextGetter();
+  return GetRequestContextForRenderProcess(renderer_child_id);
+}
+
+net::URLRequestContextGetter*
+OffTheRecordProfileImpl::GetMediaRequestContextForStoragePartition(
+    const FilePath& partition_path,
+    bool in_memory) {
+  return GetRequestContextForStoragePartition(partition_path, in_memory);
 }
 
 net::URLRequestContextGetter*
@@ -300,9 +289,10 @@ net::URLRequestContextGetter*
 }
 
 net::URLRequestContextGetter*
-    OffTheRecordProfileImpl::GetRequestContextForIsolatedApp(
-        const std::string& app_id) {
-  return io_data_.GetIsolatedAppRequestContextGetter(app_id);
+    OffTheRecordProfileImpl::GetRequestContextForStoragePartition(
+        const FilePath& partition_path,
+        bool in_memory) {
+  return io_data_.GetIsolatedAppRequestContextGetter(partition_path, in_memory);
 }
 
 content::ResourceContext* OffTheRecordProfileImpl::GetResourceContext() {
@@ -319,9 +309,11 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
   profile_->GetHostContentSettingsMap();
   if (!host_content_settings_map_.get()) {
     host_content_settings_map_ = new HostContentSettingsMap(GetPrefs(), true);
+#if defined(ENABLE_EXTENSIONS)
     ExtensionService* extension_service = GetExtensionService();
     if (extension_service)
       host_content_settings_map_->RegisterExtensionService(extension_service);
+#endif
   }
   return host_content_settings_map_.get();
 }
@@ -336,17 +328,9 @@ content::SpeechRecognitionPreferences*
   return profile_->GetSpeechRecognitionPreferences();
 }
 
-bool OffTheRecordProfileImpl::DidLastSessionExitCleanly() {
-  return profile_->DidLastSessionExitCleanly();
-}
-
 quota::SpecialStoragePolicy*
     OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
-}
-
-BookmarkModel* OffTheRecordProfileImpl::GetBookmarkModel() {
-  return profile_->GetBookmarkModel();
 }
 
 ProtocolHandlerRegistry* OffTheRecordProfileImpl::GetProtocolHandlerRegistry() {
@@ -369,7 +353,7 @@ history::TopSites* OffTheRecordProfileImpl::GetTopSites() {
   return NULL;
 }
 
-void OffTheRecordProfileImpl::MarkAsCleanShutdown() {
+void OffTheRecordProfileImpl::SetExitType(ExitType exit_type) {
 }
 
 void OffTheRecordProfileImpl::InitPromoResources() {
@@ -392,6 +376,10 @@ void OffTheRecordProfileImpl::set_last_selected_directory(
 bool OffTheRecordProfileImpl::WasCreatedByVersionOrLater(
     const std::string& version) {
   return profile_->WasCreatedByVersionOrLater(version);
+}
+
+Profile::ExitType OffTheRecordProfileImpl::GetLastSessionExitType() {
+  return profile_->GetLastSessionExitType();
 }
 
 #if defined(OS_CHROMEOS)
@@ -428,8 +416,16 @@ chrome_browser_net::Predictor* OffTheRecordProfileImpl::GetNetworkPredictor() {
   return NULL;
 }
 
-void OffTheRecordProfileImpl::ClearNetworkingHistorySince(base::Time time) {
-  // No need to do anything here, our transport security state is read-only.
+void OffTheRecordProfileImpl::ClearNetworkingHistorySince(
+    base::Time time,
+    const base::Closure& completion) {
+  // Nothing to do here, our transport security state is read-only.
+  // Still, fire the callback to indicate we have finished, otherwise the
+  // BrowsingDataRemover will never be destroyed and the dialog will never be
+  // closed. We must do this asynchronously in order to avoid reentrancy issues.
+  if (!completion.is_null()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
+  }
 }
 
 GURL OffTheRecordProfileImpl::GetHomePage() {
@@ -476,7 +472,7 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
 Profile* Profile::CreateOffTheRecordProfile() {
   OffTheRecordProfileImpl* profile = NULL;
 #if defined(OS_CHROMEOS)
-  if (Profile::IsGuestSession())
+  if (IsGuestSession())
     profile = new GuestSessionProfile(this);
 #endif
   if (!profile)

@@ -58,47 +58,63 @@ cr.define('cr.ui', function() {
           send_callback();
       });
     }
-  }
+  };
 
   /**
    * Initializes the OOBE flow.  This will cause all C++ handlers to
    * be invoked to do final setup.
    */
   Oobe.initialize = function() {
+    DisplayManager.initialize();
     oobe.NetworkScreen.register();
     oobe.EulaScreen.register();
     oobe.UpdateScreen.register();
     oobe.OAuthEnrollmentScreen.register();
+    oobe.ResetScreen.register();
     login.AccountPickerScreen.register();
     login.GaiaSigninScreen.register();
-    oobe.UserImageScreen.register();
+    oobe.UserImageScreen.register(/* lazyInit= */ false);
     login.ErrorMessageScreen.register();
+    login.TPMErrorMessageScreen.register();
+    login.PasswordChangedScreen.register();
 
     cr.ui.Bubble.decorate($('bubble'));
     login.HeaderBar.decorate($('login-header-bar'));
 
     // TODO: Cleanup with old OOBE style removal.
     $('security-link').addEventListener('click', function(event) {
-      chrome.send('eulaOnTpmPopupOpened');
+      chrome.send('eulaOnInstallationSettingsPopupOpened');
       $('popup-overlay').hidden = false;
-      $('security-ok-button').focus();
-    });
-    $('security-tpm-link').addEventListener('click', function(event) {
-      chrome.send('eulaOnTpmPopupOpened');
-      $('popup-overlay').hidden = false;
-      $('security-ok-button').focus();
-    });
-    $('security-ok-button').addEventListener('click', function(event) {
-      $('popup-overlay').hidden = true;
-    });
-    // Do not allow focus leaving the overlay.
-    $('popup-overlay').addEventListener('focusout', function(event) {
-      // WebKit does not allow immediate focus return.
-      setTimeout(function() { $('security-ok-button').focus(); }, 0);
-      event.preventDefault();
+      $('installation-settings-ok-button').focus();
     });
 
+    Oobe.initializeA11yMenu();
+
     chrome.send('screenStateInitialize');
+  };
+
+  /**
+   * Initializes OOBE accessibility menu.
+   */
+  Oobe.initializeA11yMenu = function() {
+    cr.ui.Bubble.decorate($('accessibility-menu'));
+    $('connect-accessibility-link').addEventListener(
+        'click', Oobe.handleAccessbilityLinkClick);
+    $('eula-accessibility-link').addEventListener(
+        'click', Oobe.handleAccessbilityLinkClick);
+    $('update-accessibility-link').addEventListener(
+        'click', Oobe.handleAccessbilityLinkClick);
+
+    $('high-contrast').addEventListener('click', Oobe.handleHighContrastClick);
+    $('spoken-feedback').addEventListener('click',
+                                          Oobe.handleSpokenFeedbackClick);
+    $('screen-magnifier').addEventListener('click',
+                                           Oobe.handleScreenMagnifierClick);
+
+    // A11y menu should be accessible i.e. disable autohide on any
+    // keydown or click inside menu.
+    $('accessibility-menu').hideOnKeyPress = false;
+    $('accessibility-menu').hideOnSelfClick = false;
   };
 
   /**
@@ -109,6 +125,53 @@ cr.define('cr.ui', function() {
    */
   Oobe.handleAccelerator = function(name) {
     Oobe.getInstance().handleAccelerator(name);
+  };
+
+  /**
+   * Accessibility link handler.
+   */
+  Oobe.handleAccessbilityLinkClick = function(e) {
+    /** @const */ var BUBBLE_OFFSET = 5;
+    /** @const */ var BUBBLE_PADDING = 10;
+    $('accessibility-menu').showForElement(e.target,
+                                           cr.ui.Bubble.Attachment.BOTTOM,
+                                           BUBBLE_OFFSET, BUBBLE_PADDING);
+    if (Oobe.getInstance().currentScreen &&
+        Oobe.getInstance().currentScreen.defaultControl) {
+      $('accessibility-menu').elementToFocusOnHide =
+          Oobe.getInstance().currentScreen.defaultControl;
+    } else {
+      // Update screen falls into this category. Since it doesn't have any
+      // controls other than a11y link we don't want that link to receive focus
+      // when screen is shown i.e. defaultControl is not defined.
+      // Focus a11y link instead.
+      $('accessibility-menu').elementToFocusOnHide = e.target;
+    }
+    e.stopPropagation();
+  };
+
+  /**
+   * Spoken feedback checkbox handler.
+   */
+  Oobe.handleSpokenFeedbackClick = function(e) {
+    chrome.send('enableSpokenFeedback', [$('spoken-feedback').checked]);
+    e.stopPropagation();
+  };
+
+  /**
+   * High contrast mode checkbox handler.
+   */
+  Oobe.handleHighContrastClick = function(e) {
+    chrome.send('enableHighContrast', [$('high-contrast').checked]);
+    e.stopPropagation();
+  };
+
+  /**
+   * Screen magnifier checkbox handler.
+   */
+  Oobe.handleScreenMagnifierClick = function(e) {
+    chrome.send('enableScreenMagnifier', [$('screen-magnifier').checked]);
+    e.stopPropagation();
   };
 
   /**
@@ -157,18 +220,19 @@ cr.define('cr.ui', function() {
   };
 
   /**
-   * Shows estimated time left status.
-   * @param {boolean} enable Are time left status show?
+   * Shows or hides downloading ETA message.
+   * @param {boolean} visible Are ETA message visible?
    */
-  Oobe.showUpdateEstimatedTimeLeft = function(enable) {
-    $('update-estimated-time-left').hidden = !enable;
+  Oobe.showEstimatedTimeLeft = function(visible) {
+    $('progress-message').hidden = visible;
+    $('estimated-time-left').hidden = !visible;
   };
 
   /**
    * Sets estimated time left until download will complete.
    * @param {number} seconds Time left in seconds.
    */
-  Oobe.setUpdateEstimatedTimeLeft = function(seconds) {
+  Oobe.setEstimatedTimeLeft = function(seconds) {
     var minutes = Math.ceil(seconds / 60);
     var message = '';
     if (minutes > 60) {
@@ -184,7 +248,25 @@ cr.define('cr.ui', function() {
     } else {
       message = localStrings.getString('downloadingTimeLeftSmall');
     }
-    $('update-estimated-time-left').textContent = message;
+    $('estimated-time-left').textContent =
+      localStrings.getStringF('downloading', message);
+  };
+
+  /**
+   * Shows or hides info message below progress bar.
+   * @param {boolean} visible Are message visible?
+   */
+  Oobe.showProgressMessage = function(visible) {
+    $('estimated-time-left').hidden = visible;
+    $('progress-message').hidden = !visible;
+  };
+
+  /**
+   * Sets message below progress bar.
+   * @param {string} message Message that should be shown.
+   */
+  Oobe.setProgressMessage = function(message) {
+    $('progress-message').innerText = message;
   };
 
   /**
@@ -197,11 +279,11 @@ cr.define('cr.ui', function() {
 
   /**
    * Shows or hides update curtain.
-   * @param {boolean} enable Are curtains shown?
+   * @param {boolean} visible Are curtains visible?
    */
-  Oobe.showUpdateCurtain = function(enable) {
-    $('update-screen-curtain').hidden = !enable;
-    $('update-screen-main').hidden = enable;
+  Oobe.showUpdateCurtain = function(visible) {
+    $('update-screen-curtain').hidden = !visible;
+    $('update-screen-main').hidden = visible;
   };
 
   /**
@@ -210,8 +292,24 @@ cr.define('cr.ui', function() {
    */
   Oobe.setTpmPassword = function(password) {
     $('tpm-busy').hidden = true;
-    $('tpm-password').textContent = password;
-    $('tpm-password').hidden = false;
+
+    if (password.length) {
+      $('tpm-password').textContent = password;
+      $('tpm-password').hidden = false;
+    } else {
+      $('tpm-desc').hidden = true;
+      $('tpm-desc-powerwash').hidden = false;
+    }
+  }
+
+  /**
+   * Refreshes a11y menu state.
+   * @param {!Object} data New dictionary with a11y features state.
+   */
+  Oobe.refreshA11yInfo = function(data) {
+    $('high-contrast').checked = data.highContrastEnabled;
+    $('spoken-feedback').checked = data.spokenFeedbackEnabled;
+    $('screen-magnifier').checked = data.screenMagnifierEnabled;
   };
 
   /**
@@ -300,10 +398,43 @@ cr.define('cr.ui', function() {
   };
 
   /**
-   * Clears error bubble.
+   * Shows password changed screen that offers migration.
+   * @param {boolean} showError Whether to show the incorrect password error.
+   */
+  Oobe.showPasswordChangedScreen = function(showError) {
+    DisplayManager.showPasswordChangedScreen(showError);
+  };
+
+  /**
+   * Shows TPM error screen.
+   */
+  Oobe.showTpmError = function() {
+    DisplayManager.showTpmError();
+  };
+
+  /**
+   * Clears error bubble as well as optional menus that could be open.
    */
   Oobe.clearErrors = function() {
+    $('accessibility-menu').hide();
     DisplayManager.clearErrors();
+  };
+
+  /**
+   * Displays animations on successful authentication, that have to happen
+   * before login UI is dismissed.
+   */
+  Oobe.animateAuthenticationSuccess = function() {
+    login.HeaderBar.animateOut(function() {
+      chrome.send('unlockOnLoginSuccess');
+    });
+  };
+
+  /**
+   * Displays animations that have to happen once login UI is fully displayed.
+   */
+  Oobe.animateOnceFullyDisplayed = function() {
+    login.HeaderBar.animateIn();
   };
 
   /**
@@ -324,6 +455,22 @@ cr.define('cr.ui', function() {
    */
   Oobe.setLabelText = function(labelId, labelText) {
     DisplayManager.setLabelText(labelId, labelText);
+  };
+
+  /**
+   * Sets the text content of the enterprise info message.
+   * If the text is empty, the entire notification will be hidden.
+   * @param {string} messageText The message text.
+   */
+  Oobe.setEnterpriseInfo = function(messageText) {
+    DisplayManager.setEnterpriseInfo(messageText);
+  };
+
+  /**
+   * Enforces focus on user pod of locked user.
+   */
+  Oobe.forceLockedUserPodFocus = function() {
+    login.AccountPickerScreen.forceLockedUserPodFocus();
   };
 
   // Export

@@ -124,7 +124,6 @@ class PasswordTest(pyauto.PyUITest):
 
   def testDisplayAndSavePasswordInfobar(self):
     """Verify password infobar displays and able to save password."""
-    test_utils.ClearPasswords(self)
     creds = self.GetPrivateInfo()['test_google_account']
     username = creds['username']
     password = creds['password']
@@ -143,7 +142,6 @@ class PasswordTest(pyauto.PyUITest):
     self._ClickOnLoginPage(0, 0)
     test_utils.VerifyGoogleAccountCredsFilled(self, username, password,
                                               tab_index=0, windex=0)
-    test_utils.ClearPasswords(self)
 
   def testNeverSavePasswords(self):
     """Verify passwords not saved/deleted when 'never for this site' chosen."""
@@ -191,7 +189,6 @@ class PasswordTest(pyauto.PyUITest):
     self._ClickOnLoginPage(0, 1)
     test_utils.VerifyGoogleAccountCredsFilled(self, username, password,
         tab_index=1, windex=0)
-    test_utils.ClearPasswords(self)
 
   def testLoginCredsNotShownInIncognito(self):
     """Verify login creds are not shown in Incognito mode."""
@@ -267,7 +264,7 @@ class PasswordTest(pyauto.PyUITest):
     self.PerformActionOnInfobar(
         'accept', infobar_index=test_utils.WaitForInfobarTypeAndGetIndex(
             self, self.INFOBAR_TYPE))
-    self.GetBrowserWindow(0).GetTab(0).Reload()
+    self.ReloadTab()
     test_utils.AssertInfobarTypeDoesNotAppear(self, self.INFOBAR_TYPE)
 
   def testPasswdInfoNotStoredWhenAutocompleteOff(self):
@@ -340,7 +337,6 @@ class PasswordTest(pyauto.PyUITest):
     passwd_value = self.GetDOMValue('document.getElementById("Passwd").value')
     self.assertFalse(passwd_value,
                      msg='Password field not empty for new username.')
-    test_utils.ClearPasswords(self)
 
   def testPasswordInfobarShowsForBlockedDomain(self):
     """Verify that password infobar shows when cookies are blocked.

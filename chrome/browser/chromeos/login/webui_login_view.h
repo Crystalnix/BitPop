@@ -27,8 +27,6 @@ class WebView;
 class Widget;
 }
 
-class TabContents;
-
 namespace chromeos {
 
 // View used to render a WebUI supporting Widget. This widget is used for the
@@ -73,10 +71,13 @@ class WebUILoginView : public views::WidgetDelegateView,
   // Called when WebUI is being shown after being initilized hidden.
   void OnPostponedShow();
 
-  void set_is_hidden(bool hidden) { is_hidden_ = hidden; }
-
   // Toggles status area visibility.
   void SetStatusAreaVisible(bool visible);
+
+  // Sets whether UI should be enabled.
+  void SetUIEnabled(bool enabled);
+
+  void set_is_hidden(bool hidden) { is_hidden_ = hidden; }
 
  protected:
   // Let non-login derived classes suppress emission of this signal.
@@ -106,10 +107,11 @@ class WebUILoginView : public views::WidgetDelegateView,
   virtual bool HandleContextMenu(
       const content::ContextMenuParams& params) OVERRIDE;
   virtual void HandleKeyboardEvent(
+      content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool IsPopupOrPanel(
       const content::WebContents* source) const OVERRIDE;
-  virtual bool TakeFocus(bool reverse) OVERRIDE;
+  virtual bool TakeFocus(content::WebContents* source, bool reverse) OVERRIDE;
   virtual void RequestMediaAccessPermission(
       content::WebContents* web_contents,
       const content::MediaStreamRequest* request,
@@ -127,11 +129,6 @@ class WebUILoginView : public views::WidgetDelegateView,
 
   content::NotificationRegistrar registrar_;
 
-  // TabContents for the WebView.
-  // TODO: this is needed for password manager, should be refactored/replaced
-  //       so that this code can move to src/ash.
-  scoped_ptr<TabContents> tab_contents_;
-
   // Login window which shows the view.
   views::Widget* login_window_;
 
@@ -147,15 +144,15 @@ class WebUILoginView : public views::WidgetDelegateView,
   // True when WebUI is being initialized hidden.
   bool is_hidden_;
 
-  // True when NOTIFICATION_LOGIN_WEBUI_VISIBLE notification has fired.
-  bool login_visible_notification_fired_;
-
   // True is login-prompt-visible event has been already handled.
   bool login_prompt_visible_handled_;
 
   // Should we emit the login-prompt-visible signal when the login page is
   // displayed?
   bool should_emit_login_prompt_visible_;
+
+  // True to forward keyboard event.
+  bool forward_keyboard_event_;
 
   DISALLOW_COPY_AND_ASSIGN(WebUILoginView);
 };

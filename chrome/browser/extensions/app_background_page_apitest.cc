@@ -77,7 +77,7 @@ class AppBackgroundPageApiTest : public ExtensionApiTest {
   }
 
  private:
-  ScopedTempDir app_dir_;
+  base::ScopedTempDir app_dir_;
 };
 
 // Disable on Mac only.  http://crbug.com/95139
@@ -367,7 +367,7 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, DISABLED_OpenPopupFromBGPage) {
   ASSERT_TRUE(RunExtensionTest("app_background_page/bg_open")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, OpenThenClose) {
+IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, DISABLED_OpenThenClose) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   ASSERT_TRUE(StartTestServer());
 

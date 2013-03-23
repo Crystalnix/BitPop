@@ -15,8 +15,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognitionResult.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognizerClient.h"
 
-using content::SpeechRecognitionError;
-using content::SpeechRecognitionResult;
 using WebKit::WebVector;
 using WebKit::WebString;
 using WebKit::WebSpeechGrammar;
@@ -25,9 +23,11 @@ using WebKit::WebSpeechRecognitionResult;
 using WebKit::WebSpeechRecognitionParams;
 using WebKit::WebSpeechRecognizerClient;
 
+namespace content {
+
 SpeechRecognitionDispatcher::SpeechRecognitionDispatcher(
     RenderViewImpl* render_view)
-    : content::RenderViewObserver(render_view),
+    : RenderViewObserver(render_view),
       recognizer_client_(NULL),
       next_id_(1) {
 }
@@ -46,7 +46,8 @@ bool SpeechRecognitionDispatcher::OnMessageReceived(
     IPC_MESSAGE_HANDLER(SpeechRecognitionMsg_AudioEnded, OnAudioEnded)
     IPC_MESSAGE_HANDLER(SpeechRecognitionMsg_ErrorOccurred, OnErrorOccurred)
     IPC_MESSAGE_HANDLER(SpeechRecognitionMsg_Ended, OnRecognitionEnded)
-    IPC_MESSAGE_HANDLER(SpeechRecognitionMsg_ResultRetrieved, OnResultRetrieved)
+    IPC_MESSAGE_HANDLER(SpeechRecognitionMsg_ResultRetrieved,
+                        OnResultsRetrieved)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -59,21 +60,16 @@ void SpeechRecognitionDispatcher::start(
   DCHECK(!recognizer_client_ || recognizer_client_ == recognizer_client);
   recognizer_client_ = recognizer_client;
 
-  // TODO(primiano): Should return false in order to communicate the failure
-  // and let WebKit throw an exception (need a hans@ patch to do that).
-  if (HandleExists(handle))
-    return;
-
   SpeechRecognitionHostMsg_StartRequest_Params msg_params;
   for (size_t i = 0; i < params.grammars().size(); ++i) {
     const WebSpeechGrammar& grammar = params.grammars()[i];
     msg_params.grammars.push_back(
-        content::SpeechRecognitionGrammar(grammar.src().spec(),
-                                          grammar.weight()));
+        SpeechRecognitionGrammar(grammar.src().spec(), grammar.weight()));
   }
   msg_params.language = UTF16ToUTF8(params.language());
-  msg_params.is_one_shot = !params.continuous();
   msg_params.max_hypotheses = static_cast<uint32>(params.maxAlternatives());
+  msg_params.continuous = params.continuous();
+  msg_params.interim_results = params.interimResults();
   msg_params.origin_url = params.origin().toString().utf8();
   msg_params.render_view_id = routing_id();
   msg_params.request_id = GetOrCreateIDForHandle(handle);
@@ -122,23 +118,25 @@ void SpeechRecognitionDispatcher::OnAudioEnded(int request_id) {
 }
 
 static WebSpeechRecognizerClient::ErrorCode WebKitErrorCode(
-    content::SpeechRecognitionErrorCode e) {
+    SpeechRecognitionErrorCode e) {
   switch (e) {
-    case content::SPEECH_RECOGNITION_ERROR_NONE:
+    case SPEECH_RECOGNITION_ERROR_NONE:
       NOTREACHED();
       return WebSpeechRecognizerClient::OtherError;
-    case content::SPEECH_RECOGNITION_ERROR_ABORTED:
+    case SPEECH_RECOGNITION_ERROR_ABORTED:
       return WebSpeechRecognizerClient::AbortedError;
-    case content::SPEECH_RECOGNITION_ERROR_AUDIO:
+    case SPEECH_RECOGNITION_ERROR_AUDIO:
       return WebSpeechRecognizerClient::AudioCaptureError;
-    case content::SPEECH_RECOGNITION_ERROR_NETWORK:
+    case SPEECH_RECOGNITION_ERROR_NETWORK:
       return WebSpeechRecognizerClient::NetworkError;
-    case content::SPEECH_RECOGNITION_ERROR_NO_SPEECH:
+    case SPEECH_RECOGNITION_ERROR_NOT_ALLOWED:
+      return WebSpeechRecognizerClient::NotAllowedError;
+    case SPEECH_RECOGNITION_ERROR_NO_SPEECH:
       return WebSpeechRecognizerClient::NoSpeechError;
-    case content::SPEECH_RECOGNITION_ERROR_NO_MATCH:
+    case SPEECH_RECOGNITION_ERROR_NO_MATCH:
       NOTREACHED();
       return WebSpeechRecognizerClient::OtherError;
-    case content::SPEECH_RECOGNITION_ERROR_BAD_GRAMMAR:
+    case SPEECH_RECOGNITION_ERROR_BAD_GRAMMAR:
       return WebSpeechRecognizerClient::BadGrammarError;
   }
   NOTREACHED();
@@ -147,7 +145,7 @@ static WebSpeechRecognizerClient::ErrorCode WebKitErrorCode(
 
 void SpeechRecognitionDispatcher::OnErrorOccurred(
     int request_id, const SpeechRecognitionError& error) {
-  if (error.code == content::SPEECH_RECOGNITION_ERROR_NO_MATCH) {
+  if (error.code == SPEECH_RECOGNITION_ERROR_NO_MATCH) {
     recognizer_client_->didReceiveNoMatch(GetHandleFromID(request_id),
                                           WebSpeechRecognitionResult());
   } else {
@@ -158,27 +156,53 @@ void SpeechRecognitionDispatcher::OnErrorOccurred(
 }
 
 void SpeechRecognitionDispatcher::OnRecognitionEnded(int request_id) {
-  recognizer_client_->didEnd(GetHandleFromID(request_id));
-  handle_map_.erase(request_id);
+  // TODO(tommi): It is possible that the handle isn't found in the array if
+  // the user just refreshed the page. It seems that we then get a notification
+  // for the previously loaded instance of the page.
+  HandleMap::iterator iter = handle_map_.find(request_id);
+  if (iter == handle_map_.end()) {
+    DLOG(ERROR) << "OnRecognitionEnded called for a handle that doesn't exist";
+  } else {
+    WebSpeechRecognitionHandle handle = iter->second;
+    // Note: we need to erase the handle from the map *before* calling didEnd.
+    // didEnd may call back synchronously to start a new recognition session,
+    // and we don't want to delete the handle from the map after that happens.
+    handle_map_.erase(request_id);
+    recognizer_client_->didEnd(handle);
+  }
 }
 
-void SpeechRecognitionDispatcher::OnResultRetrieved(
-    int request_id, const SpeechRecognitionResult& result) {
-  const size_t num_hypotheses = result.hypotheses.size();
-  WebSpeechRecognitionResult webkit_result;
-  WebVector<WebString> transcripts(num_hypotheses);
-  WebVector<float> confidences(num_hypotheses);
-  for (size_t i = 0; i < num_hypotheses; ++i) {
-    transcripts[i] = result.hypotheses[i].utterance;
-    confidences[i] = static_cast<float>(result.hypotheses[i].confidence);
+void SpeechRecognitionDispatcher::OnResultsRetrieved(
+    int request_id, const SpeechRecognitionResults& results) {
+  size_t provisional_count = 0;
+  SpeechRecognitionResults::const_iterator it = results.begin();
+  for (; it != results.end(); ++it) {
+    if (it->is_provisional)
+      ++provisional_count;
   }
-  webkit_result.assign(transcripts, confidences, !result.is_provisional);
-  // TODO(primiano): Handle history, currently empty.
-  WebVector<WebSpeechRecognitionResult> empty_history;
-  recognizer_client_->didReceiveResult(GetHandleFromID(request_id),
-                                       webkit_result,
-                                       0, // result_index
-                                       empty_history);
+
+  WebVector<WebSpeechRecognitionResult> provisional(provisional_count);
+  WebVector<WebSpeechRecognitionResult> final(
+      results.size() - provisional_count);
+
+  int provisional_index = 0, final_index = 0;
+  for (it = results.begin(); it != results.end(); ++it) {
+    const SpeechRecognitionResult& result = (*it);
+    WebSpeechRecognitionResult* webkit_result = result.is_provisional ?
+        &provisional[provisional_index++] : &final[final_index++];
+
+    const size_t num_hypotheses = result.hypotheses.size();
+    WebVector<WebString> transcripts(num_hypotheses);
+    WebVector<float> confidences(num_hypotheses);
+    for (size_t i = 0; i < num_hypotheses; ++i) {
+      transcripts[i] = result.hypotheses[i].utterance;
+      confidences[i] = static_cast<float>(result.hypotheses[i].confidence);
+    }
+    webkit_result->assign(transcripts, confidences, !result.is_provisional);
+  }
+
+  recognizer_client_->didReceiveResults(
+      GetHandleFromID(request_id), final, provisional);
 }
 
 
@@ -215,3 +239,5 @@ const WebSpeechRecognitionHandle& SpeechRecognitionDispatcher::GetHandleFromID(
   DCHECK(iter != handle_map_.end());
   return iter->second;
 }
+
+}  // namespace content

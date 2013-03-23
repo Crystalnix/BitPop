@@ -12,23 +12,22 @@
 #include "base/threading/platform_thread.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 
-class DragDropThread;
-class WebDragDest;
-class WebDragSource;
+class SkBitmap;
 struct WebDropData;
-
-namespace content {
-class WebContents;
-}
 
 namespace gfx {
 class ImageSkia;
 }
+
+namespace content {
+class DragDropThread;
+class WebContents;
+class WebDragDest;
+class WebDragSource;
 
 // Windows-specific drag-and-drop handling in WebContentsView.
 // If we are dragging a virtual file out of the browser, we use a background
@@ -40,7 +39,7 @@ class CONTENT_EXPORT WebContentsDragWin
       public base::RefCountedThreadSafe<WebContentsDragWin> {
  public:
   WebContentsDragWin(gfx::NativeWindow source_window,
-                     content::WebContents* web_contents,
+                     WebContents* web_contents,
                      WebDragDest* drag_dest,
                      const base::Callback<void()>& drag_end_callback);
   virtual ~WebContentsDragWin();
@@ -49,7 +48,7 @@ class CONTENT_EXPORT WebContentsDragWin
   void StartDragging(const WebDropData& drop_data,
                      WebKit::WebDragOperationsMask ops,
                      const gfx::ImageSkia& image,
-                     const gfx::Point& image_offset);
+                     const gfx::Vector2d& image_offset);
   void CancelDrag();
 
   // DataObjectImpl::Observer implementation.
@@ -67,22 +66,26 @@ class CONTENT_EXPORT WebContentsDragWin
                                   ui::OSExchangeData* data);
   void PrepareDragForUrl(const WebDropData& drop_data,
                          ui::OSExchangeData* data);
-  void DoDragging(const WebDropData& drop_data,
+  // Returns false if the source window becomes invalid when the drag ends.
+  // This could happen when the window gets destroyed when the drag is still in
+  // progress. No further processing should be done beyond this return point
+  // because the instance has been destroyed.
+  bool DoDragging(const WebDropData& drop_data,
                   WebKit::WebDragOperationsMask ops,
                   const GURL& page_url,
                   const std::string& page_encoding,
                   const gfx::ImageSkia& image,
-                  const gfx::Point& image_offset);
+                  const gfx::Vector2d& image_offset);
 
   // Called on drag-and-drop thread.
   void StartBackgroundDragging(const WebDropData& drop_data,
                                WebKit::WebDragOperationsMask ops,
                                const GURL& page_url,
                                const std::string& page_encoding,
-                               const SkBitmap& image,
-                               const gfx::Point& image_offset);
+                               const gfx::ImageSkia& image,
+                               const gfx::Vector2d& image_offset);
   // Called on UI thread.
-  void EndDragging(bool restore_suspended_state);
+  void EndDragging();
   void CloseThread();
 
   // For debug check only. Access only on drag-and-drop thread.
@@ -91,7 +94,7 @@ class CONTENT_EXPORT WebContentsDragWin
   // All the member variables below are accessed on UI thread.
 
   gfx::NativeWindow source_window_;
-  content::WebContents* web_contents_;
+  WebContents* web_contents_;
   WebDragDest* drag_dest_;
 
   // |drag_source_| is our callback interface passed to the system when we
@@ -106,12 +109,11 @@ class CONTENT_EXPORT WebContentsDragWin
   // The flag to guard that EndDragging is not called twice.
   bool drag_ended_;
 
-  // Keep track of the old suspended state of the drop target.
-  bool old_drop_target_suspended_state_;
-
   base::Callback<void()> drag_end_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsDragWin);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_WEB_CONTENTS_WEB_CONTENTS_DRAG_WIN_H_

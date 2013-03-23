@@ -38,7 +38,7 @@ ConfirmBubbleViews::~ConfirmBubbleViews() {
 }
 
 void ConfirmBubbleViews::ButtonPressed(views::Button* sender,
-                                       const views::Event& event) {
+                                       const ui::Event& event) {
   if (sender->tag() == ConfirmBubbleModel::BUTTON_OK)
     model_->Accept();
   else if (sender->tag() == ConfirmBubbleModel::BUTTON_CANCEL)
@@ -86,7 +86,7 @@ void ConfirmBubbleViews::Init() {
   views::ImageButton* close_button = new views::ImageButton(this);
   const gfx::ImageSkia* close_image =
       bundle.GetImageNamed(IDR_INFO_BUBBLE_CLOSE).ToImageSkia();
-  close_button->SetImage(views::CustomButton::BS_NORMAL, close_image);
+  close_button->SetImage(views::CustomButton::STATE_NORMAL, close_image);
   close_button->set_tag(ConfirmBubbleModel::BUTTON_NONE);
   layout->AddView(close_button);
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
@@ -101,7 +101,7 @@ void ConfirmBubbleViews::Init() {
   cs->AddColumn(views::GridLayout::LEADING, views::GridLayout::CENTER, 0,
                 views::GridLayout::FIXED, message_width, false);
   message_label->SetBounds(0, 0, message_width, 0);
-  message_label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  message_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   message_label->SetMultiLine(true);
   layout->StartRow(0, 1);
   layout->AddView(message_label);

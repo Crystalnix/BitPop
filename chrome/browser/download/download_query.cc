@@ -11,6 +11,8 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_path.h"
+#include "base/i18n/case_conversion.h"
+#include "base/i18n/string_search.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
@@ -19,8 +21,10 @@
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/download_item.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/net_util.h"
 #include "unicode/regex.h"
 
 using content::DownloadDangerType;
@@ -46,10 +50,41 @@ template<> bool GetAs(const base::Value& in, string16* out) {
 // The next several functions are helpers for making Callbacks that access
 // DownloadItem fields.
 
-static bool MatchesQuery(const string16& value, const DownloadItem& item) {
-  return item.MatchesQuery(value);
+static bool MatchesQuery(const string16& query, const DownloadItem& item) {
+  if (query.empty())
+    return true;
+
+  DCHECK_EQ(query, base::i18n::ToLower(query));
+
+  string16 url_raw(UTF8ToUTF16(item.GetOriginalUrl().spec()));
+  if (base::i18n::StringSearchIgnoringCaseAndAccents(
+          query, url_raw, NULL, NULL)) {
+    return true;
+  }
+
+  string16 url_formatted = url_raw;
+  if (item.GetBrowserContext()) {
+    url_formatted = net::FormatUrl(
+        item.GetOriginalUrl(),
+        content::GetContentClient()->browser()->GetAcceptLangs(
+            item.GetBrowserContext()));
+  }
+  if (base::i18n::StringSearchIgnoringCaseAndAccents(
+        query, url_formatted, NULL, NULL)) {
+    return true;
+  }
+
+  string16 path(item.GetTargetFilePath().LossyDisplayName());
+  return base::i18n::StringSearchIgnoringCaseAndAccents(
+      query, path, NULL, NULL);
 }
 
+static int64 GetStartTimeMsEpoch(const DownloadItem& item) {
+  return (item.GetStartTime() - base::Time::UnixEpoch()).InMilliseconds();
+}
+
+// TODO(benjhayden) These timestamps don't fit in int32, and base::Value doesn't
+// support int64. Use ISO 8601 date-time strings instead.
 static int GetStartTime(const DownloadItem& item) {
   return (item.GetStartTime() - base::Time::UnixEpoch()).InMilliseconds();
 }
@@ -61,7 +96,7 @@ static bool GetDangerAccepted(const DownloadItem& item) {
 static string16 GetFilename(const DownloadItem& item) {
   // This filename will be compared with strings that could be passed in by the
   // user, who only sees LossyDisplayNames.
-  return item.GetFullPath().LossyDisplayName();
+  return item.GetTargetFilePath().LossyDisplayName();
 }
 
 static std::string GetFilenameUTF8(const DownloadItem& item) {
@@ -313,7 +348,7 @@ void DownloadQuery::AddSorter(DownloadQuery::SortType type,
                               DownloadQuery::SortDirection direction) {
   switch (type) {
     case SORT_START_TIME:
-      sorters_.push_back(Sorter::Build<int>(direction, &GetStartTime));
+      sorters_.push_back(Sorter::Build<int64>(direction, &GetStartTimeMsEpoch));
       break;
     case SORT_URL:
       sorters_.push_back(Sorter::Build<std::string>(direction, &GetUrl));

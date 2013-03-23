@@ -9,17 +9,23 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "chrome/browser/signin/signin_tracker.h"
-#include "chrome/browser/ui/webui/options2/options_ui.h"
+#include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class LoginUIService;
 class ProfileManager;
 class ProfileSyncService;
 class SigninManager;
 
-class SyncSetupHandler : public options2::OptionsPageUIHandler,
+namespace content {
+class WebContents;
+}
+
+class SyncSetupHandler : public options::OptionsPageUIHandler,
                          public SigninTracker::Observer,
-                         public LoginUIService::LoginUI {
+                         public LoginUIService::LoginUI,
+                         public content::WebContentsObserver {
  public:
   // Constructs a new SyncSetupHandler. |profile_manager| may be NULL.
   explicit SyncSetupHandler(ProfileManager* profile_manager);
@@ -38,6 +44,10 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // LoginUIService::LoginUI implementation.
   virtual void FocusUI() OVERRIDE;
   virtual void CloseUI() OVERRIDE;
+
+  // content::WebContentsObserver implementation.
+  virtual void WebContentsDestroyed(
+      content::WebContents* web_contents) OVERRIDE;
 
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
@@ -73,6 +83,8 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, UnsuccessfullySetPassphrase);
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, SubmitAuthWithInvalidUsername);
 
+  bool is_configuring_sync() const { return configuring_sync_; }
+  bool have_signin_tracker() const { return signin_tracker_; }
 
   // Subclasses must implement this to show the setup UI that's appropriate
   // for the page this is contained in.
@@ -129,6 +141,10 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // error UI.
   void DisplayGaiaLogin(bool fatal_error);
 
+  // When web-flow is enabled, displays the Gaia login form in a new tab.
+  // This function is virtual so that tests can override.
+  virtual void DisplayGaiaLoginInNewTab();
+
   // Displays the GAIA login form with a custom error message (used for errors
   // like "email address already in use by another profile"). No message
   // displayed if |error_message| is empty. Displays fatal error UI if
@@ -163,6 +179,10 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
 
   // Invokes the javascript call to close the setup overlay.
   void CloseOverlay();
+
+  // When using web-flow, closes the Gaia page used to collection user
+  // credentials.
+  void CloseGaiaSigninPage();
 
   // Returns true if the given login data is valid, false otherwise. If the
   // login data is not valid then on return |error_message| will be set to  a
@@ -200,6 +220,10 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // The OneShotTimer object used to timeout of starting the sync backend
   // service.
   scoped_ptr<base::OneShotTimer<SyncSetupHandler> > backend_start_timer_;
+
+  // When using web-flow, weak pointer to the tab that holds the Gaia sign in
+  // page.
+  content::WebContents* active_gaia_signin_tab_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSetupHandler);
 };

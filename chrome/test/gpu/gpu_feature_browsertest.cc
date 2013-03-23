@@ -6,10 +6,11 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/test/trace_event_analyzer.h"
 #include "base/version.h"
-#include "chrome/browser/gpu_blacklist.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -18,8 +19,9 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/gpu_info.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/test/gpu/gpu_test_config.h"
-#include "content/test/gpu/test_switches.h"
 #include "net/base/net_util.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/compositor/compositor_setup.h"
@@ -39,16 +41,15 @@ using trace_analyzer::TraceEventVector;
 
 namespace {
 
-typedef uint32 GpuResultFlags;
-#define EXPECT_NO_GPU_SWAP_BUFFERS    GpuResultFlags(1<<0)
-// Expect a SwapBuffers to occur (see gles2_cmd_decoder.cc).
-#define EXPECT_GPU_SWAP_BUFFERS       GpuResultFlags(1<<1)
+const char kSwapBuffersEvent[] = "SwapBuffers";
+const char kAcceleratedCanvasCreationEvent[] = "Canvas2DLayerBridgeCreation";
+const char kWebGLCreationEvent[] = "DrawingBufferCreation";
 
 class GpuFeatureTest : public InProcessBrowserTest {
  public:
   GpuFeatureTest() : trace_categories_("test_gpu"), gpu_enabled_(false) {}
 
-  virtual void SetUpInProcessBrowserTestFixture() {
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     FilePath test_dir;
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
     gpu_test_dir_ = test_dir.AppendASCII("gpu");
@@ -71,10 +72,9 @@ class GpuFeatureTest : public InProcessBrowserTest {
   }
 
   void SetupBlacklist(const std::string& json_blacklist) {
-    GpuBlacklist* blacklist = GpuBlacklist::GetInstance();
-    ASSERT_TRUE(blacklist->LoadGpuBlacklist(
-        json_blacklist, GpuBlacklist::kAllOs));
-    blacklist->UpdateGpuDataManager();
+    content::GPUInfo gpu_info;
+    GpuDataManager::GetInstance()->InitializeForTesting(
+        json_blacklist, gpu_info);
   }
 
   // If expected_reply is NULL, we don't check the reply content.
@@ -92,7 +92,7 @@ class GpuFeatureTest : public InProcessBrowserTest {
     ASSERT_TRUE(file_util::PathExists(test_path))
         << "Missing test file: " << test_path.value();
 
-    ui_test_utils::DOMMessageQueue message_queue;
+    content::DOMMessageQueue message_queue;
     if (new_tab) {
       ui_test_utils::NavigateToURLWithDisposition(
           browser(), net::FilePathToFileURL(test_path),
@@ -109,7 +109,10 @@ class GpuFeatureTest : public InProcessBrowserTest {
       EXPECT_STREQ(expected_reply, result.c_str());
   }
 
-  void RunTest(const FilePath& url, GpuResultFlags expectations) {
+  // Open the URL and check the trace stream for the given event.
+  void RunEventTest(const FilePath& url,
+                    const char* event_name = NULL,
+                    bool event_expected = false) {
 #if defined(OS_LINUX) && !defined(NDEBUG)
     // Bypass tests on GPU Linux Debug bots.
     if (gpu_enabled_)
@@ -120,9 +123,6 @@ class GpuFeatureTest : public InProcessBrowserTest {
     if (!IOSurfaceSupport::Initialize())
       return;
 #endif
-
-    using trace_analyzer::Query;
-    using trace_analyzer::TraceAnalyzer;
 
     ASSERT_TRUE(tracing::BeginTracing(trace_categories_));
 
@@ -135,18 +135,35 @@ class GpuFeatureTest : public InProcessBrowserTest {
     analyzer_->AssociateBeginEndEvents();
     TraceEventVector events;
 
-    if (expectations & EXPECT_NO_GPU_SWAP_BUFFERS) {
-      EXPECT_EQ(analyzer_->FindEvents(Query::EventName() ==
-                                      Query::String("SwapBuffers"), &events),
-                size_t(0));
-    }
+    if (!event_name)
+      return;
 
-    // Check for swap buffers if expected:
-    if (expectations & EXPECT_GPU_SWAP_BUFFERS) {
-      EXPECT_GT(analyzer_->FindEvents(Query::EventName() ==
-                                      Query::String("SwapBuffers"), &events),
-                size_t(0));
-    }
+    size_t event_count =
+        analyzer_->FindEvents(Query::EventNameIs(event_name), &events);
+
+    if (event_expected)
+      EXPECT_GT(event_count, 0U);
+    else
+      EXPECT_EQ(event_count, 0U);
+  }
+
+  // Trigger a resize of the chrome window, and use tracing to wait for the
+  // given |wait_event|.
+  bool ResizeAndWait(const gfx::Rect& new_bounds,
+                     const char* trace_categories,
+                     const char* wait_category,
+                     const char* wait_event) {
+    if (!tracing::BeginTracingWithWatch(trace_categories, wait_category,
+                                        wait_event, 1))
+      return false;
+    browser()->window()->SetBounds(new_bounds);
+    if (!tracing::WaitForWatchEvent(base::TimeDelta()))
+      return false;
+    if (!tracing::EndTracing(&trace_events_json_))
+      return false;
+    analyzer_.reset(TraceAnalyzer::Create(trace_events_json_));
+    analyzer_->AssociateBeginEndEvents();
+    return true;
   }
 
  protected:
@@ -158,11 +175,12 @@ class GpuFeatureTest : public InProcessBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, AcceleratedCompositingAllowed) {
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   EXPECT_EQ(type, 0);
 
   const FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunTest(url, EXPECT_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kSwapBuffersEvent, true);
 }
 
 // Flash Stage3D may be blacklisted for other reasons on XP, so ignore it.
@@ -175,8 +193,11 @@ GpuFeatureType IgnoreGpuFeatures(GpuFeatureType type) {
   return type;
 }
 
-IN_PROC_BROWSER_TEST_F(GpuFeatureTest, AcceleratedCompositingBlocked) {
-  const std::string json_blacklist =
+class AcceleratedCompositingBlockedTest : public GpuFeatureTest {
+ public:
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    GpuFeatureTest::SetUpInProcessBrowserTestFixture();
+    const std::string json_blacklist =
       "{\n"
       "  \"name\": \"gpu blacklist\",\n"
       "  \"version\": \"1.0\",\n"
@@ -189,13 +210,27 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, AcceleratedCompositingBlocked) {
       "    }\n"
       "  ]\n"
       "}";
-  SetupBlacklist(json_blacklist);
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+    SetupBlacklist(json_blacklist);
+  }
+};
+
+#if defined(OS_WIN) && defined(USE_AURA)
+// Compositing is always on for Windows Aura.
+#define MAYBE_AcceleratedCompositingBlocked DISABLED_AcceleratedCompositingBlocked
+#else
+#define MAYBE_AcceleratedCompositingBlocked AcceleratedCompositingBlocked
+#endif
+
+IN_PROC_BROWSER_TEST_F(AcceleratedCompositingBlockedTest,
+    MAYBE_AcceleratedCompositingBlocked) {
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   type = IgnoreGpuFeatures(type);
+
   EXPECT_EQ(type, content::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING);
 
   const FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunTest(url, EXPECT_NO_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kSwapBuffersEvent, false);
 }
 
 class AcceleratedCompositingTest : public GpuFeatureTest {
@@ -206,18 +241,27 @@ class AcceleratedCompositingTest : public GpuFeatureTest {
   }
 };
 
+#if defined(OS_WIN) && defined(USE_AURA)
+// Compositing is always on for Windows Aura.
+#define MAYBE_AcceleratedCompositingDisabled DISABLED_AcceleratedCompositingDisabled
+#else
+#define MAYBE_AcceleratedCompositingDisabled AcceleratedCompositingDisabled
+#endif
+
 IN_PROC_BROWSER_TEST_F(AcceleratedCompositingTest,
-                       AcceleratedCompositingDisabled) {
+                       MAYBE_AcceleratedCompositingDisabled) {
+// Compositing is always on for Windows Aura.
   const FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunTest(url, EXPECT_NO_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kSwapBuffersEvent, false);
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, WebGLAllowed) {
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   EXPECT_EQ(type, 0);
 
   const FilePath url(FILE_PATH_LITERAL("feature_webgl.html"));
-  RunTest(url, EXPECT_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kWebGLCreationEvent, true);
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, WebGLBlocked) {
@@ -235,29 +279,34 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, WebGLBlocked) {
       "  ]\n"
       "}";
   SetupBlacklist(json_blacklist);
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   type = IgnoreGpuFeatures(type);
   EXPECT_EQ(type, content::GPU_FEATURE_TYPE_WEBGL);
 
   const FilePath url(FILE_PATH_LITERAL("feature_webgl.html"));
-  RunTest(url, EXPECT_NO_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kWebGLCreationEvent, false);
 }
 
 class WebGLTest : public GpuFeatureTest {
  public:
   virtual void SetUpCommandLine(CommandLine* command_line) {
     GpuFeatureTest::SetUpCommandLine(command_line);
+#if !defined(OS_ANDROID)
+    // On Android, WebGL is disabled by default
     command_line->AppendSwitch(switches::kDisableExperimentalWebGL);
+#endif
   }
 };
 
 IN_PROC_BROWSER_TEST_F(WebGLTest, WebGLDisabled) {
   const FilePath url(FILE_PATH_LITERAL("feature_webgl.html"));
-  RunTest(url, EXPECT_NO_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kWebGLCreationEvent, false);
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MultisamplingAllowed) {
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   EXPECT_EQ(type, 0);
 
   // Multisampling is not supported if running on top of osmesa.
@@ -297,7 +346,8 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MultisamplingBlocked) {
       "  ]\n"
       "}";
   SetupBlacklist(json_blacklist);
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   type = IgnoreGpuFeatures(type);
   EXPECT_EQ(type, content::GPU_FEATURE_TYPE_MULTISAMPLING);
 
@@ -327,11 +377,12 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, Canvas2DAllowed) {
   if (GPUTestBotConfig::CurrentConfigMatches("XP"))
     return;
 
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   EXPECT_EQ(type, 0);
 
   const FilePath url(FILE_PATH_LITERAL("feature_canvas2d.html"));
-  RunTest(url, EXPECT_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kAcceleratedCanvasCreationEvent, true);
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, Canvas2DBlocked) {
@@ -349,12 +400,13 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, Canvas2DBlocked) {
       "  ]\n"
       "}";
   SetupBlacklist(json_blacklist);
-  GpuFeatureType type = GpuDataManager::GetInstance()->GetGpuFeatureType();
+  GpuFeatureType type =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
   type = IgnoreGpuFeatures(type);
   EXPECT_EQ(type, content::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS);
 
   const FilePath url(FILE_PATH_LITERAL("feature_canvas2d.html"));
-  RunTest(url, EXPECT_NO_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kAcceleratedCanvasCreationEvent, false);
 }
 
 class Canvas2DDisabledTest : public GpuFeatureTest {
@@ -367,7 +419,7 @@ class Canvas2DDisabledTest : public GpuFeatureTest {
 
 IN_PROC_BROWSER_TEST_F(Canvas2DDisabledTest, Canvas2DDisabled) {
   const FilePath url(FILE_PATH_LITERAL("feature_canvas2d.html"));
-  RunTest(url, EXPECT_NO_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kAcceleratedCanvasCreationEvent, false);
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest,
@@ -389,25 +441,37 @@ class ThreadedCompositorTest : public GpuFeatureTest {
   }
 };
 
-// disabled in http://crbug.com/123503
-IN_PROC_BROWSER_TEST_F(ThreadedCompositorTest, ThreadedCompositor) {
+#if defined(OS_LINUX)
+// http://crbug.com/157985: test fails on Linux
+#define MAYBE_ThreadedCompositor DISABLED_ThreadedCompositor
+#else
+#define MAYBE_ThreadedCompositor ThreadedCompositor
+#endif
+IN_PROC_BROWSER_TEST_F(ThreadedCompositorTest, MAYBE_ThreadedCompositor) {
   const FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunTest(url, EXPECT_GPU_SWAP_BUFFERS);
+  RunEventTest(url, kSwapBuffersEvent, true);
 }
 
-IN_PROC_BROWSER_TEST_F(GpuFeatureTest, RafNoDamage) {
+
+#if defined(OS_WIN)
+// http://crbug.com/162343: flaky on Windows
+#define MAYBE_RafNoDamage DISABLED_RafNoDamage
+#else
+#define MAYBE_RafNoDamage RafNoDamage
+#endif
+IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MAYBE_RafNoDamage) {
   trace_categories_ = "-test_*";
   const FilePath url(FILE_PATH_LITERAL("feature_raf_no_damage.html"));
-  RunTest(url, GpuResultFlags(0));
+  RunEventTest(url);
 
   if (!analyzer_.get())
     return;
 
   // Search for matching name on begin event or async_begin event (any begin).
   Query query_raf =
-      (Query::EventPhase() == Query::Phase(TRACE_EVENT_PHASE_BEGIN) ||
-       Query::EventPhase() == Query::Phase(TRACE_EVENT_PHASE_ASYNC_BEGIN)) &&
-      Query::EventName() == Query::String("___RafWithNoDamage___");
+      (Query::EventPhaseIs(TRACE_EVENT_PHASE_BEGIN) ||
+       Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_BEGIN)) &&
+      Query::EventNameIs("___RafWithNoDamage___");
   TraceEventVector events;
   size_t num_events = analyzer_->FindEvents(query_raf, &events);
 
@@ -431,5 +495,76 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, RafNoDamage) {
     fprintf(stderr, "\n\nTRACE JSON:\n\n%s\n\n", trace_events_json_.c_str());
   }
 }
+
+#if defined(OS_MACOSX)
+IN_PROC_BROWSER_TEST_F(GpuFeatureTest, IOSurfaceReuse) {
+  if (!IOSurfaceSupport::Initialize())
+    return;
+
+  const FilePath url(FILE_PATH_LITERAL("feature_compositing_static.html"));
+  FilePath test_path = gpu_test_dir_.Append(url);
+  ASSERT_TRUE(file_util::PathExists(test_path))
+      << "Missing test file: " << test_path.value();
+
+  ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(test_path));
+
+  gfx::Rect bounds = browser()->window()->GetBounds();
+  gfx::Rect new_bounds = bounds;
+
+  const char* create_event = "IOSurfaceImageTransportSurface::CreateIOSurface";
+  const char* resize_event = "IOSurfaceImageTransportSurface::OnResize";
+  const char* draw_event = "CompositingIOSurfaceMac::DrawIOSurface";
+  Query find_creates = Query::MatchBeginName(create_event);
+  Query find_resizes = Query::MatchBeginName(resize_event) &&
+                       Query::EventHasNumberArg("old_width") &&
+                       Query::EventHasNumberArg("new_width");
+  Query find_draws = Query::MatchBeginName(draw_event) &&
+                     Query::EventHasNumberArg("scale");
+
+  const int roundup = 64;
+  // A few resize values assuming a roundup of 64 pixels. The test will resize
+  // by these values one at a time and verify that CreateIOSurface only happens
+  // when the rounded width changes.
+  int offsets[] = { 1, roundup - 1, roundup, roundup + 1, 2*roundup};
+  int num_offsets = static_cast<int>(arraysize(offsets));
+  int w_start = bounds.width();
+
+  for (int offset_i = 0; offset_i < num_offsets; ++offset_i) {
+    new_bounds.set_width(w_start + offsets[offset_i]);
+    ASSERT_TRUE(ResizeAndWait(new_bounds, "gpu", "gpu", resize_event));
+
+    TraceEventVector resize_events;
+    analyzer_->FindEvents(find_resizes, &resize_events);
+    for (size_t resize_i = 0; resize_i < resize_events.size(); ++resize_i) {
+      const trace_analyzer::TraceEvent* resize = resize_events[resize_i];
+      // Was a create allowed:
+      int old_width = resize->GetKnownArgAsInt("old_width");
+      int new_width = resize->GetKnownArgAsInt("new_width");
+      bool expect_create = (old_width/roundup != new_width/roundup ||
+                            old_width == 0);
+      int expected_creates = expect_create ? 1 : 0;
+
+      // Find the create event inside this resize event (if any). This will
+      // determine if the resize triggered a reallocation of the IOSurface.
+      double begin_time = resize->timestamp;
+      double end_time = begin_time + resize->GetAbsTimeToOtherEvent();
+      Query find_this_create = find_creates &&
+          Query::EventTime() >= Query::Double(begin_time) &&
+          Query::EventTime() <= Query::Double(end_time);
+      TraceEventVector create_events;
+      int num_creates = static_cast<int>(analyzer_->FindEvents(find_this_create,
+                                                               &create_events));
+      EXPECT_EQ(expected_creates, num_creates);
+
+      // For debugging failures, print out the width and height of each resize:
+      LOG(INFO) <<
+          base::StringPrintf(
+              "%d (resize offset %d): IOSurface width %d -> %d; Creates %d "
+              "Expected %d", offset_i, offsets[offset_i],
+              old_width, new_width, num_creates, expected_creates);
+    }
+  }
+}
+#endif
 
 }  // namespace anonymous

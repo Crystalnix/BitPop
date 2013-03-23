@@ -4,7 +4,6 @@
 
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 
-#include "base/metrics/histogram.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -12,9 +11,10 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/sync/one_click_signin_histogram.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
+#include "chrome/common/url_constants.h"
 
 OneClickSigninSyncStarter::OneClickSigninSyncStarter(
     Browser* browser,
@@ -26,12 +26,6 @@ OneClickSigninSyncStarter::OneClickSigninSyncStarter(
       signin_tracker_(browser_->profile(), this),
       start_mode_(start_mode) {
   DCHECK(browser_);
-
-  int action = start_mode_ == SYNC_WITH_DEFAULT_SETTINGS ?
-      one_click_signin::HISTOGRAM_WITH_DEFAULTS :
-      one_click_signin::HISTOGRAM_WITH_ADVANCED;
-  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Reverse", action,
-                            one_click_signin::HISTOGRAM_MAX);
 
   // Let the sync service know that setup is in progress so it doesn't start
   // syncing until the user has finished any configuration.
@@ -67,17 +61,30 @@ void OneClickSigninSyncStarter::SigninSuccess() {
   ProfileSyncService* profile_sync_service =
       ProfileSyncServiceFactory::GetForProfile(browser_->profile());
 
-  if (start_mode_ == SYNC_WITH_DEFAULT_SETTINGS) {
-    // Just kick off the sync machine, no need to configure it first.
-    profile_sync_service->SetSyncSetupCompleted();
-    profile_sync_service->SetSetupInProgress(false);
-  } else {
-    // Give the user a chance to configure things. We don't clear the
-    // ProfileSyncService::setup_in_progress flag because we don't want sync
-    // to start up until after the configure UI is displayed (the configure UI
-    // will clear the flag when the user is done setting up sync).
-    LoginUIServiceFactory::GetForProfile(browser_->profile())->ShowLoginUI(
-        browser_);
+  switch (start_mode_) {
+    case SYNC_WITH_DEFAULT_SETTINGS:
+      // Just kick off the sync machine, no need to configure it first.
+      profile_sync_service->OnUserChoseDatatypes(true, syncer::ModelTypeSet());
+      profile_sync_service->SetSyncSetupCompleted();
+      profile_sync_service->SetSetupInProgress(false);
+      break;
+    case CONFIGURE_SYNC_FIRST: {
+      // Give the user a chance to configure things. We don't clear the
+      // ProfileSyncService::setup_in_progress flag because we don't want sync
+      // to start up until after the configure UI is displayed (the configure UI
+      // will clear the flag when the user is done setting up sync).
+      LoginUIService* login_ui = LoginUIServiceFactory::GetForProfile(
+          browser_->profile());
+      if (login_ui->current_login_ui()) {
+        login_ui->current_login_ui()->FocusUI();
+      } else {
+        // Need to navigate to the settings page and display the UI.
+        chrome::ShowSettingsSubPage(browser_, chrome::kSyncSetupSubPage);
+      }
+      break;
+    }
+    default:
+      NOTREACHED() << "Invalid start_mode=" << start_mode_;
   }
 
   delete this;

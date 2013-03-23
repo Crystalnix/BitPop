@@ -6,6 +6,7 @@
 
 #include "base/sys_byteorder.h"
 #include "content/common/p2p_messages.h"
+#include "ipc/ipc_sender.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -18,9 +19,8 @@ const int kPacketHeaderSize = sizeof(uint16);
 
 namespace content {
 
-P2PSocketHostTcp::P2PSocketHostTcp(IPC::Sender* message_sender,
-                                   int routing_id, int id)
-    : P2PSocketHost(message_sender, routing_id, id),
+P2PSocketHostTcp::P2PSocketHostTcp(IPC::Sender* message_sender, int id)
+    : P2PSocketHost(message_sender, id),
       connected_(false) {
 }
 
@@ -72,7 +72,7 @@ void P2PSocketHostTcp::OnError() {
 
   if (state_ == STATE_UNINITIALIZED || state_ == STATE_CONNECTING ||
       state_ == STATE_OPEN) {
-    message_sender_->Send(new P2PMsg_OnError(routing_id_, id_));
+    message_sender_->Send(new P2PMsg_OnError(id_));
   }
 
   state_ = STATE_ERROR;
@@ -102,7 +102,7 @@ void P2PSocketHostTcp::OnConnected(int result) {
 
   VLOG(1) << "Local address: " << address.ToString();
   state_ = STATE_OPEN;
-  message_sender_->Send(new P2PMsg_OnSocketCreated(routing_id_, id_, address));
+  message_sender_->Send(new P2PMsg_OnSocketCreated(id_, address));
   DoRead();
 }
 
@@ -150,8 +150,7 @@ void P2PSocketHostTcp::OnPacket(std::vector<char>& data) {
     }
   }
 
-  message_sender_->Send(new P2PMsg_OnDataReceived(routing_id_, id_,
-                                                  remote_address_, data));
+  message_sender_->Send(new P2PMsg_OnDataReceived(id_, remote_address_, data));
 }
 
 void P2PSocketHostTcp::DidCompleteRead(int result) {
@@ -166,21 +165,26 @@ void P2PSocketHostTcp::DidCompleteRead(int result) {
   }
 
   read_buffer_->set_offset(read_buffer_->offset() + result);
-  if (read_buffer_->offset() > kPacketHeaderSize) {
+  char* head = read_buffer_->StartOfBuffer();  // Purely a convenience.
+  int consumed = 0;
+  while (consumed + kPacketHeaderSize <= read_buffer_->offset() &&
+         state_ == STATE_OPEN) {
     int packet_size = base::NetToHost16(
-        *reinterpret_cast<uint16*>(read_buffer_->StartOfBuffer()));
-    if (packet_size + kPacketHeaderSize <= read_buffer_->offset()) {
-      // We've got a full packet!
-      char* start = read_buffer_->StartOfBuffer() + kPacketHeaderSize;
-      std::vector<char> data(start, start + packet_size);
-      OnPacket(data);
-
-      // Move remaining data to the start of the buffer.
-      memmove(read_buffer_->StartOfBuffer(), start + packet_size,
-              read_buffer_->offset() - packet_size - kPacketHeaderSize);
-      read_buffer_->set_offset(read_buffer_->offset() - packet_size -
-                               kPacketHeaderSize);
-    }
+        *reinterpret_cast<uint16*>(head + consumed));
+    if (consumed + packet_size + kPacketHeaderSize > read_buffer_->offset())
+      break;
+    // We've got a full packet!
+    consumed += kPacketHeaderSize;
+    char* cur = head + consumed;
+    std::vector<char> data(cur, cur + packet_size);
+    OnPacket(data);
+    consumed += packet_size;
+  }
+  // We've consumed all complete packets from the buffer; now move any remaining
+  // bytes to the head of the buffer and set offset to reflect this.
+  if (consumed && consumed <= read_buffer_->offset()) {
+    memmove(head, head + consumed, read_buffer_->offset() - consumed);
+    read_buffer_->set_offset(read_buffer_->offset() - consumed);
   }
 }
 

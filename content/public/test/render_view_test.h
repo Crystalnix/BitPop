@@ -18,9 +18,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 
-class MockRenderProcess;
-class RendererMainPlatformDelegate;
-
 namespace WebKit {
 class WebHistoryItem;
 class WebKitPlatformSupport;
@@ -32,7 +29,8 @@ class Rect;
 }
 
 namespace content {
-
+class MockRenderProcess;
+class RendererMainPlatformDelegate;
 class RendererWebKitPlatformSupportImplNoSandboxImpl;
 
 class RenderViewTest : public testing::Test {
@@ -81,7 +79,7 @@ class RenderViewTest : public testing::Test {
   void GoForward(const WebKit::WebHistoryItem& item);
 
   // Sends one native key event over IPC.
-  void SendNativeKeyEvent(const content::NativeWebKeyboardEvent& key_event);
+  void SendNativeKeyEvent(const NativeWebKeyboardEvent& key_event);
 
   // Send a raw keyboard event to the renderer.
   void SendWebKeyboardEvent(const WebKit::WebKeyboardEvent& key_event);
@@ -110,6 +108,11 @@ class RenderViewTest : public testing::Test {
   // Returns the IPC message ID of the navigation message.
   uint32 GetNavigationIPCType();
 
+  // Resize the view.
+  void Resize(gfx::Size new_size,
+              gfx::Rect resizer_rect,
+              bool is_fullscreen);
+
   // These are all methods from RenderViewImpl that we expose to testing code.
   bool OnMessageReceived(const IPC::Message& msg);
   void DidNavigateWithinPage(WebKit::WebFrame* frame, bool is_new_navigation);
@@ -125,14 +128,14 @@ class RenderViewTest : public testing::Test {
   scoped_ptr<MockRenderProcess> mock_process_;
   // We use a naked pointer because we don't want to expose RenderViewImpl in
   // the embedder's namespace.
-  content::RenderView* view_;
+  RenderView* view_;
   RendererWebKitPlatformSupportImplNoSandbox webkit_platform_support_;
   ContentRendererClient content_renderer_client_;
   scoped_ptr<MockRenderThread> render_thread_;
 
   // Used to setup the process so renderers can run.
   scoped_ptr<RendererMainPlatformDelegate> platform_;
-  scoped_ptr<content::MainFunctionParams> params_;
+  scoped_ptr<MainFunctionParams> params_;
   scoped_ptr<CommandLine> command_line_;
 
  private:

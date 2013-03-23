@@ -4,17 +4,30 @@
 
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 
+#include <cmath>
+
 #include "base/bind.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "chrome/browser/extensions/extension_warning_set.h"
+#include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/net_log.h"
+#include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request.h"
+
+// TODO(battre): move all static functions into an anonymous namespace at the
+// top of this file.
+
+using base::Time;
+using extensions::ExtensionWarning;
 
 namespace extension_web_request_api_helpers {
 
@@ -58,6 +71,32 @@ COMPILE_ASSERT(
     arraysize(kResourceTypeStrings) == arraysize(kResourceTypeValues),
     keep_resource_types_in_sync);
 
+void ClearCacheOnNavigationOnUI() {
+  WebCacheManager::GetInstance()->ClearCacheOnNavigation();
+}
+
+bool ParseCookieLifetime(net::ParsedCookie* cookie,
+                         int64* seconds_till_expiry) {
+  // 'Max-Age' is processed first because according to:
+  // http://tools.ietf.org/html/rfc6265#section-5.3 'Max-Age' attribute
+  // overrides 'Expires' attribute.
+  if (cookie->HasMaxAge() &&
+      base::StringToInt64(cookie->MaxAge(), seconds_till_expiry)) {
+    return true;
+  }
+
+  Time parsed_expiry_time;
+  if (cookie->HasExpires())
+    parsed_expiry_time = net::cookie_util::ParseCookieTime(cookie->Expires());
+
+  if (!parsed_expiry_time.is_null()) {
+    *seconds_till_expiry =
+        ceil((parsed_expiry_time - Time::Now()).InSecondsF());
+    return *seconds_till_expiry >= 0;
+  }
+  return false;
+}
+
 }  // namespace
 
 RequestCookie::RequestCookie() {}
@@ -65,6 +104,9 @@ RequestCookie::~RequestCookie() {}
 
 ResponseCookie::ResponseCookie() {}
 ResponseCookie::~ResponseCookie() {}
+
+FilterResponseCookie::FilterResponseCookie() {}
+FilterResponseCookie::~FilterResponseCookie() {}
 
 RequestCookieModification::RequestCookieModification() {}
 RequestCookieModification::~RequestCookieModification() {}
@@ -203,7 +245,7 @@ EventResponseDelta* CalculateOnHeadersReceivedDelta(
     const std::string& extension_id,
     const base::Time& extension_install_time,
     bool cancel,
-    net::HttpResponseHeaders* old_response_headers,
+    const net::HttpResponseHeaders* old_response_headers,
     ResponseHeaders* new_response_headers) {
   EventResponseDelta* result =
       new EventResponseDelta(extension_id, extension_install_time);
@@ -292,11 +334,13 @@ void MergeCancelOfResponses(
 static bool MergeOnBeforeRequestResponsesHelper(
     const EventResponseDeltas& deltas,
     GURL* new_url,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log,
     bool consider_only_cancel_scheme_urls) {
   bool redirected = false;
 
+  // Extension that determines the |new_url|.
+  std::string winning_extension_id;
   EventResponseDeltas::const_iterator delta;
   for (delta = deltas.begin(); delta != deltas.end(); ++delta) {
     if ((*delta)->new_url.is_empty())
@@ -309,12 +353,18 @@ static bool MergeOnBeforeRequestResponsesHelper(
 
     if (!redirected || *new_url == (*delta)->new_url) {
       *new_url = (*delta)->new_url;
+      winning_extension_id = (*delta)->extension_id;
       redirected = true;
       net_log->AddEvent(
           net::NetLog::TYPE_CHROME_EXTENSION_REDIRECTED_REQUEST,
           CreateNetLogExtensionIdCallback(delta->get()));
     } else {
-      conflicting_extensions->insert((*delta)->extension_id);
+      conflicting_extensions->insert(
+          ExtensionWarning::CreateRedirectConflictWarning(
+              (*delta)->extension_id,
+              winning_extension_id,
+              (*delta)->new_url,
+              *new_url));
       net_log->AddEvent(
           net::NetLog::TYPE_CHROME_EXTENSION_IGNORED_DUE_TO_CONFLICT,
           CreateNetLogExtensionIdCallback(delta->get()));
@@ -326,7 +376,7 @@ static bool MergeOnBeforeRequestResponsesHelper(
 void MergeOnBeforeRequestResponses(
     const EventResponseDeltas& deltas,
     GURL* new_url,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
 
   // First handle only redirects to data:// URLs and about:blank. These are a
@@ -524,7 +574,7 @@ static bool MergeRemoveRequestCookieModifications(
 void MergeCookiesInOnBeforeSendHeadersResponses(
     const EventResponseDeltas& deltas,
     net::HttpRequestHeaders* request_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
   // Skip all work if there are no registered cookie modifications.
   bool cookie_modifications_exist = false;
@@ -556,10 +606,46 @@ void MergeCookiesInOnBeforeSendHeadersResponses(
   }
 }
 
+// Returns the extension ID of the first extension in |deltas| that sets the
+// request header identified by |key| to |value|.
+static std::string FindSetRequestHeader(
+    const EventResponseDeltas& deltas,
+    const std::string& key,
+    const std::string& value) {
+  EventResponseDeltas::const_iterator delta;
+  for (delta = deltas.begin(); delta != deltas.end(); ++delta) {
+    net::HttpRequestHeaders::Iterator modification(
+        (*delta)->modified_request_headers);
+    while (modification.GetNext()) {
+      if (key == modification.name() && value == modification.value())
+        return (*delta)->extension_id;
+    }
+  }
+  return "";
+}
+
+// Returns the extension ID of the first extension in |deltas| that removes the
+// request header identified by |key|.
+static std::string FindRemoveRequestHeader(
+    const EventResponseDeltas& deltas,
+    const std::string& key) {
+  EventResponseDeltas::const_iterator delta;
+  for (delta = deltas.begin(); delta != deltas.end(); ++delta) {
+    std::vector<std::string>::iterator i;
+    for (i = (*delta)->deleted_request_headers.begin();
+         i != (*delta)->deleted_request_headers.end();
+         ++i) {
+      if (*i == key)
+        return (*delta)->extension_id;
+    }
+  }
+  return "";
+}
+
 void MergeOnBeforeSendHeadersResponses(
     const EventResponseDeltas& deltas,
     net::HttpRequestHeaders* request_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
   EventResponseDeltas::const_iterator delta;
 
@@ -580,6 +666,8 @@ void MergeOnBeforeSendHeadersResponses(
     // has been modified differently before. As deltas is sorted by decreasing
     // extension installation order, this takes care of precedence.
     bool extension_conflicts = false;
+    std::string winning_extension_id;
+    std::string conflicting_header;
     {
       net::HttpRequestHeaders::Iterator modification(
           (*delta)->modified_request_headers);
@@ -589,15 +677,23 @@ void MergeOnBeforeSendHeadersResponses(
         const std::string& value = modification.value();
 
         // We must not delete anything that has been modified before.
-        if (removed_headers.find(key) != removed_headers.end())
+        if (removed_headers.find(key) != removed_headers.end() &&
+            !extension_conflicts) {
+          winning_extension_id = FindRemoveRequestHeader(deltas, key);
+          conflicting_header = key;
           extension_conflicts = true;
+        }
 
         // We must not modify anything that has been set to a *different*
         // value before.
-        if (set_headers.find(key) != set_headers.end()) {
+        if (set_headers.find(key) != set_headers.end() &&
+            !extension_conflicts) {
           std::string current_value;
           if (!request_headers->GetHeader(key, &current_value) ||
               current_value != value) {
+            winning_extension_id =
+                FindSetRequestHeader(deltas, key, current_value);
+            conflicting_header = key;
             extension_conflicts = true;
           }
         }
@@ -612,8 +708,14 @@ void MergeOnBeforeSendHeadersResponses(
            key != (*delta)->deleted_request_headers.end() &&
                !extension_conflicts;
            ++key) {
-        if (set_headers.find(*key) != set_headers.end())
+        if (set_headers.find(*key) != set_headers.end()) {
+          std::string current_value;
+          request_headers->GetHeader(*key, &current_value);
+          winning_extension_id =
+              FindSetRequestHeader(deltas, *key, current_value);
+          conflicting_header = *key;
           extension_conflicts = true;
+        }
       }
     }
 
@@ -643,7 +745,10 @@ void MergeOnBeforeSendHeadersResponses(
           net::NetLog::TYPE_CHROME_EXTENSION_MODIFIED_HEADERS,
           base::Bind(&NetLogModificationCallback, delta->get()));
     } else {
-      conflicting_extensions->insert((*delta)->extension_id);
+      conflicting_extensions->insert(
+          ExtensionWarning::CreateRequestHeaderConflictWarning(
+              (*delta)->extension_id, winning_extension_id,
+              conflicting_header));
       net_log->AddEvent(
           net::NetLog::TYPE_CHROME_EXTENSION_IGNORED_DUE_TO_CONFLICT,
           CreateNetLogExtensionIdCallback(delta->get()));
@@ -705,7 +810,7 @@ static bool ApplyResponseCookieModification(ResponseCookie* modification,
 }
 
 static bool DoesResponseCookieMatchFilter(net::ParsedCookie* cookie,
-                                          ResponseCookie* filter) {
+                                          FilterResponseCookie* filter) {
   if (!cookie->IsValid()) return false;
   if (!filter) return true;
   if (filter->name.get() && cookie->Name() != *filter->name) return false;
@@ -734,6 +839,26 @@ static bool DoesResponseCookieMatchFilter(net::ParsedCookie* cookie,
     return false;
   if (filter->http_only.get() && cookie->IsHttpOnly() != *filter->http_only)
     return false;
+  int64 seconds_till_expiry;
+  bool lifetime_parsed = false;
+  if (filter->age_upper_bound.get() ||
+      filter->age_lower_bound.get() ||
+      (filter->session_cookie.get() && *filter->session_cookie)) {
+    lifetime_parsed = ParseCookieLifetime(cookie, &seconds_till_expiry);
+  }
+  if (filter->age_upper_bound.get()) {
+    if (seconds_till_expiry > *filter->age_upper_bound)
+      return false;
+  }
+  if (filter->age_lower_bound.get()) {
+    if (seconds_till_expiry < *filter->age_lower_bound)
+      return false;
+  }
+  if (filter->session_cookie.get() &&
+      *filter->session_cookie &&
+      lifetime_parsed) {
+    return false;
+  }
   return true;
 }
 
@@ -830,7 +955,7 @@ void MergeCookiesInOnHeadersReceivedResponses(
     const EventResponseDeltas& deltas,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
   // Skip all work if there are no registered cookie modifications.
   bool cookie_modifications_exist = false;
@@ -868,11 +993,29 @@ static ResponseHeader ToLowerCase(const ResponseHeader& header) {
   return ResponseHeader(lower_key, header.second);
 }
 
+// Returns the extension ID of the first extension in |deltas| that removes the
+// request header identified by |key|.
+static std::string FindRemoveResponseHeader(
+    const EventResponseDeltas& deltas,
+    const std::string& key) {
+  std::string lower_key = StringToLowerASCII(key);
+  EventResponseDeltas::const_iterator delta;
+  for (delta = deltas.begin(); delta != deltas.end(); ++delta) {
+    ResponseHeaders::const_iterator i;
+    for (i = (*delta)->deleted_response_headers.begin();
+         i != (*delta)->deleted_response_headers.end(); ++i) {
+      if (StringToLowerASCII(i->first) == lower_key)
+        return (*delta)->extension_id;
+    }
+  }
+  return "";
+}
+
 void MergeOnHeadersReceivedResponses(
     const EventResponseDeltas& deltas,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
   EventResponseDeltas::const_iterator delta;
 
@@ -902,10 +1045,14 @@ void MergeOnHeadersReceivedResponses(
     // conflict. As deltas is sorted by decreasing extension installation order,
     // this takes care of precedence.
     bool extension_conflicts = false;
+    std::string conflicting_header;
+    std::string winning_extension_id;
     ResponseHeaders::const_iterator i;
     for (i = (*delta)->deleted_response_headers.begin();
          i != (*delta)->deleted_response_headers.end(); ++i) {
       if (removed_headers.find(ToLowerCase(*i)) != removed_headers.end()) {
+        winning_extension_id = FindRemoveResponseHeader(deltas, i->first);
+        conflicting_header = i->first;
         extension_conflicts = true;
         break;
       }
@@ -937,7 +1084,10 @@ void MergeOnHeadersReceivedResponses(
           net::NetLog::TYPE_CHROME_EXTENSION_MODIFIED_HEADERS,
           CreateNetLogExtensionIdCallback(delta->get()));
     } else {
-      conflicting_extensions->insert((*delta)->extension_id);
+      conflicting_extensions->insert(
+          ExtensionWarning::CreateResponseHeaderConflictWarning(
+              (*delta)->extension_id, winning_extension_id,
+              conflicting_header));
       net_log->AddEvent(
           net::NetLog::TYPE_CHROME_EXTENSION_IGNORED_DUE_TO_CONFLICT,
           CreateNetLogExtensionIdCallback(delta->get()));
@@ -951,10 +1101,11 @@ void MergeOnHeadersReceivedResponses(
 bool MergeOnAuthRequiredResponses(
     const EventResponseDeltas& deltas,
     net::AuthCredentials* auth_credentials,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
   CHECK(auth_credentials);
   bool credentials_set = false;
+  std::string winning_extension_id;
 
   for (EventResponseDeltas::const_iterator delta = deltas.begin();
        delta != deltas.end();
@@ -966,7 +1117,9 @@ bool MergeOnAuthRequiredResponses(
             (*delta)->auth_credentials->username() ||
         auth_credentials->password() != (*delta)->auth_credentials->password();
     if (credentials_set && different) {
-      conflicting_extensions->insert((*delta)->extension_id);
+      conflicting_extensions->insert(
+          ExtensionWarning::CreateCredentialsConflictWarning(
+              (*delta)->extension_id, winning_extension_id));
       net_log->AddEvent(
           net::NetLog::TYPE_CHROME_EXTENSION_IGNORED_DUE_TO_CONFLICT,
           CreateNetLogExtensionIdCallback(delta->get()));
@@ -976,6 +1129,7 @@ bool MergeOnAuthRequiredResponses(
           CreateNetLogExtensionIdCallback(delta->get()));
       *auth_credentials = *(*delta)->auth_credentials;
       credentials_set = true;
+      winning_extension_id = (*delta)->extension_id;
     }
   }
   return credentials_set;
@@ -1009,12 +1163,13 @@ bool ParseResourceType(const std::string& type_str,
   return true;
 }
 
-bool CanExtensionAccessURL(const extensions::Extension* extension,
-                           const GURL& url) {
-  // about: URLs are not covered in host permissions, but are allowed anyway.
-  return (url.SchemeIs(chrome::kAboutScheme) ||
-          extension->HasHostPermission(url) ||
-          url.GetOrigin() == extension->url());
+void ClearCacheOnNavigation() {
+  if (content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
+    ClearCacheOnNavigationOnUI();
+  } else {
+    content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
+                                     base::Bind(&ClearCacheOnNavigationOnUI));
+  }
 }
 
 }  // namespace extension_web_request_api_helpers

@@ -9,7 +9,7 @@
 #include "base/sys_string_conversions.h"
 #include "base/time.h"
 #import "chrome/browser/ui/cocoa/about_ipc_controller.h"
-#include "content/public/browser/content_ipc_logging.h"
+#include "content/public/browser/browser_ipc_logging.h"
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
 
@@ -20,7 +20,8 @@
     data_ = data;
     // data_.message_name may not have been filled in if it originated
     // somewhere other than the browser process.
-    IPC::Logging::GetMessageText(data_.type, &data_.message_name, NULL, NULL);
+    if (data_.message_name == "")
+      IPC::Logging::GetMessageText(data_.type, &data_.message_name, NULL, NULL);
   }
   return self;
 }
@@ -185,7 +186,8 @@ AboutIPCController* gSharedController = nil;
   NSUInteger count = [[dataController_ arrangedObjects] count];
   // Uncomment if you want scroll-to-end behavior... but seems expensive.
   // [tableView_ scrollRowToVisible:count-1];
-  [eventCount_ setStringValue:[NSString stringWithFormat:@"%d", count]];
+  [eventCount_ setStringValue:[NSString stringWithFormat:@"%ld",
+                               static_cast<long>(count)]];
 }
 
 - (void)setDisplayViewMessages:(BOOL)display {

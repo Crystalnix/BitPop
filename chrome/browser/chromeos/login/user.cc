@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/login/user.h"
 
+#include "base/logging.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
@@ -26,42 +27,69 @@ std::string GetUserName(const std::string& email) {
 
 }  // namespace
 
-// The demo user is represented by a domainless username.
-const char kDemoUser[] = "demouser@";
-// Incognito user is represented by an empty string (since some code already
-// depends on that and it's hard to figure out what).
-const char kGuestUser[] = "";
+// Magic e-mail addresses are bad. They exist here because some code already
+// depends on them and it is hard to figure out what. Any user types added in
+// the future should be identified by a new |UserType|, not a new magic e-mail
+// address.
+// The guest user has a magic, empty e-mail address.
+const char kGuestUserEMail[] = "";
+// The retail mode user has a magic, domainless e-mail address.
+const char kRetailModeUserEMail[] = "demouser@";
 
-User::User(const std::string& email)
-    : email_(email),
-      oauth_token_status_(OAUTH_TOKEN_STATUS_UNKNOWN),
-      image_index_(kInvalidImageIndex),
-      image_is_stub_(false) {
-  // The email address of a demo user is for internal purposes only,
-  // never meant for display.
-  if (!is_demo_user())
-    display_email_ = email;
-}
+class RegularUser : public User {
+ public:
+  explicit RegularUser(const std::string& email);
+  virtual ~RegularUser();
 
-User::~User() {}
+  // Overridden from User:
+  virtual UserType GetType() const OVERRIDE;
+  virtual bool can_lock() const OVERRIDE;
 
-void User::SetImage(const UserImage& user_image, int image_index) {
-  user_image_ = user_image;
-  image_index_ = image_index;
-  image_is_stub_ = false;
-  DCHECK(HasDefaultImage() || user_image.has_raw_image());
-}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RegularUser);
+};
 
-void User::SetImageURL(const GURL& image_url) {
-  user_image_.set_url(image_url);
-}
+class GuestUser : public User {
+ public:
+  GuestUser();
+  virtual ~GuestUser();
 
-void User::SetStubImage(int image_index) {
-  user_image_ = UserImage(
-      *ResourceBundle::GetSharedInstance().
-          GetImageSkiaNamed(IDR_PROFILE_PICTURE_LOADING));
-  image_index_ = image_index;
-  image_is_stub_ = true;
+  // Overridden from User:
+  virtual UserType GetType() const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GuestUser);
+};
+
+class RetailModeUser : public User {
+ public:
+  RetailModeUser();
+  virtual ~RetailModeUser();
+
+  // Overridden from User:
+  virtual UserType GetType() const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RetailModeUser);
+};
+
+class PublicAccountUser : public User {
+ public:
+  explicit PublicAccountUser(const std::string& email);
+  virtual ~PublicAccountUser();
+
+  // Overridden from User:
+  virtual UserType GetType() const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PublicAccountUser);
+};
+
+string16 User::GetDisplayName() const {
+  // Fallback to the email account name in case display name haven't been set.
+  return display_name_.empty() ?
+      UTF8ToUTF16(GetAccountName(true)) :
+      display_name_;
 }
 
 std::string User::GetAccountName(bool use_display_email) const {
@@ -75,11 +103,98 @@ bool User::HasDefaultImage() const {
   return image_index_ >= 0 && image_index_ < kDefaultImagesCount;
 }
 
-string16 User::GetDisplayName() const {
-  // Fallback to the email account name in case display name haven't been set.
-  return display_name_.empty() ?
-      UTF8ToUTF16(GetAccountName(true)) :
-      display_name_;
+bool User::can_lock() const {
+  return false;
+}
+
+User* User::CreateRegularUser(const std::string& email) {
+  return new RegularUser(email);
+}
+
+User* User::CreateGuestUser() {
+  return new GuestUser;
+}
+
+User* User::CreateRetailModeUser() {
+  return new RetailModeUser;
+}
+
+User* User::CreatePublicAccountUser(const std::string& email) {
+  return new PublicAccountUser(email);
+}
+
+User::User(const std::string& email)
+    : email_(email),
+      oauth_token_status_(OAUTH_TOKEN_STATUS_UNKNOWN),
+      image_index_(kInvalidImageIndex),
+      image_is_stub_(false),
+      image_is_loading_(false) {
+}
+
+User::~User() {}
+
+void User::SetImage(const UserImage& user_image, int image_index) {
+  user_image_ = user_image;
+  image_index_ = image_index;
+  image_is_stub_ = false;
+  image_is_loading_ = false;
+  DCHECK(HasDefaultImage() || user_image.has_raw_image());
+}
+
+void User::SetImageURL(const GURL& image_url) {
+  user_image_.set_url(image_url);
+}
+
+void User::SetStubImage(int image_index, bool is_loading) {
+  user_image_ = UserImage(
+      *ResourceBundle::GetSharedInstance().
+          GetImageSkiaNamed(IDR_PROFILE_PICTURE_LOADING));
+  image_index_ = image_index;
+  image_is_stub_ = true;
+  image_is_loading_ = is_loading;
+}
+
+RegularUser::RegularUser(const std::string& email) : User(email) {
+  set_display_email(email);
+}
+
+RegularUser::~RegularUser() {}
+
+User::UserType RegularUser::GetType() const {
+  return USER_TYPE_REGULAR;
+}
+
+bool RegularUser::can_lock() const {
+  return true;
+}
+
+GuestUser::GuestUser() : User(kGuestUserEMail) {
+  set_display_email("");
+}
+
+GuestUser::~GuestUser() {}
+
+User::UserType GuestUser::GetType() const {
+  return USER_TYPE_GUEST;
+}
+
+RetailModeUser::RetailModeUser() : User(kRetailModeUserEMail) {
+  set_display_email("");
+}
+
+RetailModeUser::~RetailModeUser() {}
+
+User::UserType RetailModeUser::GetType() const {
+  return USER_TYPE_RETAIL_MODE;
+}
+
+PublicAccountUser::PublicAccountUser(const std::string& email) : User(email) {
+}
+
+PublicAccountUser::~PublicAccountUser() {}
+
+User::UserType PublicAccountUser::GetType() const {
+  return USER_TYPE_PUBLIC_ACCOUNT;
 }
 
 }  // namespace chromeos

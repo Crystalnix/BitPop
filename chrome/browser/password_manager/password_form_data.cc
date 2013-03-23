@@ -6,7 +6,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_form_data.h"
 
-using webkit::forms::PasswordForm;
+using content::PasswordForm;
 
 PasswordForm* CreatePasswordFormFromData(
     const PasswordFormData& form_data) {
@@ -69,14 +69,21 @@ std::ostream& operator<<(std::ostream& os, const PasswordForm& form) {
             << "date_created: " << form.date_created.ToDoubleT();
 }
 
-typedef std::set<const webkit::forms::PasswordForm*> SetOfForms;
+typedef std::set<const content::PasswordForm*> SetOfForms;
 
 bool ContainsSamePasswordFormsPtr(
     const std::vector<PasswordForm*>& first,
     const std::vector<PasswordForm*>& second) {
   if (first.size() != second.size())
     return false;
-  SetOfForms expectations(first.begin(), first.end());
+
+  // TODO(cramya): As per b/7079906, the STLport of Android causes a crash
+  // if we use expectations(first.begin(), first.end()) to copy a vector
+  // into a set rather than std::copy that is used below.
+  // Need to revert this once STLport is fixed.
+  SetOfForms expectations;
+  std::copy(first.begin(), first.end(), std::inserter(expectations,
+                                                      expectations.begin()));
   for (unsigned int i = 0; i < second.size(); ++i) {
     const PasswordForm* actual = second[i];
     bool found_match = false;
@@ -98,8 +105,8 @@ bool ContainsSamePasswordFormsPtr(
 }
 
 bool ContainsSamePasswordForms(
-    std::vector<webkit::forms::PasswordForm>& first,
-    std::vector<webkit::forms::PasswordForm>& second) {
+    std::vector<content::PasswordForm>& first,
+    std::vector<content::PasswordForm>& second) {
   std::vector<PasswordForm*> first_ptr;
   for (unsigned int i = 0; i < first.size(); ++i) {
     first_ptr.push_back(&first[i]);

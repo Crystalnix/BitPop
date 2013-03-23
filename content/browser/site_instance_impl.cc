@@ -8,6 +8,7 @@
 #include "content/browser/browsing_instance.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -17,10 +18,7 @@
 #include "content/public/common/url_constants.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
-using content::RenderProcessHost;
-using content::RenderProcessHostImpl;
-using content::SiteInstance;
-using content::WebUIControllerFactory;
+namespace content {
 
 static bool IsURLSameAsAnySiteInstance(const GURL& url) {
   if (!url.is_valid())
@@ -34,7 +32,7 @@ static bool IsURLSameAsAnySiteInstance(const GURL& url) {
   return url == GURL(chrome::kChromeUICrashURL) ||
          url == GURL(chrome::kChromeUIKillURL) ||
          url == GURL(chrome::kChromeUIHangURL) ||
-         url == GURL(chrome::kChromeUIShorthangURL);
+         url == GURL(kChromeUIShorthangURL);
 }
 
 int32 SiteInstanceImpl::next_site_instance_id_ = 1;
@@ -47,12 +45,12 @@ SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
       has_site_(false) {
   DCHECK(browsing_instance);
 
-  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+                 NotificationService::AllBrowserContextsAndSources());
 }
 
 SiteInstanceImpl::~SiteInstanceImpl() {
-  content::GetContentClient()->browser()->SiteInstanceDeleting(this);
+  GetContentClient()->browser()->SiteInstanceDeleting(this);
 
   // Now that no one is referencing us, we can safely remove ourselves from
   // the BrowsingInstance.  Any future visits to a page from this site
@@ -72,7 +70,7 @@ bool SiteInstanceImpl::HasProcess() const {
 
   // If we would use process-per-site for this site, also check if there is an
   // existing process that we would use if GetProcess() were called.
-  content::BrowserContext* browser_context =
+  BrowserContext* browser_context =
       browsing_instance_->browser_context();
   if (has_site_ &&
       RenderProcessHostImpl::ShouldUseProcessPerSite(browser_context, site_) &&
@@ -93,8 +91,7 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
 
   // Create a new process if ours went away or was reused.
   if (!process_) {
-    content::BrowserContext* browser_context =
-        browsing_instance_->browser_context();
+    BrowserContext* browser_context = browsing_instance_->browser_context();
 
     // If we should use process-per-site mode (either in general or for the
     // given site), then look for an existing RenderProcessHost for the site.
@@ -118,8 +115,11 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
         process_ = render_process_host_factory_->CreateRenderProcessHost(
             browser_context);
       } else {
+        StoragePartitionImpl* partition =
+            static_cast<StoragePartitionImpl*>(
+                BrowserContext::GetStoragePartition(browser_context, this));
         process_ =
-            new RenderProcessHostImpl(browser_context,
+            new RenderProcessHostImpl(browser_context, partition,
                                       site_.SchemeIs(chrome::kGuestScheme));
       }
     }
@@ -133,7 +133,7 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
                                                         process_, site_);
     }
 
-    content::GetContentClient()->browser()->SiteInstanceGotProcess(this);
+    GetContentClient()->browser()->SiteInstanceGotProcess(this);
 
     if (has_site_)
       LockToOrigin();
@@ -154,8 +154,7 @@ void SiteInstanceImpl::SetSite(const GURL& url) {
   // Remember that this SiteInstance has been used to load a URL, even if the
   // URL is invalid.
   has_site_ = true;
-  content::BrowserContext* browser_context =
-      browsing_instance_->browser_context();
+  BrowserContext* browser_context = browsing_instance_->browser_context();
   site_ = GetSiteForURL(browser_context, url);
 
   // Now that we have a site, register it with the BrowsingInstance.  This
@@ -176,7 +175,7 @@ void SiteInstanceImpl::SetSite(const GURL& url) {
   }
 }
 
-const GURL& SiteInstanceImpl::GetSite() const {
+const GURL& SiteInstanceImpl::GetSiteURL() const {
   return site_;
 }
 
@@ -197,8 +196,12 @@ bool SiteInstanceImpl::IsRelatedSiteInstance(const SiteInstance* instance) {
       static_cast<const SiteInstanceImpl*>(instance)->browsing_instance_;
 }
 
-bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) const {
+bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
   // Having no process isn't a problem, since we'll assign it correctly.
+  // Note that HasProcess() may return true if process_ is null, in
+  // process-per-site cases where there's an existing process available.
+  // We want to use such a process in the IsSuitableHost check, so we
+  // may end up assigning process_ in the GetProcess() call below.
   if (!HasProcess())
     return false;
 
@@ -211,21 +214,21 @@ bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) const {
   // process is not (or vice versa), make sure we notice and fix it.
   GURL site_url = GetSiteForURL(browsing_instance_->browser_context(), url);
   return !RenderProcessHostImpl::IsSuitableHost(
-      process_, browsing_instance_->browser_context(), site_url);
+      GetProcess(), browsing_instance_->browser_context(), site_url);
 }
 
-content::BrowserContext* SiteInstanceImpl::GetBrowserContext() const {
+BrowserContext* SiteInstanceImpl::GetBrowserContext() const {
   return browsing_instance_->browser_context();
 }
 
 /*static*/
-SiteInstance* SiteInstance::Create(content::BrowserContext* browser_context) {
+SiteInstance* SiteInstance::Create(BrowserContext* browser_context) {
   return new SiteInstanceImpl(new BrowsingInstance(browser_context));
 }
 
 /*static*/
-SiteInstance* SiteInstance::CreateForURL(
-    content::BrowserContext* browser_context, const GURL& url) {
+SiteInstance* SiteInstance::CreateForURL(BrowserContext* browser_context,
+                                         const GURL& url) {
   // This BrowsingInstance may be deleted if it returns an existing
   // SiteInstance.
   scoped_refptr<BrowsingInstance> instance(
@@ -234,8 +237,37 @@ SiteInstance* SiteInstance::CreateForURL(
 }
 
 /*static*/
-GURL SiteInstanceImpl::GetSiteForURL(content::BrowserContext* browser_context,
-                                     const GURL& real_url) {
+bool SiteInstance::IsSameWebSite(BrowserContext* browser_context,
+                                 const GURL& real_url1,
+                                 const GURL& real_url2) {
+  GURL url1 = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url1);
+  GURL url2 = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url2);
+
+  // We infer web site boundaries based on the registered domain name of the
+  // top-level page and the scheme.  We do not pay attention to the port if
+  // one is present, because pages served from different ports can still
+  // access each other if they change their document.domain variable.
+
+  // Some special URLs will match the site instance of any other URL. This is
+  // done before checking both of them for validity, since we want these URLs
+  // to have the same site instance as even an invalid one.
+  if (IsURLSameAsAnySiteInstance(url1) || IsURLSameAsAnySiteInstance(url2))
+    return true;
+
+  // If either URL is invalid, they aren't part of the same site.
+  if (!url1.is_valid() || !url2.is_valid())
+    return false;
+
+  // If the schemes differ, they aren't part of the same site.
+  if (url1.scheme() != url2.scheme())
+    return false;
+
+  return net::RegistryControlledDomainService::SameDomainOrHost(url1, url2);
+}
+
+/*static*/
+GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
+                                 const GURL& real_url) {
   // TODO(fsamuel, creis): For some reason appID is not recognized as a host.
   if (real_url.SchemeIs(chrome::kGuestScheme))
     return real_url;
@@ -274,57 +306,31 @@ GURL SiteInstanceImpl::GetSiteForURL(content::BrowserContext* browser_context,
 }
 
 /*static*/
-bool SiteInstance::IsSameWebSite(content::BrowserContext* browser_context,
-                                 const GURL& real_url1,
-                                 const GURL& real_url2) {
-  GURL url1 = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url1);
-  GURL url2 = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url2);
-
-  // We infer web site boundaries based on the registered domain name of the
-  // top-level page and the scheme.  We do not pay attention to the port if
-  // one is present, because pages served from different ports can still
-  // access each other if they change their document.domain variable.
-
-  // Some special URLs will match the site instance of any other URL. This is
-  // done before checking both of them for validity, since we want these URLs
-  // to have the same site instance as even an invalid one.
-  if (IsURLSameAsAnySiteInstance(url1) || IsURLSameAsAnySiteInstance(url2))
-    return true;
-
-  // If either URL is invalid, they aren't part of the same site.
-  if (!url1.is_valid() || !url2.is_valid())
-    return false;
-
-  // If the schemes differ, they aren't part of the same site.
-  if (url1.scheme() != url2.scheme())
-    return false;
-
-  return net::RegistryControlledDomainService::SameDomainOrHost(url1, url2);
-}
-
-/*static*/
-GURL SiteInstanceImpl::GetEffectiveURL(
-    content::BrowserContext* browser_context,
-    const GURL& url) {
-  return content::GetContentClient()->browser()->
+GURL SiteInstanceImpl::GetEffectiveURL(BrowserContext* browser_context,
+                                       const GURL& url) {
+  return GetContentClient()->browser()->
       GetEffectiveURL(browser_context, url);
 }
 
 void SiteInstanceImpl::Observe(int type,
-                               const content::NotificationSource& source,
-                               const content::NotificationDetails& details) {
-  DCHECK(type == content::NOTIFICATION_RENDERER_PROCESS_TERMINATED);
-  RenderProcessHost* rph = content::Source<RenderProcessHost>(source).ptr();
+                               const NotificationSource& source,
+                               const NotificationDetails& details) {
+  DCHECK(type == NOTIFICATION_RENDERER_PROCESS_TERMINATED);
+  RenderProcessHost* rph = Source<RenderProcessHost>(source).ptr();
   if (rph == process_)
     process_ = NULL;
 }
 
 void SiteInstanceImpl::LockToOrigin() {
+  // We currently only restrict this process to a particular site if the
+  // --enable-strict-site-isolation or --site-per-process flags are present.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableStrictSiteIsolation)) {
+  if (command_line.HasSwitch(switches::kEnableStrictSiteIsolation) ||
+      command_line.HasSwitch(switches::kSitePerProcess)) {
     ChildProcessSecurityPolicyImpl* policy =
         ChildProcessSecurityPolicyImpl::GetInstance();
     policy->LockToOrigin(process_->GetID(), site_);
   }
 }
 
+}  // namespace content

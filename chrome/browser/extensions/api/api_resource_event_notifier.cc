@@ -13,28 +13,13 @@
 
 using content::BrowserThread;
 
-namespace events {
-const char kExperimentalUsbOnEvent[] = "experimental.usb.onEvent";
-};
-
 namespace extensions {
 
 const char kEventTypeKey[] = "type";
 
-const char kEventTypeConnectComplete[] = "connectComplete";
-const char kEventTypeDataRead[] = "dataRead";
-const char kEventTypeWriteComplete[] = "writeComplete";
-
-const char kEventTypeTransferComplete[] = "transferComplete";
-
 const char kSrcIdKey[] = "srcId";
 const char kIsFinalEventKey[] = "isFinalEvent";
-
 const char kResultCodeKey[] = "resultCode";
-const char kDataKey[] = "data";
-const char kAddressKey[] = "address";
-const char kPortKey[] = "port";
-const char kErrorKey[] = "error";
 
 ApiResourceEventNotifier::ApiResourceEventNotifier(
     EventRouter* router,
@@ -49,56 +34,34 @@ ApiResourceEventNotifier::ApiResourceEventNotifier(
       src_url_(src_url) {
 }
 
-void ApiResourceEventNotifier::OnTransferComplete(UsbTransferStatus status,
-                                                  const std::string& error,
-                                                  base::BinaryValue* data) {
-  if (src_id_ < 0) {
-    delete data;
-    return;
-  }
-
-  DictionaryValue* event = CreateApiResourceEvent(
-      API_RESOURCE_EVENT_TRANSFER_COMPLETE);
-  event->SetInteger(kResultCodeKey, status);
-  event->Set(kDataKey, data);
-  if (!error.empty()) {
-    event->SetString(kErrorKey, error);
-  }
-
-  DispatchEvent(events::kExperimentalUsbOnEvent, event);
-}
-
 // static
 std::string ApiResourceEventNotifier::ApiResourceEventTypeToString(
     ApiResourceEventType event_type) {
-  switch (event_type) {
-    case API_RESOURCE_EVENT_TRANSFER_COMPLETE:
-      return kEventTypeTransferComplete;
-  }
-
   NOTREACHED();
   return std::string();
 }
 
 ApiResourceEventNotifier::~ApiResourceEventNotifier() {}
 
-void ApiResourceEventNotifier::DispatchEvent(const std::string &extension,
-                                             DictionaryValue* event) {
+void ApiResourceEventNotifier::DispatchEvent(
+    const std::string& event_name, DictionaryValue* args) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(
-          &ApiResourceEventNotifier::DispatchEventOnUIThread, this, extension,
-          event));
+          &ApiResourceEventNotifier::DispatchEventOnUIThread, this,
+          event_name, args));
 }
 
 void ApiResourceEventNotifier::DispatchEventOnUIThread(
-    const std::string &extension, DictionaryValue* event) {
+    const std::string& event_name, DictionaryValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ListValue args;
-  args.Set(0, event);
-  router_->DispatchEventToExtension(src_extension_id_, extension, args,
-                                    profile_, src_url_);
+  scoped_ptr<ListValue> arguments(new ListValue());
+  arguments->Set(0, args);
+  scoped_ptr<Event> event(new Event(event_name, arguments.Pass()));
+  event->restrict_to_profile = profile_;
+  event->event_url = src_url_;
+  router_->DispatchEventToExtension(src_extension_id_, event.Pass());
 }
 
 DictionaryValue* ApiResourceEventNotifier::CreateApiResourceEvent(
@@ -114,18 +77,6 @@ DictionaryValue* ApiResourceEventNotifier::CreateApiResourceEvent(
   // The caller owns the created event, which typically is then given to a
   // ListValue to dispose of.
   return event;
-}
-
-void ApiResourceEventNotifier::SendEventWithResultCode(
-    const std::string &extension,
-    ApiResourceEventType event_type,
-    int result_code) {
-  if (src_id_ < 0)
-    return;
-
-  DictionaryValue* event = CreateApiResourceEvent(event_type);
-  event->SetInteger(kResultCodeKey, result_code);
-  DispatchEvent(extension, event);
 }
 
 }  // namespace extensions

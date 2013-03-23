@@ -7,15 +7,15 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/persistent_pref_store.h"
-#include "chrome/common/pref_store.h"
+#include "base/prefs/persistent_pref_store.h"
+#include "base/prefs/pref_store.h"
 
 class CommandLine;
 class FilePath;
 class PrefService;
 
 namespace base {
-class MessageLoopProxy;
+class SequencedTaskRunner;
 }
 
 namespace policy {
@@ -48,10 +48,11 @@ class PrefServiceMockBuilder {
   PrefServiceMockBuilder& WithCommandLine(CommandLine* command_line);
 
   // Specifies to use an actual file-backed user pref store.
+  // TODO(zelidrag): Remove the first overloaded method below.
   PrefServiceMockBuilder& WithUserFilePrefs(const FilePath& prefs_file);
   PrefServiceMockBuilder& WithUserFilePrefs(
       const FilePath& prefs_file,
-      base::MessageLoopProxy* message_loop_proxy);
+      base::SequencedTaskRunner* task_runner);
 
   // Creates the PrefService, invalidating the entire builder configuration.
   PrefService* Create();

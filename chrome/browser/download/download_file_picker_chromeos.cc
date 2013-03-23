@@ -6,8 +6,9 @@
 
 #include "base/bind.h"
 #include "base/i18n/file_util_icu.h"
-#include "chrome/browser/chromeos/gdata/gdata_download_observer.h"
-#include "chrome/browser/chromeos/gdata/gdata_util.h"
+#include "chrome/browser/chromeos/drive/drive_download_observer.h"
+#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "ui/base/dialogs/selected_file_info.h"
@@ -23,11 +24,11 @@ DownloadFilePickerChromeOS::~DownloadFilePickerChromeOS() {
 
 void DownloadFilePickerChromeOS::InitSuggestedPath(DownloadItem* item,
                                                    const FilePath& path) {
-  // For GData downloads, |path| is the virtual gdata path instead of the
+  // For Drive downloads, |path| is the virtual gdata path instead of the
   // temporary local one.
-  if (gdata::GDataDownloadObserver::IsGDataDownload(item)) {
-    set_suggested_path(gdata::util::GetSpecialRemoteRootPath().Append(
-        gdata::GDataDownloadObserver::GetGDataPath(item)));
+  if (drive::DriveDownloadObserver::IsDriveDownload(item)) {
+    set_suggested_path(drive::util::GetSpecialRemoteRootPath().Append(
+        drive::DriveDownloadObserver::GetDrivePath(item)));
   } else {
     DownloadFilePicker::InitSuggestedPath(item, path);
   }
@@ -54,10 +55,11 @@ void DownloadFilePickerChromeOS::FileSelectedWithExtraInfo(
   RecordFileSelected(path);
 
   if (download_manager_) {
-    content::DownloadItem* download =
-        download_manager_->GetActiveDownloadItem(download_id_);
-    gdata::GDataDownloadObserver::SubstituteGDataDownloadPath(
-        NULL, path, download,
+    Profile* profile =
+        Profile::FromBrowserContext(download_manager_->GetBrowserContext());
+    DownloadItem* download = download_manager_->GetDownload(download_id_);
+    drive::DriveDownloadObserver::SubstituteDriveDownloadPath(
+        profile, path, download,
         base::Bind(&DownloadFilePickerChromeOS::OnFileSelected,
                    base::Unretained(this)));
   } else {

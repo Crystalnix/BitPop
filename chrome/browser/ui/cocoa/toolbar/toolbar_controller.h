@@ -9,11 +9,11 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/public/pref_member.h"
 #import "chrome/browser/ui/cocoa/command_observer_bridge.h"
 #import "chrome/browser/ui/cocoa/tracking_area.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
-#include "chrome/browser/prefs/pref_member.h"
 
 @class AutocompleteTextField;
 @class AutocompleteTextFieldEditor;
@@ -126,6 +126,11 @@ class NotificationBridge;
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
 
+// Happens when the zoom for the active tab changes, the active tab switches, or
+// a new tab or browser window is created. |canShowBubble| indicates if it is
+// appropriate to show a zoom bubble for the change.
+- (void)zoomChangedForActiveTab:(BOOL)canShowBubble;
+
 // Called to update the loading state. Handles updating the go/stop
 // button state.  |force| is set if the update is due to changing
 // tabs, as opposed to the page-load finishing.  See comment in
@@ -140,10 +145,6 @@ class NotificationBridge;
 // Point on the star icon for the bookmark bubble to be - in the
 // associated window's coordinate system.
 - (NSPoint)bookmarkBubblePoint;
-
-// Return the anchor point for the Chrome To Mobile bubble on its icon.
-// The returned value is in the associated window's coordinate system.
-- (NSPoint)chromeToMobileBubblePoint;
 
 // Returns the desired toolbar height for the given compression factor.
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight;

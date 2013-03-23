@@ -27,7 +27,7 @@ class Rect;
 }
 
 namespace skia {
-class PlatformCanvas;
+class PlatformBitmap;
 }
 
 namespace content {
@@ -165,9 +165,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Copies the given subset of the backing store into the given (uninitialized)
   // PlatformCanvas. If |src_rect| is empty, the whole contents is copied.
-  // NOTE: |src_rect| is not supported yet when accelerated compositing is
-  // active (http://crbug.com/118571) and the whole content is always copied
-  // regardless of |src_rect|.
   // If non empty |accelerated_dest_size| is given and accelerated compositing
   // is active, the content is shrinked so that it fits in
   // |accelerated_dest_size|. If |accelerated_dest_size| is larger than the
@@ -181,7 +178,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void CopyFromBackingStore(const gfx::Rect& src_rect,
                                     const gfx::Size& accelerated_dest_size,
                                     const base::Callback<void(bool)>& callback,
-                                    skia::PlatformCanvas* output) = 0;
+                                    skia::PlatformBitmap* output) = 0;
 #if defined(TOOLKIT_GTK)
   // Paint the backing store into the target's |dest_rect|.
   virtual bool CopyFromBackingStoreToGtkWindow(const gfx::Rect& dest_rect,
@@ -204,7 +201,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) = 0;
 
-  virtual const gfx::Point& GetLastScrollOffset() const = 0;
+  virtual const gfx::Vector2d& GetLastScrollOffset() const = 0;
 
   virtual RenderProcessHost* GetProcess() const = 0;
 
@@ -268,9 +265,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Remove a keyboard listener.
   virtual void RemoveKeyboardListener(KeyboardListener* listener) = 0;
-
-  // Update the device scale factor.
-  virtual void SetDeviceScaleFactor(float scale) = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

@@ -11,16 +11,19 @@
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/common/extensions/api/permissions.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/extensions/api/permissions.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/net/gaia/oauth2_mint_token_flow.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "google_apis/gaia/oauth2_mint_token_flow.h"
 
 using content::RenderProcessHost;
 using extensions::permissions_api_helpers::PackPermissionSet;
@@ -33,7 +36,59 @@ namespace {
 const char kOnAdded[] = "permissions.onAdded";
 const char kOnRemoved[] = "permissions.onRemoved";
 
-}
+// An object to link the lifetime of an OAuth2MintTokenFlow to a Profile.
+// The flow should not outlive the profile because the request context will
+// become invalid.
+class OAuth2GrantRecorder : public OAuth2MintTokenFlow::Delegate,
+                            public content::NotificationObserver {
+ public:
+  OAuth2GrantRecorder(Profile* profile, const Extension* extension)
+    : ALLOW_THIS_IN_INITIALIZER_LIST(flow_(
+          profile->GetRequestContext(),
+          this,
+          OAuth2MintTokenFlow::Parameters(
+              TokenServiceFactory::GetForProfile(profile)->
+                  GetOAuth2LoginRefreshToken(),
+              extension->id(),
+              extension->oauth2_info().client_id,
+              extension->oauth2_info().scopes,
+              OAuth2MintTokenFlow::MODE_RECORD_GRANT))) {
+    notification_registrar_.Add(this,
+                                chrome::NOTIFICATION_PROFILE_DESTROYED,
+                                content::Source<Profile>(profile));
+
+    flow_.Start();
+  }
+
+  // content::NotificationObserver:
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) OVERRIDE {
+    DCHECK_EQ(type, chrome::NOTIFICATION_PROFILE_DESTROYED);
+    delete this;
+  }
+
+  // OAuth2MintTokenFlow::Delegate:
+  virtual void OnMintTokenSuccess(const std::string& access_token) OVERRIDE {
+    delete this;
+  }
+  virtual void OnIssueAdviceSuccess(
+      const IssueAdviceInfo& issue_advice) OVERRIDE {
+    delete this;
+  }
+  virtual void OnMintTokenFailure(
+      const GoogleServiceAuthError& error) OVERRIDE {
+    delete this;
+  }
+
+ private:
+  virtual ~OAuth2GrantRecorder() {}
+
+  OAuth2MintTokenFlow flow_;
+  content::NotificationRegistrar notification_registrar_;
+};
+
+}  // namespace
 
 PermissionsUpdater::PermissionsUpdater(Profile* profile)
     : profile_(profile) {}
@@ -84,8 +139,19 @@ void PermissionsUpdater::GrantActivePermissions(const Extension* extension,
       extension->location() != Extension::INTERNAL)
     return;
 
-  if (record_oauth2_grant)
-    RecordOAuth2Grant(extension);
+  if (record_oauth2_grant) {
+    // Only record OAuth grant if:
+    // 1. The extension has client id and scopes.
+    // 2. The user is signed in to Chrome.
+    const Extension::OAuth2Info& oauth2_info = extension->oauth2_info();
+    if (!oauth2_info.client_id.empty() && !oauth2_info.scopes.empty()) {
+      TokenService* token_service = TokenServiceFactory::GetForProfile(
+          profile_);
+      if (token_service && token_service->HasOAuthLoginToken()) {
+        new OAuth2GrantRecorder(profile_, extension);
+      }
+    }
+  }
 
   GetExtensionPrefs()->AddGrantedPermissions(extension->id(),
                                              extension->GetActivePermissions());
@@ -97,34 +163,22 @@ void PermissionsUpdater::UpdateActivePermissions(
   extension->SetActivePermissions(permissions);
 }
 
-void PermissionsUpdater::RecordOAuth2Grant(const Extension* extension) {
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  OAuth2MintTokenFlow* flow = new OAuth2MintTokenFlow(
-      profile_->GetRequestContext(), NULL, OAuth2MintTokenFlow::Parameters(
-          token_service->GetOAuth2LoginRefreshToken(),
-          extension->id(),
-          extension->oauth2_info().client_id,
-          extension->oauth2_info().scopes,
-          OAuth2MintTokenFlow::MODE_RECORD_GRANT));
-  // |flow| will delete itself.
-  flow->FireAndForget();
-}
-
 void PermissionsUpdater::DispatchEvent(
     const std::string& extension_id,
     const char* event_name,
     const PermissionSet* changed_permissions) {
-  if (!profile_ || !profile_->GetExtensionEventRouter())
+  if (!profile_ ||
+      !extensions::ExtensionSystem::Get(profile_)->event_router())
     return;
 
-  ListValue value;
+  scoped_ptr<ListValue> value(new ListValue());
   scoped_ptr<api::permissions::Permissions> permissions =
-    PackPermissionSet(changed_permissions);
-  value.Append(permissions->ToValue().release());
-  std::string json_value;
-  base::JSONWriter::Write(&value, &json_value);
-  profile_->GetExtensionEventRouter()->DispatchEventToExtension(
-      extension_id, event_name, json_value, profile_, GURL());
+      PackPermissionSet(changed_permissions);
+  value->Append(permissions->ToValue().release());
+  scoped_ptr<Event> event(new Event(event_name, value.Pass()));
+  event->restrict_to_profile = profile_;
+  ExtensionSystem::Get(profile_)->event_router()->
+      DispatchEventToExtension(extension_id, event.Pass());
 }
 
 void PermissionsUpdater::NotifyPermissionsUpdated(
@@ -173,7 +227,8 @@ void PermissionsUpdater::NotifyPermissionsUpdated(
 }
 
 ExtensionPrefs* PermissionsUpdater::GetExtensionPrefs() {
-  return profile_->GetExtensionService()->extension_prefs();
+  return extensions::ExtensionSystem::Get(profile_)->extension_service()->
+      extension_prefs();
 }
 
 }  // namespace extensions

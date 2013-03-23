@@ -12,12 +12,13 @@
 #include "media/filters/gpu_video_decoder.h"
 #include "ui/gfx/size.h"
 
-class ContentGLContext;
-class GpuChannelHost;
-class WebGraphicsContext3DCommandBufferImpl;
 namespace base {
 class WaitableEvent;
 }
+
+namespace content {
+class GpuChannelHost;
+class WebGraphicsContext3DCommandBufferImpl;
 
 // Glue code to expose functionality needed by media::GpuVideoDecoder to
 // RenderViewImpl.  This class is entirely an implementation detail of
@@ -36,7 +37,7 @@ class CONTENT_EXPORT RendererGpuVideoDecoderFactories
   // use.
   RendererGpuVideoDecoderFactories(
       GpuChannelHost* gpu_channel_host,
-      MessageLoop* message_loop,
+      const scoped_refptr<base::MessageLoopProxy>& message_loop,
       WebGraphicsContext3DCommandBufferImpl* wgc3dcbi);
 
   virtual media::VideoDecodeAccelerator* CreateVideoDecodeAccelerator(
@@ -48,6 +49,9 @@ class CONTENT_EXPORT RendererGpuVideoDecoderFactories
                               uint32 texture_target) OVERRIDE;
 
   virtual void DeleteTexture(uint32 texture_id) OVERRIDE;
+
+  virtual void ReadPixels(uint32 texture_id, uint32 texture_target,
+                          const gfx::Size& size, void* pixels) OVERRIDE;
 
   virtual base::SharedMemory* CreateSharedMemory(size_t size) OVERRIDE;
 
@@ -75,13 +79,18 @@ class CONTENT_EXPORT RendererGpuVideoDecoderFactories
       int32 count, const gfx::Size& size, std::vector<uint32>* texture_ids,
       uint32 texture_target, bool* success, base::WaitableEvent* waiter);
   void AsyncDeleteTexture(uint32 texture_id);
+  void AsyncReadPixels(uint32 texture_id, uint32 texture_target,
+                       const gfx::Size& size,
+                       void* pixels, base::WaitableEvent* waiter);
   void AsyncCreateSharedMemory(
       size_t size, base::SharedMemory** shm, base::WaitableEvent* waiter);
 
-  MessageLoop* message_loop_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
   scoped_refptr<GpuChannelHost> gpu_channel_host_;
   base::WeakPtr<WebGraphicsContext3DCommandBufferImpl> context_;
   DISALLOW_IMPLICIT_CONSTRUCTORS(RendererGpuVideoDecoderFactories);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_RENDERER_GPU_VIDEO_DECODER_FACTORIES_H_

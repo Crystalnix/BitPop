@@ -12,6 +12,7 @@
 #include "base/threading/thread.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/icon_util.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/size.h"
 
 void IconLoader::ReadIcon() {
@@ -29,16 +30,24 @@ void IconLoader::ReadIcon() {
     default:
       NOTREACHED();
   }
-  SHFILEINFO file_info = { 0 };
-  if (!SHGetFileInfo(group_.c_str(), FILE_ATTRIBUTE_NORMAL, &file_info,
-                     sizeof(SHFILEINFO),
-                     SHGFI_ICON | size | SHGFI_USEFILEATTRIBUTES))
-    return;
 
-  scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(
-      file_info.hIcon));
-  image_.reset(new gfx::Image(*bitmap));
-  DestroyIcon(file_info.hIcon);
+  image_.reset();
+
+  SHFILEINFO file_info = { 0 };
+  if (SHGetFileInfo(group_.c_str(), FILE_ATTRIBUTE_NORMAL, &file_info,
+                     sizeof(SHFILEINFO),
+                     SHGFI_ICON | size | SHGFI_USEFILEATTRIBUTES)) {
+    scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(
+        file_info.hIcon));
+    if (bitmap.get()) {
+      gfx::ImageSkia image_skia(*bitmap);
+      image_skia.MakeThreadSafe();
+      image_.reset(new gfx::Image(image_skia));
+      DestroyIcon(file_info.hIcon);
+    }
+  }
+
+  // Always notify the delegate, regardless of success.
   target_message_loop_->PostTask(FROM_HERE,
       base::Bind(&IconLoader::NotifyDelegate, this));
 }

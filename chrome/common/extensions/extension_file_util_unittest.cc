@@ -5,9 +5,9 @@
 #include "chrome/common/extensions/extension_file_util.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
@@ -27,7 +27,7 @@ namespace keys = extension_manifest_keys;
 #define InstallUninstallGarbageCollect DISABLED_InstallUninstallGarbageCollect
 #endif
 TEST(ExtensionFileUtil, InstallUninstallGarbageCollect) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   // Create a source extension.
@@ -64,18 +64,36 @@ TEST(ExtensionFileUtil, InstallUninstallGarbageCollect) {
                 .value());
   ASSERT_TRUE(file_util::DirectoryExists(version_2));
 
+  // Should have moved the source.
+  ASSERT_FALSE(file_util::DirectoryExists(src));
+
+  // Install yet again. Should create a new one with a different name.
+  ASSERT_TRUE(file_util::CreateDirectory(src));
+  FilePath version_3 = extension_file_util::InstallExtension(src,
+                                                             extension_id,
+                                                             version,
+                                                             all_extensions);
+  ASSERT_EQ(version_3.value(),
+            all_extensions.AppendASCII(extension_id).AppendASCII("1.0_2")
+                .value());
+  ASSERT_TRUE(file_util::DirectoryExists(version_3));
+
   // Collect garbage. Should remove first one.
-  std::map<std::string, FilePath> extension_paths;
-  extension_paths[extension_id] =
-      FilePath().AppendASCII(extension_id).Append(version_2.BaseName());
+  std::multimap<std::string, FilePath> extension_paths;
+  extension_paths.insert(std::make_pair(extension_id,
+      FilePath().AppendASCII(extension_id).Append(version_2.BaseName())));
+  extension_paths.insert(std::make_pair(extension_id,
+      FilePath().AppendASCII(extension_id).Append(version_3.BaseName())));
   extension_file_util::GarbageCollectExtensions(all_extensions,
                                                 extension_paths);
   ASSERT_FALSE(file_util::DirectoryExists(version_1));
   ASSERT_TRUE(file_util::DirectoryExists(version_2));
+  ASSERT_TRUE(file_util::DirectoryExists(version_3));
 
   // Uninstall. Should remove entire extension subtree.
   extension_file_util::UninstallExtension(all_extensions, extension_id);
   ASSERT_FALSE(file_util::DirectoryExists(version_2.DirName()));
+  ASSERT_FALSE(file_util::DirectoryExists(version_3.DirName()));
   ASSERT_TRUE(file_util::DirectoryExists(all_extensions));
 }
 
@@ -117,7 +135,7 @@ TEST(ExtensionFileUtil, LoadExtensionWithoutLocalesFolder) {
     DISABLED_CheckIllegalFilenamesNoUnderscores
 #endif
 TEST(ExtensionFileUtil, CheckIllegalFilenamesNoUnderscores) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   FilePath src_path = temp.path().AppendASCII("some_dir");
@@ -137,7 +155,7 @@ TEST(ExtensionFileUtil, CheckIllegalFilenamesNoUnderscores) {
     DISABLED_CheckIllegalFilenamesOnlyReserved
 #endif
 TEST(ExtensionFileUtil, CheckIllegalFilenamesOnlyReserved) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   FilePath src_path = temp.path().Append(Extension::kLocaleFolder);
@@ -154,7 +172,7 @@ TEST(ExtensionFileUtil, CheckIllegalFilenamesOnlyReserved) {
     DISABLED_CheckIllegalFilenamesReservedAndIllegal
 #endif
 TEST(ExtensionFileUtil, CheckIllegalFilenamesReservedAndIllegal) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   FilePath src_path = temp.path().Append(Extension::kLocaleFolder);
@@ -364,7 +382,7 @@ static scoped_refptr<Extension> LoadExtensionManifest(
 #define ValidateThemeUTF8 DISABLED_ValidateThemeUTF8
 #endif
 TEST(ExtensionFileUtil, ValidateThemeUTF8) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   // "aeo" with accents. Use http://0xcc.net/jsescape/ to decode them.
@@ -397,7 +415,7 @@ TEST(ExtensionFileUtil, ValidateThemeUTF8) {
 #define MAYBE_BackgroundScriptsMustExist BackgroundScriptsMustExist
 #endif
 TEST(ExtensionFileUtil, MAYBE_BackgroundScriptsMustExist) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   scoped_ptr<DictionaryValue> value(new DictionaryValue());
@@ -460,7 +478,7 @@ const char private_key[] =
     "-----END PRIVATE KEY-----\n";
 
 TEST(ExtensionFileUtil, FindPrivateKeyFiles) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   FilePath src_path = temp.path().AppendASCII("some_dir");
@@ -486,7 +504,7 @@ TEST(ExtensionFileUtil, FindPrivateKeyFiles) {
 }
 
 TEST(ExtensionFileUtil, WarnOnPrivateKey) {
-  ScopedTempDir temp;
+  base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
 
   FilePath ext_path = temp.path().AppendASCII("ext_root");

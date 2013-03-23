@@ -5,7 +5,6 @@
 #include "chrome/browser/tab_contents/background_contents.h"
 
 #include "chrome/browser/background/background_contents_service.h"
-#include "chrome/browser/extensions/message_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
@@ -30,15 +29,16 @@ BackgroundContents::BackgroundContents(SiteInstance* site_instance,
       site_instance->GetBrowserContext());
 
   // TODO(rafaelw): Implement correct session storage.
-  web_contents_.reset(WebContents::Create(
-      profile_, site_instance, routing_id, NULL, NULL));
+  WebContents::CreateParams create_params(profile_, site_instance);
+  create_params.routing_id = routing_id;
+  web_contents_.reset(WebContents::Create(create_params));
   chrome::SetViewType(
       web_contents_.get(), chrome::VIEW_TYPE_BACKGROUND_CONTENTS);
   web_contents_->SetDelegate(this);
   content::WebContentsObserver::Observe(web_contents_.get());
 
   // Close ourselves when the application is shutting down.
-  registrar_.Add(this, content::NOTIFICATION_APP_TERMINATING,
+  registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
 
   // Register for our parent profile to shutdown, so we can shut ourselves down
@@ -98,9 +98,10 @@ void BackgroundContents::AddNewContents(WebContents* source,
                                         WebContents* new_contents,
                                         WindowOpenDisposition disposition,
                                         const gfx::Rect& initial_pos,
-                                        bool user_gesture) {
+                                        bool user_gesture,
+                                        bool* was_blocked) {
   delegate_->AddWebContents(
-      new_contents, disposition, initial_pos, user_gesture);
+      new_contents, disposition, initial_pos, user_gesture, was_blocked);
 }
 
 void BackgroundContents::RenderViewGone(base::TerminationStatus status) {
@@ -123,7 +124,7 @@ void BackgroundContents::Observe(int type,
   // background pages are closed when the last referencing frame is closed.
   switch (type) {
     case chrome::NOTIFICATION_PROFILE_DESTROYED:
-    case content::NOTIFICATION_APP_TERMINATING: {
+    case chrome::NOTIFICATION_APP_TERMINATING: {
       delete this;
       break;
     }

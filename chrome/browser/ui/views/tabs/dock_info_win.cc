@@ -6,11 +6,18 @@
 
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/ui/ash/tabs/dock_info_ash.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/gfx/screen.h"
+
+#if defined(USE_AURA)
+#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
+#endif
 
 namespace {
 
@@ -150,8 +157,9 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
  public:
   // Returns the hwnd from our process at screen_loc that is not obscured by
   // another window. Returns NULL otherwise.
-  static HWND GetProcessWindowAtPoint(const gfx::Point& screen_loc,
-                                      const std::set<HWND>& ignore) {
+  static gfx::NativeWindow GetProcessWindowAtPoint(
+      const gfx::Point& screen_loc,
+      const std::set<HWND>& ignore) {
     LocalProcessWindowFinder finder(screen_loc, ignore);
     // Windows 8 has a window that appears first in the list of iterated
     // windows, yet is not visually on top of everything.
@@ -161,7 +169,12 @@ class LocalProcessWindowFinder : public BaseWindowFinder {
           base::win::VERSION_WIN8) ||
          TopMostFinder::IsTopMostWindowAtPoint(finder.result_, screen_loc,
                                                ignore))) {
+#if defined(USE_AURA)
+      return views::DesktopRootWindowHostWin::GetContentWindowForHWND(
+          finder.result_);
+#else
       return finder.result_;
+#endif
     }
     return NULL;
   }
@@ -206,8 +219,15 @@ class DockToWindowFinder : public BaseWindowFinder {
   static DockInfo GetDockInfoAtPoint(const gfx::Point& screen_loc,
                                      const std::set<HWND>& ignore) {
     DockToWindowFinder finder(screen_loc, ignore);
+#if defined(USE_AURA)
+    HWND hwnd = finder.result_.window() ?
+        finder.result_.window()->GetRootWindow()->GetAcceleratedWidget() :
+        NULL;
+#else
+    HWND hwnd = finder.result_.window();
+#endif
     if (!finder.result_.window() ||
-        !TopMostFinder::IsTopMostWindowAtPoint(finder.result_.window(),
+        !TopMostFinder::IsTopMostWindowAtPoint(hwnd,
                                                finder.result_.hot_spot(),
                                                ignore)) {
       finder.result_.set_type(DockInfo::NONE);
@@ -217,7 +237,12 @@ class DockToWindowFinder : public BaseWindowFinder {
 
  protected:
   virtual bool ShouldStopIterating(HWND hwnd) {
+#if defined(USE_AURA)
+    BrowserView* window = BrowserView::GetBrowserViewForNativeWindow(
+        views::DesktopRootWindowHostWin::GetContentWindowForHWND(hwnd));
+#else
     BrowserView* window = BrowserView::GetBrowserViewForNativeWindow(hwnd);
+#endif
     RECT bounds;
     if (!window || !IsWindowVisible(hwnd) ||
         !GetWindowRect(hwnd, &bounds)) {
@@ -242,8 +267,8 @@ class DockToWindowFinder : public BaseWindowFinder {
                      const std::set<HWND>& ignore)
       : BaseWindowFinder(ignore),
         screen_loc_(screen_loc) {
-    gfx::Rect work_area = gfx::Screen::GetDisplayNearestPoint(
-        screen_loc).bounds();
+    gfx::Rect work_area = gfx::Screen::GetNativeScreen()->
+        GetDisplayNearestPoint(screen_loc).bounds();
     if (!work_area.IsEmpty()) {
       result_.set_monitor_bounds(work_area);
       EnumThreadWindows(GetCurrentThreadId(), WindowCallbackProc, as_lparam());
@@ -254,7 +279,12 @@ class DockToWindowFinder : public BaseWindowFinder {
     bool in_enable_area;
     if (DockInfo::IsCloseToPoint(screen_loc_, x, y, &in_enable_area)) {
       result_.set_in_enable_area(in_enable_area);
+#if defined(USE_AURA)
+      result_.set_window(
+          views::DesktopRootWindowHostWin::GetContentWindowForHWND(hwnd));
+#else
       result_.set_window(hwnd);
+#endif
       result_.set_type(type);
       result_.set_hot_spot(gfx::Point(x, y));
       // Only show the hotspot if the monitor contains the bounds of the popup
@@ -274,15 +304,37 @@ class DockToWindowFinder : public BaseWindowFinder {
   DISALLOW_COPY_AND_ASSIGN(DockToWindowFinder);
 };
 
+std::set<HWND> RemapIgnoreSet(const std::set<gfx::NativeView>& ignore) {
+#if defined(USE_AURA)
+  std::set<HWND> hwnd_set;
+  std::set<gfx::NativeView>::const_iterator it = ignore.begin();
+  for (; it != ignore.end(); ++it) {
+    HWND w = (*it)->GetRootWindow()->GetAcceleratedWidget();
+    if (w)
+      hwnd_set.insert(w);
+  }
+  return hwnd_set;
+#else
+  // NativeViews are already HWNDs on non-Aura Windows.
+  return ignore;
+#endif
+}
+
 }  // namespace
 
 // DockInfo -------------------------------------------------------------------
 
 // static
-DockInfo DockInfo::GetDockInfoAtPoint(const gfx::Point& screen_point,
-                                      const std::set<HWND>& ignore) {
+DockInfo DockInfo::GetDockInfoAtPoint(chrome::HostDesktopType host_desktop_type,
+                                      const gfx::Point& screen_point,
+                                      const std::set<gfx::NativeView>& ignore) {
+#if defined(USE_AURA)
+  if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
+    return chrome::ash::GetDockInfoAtPointAsh(screen_point, ignore);
+#endif
   // Try docking to a window first.
-  DockInfo info = DockToWindowFinder::GetDockInfoAtPoint(screen_point, ignore);
+  DockInfo info = DockToWindowFinder::GetDockInfoAtPoint(
+      screen_point, RemapIgnoreSet(ignore));
   if (info.type() != DockInfo::NONE)
     return info;
 
@@ -304,11 +356,33 @@ DockInfo DockInfo::GetDockInfoAtPoint(const gfx::Point& screen_point,
   return info;
 }
 
-HWND DockInfo::GetLocalProcessWindowAtPoint(const gfx::Point& screen_point,
-                                            const std::set<HWND>& ignore) {
+gfx::NativeView DockInfo::GetLocalProcessWindowAtPoint(
+    chrome::HostDesktopType host_desktop_type,
+    const gfx::Point& screen_point,
+    const std::set<gfx::NativeView>& ignore) {
+#if defined(USE_AURA)
+  if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
+    return chrome::ash::GetLocalProcessWindowAtPointAsh(screen_point, ignore);
+#endif
   return
-      LocalProcessWindowFinder::GetProcessWindowAtPoint(screen_point, ignore);
+      LocalProcessWindowFinder::GetProcessWindowAtPoint(
+          screen_point, RemapIgnoreSet(ignore));
 }
+
+#if defined(USE_AURA)
+
+bool DockInfo::GetWindowBounds(gfx::Rect* bounds) const {
+  if (!window())
+    return false;
+  *bounds = window_->bounds();
+  return true;
+}
+
+void DockInfo::SizeOtherWindowTo(const gfx::Rect& bounds) const {
+  window_->SetBounds(bounds);
+}
+
+#else  // USE_AURA
 
 bool DockInfo::GetWindowBounds(gfx::Rect* bounds) const {
   RECT window_rect;
@@ -332,3 +406,5 @@ void DockInfo::SizeOtherWindowTo(const gfx::Rect& bounds) const {
 int DockInfo::GetHotSpotDeltaY() {
   return Tab::GetMinimumUnselectedSize().height() - 1;
 }
+
+#endif  // !USE_AURA

@@ -82,7 +82,13 @@ cr.define('gpu', function() {
         'multisampling': 'WebGL multisampling',
         'flash_3d': 'Flash 3D',
         'flash_stage3d': 'Flash Stage3D',
-        'texture_sharing': 'Texture Sharing'
+        'texture_sharing': 'Texture Sharing',
+        'video_decode': 'Video Decode',
+        'video': 'Video',
+        // GPU Switching
+        'gpu_switching': 'GPU Switching',
+        'panel_fitting': 'Panel Fitting',
+        'force_compositing_mode': 'Force Compositing Mode',
       };
       var statusLabelMap = {
         'disabled_software': 'Software only. Hardware acceleration disabled.',
@@ -99,7 +105,11 @@ cr.define('gpu', function() {
             'Hardware accelerated on all pages and threaded',
         'enabled': 'Hardware accelerated',
         'accelerated': 'Accelerated',
-        'accelerated_threaded': 'Accelerated and threaded'
+        'accelerated_threaded': 'Accelerated and threaded',
+        // GPU Switching
+        'gpu_switching_automatic': 'Automatic switching',
+        'gpu_switching_force_discrete': 'Always on discrete GPU',
+        'gpu_switching_force_integrated': 'Always on integrated GPU',
       };
 
       var statusClassMap = {
@@ -115,7 +125,11 @@ cr.define('gpu', function() {
         'enabled_force_threaded': 'feature-green',
         'enabled': 'feature-green',
         'accelerated': 'feature-green',
-        'accelerated_threaded': 'feature-green'
+        'accelerated_threaded': 'feature-green',
+        // GPU Switching
+        'gpu_switching_automatic': 'feature-green',
+        'gpu_switching_force_discrete': 'feature-red',
+        'gpu_switching_force_integrated': 'feature-red',
       };
 
       // GPU info, basic

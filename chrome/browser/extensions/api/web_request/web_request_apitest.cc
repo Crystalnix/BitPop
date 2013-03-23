@@ -6,6 +6,7 @@
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -13,6 +14,7 @@
 #include "chrome/browser/ui/login/login_prompt.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/features/feature.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -23,6 +25,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
 using content::WebContents;
+using extensions::Feature;
 
 namespace {
 
@@ -116,7 +119,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, WebRequestNewTab) {
 
   ResultCatcher catcher;
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
   GURL url = extension->GetResourceURL("newTab/a.html");
@@ -143,6 +147,17 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, WebRequestDeclarative) {
       message_;
 }
 
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
+                       WebRequestDeclarativePermissions) {
+  ExtensionTestMessageListener listener("rules all registered", false);
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
+      "webrequest/permissionless")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  ASSERT_TRUE(RunExtensionSubtest(
+      "webrequest", "test_declarative_permissions.html")) <<
+      message_;
+}
+
 void ExtensionWebRequestApiTest::RunPermissionTest(
     const char* extension_directory,
     bool load_extension_with_incognito_permission,
@@ -158,11 +173,13 @@ void ExtensionWebRequestApiTest::RunPermissionTest(
   ExtensionTestMessageListener listener("done", true);
   ExtensionTestMessageListener listener_incognito("done_incognito", true);
 
-  ASSERT_TRUE(LoadExtensionWithOptions(
+  int load_extension_flags = kFlagNone;
+  if (load_extension_with_incognito_permission)
+    load_extension_flags |= kFlagEnableIncognito;
+  ASSERT_TRUE(LoadExtensionWithFlags(
       test_data_dir_.AppendASCII("webrequest_permissions")
                     .AppendASCII(extension_directory),
-      load_extension_with_incognito_permission,
-      false));
+      load_extension_flags));
 
   // Test that navigation in regular window is properly redirected.
   EXPECT_TRUE(listener.WaitUntilSatisfied());
@@ -225,4 +242,20 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
                        WebRequestDeclarativePermissionSplit2) {
   // Test split without incognito permission.
   RunPermissionTest("split", false, false, "redirected1", "");
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, PostData1) {
+  // Request body access is only enabled on dev (and canary).
+  Feature::ScopedCurrentChannel sc(chrome::VersionInfo::CHANNEL_DEV);
+  // Test HTML form POST data access with the default and "url" encoding.
+  ASSERT_TRUE(RunExtensionSubtest("webrequest", "test_post1.html")) <<
+      message_;
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, PostData2) {
+  // Request body access is only enabled on dev (and canary).
+  Feature::ScopedCurrentChannel sc(chrome::VersionInfo::CHANNEL_DEV);
+  // Test HTML form POST data access with the multipart and plaintext encoding.
+  ASSERT_TRUE(RunExtensionSubtest("webrequest", "test_post2.html")) <<
+      message_;
 }

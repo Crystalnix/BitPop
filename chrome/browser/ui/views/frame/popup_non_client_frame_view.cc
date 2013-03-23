@@ -38,6 +38,9 @@ void PopupNonClientFrameView::ResetWindowControls() {
 void PopupNonClientFrameView::UpdateWindowIcon() {
 }
 
+void PopupNonClientFrameView::UpdateWindowTitle() {
+}
+
 gfx::Rect PopupNonClientFrameView::GetBoundsForTabStrip(
     views::View* tabstrip) const {
   return gfx::Rect(0, 0, width(), tabstrip->GetPreferredSize().height());
@@ -46,6 +49,10 @@ gfx::Rect PopupNonClientFrameView::GetBoundsForTabStrip(
 BrowserNonClientFrameView::TabStripInsets
 PopupNonClientFrameView::GetTabStripInsets(bool restored) const {
   return TabStripInsets();
+}
+
+int PopupNonClientFrameView::GetThemeBackgroundXInset() const {
+  return 0;
 }
 
 void PopupNonClientFrameView::UpdateThrobber(bool running) {

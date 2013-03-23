@@ -10,8 +10,7 @@ cr.define('options', function() {
   /** @const */ var ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
 
   /**
-   * Interval between consecutive camera presence checks in msec while camera is
-   * not present.
+   * Interval between consecutive camera presence checks in msec.
    * @const
    */
   var CAMERA_CHECK_INTERVAL_MS = 3000;
@@ -20,7 +19,7 @@ cr.define('options', function() {
    * Interval between consecutive camera liveness checks in msec.
    * @const
    */
-  var CAMERA_LIVENESS_CHECK_MS = 1000;
+  var CAMERA_LIVENESS_CHECK_MS = 3000;
 
   /**
    * Number of frames recorded by takeVideo().
@@ -44,6 +43,12 @@ cr.define('options', function() {
   };
 
   /**
+   * Internal URL scheme.
+   * @const
+   */
+  var CHROME_SCHEME = 'chrome://';
+
+  /**
    * Creates a new user images grid item.
    * @param {{url: string, title: string=, decorateFn: function=,
    *     clickHandler: function=}} imageInfo User image URL, optional title,
@@ -60,11 +65,16 @@ cr.define('options', function() {
   UserImagesGridItem.prototype = {
     __proto__: GridItem.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       GridItem.prototype.decorate.call(this);
       var imageEl = cr.doc.createElement('img');
-      imageEl.src = this.dataItem.url;
+      // Force 1x scale for internal URLs. Grid elements are much smaller
+      // than actual images so there is no need in full scale on HDPI.
+      if (this.dataItem.url.slice(0, CHROME_SCHEME.length) == CHROME_SCHEME)
+        imageEl.src = this.dataItem.url + '@1x';
+      else
+        imageEl.src = this.dataItem.url;
       imageEl.title = this.dataItem.title || '';
       if (typeof this.dataItem.clickHandler == 'function')
         imageEl.addEventListener('mousedown', this.dataItem.clickHandler);
@@ -93,21 +103,21 @@ cr.define('options', function() {
   UserImagesGridSelectionController.prototype = {
     __proto__: GridSelectionController.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     getIndexBefore: function(index) {
       var result =
           GridSelectionController.prototype.getIndexBefore.call(this, index);
       return result == -1 ? this.getLastIndex() : result;
     },
 
-    /** @inheritDoc */
+    /** @override */
     getIndexAfter: function(index) {
       var result =
           GridSelectionController.prototype.getIndexAfter.call(this, index);
       return result == -1 ? this.getFirstIndex() : result;
     },
 
-    /** @inheritDoc */
+    /** @override */
     handleKeyDown: function(e) {
       if (e.keyIdentifier == 'Enter')
         cr.dispatchSimpleEvent(this.grid_, 'activate');
@@ -127,12 +137,12 @@ cr.define('options', function() {
   UserImagesGrid.prototype = {
     __proto__: Grid.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     createSelectionController: function(sm) {
       return new UserImagesGridSelectionController(sm, this);
     },
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       Grid.prototype.decorate.call(this);
       this.dataModel = new ArrayDataModel([]);
@@ -142,6 +152,7 @@ cr.define('options', function() {
       this.addEventListener('dblclick', this.handleDblClick_.bind(this));
       this.addEventListener('change', this.handleChange_.bind(this));
       this.setAttribute('role', 'listbox');
+      this.autoExpands = true;
     },
 
     /**
@@ -165,6 +176,8 @@ cr.define('options', function() {
       if (this.selectedItem === null)
         return;
 
+      var oldSelectionType = this.selectionType;
+
       // Update current selection type.
       this.selectionType = this.selectedItem.type;
 
@@ -174,7 +187,9 @@ cr.define('options', function() {
 
       this.updatePreview_();
 
-      cr.dispatchSimpleEvent(this, 'select');
+      var e = new cr.Event('select', false, false);
+      e.oldSelectionType = oldSelectionType;
+      this.dispatchEvent(e);
     },
 
     /**
@@ -183,8 +198,26 @@ cr.define('options', function() {
      */
     updatePreview_: function() {
       var url = this.selectedItemUrl;
-      if (url && this.previewImage_)
-        this.previewImage_.src = url;
+      if (url && this.previewImage_) {
+        if (url.slice(0, CHROME_SCHEME.length) == CHROME_SCHEME)
+          this.previewImage_.src = url + '@' + window.devicePixelRatio + 'x';
+        else
+          this.previewImage_.src = url;
+      }
+    },
+
+    /**
+     * Start camera presence check.
+     * @private
+     */
+    checkCameraPresence_: function() {
+      if (this.cameraPresentCheckTimer_) {
+        window.clearTimeout(this.cameraPresentCheckTimer_);
+        this.cameraPresentCheckTimer_ = null;
+      }
+      if (!this.cameraVideo_)
+        return;
+      chrome.send('checkCameraPresence');
     },
 
     /**
@@ -198,6 +231,10 @@ cr.define('options', function() {
       this.cameraPresent_ = value;
       if (this.cameraLive)
         this.cameraImage = null;
+      // Repeat the check after some time.
+      this.cameraPresentCheckTimer_ = window.setTimeout(
+          this.checkCameraPresence_.bind(this),
+          CAMERA_CHECK_INTERVAL_MS);
     },
 
     /**
@@ -211,36 +248,27 @@ cr.define('options', function() {
     set cameraOnline(value) {
       this.previewElement.classList[value ? 'add' : 'remove']('online');
       if (value) {
-        this.cameraLiveCheckTimer_ = setInterval(
+        this.cameraLiveCheckTimer_ = window.setInterval(
             this.checkCameraLive_.bind(this), CAMERA_LIVENESS_CHECK_MS);
       } else if (this.cameraLiveCheckTimer_) {
-        clearInterval(this.cameraLiveCheckTimer_);
+        window.clearInterval(this.cameraLiveCheckTimer_);
         this.cameraLiveCheckTimer_ = null;
       }
     },
 
     /**
-     * Start camera presence check.
+     * Tries to starts camera stream capture.
      * @param {function(): boolean} onAvailable Callback that is called if
      *     camera is available. If it returns |true|, capture is started
      *     immediately.
-     * @param {function(): boolean} onAbsent Callback that is called if camera
-     *     is absent. If it returns |true|, camera is checked again after some
-     *     delay.
      */
-    checkCameraPresence: function(onAvailable, onAbsent) {
-      this.cameraOnline = false;
-      if (this.cameraPresentCheckTimer_) {
-        clearTimeout(this.cameraPresentCheckTimer_);
-        this.cameraPresentCheckTimer_ = null;
-      }
-      if (!this.cameraVideo_)
-        return;
+    startCamera: function(onAvailable, onAbsent) {
+      this.stopCamera();
+      this.cameraStartInProgress_ = true;
       navigator.webkitGetUserMedia(
           {video: true},
           this.handleCameraAvailable_.bind(this, onAvailable),
-          // Needs both arguments since it may call checkCameraPresence again.
-          this.handleCameraAbsent_.bind(this, onAvailable, onAbsent));
+          this.handleCameraAbsent_.bind(this));
     },
 
     /**
@@ -250,6 +278,10 @@ cr.define('options', function() {
       this.cameraOnline = false;
       if (this.cameraVideo_)
         this.cameraVideo_.src = '';
+      if (this.cameraStream_)
+        this.cameraStream_.stop();
+      // Cancel any pending getUserMedia() checks.
+      this.cameraStartInProgress_ = false;
     },
 
     /**
@@ -260,30 +292,24 @@ cr.define('options', function() {
      * @private
      */
     handleCameraAvailable_: function(onAvailable, stream) {
-      this.cameraPresent = true;
-      if (onAvailable())
+      if (this.cameraStartInProgress_ && onAvailable()) {
         this.cameraVideo_.src = window.webkitURL.createObjectURL(stream);
+        this.cameraStream_ = stream;
+      } else {
+        stream.stop();
+      }
+      this.cameraStartInProgress_ = false;
     },
 
     /**
      * Handles camera check failure.
-     * @param {function(): boolean} onAvailable Callback that is called if
-     *     camera is available in future re-checks. If it returns |true|,
-     *     capture is started immediately.
-     * @param {function(): boolean} onAbsent Callback to call. If it returns
-     *     |true|, camera is checked again after some delay.
      * @param {NavigatorUserMediaError=} err Error object.
      * @private
      */
-    handleCameraAbsent_: function(onAvailable, onAbsent, err) {
+    handleCameraAbsent_: function(err) {
       this.cameraPresent = false;
       this.cameraOnline = false;
-      if (onAbsent()) {
-        // Repeat the check.
-        this.cameraPresentCheckTimer_ = setTimeout(
-            this.checkCameraPresence.bind(this, onAvailable, onAbsent),
-            CAMERA_CHECK_INTERVAL_MS);
-      }
+      this.cameraStartInProgress_ = false;
     },
 
     /**
@@ -312,9 +338,7 @@ cr.define('options', function() {
     checkCameraLive_: function() {
       if (new Date().getTime() - this.lastFrameTime_ >
           CAMERA_LIVENESS_CHECK_MS) {
-        // Continue checking for camera presence but don't start capture.
-        this.handleCameraAbsent_(function() { return false; },
-                                 function() { return true; });
+        this.cameraPresent = false;
       }
     },
 
@@ -348,7 +372,7 @@ cr.define('options', function() {
         imageUrl = UserImagesGrid.ButtonImages.TAKE_PHOTO;
       if (imageUrl) {
         this.cameraImage_ = this.cameraImage_ ?
-            this.updateItem(this.cameraImage_, imageUrl) :
+            this.updateItem(this.cameraImage_, imageUrl, this.cameraTitle_) :
             this.addItem(imageUrl, this.cameraTitle_, undefined, 0);
         this.cameraImage_.type = 'camera';
       } else {
@@ -362,12 +386,14 @@ cr.define('options', function() {
     },
 
     /**
-     * Title for the camera element. Must be set before setting |cameraImage|
-     * for the first time.
-     * @type {string}
+     * Updates the titles for the camera element.
+     * @param {string} placeholderTitle Title when showing a placeholder.
+     * @param {string} capturedImageTitle Title when showing a captured photo.
      */
-    set cameraTitle(value) {
-      return this.cameraTitle_ = value;
+    setCameraTitles: function(placeholderTitle, capturedImageTitle) {
+      this.placeholderTitle_ = placeholderTitle;
+      this.capturedImageTitle_ = capturedImageTitle;
+      this.cameraTitle_ = this.placeholderTitle_;
     },
 
     /**
@@ -416,7 +442,7 @@ cr.define('options', function() {
       this.inProgramSelection_ = false;
     },
 
-    /** @inheritDoc */
+    /** @override */
     get selectedItem() {
       var index = this.selectionModel.selectedIndex;
       return index != -1 ? this.dataModel.item(index) : null;
@@ -447,6 +473,9 @@ cr.define('options', function() {
       this.cameraVideo_.addEventListener('timeupdate',
                                          this.handleVideoUpdate_.bind(this));
       this.updatePreview_();
+      // Initialize camera state and check for its presence.
+      this.cameraLive = true;
+      this.cameraPresent = false;
     },
 
     /**
@@ -482,6 +511,7 @@ cr.define('options', function() {
       var self = this;
       var previewImg = new Image();
       previewImg.addEventListener('load', function(e) {
+        self.cameraTitle_ = self.capturedImageTitle_;
         self.cameraImage = this.src;
       });
       previewImg.src = photoURL;
@@ -507,7 +537,7 @@ cr.define('options', function() {
         frameNo: 0,
         lastTimestamp: new Date().getTime()
       };
-      captureData.timer = setInterval(
+      captureData.timer = window.setInterval(
           this.captureVideoFrame_.bind(this, captureData), 1000 / RECORD_FPS);
     },
 
@@ -515,6 +545,7 @@ cr.define('options', function() {
      * Discard current photo and return to the live camera stream.
      */
     discardPhoto: function() {
+      this.cameraTitle_ = this.placeholderTitle_;
       this.cameraImage = null;
     },
 
@@ -571,7 +602,7 @@ cr.define('options', function() {
       data.ctx.translate(0, CAPTURE_SIZE.height);
 
       if (++data.frameNo == RECORD_FRAMES) {
-        clearTimeout(data.timer);
+        window.clearTimeout(data.timer);
         if (data.callback && typeof data.callback == 'function')
           data.callback(data.canvas.toDataURL('image/png'));
       }

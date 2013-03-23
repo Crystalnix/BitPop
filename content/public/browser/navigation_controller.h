@@ -5,15 +5,23 @@
 #ifndef CONTENT_PUBLIC_BROWSER_NAVIGATION_CONTROLLER_H_
 #define CONTENT_PUBLIC_BROWSER_NAVIGATION_CONTROLLER_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
+#include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/page_transition_types.h"
+#include "content/public/common/referrer.h"
+#include "googleurl/src/gurl.h"
 
-class GURL;
+namespace base {
+
+class RefCountedMemory;
+
+}  // namespace base
 
 namespace content {
 
@@ -21,7 +29,11 @@ class BrowserContext;
 class NavigationEntry;
 class SessionStorageNamespace;
 class WebContents;
-struct Referrer;
+
+// Used to store the mapping of a StoragePartition id to
+// SessionStorageNamespace.
+typedef std::map<std::string, scoped_refptr<SessionStorageNamespace> >
+    SessionStorageNamespaceMap;
 
 // A NavigationController maintains the back-forward list for a WebContents and
 // manages all navigation within that list.
@@ -37,6 +49,50 @@ class NavigationController {
     RELOAD_ORIGINAL_REQUEST_URL  // Reload using the original request URL.
   };
 
+  // Load type used in LoadURLParams.
+  enum LoadURLType {
+    // For loads that do not fall into any types below.
+    LOAD_TYPE_DEFAULT,
+
+    // An http post load request initiated from browser side.
+    // The post data is passed in |browser_initiated_post_data|.
+    LOAD_TYPE_BROWSER_INITIATED_HTTP_POST,
+
+    // Loads a 'data:' scheme URL with specified base URL and a history entry
+    // URL. This is only safe to be used for browser-initiated data: URL
+    // navigations, since it shows arbitrary content as if it comes from
+    // |virtual_url_for_data_url|.
+    LOAD_TYPE_DATA
+
+    // Adding new LoadURLType? Also update LoadUrlParams.java static constants.
+  };
+
+  // User agent override type used in LoadURLParams.
+  enum UserAgentOverrideOption {
+    // Use the override value from the previous NavigationEntry in the
+    // NavigationController.
+    UA_OVERRIDE_INHERIT,
+
+    // Use the default user agent.
+    UA_OVERRIDE_FALSE,
+
+    // Use the user agent override, if it's available.
+    UA_OVERRIDE_TRUE
+
+    // Adding new UserAgentOverrideOption? Also update LoadUrlParams.java
+    // static constants.
+  };
+
+  enum RestoreType {
+    // Indicates the restore is from the current session. For example, restoring
+    // a closed tab.
+    RESTORE_CURRENT_SESSION,
+
+    // Restore from the previous session.
+    RESTORE_LAST_SESSION_EXITED_CLEANLY,
+    RESTORE_LAST_SESSION_CRASHED,
+  };
+
   // Creates a navigation entry and translates the virtual url to a real one.
   // This is a general call; prefer LoadURL[FromRenderer]/TransferURL below.
   // Extra headers are separated by \n.
@@ -47,6 +103,65 @@ class NavigationController {
       bool is_renderer_initiated,
       const std::string& extra_headers,
       BrowserContext* browser_context);
+
+  // Extra optional parameters for LoadURLWithParams.
+  struct CONTENT_EXPORT LoadURLParams {
+    // The url to load. This field is required.
+    GURL url;
+
+    // See LoadURLType comments above.
+    LoadURLType load_type;
+
+    // PageTransition for this load. See PageTransition for details.
+    // Note the default value in constructor below.
+    PageTransition transition_type;
+
+    // Referrer for this load. Empty if none.
+    Referrer referrer;
+
+    // Extra headers for this load, separated by \n.
+    std::string extra_headers;
+
+    // True for renderer-initiated navigations. This is
+    // important for tracking whether to display pending URLs.
+    bool is_renderer_initiated;
+
+    // User agent override for this load. See comments in
+    // UserAgentOverrideOption definition.
+    UserAgentOverrideOption override_user_agent;
+
+    // Marks the new navigation as being transferred from one RVH to another.
+    // In this case the browser can recycle the old request once the new
+    // renderer wants to navigate. Identifies the request ID of the old request.
+    GlobalRequestID transferred_global_request_id;
+
+    // Used in LOAD_TYPE_DATA loads only. Used for specifying a base URL
+    // for pages loaded via data URLs.
+    GURL base_url_for_data_url;
+
+    // Used in LOAD_TYPE_DATA loads only. URL displayed to the user for
+    // data loads.
+    GURL virtual_url_for_data_url;
+
+    // Used in LOAD_TYPE_BROWSER_INITIATED_HTTP_POST loads only. Carries the
+    // post data of the load. Ownership is transferred to NavigationController
+    // after LoadURLWithParams call.
+    scoped_refptr<base::RefCountedMemory> browser_initiated_post_data;
+
+    // True if this URL should be able to access local resources.
+    bool can_load_local_resources;
+
+    // Indicates whether this navigation involves a cross-process redirect,
+    // in which case it should replace the current navigation entry.
+    bool is_cross_site_redirect;
+
+    explicit LoadURLParams(const GURL& url);
+    ~LoadURLParams();
+
+    // Allows copying of LoadURLParams struct.
+    LoadURLParams(const LoadURLParams& other);
+    LoadURLParams& operator=(const LoadURLParams& other);
+  };
 
   // Disables checking for a repost and prompting the user. This is used during
   // testing.
@@ -63,14 +178,13 @@ class NavigationController {
   virtual void SetBrowserContext(BrowserContext* browser_context) = 0;
 
   // Initializes this NavigationController with the given saved navigations,
-  // using selected_navigation as the currently loaded entry. Before this call
-  // the controller should be unused (there should be no current entry). If
-  // from_last_session is true, navigations are from the previous session,
-  // otherwise they are from the current session (undo tab close). This takes
-  // ownership of the NavigationEntrys in |entries| and clears it out.
-  // This is used for session restore.
+  // using |selected_navigation| as the currently loaded entry. Before this call
+  // the controller should be unused (there should be no current entry). |type|
+  // indicates where the restor comes from. This takes ownership of the
+  // NavigationEntrys in |entries| and clears it out.  This is used for session
+  // restore.
   virtual void Restore(int selected_navigation,
-                       bool from_last_session,
+                       RestoreType type,
                        std::vector<NavigationEntry*>* entries) = 0;
 
   // Entries -------------------------------------------------------------------
@@ -160,36 +274,9 @@ class NavigationController {
                        PageTransition type,
                        const std::string& extra_headers) = 0;
 
-  // Same as LoadURL, but for renderer-initiated navigations.  This state is
-  // important for tracking whether to display pending URLs.
-  virtual void LoadURLFromRenderer(const GURL& url,
-                                   const Referrer& referrer,
-                                   PageTransition type,
-                                   const std::string& extra_headers) = 0;
-
-  // Same as LoadURL, but allows overriding the user agent of the
-  // NavigationEntry before it loads.
-  // TODO(dfalcantara): Consolidate the LoadURL* interfaces.
-  virtual void LoadURLWithUserAgentOverride(const GURL& url,
-                                            const Referrer& referrer,
-                                            PageTransition type,
-                                            bool is_renderer_initiated,
-                                            const std::string& extra_headers,
-                                            bool is_overriding_user_agent) = 0;
-
-  // Behaves like LoadURL() and LoadURLFromRenderer() but marks the new
-  // navigation as being transferred from one RVH to another. In this case the
-  // browser can recycle the old request once the new renderer wants to
-  // navigate.
-  // |transferred_global_request_id| identifies the request ID of the old
-  // request.
-  virtual void TransferURL(
-      const GURL& url,
-      const Referrer& referrer,
-      PageTransition transition,
-      const std::string& extra_headers,
-      const GlobalRequestID& transferred_global_request_id,
-      bool is_renderer_initiated) = 0;
+  // More general version of LoadURL. See comments in LoadURLParams for
+  // using |params|.
+  virtual void LoadURLWithParams(const LoadURLParams& params) = 0;
 
   // Loads the current page if this NavigationController was restored from
   // history and the current page has not loaded yet.
@@ -213,11 +300,17 @@ class NavigationController {
 
   // Reloads the current entry. If |check_for_repost| is true and the current
   // entry has POST data the user is prompted to see if they really want to
-  // reload the page. In nearly all cases pass in true.
+  // reload the page. In nearly all cases pass in true.  If a transient entry
+  // is showing, initiates a new navigation to its URL.
   virtual void Reload(bool check_for_repost) = 0;
 
   // Like Reload(), but don't use caches (aka "shift-reload").
   virtual void ReloadIgnoringCache(bool check_for_repost) = 0;
+
+  // Reloads the current entry using the original URL used to create it.  This
+  // is used for cases where the user wants to refresh a page using a different
+  // user agent after following a redirect.
+  virtual void ReloadOriginalRequestURL(bool check_for_repost) = 0;
 
   // Removing of entries -------------------------------------------------------
 
@@ -228,8 +321,18 @@ class NavigationController {
 
   // Random --------------------------------------------------------------------
 
-  // The session storage namespace that all child render views should use.
-  virtual SessionStorageNamespace* GetSessionStorageNamespace() const = 0;
+  // Session storage depends on dom_storage that depends on WebKit::WebString,
+  // which cannot be used on iOS.
+#if !defined(OS_IOS)
+  // Returns all the SessionStorageNamespace objects that this
+  // NavigationController knows about.
+  virtual const SessionStorageNamespaceMap&
+      GetSessionStorageNamespaceMap() const = 0;
+
+  // TODO(ajwong): Remove this once prerendering, instant, and session restore
+  // are migrated.
+  virtual SessionStorageNamespace* GetDefaultSessionStorageNamespace() = 0;
+#endif
 
   // Sets the max restored page ID this NavigationController has seen, if it
   // was restored from a previous session.
@@ -249,6 +352,7 @@ class NavigationController {
   virtual void ContinuePendingReload() = 0;
 
   // Returns true if we are navigating to the URL the tab is opened with.
+  // Returns false after initial navigation has loaded in frame.
   virtual bool IsInitialNavigation() = 0;
 
   // Broadcasts the NOTIFY_NAV_ENTRY_CHANGED notification for the given entry

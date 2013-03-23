@@ -17,9 +17,10 @@
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/ntp_background_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -37,6 +38,7 @@
 #include "chrome/browser/ui/gtk/rounded_window.h"
 #include "chrome/browser/ui/gtk/tabstrip_origin_provider.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
+#include "chrome/browser/ui/ntp_background_util.h"
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -132,8 +134,6 @@ void RecordAppLaunch(Profile* profile, const GURL& url) {
 
 }  // namespace
 
-const int BookmarkBarGtk::kBookmarkBarNTPHeight = 57;
-
 BookmarkBarGtk::BookmarkBarGtk(BrowserWindowGtk* window,
                                Browser* browser,
                                TabstripOriginProvider* tabstrip_origin_provider)
@@ -164,8 +164,12 @@ BookmarkBarGtk::BookmarkBarGtk(BrowserWindowGtk* window,
   registrar_.Add(this, chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
                  content::Source<ThemeService>(theme_service_));
 
-  edit_bookmarks_enabled_.Init(prefs::kEditBookmarksEnabled,
-                               browser_->profile()->GetPrefs(), this);
+  edit_bookmarks_enabled_.Init(
+      prefs::kEditBookmarksEnabled,
+      browser_->profile()->GetPrefs(),
+      base::Bind(&BookmarkBarGtk::OnEditBookmarksEnabledChanged,
+                 base::Unretained(this)));
+
   OnEditBookmarksEnabledChanged();
 }
 
@@ -251,11 +255,6 @@ void BookmarkBarGtk::Init() {
   gtk_box_pack_start(GTK_BOX(bookmark_hbox_), other_bookmarks_separator_,
                      FALSE, FALSE, 0);
 
-  // Newer versions of Gtk default to not showing images on buttons if a label
-  // is set. Override that here.
-  GtkSettings* default_settings = gtk_settings_get_default();
-  g_object_set(default_settings, "gtk-button-images", TRUE, NULL);
-
   // We pack the button manually (rather than using gtk_button_set_*) so that
   // we can have finer control over its label.
   other_bookmarks_button_ = theme_service_->BuildChromeButton();
@@ -328,7 +327,7 @@ void BookmarkBarGtk::CalculateMaxHeight() {
     max_height_ = req.height;
   } else {
     max_height_ = (bookmark_bar_state_ == BookmarkBar::DETACHED) ?
-                  kBookmarkBarNTPHeight : kBookmarkBarHeight;
+                  chrome::kNTPBookmarkBarHeight : kBookmarkBarHeight;
   }
 }
 
@@ -681,15 +680,15 @@ void BookmarkBarGtk::UpdateEventBoxPaintability() {
 }
 
 void BookmarkBarGtk::PaintEventBox() {
-  gfx::Size tab_contents_size;
-  if (GetTabContentsSize(&tab_contents_size) &&
-      tab_contents_size != last_tab_contents_size_) {
-    last_tab_contents_size_ = tab_contents_size;
+  gfx::Size web_contents_size;
+  if (GetWebContentsSize(&web_contents_size) &&
+      web_contents_size != last_web_contents_size_) {
+    last_web_contents_size_ = web_contents_size;
     gtk_widget_queue_draw(event_box_.get());
   }
 }
 
-bool BookmarkBarGtk::GetTabContentsSize(gfx::Size* size) {
+bool BookmarkBarGtk::GetWebContentsSize(gfx::Size* size) {
   Browser* browser = browser_;
   if (!browser) {
     NOTREACHED();
@@ -985,11 +984,6 @@ void BookmarkBarGtk::Observe(int type,
     }
 
     SetOverflowButtonAppearance();
-  } else if (type == chrome::NOTIFICATION_PREF_CHANGED) {
-    const std::string& pref_name =
-        *content::Details<std::string>(details).ptr();
-    if (pref_name == prefs::kEditBookmarksEnabled)
-      OnEditBookmarksEnabledChanged();
   }
 }
 
@@ -1153,9 +1147,9 @@ void BookmarkBarGtk::OnClicked(GtkWidget* sender) {
   DCHECK(page_navigator_);
 
   RecordAppLaunch(browser_->profile(), node->url());
-  bookmark_utils::OpenAll(
-      window_->GetNativeWindow(), page_navigator_, node,
-      event_utils::DispositionForCurrentButtonPressEvent());
+  chrome::OpenAll(window_->GetNativeWindow(), page_navigator_, node,
+                  event_utils::DispositionForCurrentButtonPressEvent(),
+                  browser_->profile());
 
   content::RecordAction(UserMetricsAction("ClickedBookmarkBarURLButton"));
 }
@@ -1182,8 +1176,8 @@ void BookmarkBarGtk::OnButtonDragBegin(GtkWidget* button,
   gtk_widget_size_request(drag_icon_, &req);
   gfx::Rect button_rect = gtk_util::WidgetBounds(button);
   gfx::Point drag_icon_relative =
-      gfx::Rect(req.width, req.height).CenterPoint().Add(
-          (last_pressed_coordinates_.Subtract(button_rect.CenterPoint())));
+      gfx::Rect(req.width, req.height).CenterPoint() +
+      (last_pressed_coordinates_ - button_rect.CenterPoint());
   gtk_drag_set_icon_widget(drag_context, drag_icon_,
                            drag_icon_relative.x(),
                            drag_icon_relative.y());
@@ -1235,12 +1229,13 @@ void BookmarkBarGtk::OnFolderClicked(GtkWidget* sender) {
     hover_controller->StartThrobbing(0);
 
   GdkEvent* event = gtk_get_current_event();
-  if (event->button.button == 1) {
+  if (event->button.button == 1 ||
+      (event->button.button == 2 && sender == overflow_button_)) {
     PopupForButton(sender);
   } else if (event->button.button == 2) {
     const BookmarkNode* node = GetNodeForToolButton(sender);
-    bookmark_utils::OpenAll(window_->GetNativeWindow(), page_navigator_, node,
-                            NEW_BACKGROUND_TAB);
+    chrome::OpenAll(window_->GetNativeWindow(), page_navigator_, node,
+                    NEW_BACKGROUND_TAB, browser_->profile());
   }
 }
 
@@ -1414,8 +1409,8 @@ gboolean BookmarkBarGtk::OnEventBoxExpose(GtkWidget* widget,
 
     cairo_destroy(cr);
   } else {
-    gfx::Size tab_contents_size;
-    if (!GetTabContentsSize(&tab_contents_size))
+    gfx::Size web_contents_size;
+    if (!GetWebContentsSize(&web_contents_size))
       return FALSE;
     gfx::CanvasSkiaPaint canvas(event, true);
 
@@ -1426,7 +1421,7 @@ gboolean BookmarkBarGtk::OnEventBoxExpose(GtkWidget* widget,
                      gfx::Rect(0, 0, allocation.width, allocation.height) :
                      gfx::Rect(allocation);
     NtpBackgroundUtil::PaintBackgroundDetachedMode(theme_provider, &canvas,
-        area, tab_contents_size.height());
+        area, web_contents_size.height());
   }
 
   return FALSE;  // Propagate expose to children.

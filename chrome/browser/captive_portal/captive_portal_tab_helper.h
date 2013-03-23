@@ -13,9 +13,19 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
+#include "webkit/glue/resource_type.h"
 
 class GURL;
 class Profile;
+
+namespace content {
+  class WebContents;
+}
+
+namespace net {
+class SSLInfo;
+}
 
 namespace captive_portal {
 
@@ -35,23 +45,29 @@ class CaptivePortalTabReloader;
 // to inform the tab's CaptivePortalLoginDetector when the tab is at a captive
 // portal's login page.
 //
-// TODO(mmenke): Support redirects.  Needed for HSTS, which simulates redirects
-//               at the network layer.  Also may reduce the number of
-//               unnecessary captive portal checks on high latency connections.
+// The TabHelper assumes that a WebContents can only have one RenderViewHost
+// with a provisional load at a time, and tracks only that navigation.  This
+// assumption can be violated in rare cases, for example, a same-site
+// navigation interrupted by a cross-process navigation started from the
+// omnibox, may commit before it can be cancelled.  In these cases, this class
+// may pass incorrect messages to the TabReloader, which will, at worst, result
+// in not opening up a login tab until a second load fails or not automatically
+// reloading a tab after logging in.
 //
 // For the design doc, see:
 // https://docs.google.com/document/d/1k-gP2sswzYNvryu9NcgN7q5XrsMlUdlUdoW9WRaEmfM/edit
-class CaptivePortalTabHelper : public content::WebContentsObserver,
-                               public content::NotificationObserver,
-                               public base::NonThreadSafe {
+class CaptivePortalTabHelper
+    : public content::WebContentsObserver,
+      public content::NotificationObserver,
+      public base::NonThreadSafe,
+      public content::WebContentsUserData<CaptivePortalTabHelper> {
  public:
-  CaptivePortalTabHelper(Profile* profile,
-                         content::WebContents* web_contents);
   virtual ~CaptivePortalTabHelper();
 
   // content::WebContentsObserver:
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
+      int64 parent_frame_id,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
@@ -81,6 +97,9 @@ class CaptivePortalTabHelper : public content::WebContentsObserver,
       const content::NotificationSource& source,
       const content::NotificationDetails& details) OVERRIDE;
 
+  // Called when a certificate interstitial error page is about to be shown.
+  void OnSSLCertError(const net::SSLInfo& ssl_info);
+
   // A "Login Tab" is a tab that was originally at a captive portal login
   // page.  This is set to false when a captive portal is no longer detected.
   bool IsLoginTab() const;
@@ -89,11 +108,18 @@ class CaptivePortalTabHelper : public content::WebContentsObserver,
   friend class CaptivePortalBrowserTest;
   friend class CaptivePortalTabHelperTest;
 
+  friend class content::WebContentsUserData<CaptivePortalTabHelper>;
+  explicit CaptivePortalTabHelper(content::WebContents* web_contents);
+
   // Called by Observe in response to the corresponding event.
-  void OnRedirect(int64 frame_id, const GURL& new_url);
+  void OnRedirect(int child_id,
+                  ResourceType::Type resource_type,
+                  const GURL& new_url);
 
   // Called by Observe in response to the corresponding event.
   void OnCaptivePortalResults(Result previous_result, Result result);
+
+  void OnLoadAborted();
 
   // Called to indicate a tab is at, or is navigating to, the captive portal
   // login page.
@@ -102,26 +128,33 @@ class CaptivePortalTabHelper : public content::WebContentsObserver,
   // |this| takes ownership of |tab_reloader|.
   void SetTabReloaderForTest(CaptivePortalTabReloader* tab_reloader);
 
+  const content::RenderViewHost* provisional_render_view_host() const {
+    return provisional_render_view_host_;
+  }
+
   CaptivePortalTabReloader* GetTabReloaderForTest();
 
   // Opens a login tab if the profile's active window doesn't have one already.
   void OpenLoginTab();
 
+  Profile* profile_;
+
   // Neither of these will ever be NULL.
   scoped_ptr<CaptivePortalTabReloader> tab_reloader_;
   scoped_ptr<CaptivePortalLoginDetector> login_detector_;
 
-  Profile* profile_;
+  content::WebContents* web_contents_;
 
   // If a provisional load has failed, and the tab is loading an error page, the
   // error code associated with the error page we're loading.
   // net::OK, otherwise.
   int pending_error_code_;
 
-  // The ID of the main frame that's currently provisionally loaded, if there is
-  // one.  -1 (unknown/invalid) when there is no such frame, or when an id of
-  // -1 is passed to DidStartProvisionalLoadForFrame.
-  int64 provisional_main_frame_id_;
+  // The RenderViewHost with a provisional load, if any.  Can either be
+  // the currently displayed RenderViewHost or a pending RenderViewHost for
+  // cross-process navitations.  NULL when there's currently no provisional
+  // load.
+  content::RenderViewHost* provisional_render_view_host_;
 
   content::NotificationRegistrar registrar_;
 

@@ -17,24 +17,28 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/stl_util.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "chrome/browser/chromeos/contacts/contact_map.h"
+#include "net/base/network_change_notifier.h"
 
 class Profile;
 
-namespace gdata {
-class GDataContactsServiceInterface;
-}
+namespace net {
+class URLRequestContextGetter;
+}  // namespace net
 
 namespace contacts {
 
 class Contact;
 class ContactDatabaseInterface;
+class GDataContactsServiceInterface;
 class UpdateMetadata;
 
 // A collection of contacts from a Google account.
-class GoogleContactStore : public ContactStore {
+class GoogleContactStore
+    : public ContactStore,
+      public net::NetworkChangeNotifier::ConnectionTypeObserver {
  public:
   class TestAPI {
    public:
@@ -42,7 +46,9 @@ class GoogleContactStore : public ContactStore {
     ~TestAPI();
 
     bool update_scheduled() { return store_->update_timer_.IsRunning(); }
-
+    base::Time last_contact_update_time() const {
+      return store_->last_contact_update_time_;
+    }
     void set_current_time(const base::Time& time) {
       store_->current_time_for_testing_ = time;
     }
@@ -50,11 +56,19 @@ class GoogleContactStore : public ContactStore {
     // Takes ownership of |db|. Must be called before Init().
     void SetDatabase(ContactDatabaseInterface* db);
 
-    // Takes ownership of |service|. Must be called before Init().
-    void SetGDataService(gdata::GDataContactsServiceInterface* service);
+    // Takes ownership of |service|. Must be called before Init(). The caller is
+    // responsible for calling |service|'s Initialize() method.
+    void SetGDataService(GDataContactsServiceInterface* service);
 
     // Triggers an update, similar to what happens when the update timer fires.
     void DoUpdate();
+
+    // Notifies the store that the system has gone online or offline.
+    void NotifyAboutNetworkStateChange(bool online);
+
+    // Returns pointers to all of the contacts in the store's |contacts_|
+    // member.
+    scoped_ptr<ContactPointers> GetLoadedContacts();
 
    private:
     GoogleContactStore* store_;  // not owned
@@ -62,21 +76,23 @@ class GoogleContactStore : public ContactStore {
     DISALLOW_COPY_AND_ASSIGN(TestAPI);
   };
 
-  explicit GoogleContactStore(Profile* profile);
+  GoogleContactStore(
+      net::URLRequestContextGetter* url_request_context_getter,
+      Profile* profile);
   virtual ~GoogleContactStore();
 
   // ContactStore implementation:
   virtual void Init() OVERRIDE;
   virtual void AppendContacts(ContactPointers* contacts_out) OVERRIDE;
-  virtual const Contact* GetContactByProviderId(
-      const std::string& provider_id) OVERRIDE;
+  virtual const Contact* GetContactById(const std::string& contact_id) OVERRIDE;
   virtual void AddObserver(ContactStoreObserver* observer) OVERRIDE;
   virtual void RemoveObserver(ContactStoreObserver* observer) OVERRIDE;
 
- private:
-  // Map from a contact's Google-assigned ID to the contact itself.
-  typedef std::map<std::string, Contact*> ContactMap;
+  // net::NetworkChangeNotifier::ConnectionTypeObserver implementation:
+  virtual void OnConnectionTypeChanged(
+      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
+ private:
   // Returns the current time. Uses |current_time_for_testing_| instead if it's
   // set.
   base::Time GetCurrentTime() const;
@@ -120,6 +136,8 @@ class GoogleContactStore : public ContactStore {
   // being accessed by the database, we schedule an update.
   void OnDatabaseContactsSaved(bool success);
 
+  net::URLRequestContextGetter* url_request_context_getter_;  // not owned
+
   Profile* profile_;  // not owned
 
   ObserverList<ContactStoreObserver> observers_;
@@ -127,18 +145,15 @@ class GoogleContactStore : public ContactStore {
   // Owns the pointed-to Contact values.
   ContactMap contacts_;
 
-  // Deletes values in |contacts_|.
-  STLValueDeleter<ContactMap> contacts_deleter_;
-
   // Most-recent time that an entry in |contacts_| has been updated (as reported
   // by Google).
   base::Time last_contact_update_time_;
 
+  // Used to download contacts.
+  scoped_ptr<GDataContactsServiceInterface> gdata_service_;
+
   // Used to save contacts to disk and load them at startup. Owns the object.
   ContactDatabaseInterface* db_;
-
-  // If non-NULL, used in place of the real GData service to download contacts.
-  scoped_ptr<gdata::GDataContactsServiceInterface> gdata_service_for_testing_;
 
   // Used to schedule calls to UpdateContacts().
   base::OneShotTimer<GoogleContactStore> update_timer_;
@@ -149,6 +164,14 @@ class GoogleContactStore : public ContactStore {
   // Amount of time that we'll wait before retrying the next time that an update
   // fails.
   base::TimeDelta update_delay_on_next_failure_;
+
+  // Do we believe that it's likely that we'll be able to make network
+  // connections?
+  bool is_online_;
+
+  // Should we call UpdateContacts() when |is_online_| becomes true?  Set when
+  // UpdateContacts() is called while we're offline.
+  bool should_update_when_online_;
 
   // If non-null, used in place of base::Time::Now() when the current time is
   // needed.

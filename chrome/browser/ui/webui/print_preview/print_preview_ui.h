@@ -10,7 +10,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
-#include "ui/web_dialogs/constrained_web_dialog_ui.h"
+#include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
 
 class PrintPreviewDataService;
 class PrintPreviewHandler;
@@ -28,7 +28,7 @@ namespace printing {
 struct PageSizeMargins;
 }
 
-class PrintPreviewUI : public ui::ConstrainedWebDialogUI {
+class PrintPreviewUI : public ConstrainedWebDialogUI {
  public:
   explicit PrintPreviewUI(content::WebUI* web_ui);
   virtual ~PrintPreviewUI();
@@ -60,7 +60,7 @@ class PrintPreviewUI : public ui::ConstrainedWebDialogUI {
   bool source_is_modifiable() { return source_is_modifiable_; }
 
   // Set |source_is_modifiable_| for |print_preview_tab|'s PrintPreviewUI.
-  static void SetSourceIsModifiable(TabContents* print_preview_tab,
+  static void SetSourceIsModifiable(content::WebContents* print_preview_tab,
                                     bool source_is_modifiable);
 
   // Determines whether to cancel a print preview request based on

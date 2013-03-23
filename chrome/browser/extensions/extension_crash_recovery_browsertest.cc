@@ -8,17 +8,17 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/balloon_collection.h"
 #include "chrome/browser/notifications/balloon_host.h"
+#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_delegate.h"
-#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/navigation_controller.h"
@@ -38,15 +38,8 @@ class ExtensionCrashRecoveryTest : public ExtensionBrowserTest {
   }
 
   ExtensionProcessManager* GetExtensionProcessManager() {
-    return browser()->profile()->GetExtensionProcessManager();
-  }
-
-  Balloon* GetNotificationDelegate(size_t index) {
-    NotificationUIManager* manager =
-        g_browser_process->notification_ui_manager();
-    BalloonCollection::Balloons balloons =
-        manager->balloon_collection()->GetActiveBalloons();
-    return balloons.at(index);
+    return extensions::ExtensionSystem::Get(browser()->profile())->
+        process_manager();
   }
 
   void AcceptNotification(size_t index) {
@@ -58,14 +51,15 @@ class ExtensionCrashRecoveryTest : public ExtensionBrowserTest {
 
   void CancelNotification(size_t index) {
     Balloon* balloon = GetNotificationDelegate(index);
-    NotificationUIManager* manager =
-        g_browser_process->notification_ui_manager();
+    ASSERT_TRUE(balloon);
+    BalloonNotificationUIManager* manager =
+        BalloonNotificationUIManager::GetInstanceForTesting();
     ASSERT_TRUE(manager->CancelById(balloon->notification().notification_id()));
   }
 
   size_t CountBalloons() {
-    NotificationUIManager* manager =
-        g_browser_process->notification_ui_manager();
+    BalloonNotificationUIManager* manager =
+        BalloonNotificationUIManager::GetInstanceForTesting();
     BalloonCollection::Balloons balloons =
         manager->balloon_collection()->GetActiveBalloons();
     return balloons.size();
@@ -73,16 +67,14 @@ class ExtensionCrashRecoveryTest : public ExtensionBrowserTest {
 
   void CrashExtension(std::string extension_id) {
     const Extension* extension =
-        GetExtensionService()->extensions()->GetByID(extension_id);
+        GetExtensionService()->GetExtensionById(extension_id, false);
     ASSERT_TRUE(extension);
     extensions::ExtensionHost* extension_host = GetExtensionProcessManager()->
         GetBackgroundHostForExtension(extension_id);
     ASSERT_TRUE(extension_host);
 
-    content::RenderProcessHost* extension_rph =
-        extension_host->render_view_host()->GetProcess();
-    base::KillProcess(extension_rph->GetHandle(), content::RESULT_CODE_KILLED,
-                      false);
+    base::KillProcess(extension_host->render_process_host()->GetHandle(),
+                      content::RESULT_CODE_KILLED, false);
     ASSERT_TRUE(WaitForExtensionCrash(extension_id));
     ASSERT_FALSE(GetExtensionProcessManager()->
                  GetBackgroundHostForExtension(extension_id));
@@ -127,6 +119,15 @@ class ExtensionCrashRecoveryTest : public ExtensionBrowserTest {
 
   std::string first_extension_id_;
   std::string second_extension_id_;
+
+ private:
+  Balloon* GetNotificationDelegate(size_t index) {
+    BalloonNotificationUIManager* manager =
+        BalloonNotificationUIManager::GetInstanceForTesting();
+    BalloonCollection::Balloons balloons =
+        manager->balloon_collection()->GetActiveBalloons();
+    return index < balloons.size() ? balloons.at(index) : NULL;
+  }
 };
 
 IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, Basic) {
@@ -138,7 +139,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, Basic) {
   ASSERT_EQ(size_before, GetExtensionService()->extensions()->size());
   ASSERT_EQ(crash_size_before + 1,
             GetExtensionService()->terminated_extensions()->size());
-  AcceptNotification(0);
+  ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
 
   SCOPED_TRACE("after clicking the balloon");
   CheckExtensionConsistency(first_extension_id_);
@@ -157,7 +158,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, CloseAndReload) {
   ASSERT_EQ(crash_size_before + 1,
             GetExtensionService()->terminated_extensions()->size());
 
-  CancelNotification(0);
+  ASSERT_NO_FATAL_FAILURE(CancelNotification(0));
   ReloadExtension(first_extension_id_);
 
   SCOPED_TRACE("after reloading");
@@ -264,7 +265,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, TwoExtensionsCrashFirst) {
   LoadSecondExtension();
   CrashExtension(first_extension_id_);
   ASSERT_EQ(size_before + 1, GetExtensionService()->extensions()->size());
-  AcceptNotification(0);
+  ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
 
   SCOPED_TRACE("after clicking the balloon");
   CheckExtensionConsistency(first_extension_id_);
@@ -277,7 +278,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, TwoExtensionsCrashSecond) {
   LoadSecondExtension();
   CrashExtension(second_extension_id_);
   ASSERT_EQ(size_before + 1, GetExtensionService()->extensions()->size());
-  AcceptNotification(0);
+  ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
 
   SCOPED_TRACE("after clicking the balloon");
   CheckExtensionConsistency(first_extension_id_);
@@ -302,13 +303,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest,
 
   {
     SCOPED_TRACE("first balloon");
-    AcceptNotification(0);
+    ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
     CheckExtensionConsistency(first_extension_id_);
   }
 
   {
     SCOPED_TRACE("second balloon");
-    AcceptNotification(0);
+    ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
     CheckExtensionConsistency(first_extension_id_);
     CheckExtensionConsistency(second_extension_id_);
   }
@@ -325,13 +326,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, TwoExtensionsOneByOne) {
 
   {
     SCOPED_TRACE("first balloon");
-    AcceptNotification(0);
+    ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
     CheckExtensionConsistency(first_extension_id_);
   }
 
   {
     SCOPED_TRACE("second balloon");
-    AcceptNotification(0);
+    ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
     CheckExtensionConsistency(first_extension_id_);
     CheckExtensionConsistency(second_extension_id_);
   }
@@ -373,8 +374,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest,
   // Accept notification 1 before canceling notification 0.
   // Otherwise, on Linux and Windows, there is a race here, in which
   // canceled notifications do not immediately go away.
-  AcceptNotification(1);
-  CancelNotification(0);
+  ASSERT_NO_FATAL_FAILURE(AcceptNotification(1));
+  ASSERT_NO_FATAL_FAILURE(CancelNotification(0));
 
   SCOPED_TRACE("balloons done");
   ASSERT_EQ(size_before + 1, GetExtensionService()->extensions()->size());
@@ -405,7 +406,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest,
 
   {
     SCOPED_TRACE("second: balloon");
-    AcceptNotification(0);
+    ASSERT_NO_FATAL_FAILURE(AcceptNotification(0));
     CheckExtensionConsistency(first_extension_id_);
     CheckExtensionConsistency(second_extension_id_);
   }
@@ -424,7 +425,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrashRecoveryTest, CrashAndUninstall) {
 
   ASSERT_EQ(1U, CountBalloons());
   UninstallExtension(first_extension_id_);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   SCOPED_TRACE("after uninstalling");
   ASSERT_EQ(size_before + 1, GetExtensionService()->extensions()->size());

@@ -14,13 +14,13 @@ namespace content {
 
 // TODO(jln): have call sites provide a process / policy type to
 // InitializeSandbox().
-void InitializeSandbox() {
+bool InitializeSandbox() {
   bool seccomp_legacy_started = false;
+  bool seccomp_bpf_started = false;
   LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
   const std::string process_type =
       CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessType);
-
 
   // No matter what, it's always an error to call InitializeSandbox() after
   // threads have been created.
@@ -30,19 +30,21 @@ void InitializeSandbox() {
     // TODO(jln): change this into a CHECK() once we are more comfortable it
     // does not trigger.
     LOG(ERROR) << error_message;
-    return;
+    return false;
   }
 
-  // First, try to enable seccomp-legacy.
-  seccomp_legacy_started = linux_sandbox->StartSeccompLegacy(process_type);
+  // Attempt to limit the future size of the address space of the process.
+  linux_sandbox->LimitAddressSpace(process_type);
 
-  // Then, try to enable seccomp-bpf.
-  // If seccomp-legacy is enabled, seccomp-bpf initialization will crash
-  // instead of failing gracefully.
-  // TODO(markus): fix this (crbug.com/139872).
-  if (!seccomp_legacy_started) {
-    linux_sandbox->StartSeccompBpf(process_type);
+  // First, try to enable seccomp-bpf.
+  seccomp_bpf_started = linux_sandbox->StartSeccompBpf(process_type);
+
+  // If that fails, try to enable seccomp-legacy.
+  if (!seccomp_bpf_started) {
+    seccomp_legacy_started = linux_sandbox->StartSeccompLegacy(process_type);
   }
+
+  return seccomp_legacy_started || seccomp_bpf_started;
 }
 
 }  // namespace content

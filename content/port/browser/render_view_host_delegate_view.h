@@ -9,6 +9,8 @@
 
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
+#include "content/common/drag_event_source_info.h"
+#include "content/public/common/context_menu_source_type.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 
 class SkBitmap;
@@ -17,8 +19,8 @@ struct WebMenuItem;
 
 namespace gfx {
 class ImageSkia;
-class Point;
 class Rect;
+class Vector2d;
 }
 
 namespace content {
@@ -32,7 +34,8 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
  public:
   // A context menu should be shown, to be built using the context information
   // provided in the supplied params.
-  virtual void ShowContextMenu(const ContextMenuParams& params) {}
+  virtual void ShowContextMenu(const ContextMenuParams& params,
+                               ContextMenuSourceType type) {}
 
   // Shows a popup menu with the specified items.
   // This method should call RenderViewHost::DidSelectPopupMenuItem[s]() or
@@ -51,7 +54,8 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
   virtual void StartDragging(const WebDropData& drop_data,
                              WebKit::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
-                             const gfx::Point& image_offset) {}
+                             const gfx::Vector2d& image_offset,
+                             const DragEventSourceInfo& event_info) {}
 
   // The page wants to update the mouse cursor during a drag & drop operation.
   // |operation| describes the current operation (none, move, copy, link.)

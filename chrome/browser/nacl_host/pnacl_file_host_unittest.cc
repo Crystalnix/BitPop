@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/path_service.h"
+#include "base/test/scoped_path_override.h"
 #include "chrome/common/chrome_paths.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -16,20 +17,42 @@ using pnacl_file_host::PnaclCanOpenFile;
 // Try to pass a few funny filenames with a dummy pnacl directory set.
 TEST(PnaclFileHostTest, TestFilenamesWithPnaclPath) {
   FilePath kDummyPnaclPath(FILE_PATH_LITERAL("dummy_pnacl_path"));
-  ASSERT_TRUE(PathService::Override(chrome::DIR_PNACL_COMPONENT,
-                                    kDummyPnaclPath));
+  base::ScopedPathOverride pnach_dir_override(chrome::DIR_PNACL_COMPONENT,
+                                              kDummyPnaclPath);
   ASSERT_TRUE(PathService::Get(chrome::DIR_PNACL_COMPONENT,
                                &kDummyPnaclPath));
+
+  // Check allowed strings, and check that the expected prefix is added.
   FilePath out_path;
-  EXPECT_TRUE(PnaclCanOpenFile("manifest.json", &out_path));
+  EXPECT_TRUE(PnaclCanOpenFile("pnacl_json", &out_path));
   FilePath expected_path = kDummyPnaclPath.Append(
-      FILE_PATH_LITERAL("manifest.json"));
+      FILE_PATH_LITERAL("pnacl_public_pnacl_json"));
   EXPECT_EQ(out_path, expected_path);
 
-  EXPECT_TRUE(PnaclCanOpenFile("x86-32/llc", &out_path));
-  expected_path = kDummyPnaclPath.Append(FILE_PATH_LITERAL("x86-32/llc"));
+  EXPECT_TRUE(PnaclCanOpenFile("x86_32_llc", &out_path));
+  expected_path = kDummyPnaclPath.Append(
+      FILE_PATH_LITERAL("pnacl_public_x86_32_llc"));
   EXPECT_EQ(out_path, expected_path);
 
+  // Check character ranges.
+  EXPECT_FALSE(PnaclCanOpenFile(".xchars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("/xchars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("x/chars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("\\xchars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("x\\chars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("$xchars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("%xchars", &out_path));
+  EXPECT_FALSE(PnaclCanOpenFile("CAPS", &out_path));
+  const char non_ascii[] = "\xff\xfe";
+  EXPECT_FALSE(PnaclCanOpenFile(non_ascii, &out_path));
+
+  // Check file length restriction.
+  EXPECT_FALSE(PnaclCanOpenFile("thisstringisactuallywaaaaaaaaaaaaaaaaaaaaaaaa"
+                                "toolongwaytoolongwaaaaayyyyytoooooooooooooooo"
+                                "looooooooong",
+                                &out_path));
+
+  // Other bad files.
   EXPECT_FALSE(PnaclCanOpenFile("", &out_path));
   EXPECT_FALSE(PnaclCanOpenFile(".", &out_path));
   EXPECT_FALSE(PnaclCanOpenFile("..", &out_path));
@@ -44,6 +67,4 @@ TEST(PnaclFileHostTest, TestFilenamesWithPnaclPath) {
   EXPECT_FALSE(PnaclCanOpenFile("$HOME/.bashrc", &out_path));
 #endif
 
-  const char non_ascii[] = "\xff\xfe";
-  EXPECT_FALSE(PnaclCanOpenFile(non_ascii, &out_path));
 }

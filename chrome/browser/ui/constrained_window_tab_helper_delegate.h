@@ -5,21 +5,31 @@
 #ifndef CHROME_BROWSER_UI_CONSTRAINED_WINDOW_TAB_HELPER_DELEGATE_H_
 #define CHROME_BROWSER_UI_CONSTRAINED_WINDOW_TAB_HELPER_DELEGATE_H_
 
-class TabContents;
+namespace content {
+class WebContents;
+}
+
+namespace gfx {
+class Point;
+}
 
 class ConstrainedWindowTabHelperDelegate {
  public:
-  // Invoked prior to the TabContents showing a constrained window.
-  virtual void WillShowConstrainedWindow(TabContents* source);
-
   // Returns true if constrained windows should be focused. Default is true.
   virtual bool ShouldFocusConstrainedWindow();
 
-  // Changes the blocked state of |tab_contents|. TabContentses are considered
+  // Changes the blocked state of |web_contents|. WebContentses are considered
   // blocked while displaying a tab modal dialog. During that time renderer host
-  // will ignore any UI interaction within TabContents outside of the
+  // will ignore any UI interaction within WebContents outside of the
   // currently displaying dialog.
-  virtual void SetTabContentBlocked(TabContents* tab_contents, bool blocked);
+  virtual void SetTabContentBlocked(content::WebContents* web_contents,
+                                    bool blocked);
+
+  // Fills in |point| with the coordinates for positioning chrome style
+  // constrained windows. The constrained window should position itself such
+  // that its top center is at |point|. Return false if the default position
+  // should be used.
+  virtual bool GetConstrainedWindowTopCenter(gfx::Point* point);
 
  protected:
   virtual ~ConstrainedWindowTabHelperDelegate();

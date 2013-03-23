@@ -4,17 +4,14 @@
 
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
 
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/views/view.h"
 
-InfoBarBackground::InfoBarBackground(InfoBarDelegate::Type infobar_type)
-    : separator_color_(SK_ColorBLACK),
-      top_color_(GetInfoBarTopColor(infobar_type)),
-      bottom_color_(GetInfoBarBottomColor(infobar_type)) {
+InfoBarBackground::InfoBarBackground(SkColor top, SkColor bottom)
+    : separator_color_(SK_ColorBLACK), top_color_(top), bottom_color_(bottom) {
   SetNativeControlColor(
       color_utils::AlphaBlend(top_color_, bottom_color_, 128));
 }
@@ -27,14 +24,14 @@ void InfoBarBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   gradient_points[0].iset(0, 0);
   gradient_points[1].iset(0, view->height());
   SkColor gradient_colors[2] = { top_color_, bottom_color_ };
-  SkShader* gradient_shader = SkGradientShader::CreateLinear(
-      gradient_points, gradient_colors, NULL, 2, SkShader::kClamp_TileMode);
+  skia::RefPtr<SkShader> gradient_shader = skia::AdoptRef(
+      SkGradientShader::CreateLinear(gradient_points, gradient_colors, NULL, 2,
+                                     SkShader::kClamp_TileMode));
   SkPaint paint;
   paint.setStrokeWidth(SkIntToScalar(InfoBar::kSeparatorLineHeight));
   paint.setStyle(SkPaint::kFill_Style);
   paint.setStrokeCap(SkPaint::kRound_Cap);
-  paint.setShader(gradient_shader);
-  gradient_shader->unref();
+  paint.setShader(gradient_shader.get());
 
   InfoBarView* infobar = static_cast<InfoBarView*>(view);
   SkCanvas* canvas_skia = canvas->sk_canvas();

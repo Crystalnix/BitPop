@@ -9,10 +9,10 @@
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/common/extensions/features/feature.h"
-#include "chrome/common/extensions/features/simple_feature_provider.h"
+#include "extensions/common/error_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace errors = extension_manifest_errors;
@@ -22,11 +22,6 @@ namespace extensions {
 TEST_F(ExtensionManifestTest, BackgroundPermission) {
   LoadAndExpectError("background_permission.json",
                      errors::kBackgroundPermissionNeeded);
-
-  scoped_refptr<Extension> extension;
-  extension = LoadAndExpectSuccess("background_permission_alias.json");
-  EXPECT_TRUE(extension->HasAPIPermission(
-        extensions::APIPermission::kBackground));
 }
 
 TEST_F(ExtensionManifestTest, BackgroundScripts) {
@@ -68,11 +63,9 @@ TEST_F(ExtensionManifestTest, BackgroundPage) {
   EXPECT_EQ("/foo.html", extension->GetBackgroundURL().path());
 
   manifest->SetInteger(keys::kManifestVersion, 2);
-  Feature* feature = SimpleFeatureProvider::GetManifestFeatures()->
-      GetFeature("background_page");
   LoadAndExpectWarning(
       Manifest(manifest.get(), ""),
-      feature->GetErrorMessage(Feature::INVALID_MAX_MANIFEST_VERSION));
+      "'background_page' requires manifest version of 1 or lower.");
 }
 
 TEST_F(ExtensionManifestTest, BackgroundAllowNoJsAccess) {
@@ -89,7 +82,8 @@ TEST_F(ExtensionManifestTest, BackgroundAllowNoJsAccess) {
 TEST_F(ExtensionManifestTest, BackgroundPageWebRequest) {
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableExperimentalExtensionApis);
-  Feature::SetChannelForTesting(chrome::VersionInfo::CHANNEL_UNKNOWN);
+  Feature::ScopedCurrentChannel current_channel(
+      chrome::VersionInfo::CHANNEL_DEV);
 
   std::string error;
   scoped_ptr<DictionaryValue> manifest(

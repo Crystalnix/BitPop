@@ -13,7 +13,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
-#include "chrome/browser/extensions/script_executor.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -21,7 +21,6 @@
 class ExtensionAction;
 class ExtensionService;
 class GURL;
-class TabContents;
 
 namespace base {
 class ListValue;
@@ -36,25 +35,19 @@ namespace extensions {
 class Extension;
 
 // A LocationBarController which displays icons whenever a script is executing
-// in a tab. It accomplishes this two different ways:
-//
-// - For content_script declarations, this receives IPCs from the renderer
-//   notifying that a content script is running (either on this tab or one of
-//   its frames), which is recorded.
-// - Observes a ScriptExecutor so that successfully-executed scripts
-//   can cause a script badge to appear.
+// in a tab.
 //
 // When extension IDs are recorded a NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED
 // is sent, and those extensions will be returned from GetCurrentActions until
 // the next page navigation.
 class ScriptBadgeController
     : public LocationBarController,
-      public ScriptExecutor::Observer,
+      public TabHelper::ScriptExecutionObserver,
       public content::WebContentsObserver,
       public content::NotificationObserver {
  public:
-  explicit ScriptBadgeController(TabContents* tab_contents,
-                                 ScriptExecutor* script_executor);
+  explicit ScriptBadgeController(content::WebContents* web_contents,
+                                 TabHelper* tab_helper);
   virtual ~ScriptBadgeController();
 
   // LocationBarController implementation.
@@ -64,17 +57,19 @@ class ScriptBadgeController
                            int mouse_button) OVERRIDE;
   virtual void NotifyChange() OVERRIDE;
 
-  // ScriptExecutor::Observer implementation.
-  virtual void OnExecuteScriptFinished(
-      const std::string& extension_id,
-      const std::string& error,
+  // TabHelper::ScriptExecutionObserver implementation.
+  virtual void OnScriptsExecuted(
+      const content::WebContents* web_contents,
+      const ExecutingScriptsMap& extension_ids,
       int32 on_page_id,
-      const GURL& on_url,
-      const base::ListValue& script_result) OVERRIDE;
+      const GURL& on_url) OVERRIDE;
 
  private:
-  // Gets the ExtensionService for |tab_contents_|.
-  ExtensionService* GetExtensionService();
+  // Gets the Profile for |web_contents_|.
+  Profile* profile() const;
+
+  // Gets the ExtensionService for |web_contents_|.
+  ExtensionService* GetExtensionService() const;
 
   // Gets the current page ID, or -1 if no navigation entry has been committed.
   int32 GetPageID();
@@ -83,17 +78,11 @@ class ScriptBadgeController
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // IPC::Message handlers.
-  void OnContentScriptsExecuting(const std::set<std::string>& extension_ids,
-                                 int32 page_id,
-                                 const GURL& on_url);
 
   // Adds the extension's icon to the list of script badges.  Returns
   // the script badge ExtensionAction that was added, or NULL if
@@ -106,18 +95,8 @@ class ScriptBadgeController
   // Returns true if any change was made.
   bool MarkExtensionExecuting(const std::string& extension_id);
 
-  // Tries to erase an extension from the relevant collections, and returns
-  // whether any change was made.
-  bool EraseExtension(const Extension* extension);
-
-  // Our parent TabContents.
-  TabContents* tab_contents_;
-
-  // The current extension actions in the order they appeared.  These come from
-  // calls to ExecuteScript or getAttention on the current frame.
-  std::vector<ExtensionAction*> current_actions_;
-
-  // The extensions that have actions in current_actions_.
+  // The current extension actions.  These come from calls to ExecuteScript or
+  // getAttention on the current frame.
   std::set<std::string> extensions_in_current_actions_;
 
   // Listen to extension unloaded notifications.

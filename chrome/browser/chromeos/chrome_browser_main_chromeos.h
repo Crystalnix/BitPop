@@ -8,24 +8,37 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chrome_browser_main_linux.h"
+#include "chrome/browser/chromeos/version_loader.h"
+#include "chrome/common/cancelable_task_tracker.h"
+
+namespace contacts {
+class ContactManager;
+}
 
 namespace chromeos {
+
 class BrightnessObserver;
-class MediaDeviceNotifications;
+class MagnificationManager;
 class OutputObserver;
 class PowerButtonObserver;
 class PowerStateOverride;
+class PrimaryDisplaySwitchObserver;
+class RemovableDeviceNotificationsCros;
 class ResumeObserver;
 class ScreenDimmingObserver;
 class ScreenLockObserver;
 class SessionManagerObserver;
+class SuspendObserver;
 class UserActivityNotifier;
 class VideoActivityNotifier;
-}  // namespace chromeos
 
-namespace policy {
-class NetworkConfigurationUpdater;
-}  // namespace policy
+namespace default_app_order {
+class ExternalLoader;
+}
+
+namespace internal {
+class DBusServices;
+}
 
 class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
  public:
@@ -53,20 +66,30 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   // Set up field trial for low memory headroom settings.
   void SetupLowMemoryHeadroomFieldTrial();
 
-  scoped_ptr<chromeos::BrightnessObserver> brightness_observer_;
-  scoped_ptr<chromeos::OutputObserver> output_observer_;
-  scoped_ptr<chromeos::ResumeObserver> resume_observer_;
-  scoped_ptr<chromeos::ScreenLockObserver> screen_lock_observer_;
-  scoped_ptr<chromeos::SessionManagerObserver> session_manager_observer_;
-  scoped_ptr<chromeos::PowerButtonObserver> power_button_observer_;
-  scoped_ptr<chromeos::PowerStateOverride> power_state_override_;
-  scoped_ptr<chromeos::UserActivityNotifier> user_activity_notifier_;
-  scoped_ptr<chromeos::VideoActivityNotifier> video_activity_notifier_;
-  scoped_ptr<chromeos::ScreenDimmingObserver> screen_dimming_observer_;
-  scoped_ptr<policy::NetworkConfigurationUpdater> network_config_updater_;
-  scoped_refptr<chromeos::MediaDeviceNotifications> media_device_notifications_;
+  scoped_ptr<contacts::ContactManager> contact_manager_;
+  scoped_ptr<BrightnessObserver> brightness_observer_;
+  scoped_ptr<default_app_order::ExternalLoader> app_order_loader_;
+  scoped_ptr<OutputObserver> output_observer_;
+  scoped_ptr<SuspendObserver> suspend_observer_;
+  scoped_ptr<ResumeObserver> resume_observer_;
+  scoped_ptr<ScreenLockObserver> screen_lock_observer_;
+  scoped_ptr<PowerButtonObserver> power_button_observer_;
+  scoped_refptr<PowerStateOverride> power_state_override_;
+  scoped_ptr<PrimaryDisplaySwitchObserver> primary_display_switch_observer_;
+  scoped_ptr<UserActivityNotifier> user_activity_notifier_;
+  scoped_ptr<VideoActivityNotifier> video_activity_notifier_;
+  scoped_ptr<ScreenDimmingObserver> screen_dimming_observer_;
+  scoped_refptr<RemovableDeviceNotificationsCros>
+      removable_device_notifications_;
+
+  scoped_ptr<internal::DBusServices> dbus_services_;
+
+  VersionLoader cros_version_loader_;
+  CancelableTaskTracker tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainPartsChromeos);
 };
+
+}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_CHROME_BROWSER_MAIN_CHROMEOS_H_

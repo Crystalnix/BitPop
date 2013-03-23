@@ -65,9 +65,12 @@
 // call it with the appropriate |maxY| which depends on whether or not the
 // bookmark bar is shown as the NTP bubble or not (use
 // |-placeBookmarkBarBelowInfoBar|).
-- (CGFloat)layoutBookmarkBarAtMinX:(CGFloat)minX
-                              maxY:(CGFloat)maxY
-                             width:(CGFloat)width;
+- (CGFloat)layoutTopBookmarkBarAtMinX:(CGFloat)minX
+                                 maxY:(CGFloat)maxY
+                                width:(CGFloat)width;
+
+// Lays out the bookmark at the bottom of the content area.
+- (void)layoutBottomBookmarkBarInContentFrame:(NSRect)contentFrame;
 
 // Lay out the view which draws the background for the floating bar when in
 // presentation mode, with the given frame and presentation-mode-status. Should
@@ -92,13 +95,6 @@
 // sends a message to the renderer to resize.
 - (void)layoutTabContentArea:(NSRect)frame;
 
-// Should we show the normal bookmark bar?
-- (BOOL)shouldShowBookmarkBar;
-
-// Is the current page one for which the bookmark should be shown detached *if*
-// the normal bookmark bar is not shown?
-- (BOOL)shouldShowDetachedBookmarkBar;
-
 // Sets the toolbar's height to a value appropriate for the given compression.
 // Also adjusts the bookmark bar's height by the opposite amount in order to
 // keep the total height of the two views constant.
@@ -110,13 +106,13 @@
 - (BOOL)shouldShowPresentationModeToggle;
 
 // Moves views between windows in preparation for fullscreen mode on Snow
-// Leopard or earlier.  (Lion and later reuses the original window for
+// Leopard.  (Lion and later reuses the original window for
 // fullscreen mode, so there is no need to move views around.)  This method does
 // not position views; callers must also call |-layoutSubviews|.  This method
 // must not be called on Lion or later.
-- (void)moveViewsForFullscreenForSnowLeopardOrEarlier:(BOOL)fullscreen
-    regularWindow:(NSWindow*)regularWindow
-    fullscreenWindow:(NSWindow*)fullscreenWindow;
+- (void)moveViewsForFullscreenForSnowLeopard:(BOOL)fullscreen
+                               regularWindow:(NSWindow*)regularWindow
+                            fullscreenWindow:(NSWindow*)fullscreenWindow;
 
 // Sets presentation mode, creating the PresentationModeController if needed and
 // forcing a relayout.  If |forceDropdown| is YES, this method will always
@@ -129,8 +125,8 @@
 // Called on Snow Leopard or earlier to enter or exit fullscreen.  These methods
 // are internal implementations of |-setFullscreen:|.  These methods must not be
 // called on Lion or later.
-- (void)enterFullscreenForSnowLeopardOrEarlier;
-- (void)exitFullscreenForSnowLeopardOrEarlier;
+- (void)enterFullscreenForSnowLeopard;
+- (void)exitFullscreenForSnowLeopard;
 
 // Register or deregister for content view resize notifications.  These
 // notifications are used while transitioning to fullscreen mode in Lion or

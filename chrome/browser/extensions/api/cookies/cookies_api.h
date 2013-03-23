@@ -11,20 +11,17 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/extensions/api/cookies.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 #include "net/cookies/canonical_cookie.h"
-
-namespace base {
-class DictionaryValue;
-}
 
 namespace net {
 class URLRequestContextGetter;
@@ -34,12 +31,10 @@ namespace extensions {
 
 // Observes CookieMonster notifications and routes them as events to the
 // extension system.
-class ExtensionCookiesEventRouter : public content::NotificationObserver {
+class CookiesEventRouter : public content::NotificationObserver {
  public:
-  explicit ExtensionCookiesEventRouter(Profile* profile);
-  virtual ~ExtensionCookiesEventRouter();
-
-  void Init();
+  explicit CookiesEventRouter(Profile* profile);
+  virtual ~CookiesEventRouter();
 
  private:
   // content::NotificationObserver implementation.
@@ -49,13 +44,12 @@ class ExtensionCookiesEventRouter : public content::NotificationObserver {
 
   // Handler for the COOKIE_CHANGED event. The method takes the details of such
   // an event and constructs a suitable JSON formatted extension event from it.
-  void CookieChanged(Profile* profile,
-                     ChromeCookieDetails* details);
+  void CookieChanged(Profile* profile, ChromeCookieDetails* details);
 
   // This method dispatches events to the extension message service.
   void DispatchEvent(Profile* context,
-                     const char* event_name,
-                     const std::string& json_args,
+                     const std::string& event_name,
+                     scoped_ptr<base::ListValue> event_args,
                      GURL& cookie_domain);
 
   // Used for tracking registrations to CookieMonster notifications.
@@ -63,7 +57,7 @@ class ExtensionCookiesEventRouter : public content::NotificationObserver {
 
   Profile* profile_;
 
-  DISALLOW_COPY_AND_ASSIGN(ExtensionCookiesEventRouter);
+  DISALLOW_COPY_AND_ASSIGN(CookiesEventRouter);
 };
 
 // Serves as a base class for all cookies API functions, and defines some
@@ -196,6 +190,26 @@ class GetAllCookieStoresFunction : public CookiesFunction {
   // GetAllCookieStoresFunction is sync.
   virtual void Run() OVERRIDE;
   virtual bool RunImpl() OVERRIDE;
+};
+
+class CookiesAPI : public ProfileKeyedService,
+                   public extensions::EventRouter::Observer {
+ public:
+  explicit CookiesAPI(Profile* profile);
+  virtual ~CookiesAPI();
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
+      OVERRIDE;
+
+ private:
+  Profile* profile_;
+
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<CookiesEventRouter> cookies_event_router_;
 };
 
 }  // namespace extensions

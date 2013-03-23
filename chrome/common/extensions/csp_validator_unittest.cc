@@ -63,7 +63,7 @@ TEST(ExtensionCSPValidator, IsSecure) {
   EXPECT_TRUE(ContentSecurityPolicyIsSecure(
       "default-src 'unsafe-eval'", Extension::TYPE_EXTENSION));
   EXPECT_TRUE(ContentSecurityPolicyIsSecure(
-      "default-src 'unsafe-eval'", Extension::TYPE_PACKAGED_APP));
+      "default-src 'unsafe-eval'", Extension::TYPE_LEGACY_PACKAGED_APP));
 
   EXPECT_FALSE(ContentSecurityPolicyIsSecure(
       "default-src 'unsafe-eval'", Extension::TYPE_PLATFORM_APP));
@@ -88,13 +88,33 @@ TEST(ExtensionCSPValidator, IsSecure) {
   EXPECT_FALSE(ContentSecurityPolicyIsSecure(
       "default-src 'self' http:", Extension::TYPE_EXTENSION));
   EXPECT_FALSE(ContentSecurityPolicyIsSecure(
-      "default-src 'self' https://*", Extension::TYPE_EXTENSION));
+      "default-src 'self' google.com", Extension::TYPE_EXTENSION));
+
   EXPECT_FALSE(ContentSecurityPolicyIsSecure(
       "default-src 'self' *", Extension::TYPE_EXTENSION));
   EXPECT_FALSE(ContentSecurityPolicyIsSecure(
-      "default-src 'self' google.com", Extension::TYPE_EXTENSION));
+      "default-src 'self' *:*", Extension::TYPE_EXTENSION));
+  EXPECT_FALSE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' *:*/", Extension::TYPE_EXTENSION));
+  EXPECT_FALSE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' *:*/path", Extension::TYPE_EXTENSION));
+  EXPECT_FALSE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*:*", Extension::TYPE_EXTENSION));
+  EXPECT_FALSE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*:*/", Extension::TYPE_EXTENSION));
+  EXPECT_FALSE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*:*/path", Extension::TYPE_EXTENSION));
+
   EXPECT_TRUE(ContentSecurityPolicyIsSecure(
       "default-src 'self' https://*.google.com", Extension::TYPE_EXTENSION));
+  EXPECT_TRUE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*.google.com:1", Extension::TYPE_EXTENSION));
+  EXPECT_TRUE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*.google.com:*", Extension::TYPE_EXTENSION));
+  EXPECT_TRUE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*.google.com:1/", Extension::TYPE_EXTENSION));
+  EXPECT_TRUE(ContentSecurityPolicyIsSecure(
+      "default-src 'self' https://*.google.com:*/", Extension::TYPE_EXTENSION));
 
   EXPECT_TRUE(ContentSecurityPolicyIsSecure(
       "default-src 'self' http://127.0.0.1", Extension::TYPE_EXTENSION));
@@ -145,13 +165,15 @@ TEST(ExtensionCSPValidator, IsSandboxed) {
   EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
       "sandbox; img-src https://google.com", Extension::TYPE_EXTENSION));
 
-  // Extensions allow navigation and popups, platform apps don't.
+  // Extensions allow navigation, platform apps don't.
   EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
       "sandbox allow-top-navigation", Extension::TYPE_EXTENSION));
   EXPECT_FALSE(ContentSecurityPolicyIsSandboxed(
       "sandbox allow-top-navigation", Extension::TYPE_PLATFORM_APP));
+
+  // Popups are OK.
   EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
       "sandbox allow-popups", Extension::TYPE_EXTENSION));
-  EXPECT_FALSE(ContentSecurityPolicyIsSandboxed(
+  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
       "sandbox allow-popups", Extension::TYPE_PLATFORM_APP));
 }

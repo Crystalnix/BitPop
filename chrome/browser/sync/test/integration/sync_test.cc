@@ -20,6 +20,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/password_manager/encryptor.h"
 #include "chrome/browser/profiles/profile.h"
@@ -34,11 +35,11 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/gaia/gaia_urls.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -53,9 +54,9 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
-#include "sync/notifier/p2p_notifier.h"
-#include "sync/protocol/sync.pb.h"
 #include "sync/engine/sync_scheduler_impl.h"
+#include "sync/notifier/p2p_invalidator.h"
+#include "sync/protocol/sync.pb.h"
 
 using content::BrowserThread;
 
@@ -170,14 +171,14 @@ void SyncTest::SetUp() {
   Encryptor::UseMockKeychain(true);
 #endif
 
-  // TODO(tim): Use command line flag.
-  syncer::SyncSchedulerImpl::ForceShortInitialBackoffRetry();
-
   // Yield control back to the InProcessBrowserTest framework.
   InProcessBrowserTest::SetUp();
 }
 
 void SyncTest::TearDown() {
+  // Clear any mock gaia responses that might have been set.
+  ClearMockGaiaResponses();
+
   // Allow the InProcessBrowserTest framework to perform its tear down.
   InProcessBrowserTest::TearDown();
 
@@ -206,6 +207,9 @@ void SyncTest::AddTestSwitches(CommandLine* cl) {
   // TODO(sync): remove this once keystore encryption is enabled by default.
   if (!cl->HasSwitch(switches::kSyncKeystoreEncryption))
     cl->AppendSwitch(switches::kSyncKeystoreEncryption);
+
+  if (!cl->HasSwitch(switches::kSyncShortInitialRetryOverride))
+    cl->AppendSwitch(switches::kSyncShortInitialRetryOverride);
 }
 
 void SyncTest::AddOptionalTypesToCommandLine(CommandLine* cl) {}
@@ -280,6 +284,8 @@ bool SyncTest::SetupClients() {
   verifier_ = MakeProfile(FILE_PATH_LITERAL("Verifier"));
   ui_test_utils::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(verifier()));
+  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+      verifier(), Profile::EXPLICIT_ACCESS));
   ui_test_utils::WaitForTemplateURLServiceToLoad(
       TemplateURLServiceFactory::GetForProfile(verifier()));
   return (verifier_ != NULL);
@@ -303,7 +309,8 @@ void SyncTest::InitializeInstance(int index) {
 
   ui_test_utils::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(GetProfile(index)));
-
+  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+      GetProfile(index), Profile::EXPLICIT_ACCESS));
   ui_test_utils::WaitForTemplateURLServiceToLoad(
       TemplateURLServiceFactory::GetForProfile(GetProfile(index)));
 }
@@ -353,6 +360,9 @@ bool SyncTest::SetupSync() {
 }
 
 void SyncTest::CleanUpOnMainThread() {
+  // Some of the pending messages might rely on browser windows still being
+  // around, so run messages both before and after closing all browsers.
+  content::RunAllPendingInMessageLoop();
   // Close all browser windows.
   browser::CloseAllBrowsers();
   content::RunAllPendingInMessageLoop();
@@ -414,7 +424,7 @@ void SyncTest::SetupMockGaiaResponses() {
       true);
   fake_factory_->SetFakeResponse(
       GaiaUrls::GetInstance()->get_user_info_url(),
-      "email=user@gmail.com",
+      "email=user@gmail.com\ndisplayEmail=user@gmail.com",
       true);
   fake_factory_->SetFakeResponse(
       GaiaUrls::GetInstance()->issue_auth_token_url(),
@@ -452,6 +462,19 @@ void SyncTest::SetupMockGaiaResponses() {
       GaiaUrls::GetInstance()->oauth1_login_url(),
       "SID=sid\nLSID=lsid\nAuth=auth_token",
       true);
+}
+
+void SyncTest::ClearMockGaiaResponses() {
+  // Clear any mock gaia responses that might have been set.
+  if (fake_factory_.get()) {
+    fake_factory_->ClearFakeResponses();
+    fake_factory_.reset();
+  }
+
+  // Cancel any outstanding URL fetches and destroy the URLFetcherImplFactory we
+  // created.
+  net::URLFetcher::CancelAll();
+  factory_.reset();
 }
 
 // Start up a local sync server based on the value of server_type_, which
@@ -651,9 +674,12 @@ void SyncTest::EnableNotifications() {
 void SyncTest::TriggerNotification(syncer::ModelTypeSet changed_types) {
   ASSERT_TRUE(ServerSupportsNotificationControl());
   const std::string& data =
-      syncer::P2PNotificationData("from_server",
-                                         syncer::NOTIFY_ALL,
-                                         changed_types).ToString();
+      syncer::P2PNotificationData(
+          "from_server",
+          syncer::NOTIFY_ALL,
+          syncer::ObjectIdSetToInvalidationMap(
+              syncer::ModelTypeSetToObjectIdSet(changed_types), std::string()),
+          syncer::REMOTE_INVALIDATION).ToString();
   const std::string& path =
       std::string("chromiumsync/sendnotification?channel=") +
       syncer::kSyncP2PNotificationChannel + "&data=" + data;
@@ -705,6 +731,12 @@ void SyncTest::TriggerTransientError() {
 void SyncTest::TriggerAuthError() {
   ASSERT_TRUE(ServerSupportsErrorTriggering());
   std::string path = "chromiumsync/cred";
+  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
+}
+
+void SyncTest::TriggerXmppAuthError() {
+  ASSERT_TRUE(ServerSupportsErrorTriggering());
+  std::string path = "chromiumsync/xmppcred";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
 }
 

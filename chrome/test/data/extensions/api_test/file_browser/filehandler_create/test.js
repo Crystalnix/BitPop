@@ -31,7 +31,7 @@ function errorCallback(error) {
         break;
     };
   }
-  console.log(msg);
+
   chrome.test.fail(msg);
 }
 
@@ -49,9 +49,8 @@ function writeToFile(entry) {
     };
     writer.onwrite = chrome.test.succeed;
 
-    var bb = new WebKitBlobBuilder();
-    bb.append(FILE_CONTENTS);
-    writer.write(bb.getBlob('text/plain'));
+    var blob = new Blob([FILE_CONTENTS], {type: 'text/plain'});
+    writer.write(blob);
   }, errorCallback);
 }
 
@@ -60,7 +59,9 @@ chrome.test.runTests([
     // The test will call selectFile function and expect it to succeed.
     // When it gets the file entry, it verifies that the permissions given in
     // the method allow the extension to read/write to selected file.
-    chrome.fileBrowserHandler.selectFile({ suggestedName: 'some_file_name.txt'},
+    chrome.fileBrowserHandler.selectFile(
+        { suggestedName: 'some_file_name.txt',
+          allowedFileExtensions: ['txt', 'html'] },
         function(result) {
           chrome.test.assertTrue(!!result);
           chrome.test.assertTrue(result.success);

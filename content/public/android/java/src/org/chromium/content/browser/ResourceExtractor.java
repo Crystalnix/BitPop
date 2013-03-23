@@ -39,6 +39,11 @@ public class ResourceExtractor {
 
     private static String[] sMandatoryPaks = null;
 
+    // By default, we attempt to extract a pak file for the users
+    // current device locale. Use setExtractImplicitLocale() to
+    // change this behavior.
+    private static boolean sExtractImplicitLocalePak = true;
+
     private class ExtractTask extends AsyncTask<Void, Void, Void> {
         private static final int BUFFER_SIZE = 16 * 1024;
 
@@ -82,25 +87,29 @@ public class ResourceExtractor {
 
             StringBuilder p = new StringBuilder();
             for (String mandatoryPak : sMandatoryPaks) {
-                p.append("\\Q" + mandatoryPak + "\\E|");
+                if (p.length() > 0) p.append('|');
+                p.append("\\Q" + mandatoryPak + "\\E");
             }
 
-            // As well as the minimum required set of .paks above, we'll also add all .paks that
-            // we have for the users currently selected language.
+            if (sExtractImplicitLocalePak) {
+                if (p.length() > 0) p.append('|');
+                // As well as the minimum required set of .paks above, we'll also add all .paks that
+                // we have for the user's currently selected language.
 
-            // Android uses non-standard language codes for Indonesian, Hebrew, and Yiddish:
-            // http://developer.android.com/reference/java/util/Locale.html. Correct these codes
-            // so that we unpack the correct .pak file (see crbug.com/136933).
-            if (currentLanguage.equals("in")) {
-                currentLanguage = "id";
-            } else if (currentLanguage.equals("iw")) {
-                currentLanguage = "he";
-            } else if (currentLanguage.equals("ji")) {
-                currentLanguage = "yi";
+                // Android uses non-standard language codes for Indonesian, Hebrew, and Yiddish:
+                // http://developer.android.com/reference/java/util/Locale.html. Correct these codes
+                // so that we unpack the correct .pak file (see crbug.com/136933).
+                if (currentLanguage.equals("in")) {
+                    currentLanguage = "id";
+                } else if (currentLanguage.equals("iw")) {
+                    currentLanguage = "he";
+                } else if (currentLanguage.equals("ji")) {
+                    currentLanguage = "yi";
+                }
+
+                p.append(currentLanguage);
+                p.append("(-\\w+)?\\.pak");
             }
-
-            p.append(currentLanguage);
-            p.append("(-\\w+)?\\.pak");
             Pattern paksToInstall = Pattern.compile(p.toString());
 
             AssetManager manager = mContext.getResources().getAssets();
@@ -133,6 +142,13 @@ public class ResourceExtractor {
                         while ((count = is.read(buffer, 0, BUFFER_SIZE)) != -1) {
                             os.write(buffer, 0, count);
                         }
+                        os.flush();
+
+                        // Ensure something reasonable was written.
+                        if (output.length() == 0) {
+                            throw new IOException(file + " extracted with 0 length!");
+                        }
+
                         filenames.add(file);
                     } finally {
                         try {
@@ -147,6 +163,10 @@ public class ResourceExtractor {
                     }
                 }
             } catch (IOException e) {
+                // TODO(benm): See crbug/152413.
+                // Try to recover here, can we try again after deleting files instead of
+                // returning null? It might be useful to gather UMA here too to track if
+                // this happens with regularity.
                 Log.w(LOGTAG, "Exception unpacking required pak resources: " + e.getMessage());
                 deleteFiles(mContext);
                 return null;
@@ -237,6 +257,21 @@ public class ResourceExtractor {
         assert (sInstance == null || sInstance.mExtractTask == null)
                 : "Must be called before startExtractingResources is called";
         sMandatoryPaks = mandatoryPaks;
+
+    }
+
+    /**
+     * By default the ResourceExtractor will attempt to extract a pak resource for the users
+     * currently specified locale. This behavior can be changed with this function and is
+     * only needed by tests.
+     * @param extract False if we should not attempt to extract a pak file for
+     *         the users currently selected locale and try to extract only the
+     *         pak files specified in sMandatoryPaks.
+     */
+    public static void setExtractImplicitLocaleForTesting(boolean extract) {
+        assert (sInstance == null || sInstance.mExtractTask == null)
+                : "Must be called before startExtractingResources is called";
+        sExtractImplicitLocalePak = extract;
     }
 
     private ResourceExtractor(Context context) {

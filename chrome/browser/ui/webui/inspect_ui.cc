@@ -17,7 +17,6 @@
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager_backend.h"
@@ -117,8 +116,10 @@ DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh, bool is_tab) {
   WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
   std::string title;
   std::string target_type = is_tab ? kPageTargetType : "";
+  GURL url;
   GURL favicon_url;
   if (web_contents) {
+    url = web_contents->GetURL();
     title = UTF16ToUTF8(web_contents->GetTitle());
     content::NavigationController& controller = web_contents->GetController();
     content::NavigationEntry* entry = controller.GetActiveEntry();
@@ -130,7 +131,7 @@ DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh, bool is_tab) {
     if (profile) {
       ExtensionService* extension_service = profile->GetExtensionService();
       const extensions::Extension* extension = extension_service->
-          extensions()->GetByID(web_contents->GetURL().host());
+          extensions()->GetByID(url.host());
       if (extension) {
         target_type = kExtensionTargetType;
         title = extension->name();
@@ -140,7 +141,7 @@ DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh, bool is_tab) {
 
   return BuildTargetDescriptor(target_type,
                                HasClientHost(rvh),
-                               web_contents->GetURL(),
+                               url,
                                title,
                                favicon_url,
                                rvh->GetProcess()->GetID(),
@@ -178,7 +179,7 @@ void InspectDataSource::StartDataRequest(const std::string& path,
 
   std::set<RenderViewHost*> tab_rvhs;
   for (TabContentsIterator it; !it.done(); ++it)
-    tab_rvhs.insert(it->web_contents()->GetRenderViewHost());
+    tab_rvhs.insert(it->GetRenderViewHost());
 
   scoped_ptr<ListValue> rvh_list(new ListValue());
 
@@ -404,12 +405,10 @@ void InspectUI::RefreshUI() {
 void InspectUI::Observe(int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  if (source == content::Source<WebContents>(web_ui()->GetWebContents())) {
-    if (type == content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED)
-        StopListeningNotifications();
-    return;
-  }
-  RefreshUI();
+  if (source != content::Source<WebContents>(web_ui()->GetWebContents()))
+    RefreshUI();
+  else if (type == content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED)
+    StopListeningNotifications();
 }
 
 void InspectUI::StopListeningNotifications()

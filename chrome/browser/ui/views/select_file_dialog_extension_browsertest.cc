@@ -5,13 +5,14 @@
 #include "chrome/browser/ui/views/select_file_dialog_extension.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"  // ASCIIToUTF16
 #include "build/build_config.h"
+#include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,9 +20,11 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_paths.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_utils.h"
 #include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/base/dialogs/selected_file_info.h"
@@ -82,6 +85,8 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   };
 
   virtual void SetUp() OVERRIDE {
+    extensions::ComponentLoader::EnableBackgroundExtensionsForTesting();
+
     // Create the dialog wrapper object, but don't show it yet.
     listener_.reset(new MockSelectFileDialogListener());
     dialog_ = new SelectFileDialogExtension(listener_.get(), NULL);
@@ -112,9 +117,19 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   // Creates a file system mount point for a directory.
   void AddMountPoint(const FilePath& path) {
     fileapi::ExternalFileSystemMountPointProvider* provider =
-        BrowserContext::GetFileSystemContext(browser()->profile())->
-            external_provider();
+        BrowserContext::GetDefaultStoragePartition(browser()->profile())->
+            GetFileSystemContext()->external_provider();
     provider->AddLocalMountPoint(path);
+  }
+
+  void CheckJavascriptErrors() {
+    content::RenderViewHost* host = dialog_->GetRenderViewHost();
+    scoped_ptr<base::Value> value(host->ExecuteJavascriptAndGetValue(
+        string16(),
+        ASCIIToUTF16("window.JSErrorCount")));
+    int js_error_count = 0;
+    ASSERT_TRUE(value->GetAsInteger(&js_error_count));
+    ASSERT_EQ(0, js_error_count);
   }
 
   void OpenDialog(ui::SelectFileDialog::Type dialog_type,
@@ -152,6 +167,8 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
 
     // Dialog should be running now.
     ASSERT_TRUE(dialog_->IsRunning(owning_window));
+
+    ASSERT_NO_FATAL_FAILURE(CheckJavascriptErrors());
   }
 
   void TryOpeningSecondDialog(const gfx::NativeWindow& owning_window) {
@@ -201,7 +218,7 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   scoped_ptr<MockSelectFileDialogListener> second_listener_;
   scoped_refptr<SelectFileDialogExtension> second_dialog_;
 
-  ScopedTempDir tmp_dir_;
+  base::ScopedTempDir tmp_dir_;
   FilePath downloads_dir_;
 };
 
@@ -232,8 +249,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
   // FilePath() for default path.
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, FilePath(), owning_window,
-             "");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     FilePath(), owning_window, ""));
 
   // Press cancel button.
   CloseDialog(DIALOG_BTN_CANCEL, owning_window);
@@ -262,8 +279,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   // waiting for chrome.test.sendMessage('selection-change-complete').
   // The extension starts a Web Worker to read file metadata, so it may send
   // 'selection-change-complete' before 'worker-initialized'.  This is OK.
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, test_file, owning_window,
-             "selection-change-complete");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     test_file, owning_window,
+                                     "selection-change-complete"));
 
   // Click open button.
   CloseDialog(DIALOG_BTN_OK, owning_window);
@@ -288,8 +306,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   // chrome.test.sendMessage().
   // The extension starts a Web Worker to read file metadata, so it may send
   // 'directory-change-complete' before 'worker-initialized'.  This is OK.
-  OpenDialog(ui::SelectFileDialog::SELECT_SAVEAS_FILE, test_file,
-             owning_window, "directory-change-complete");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_SAVEAS_FILE,
+                                     test_file, owning_window,
+                                     "directory-change-complete"));
 
   // Click save button.
   CloseDialog(DIALOG_BTN_OK, owning_window);
@@ -307,8 +326,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, FilePath(), owning_window,
-             "");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     FilePath(), owning_window, ""));
 
   // Open a singleton tab in background.
   chrome::NavigateParams p(browser(), GURL("www.google.com"),
@@ -332,8 +351,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, FilePath(), owning_window,
-             "");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     FilePath(), owning_window, ""));
 
   TryOpeningSecondDialog(owning_window);
 

@@ -6,12 +6,10 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_nsobject.h"
-#include "base/property_bag.h"
 #include "base/sys_string_conversions.h"
 #import "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
@@ -61,7 +59,8 @@ public:
 
   // WebDialogWebContentsDelegate declarations.
   virtual void MoveContents(WebContents* source, const gfx::Rect& pos);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
+  virtual void HandleKeyboardEvent(content::WebContents* source,
+                                   const NativeWebKeyboardEvent& event);
   virtual void CloseContents(WebContents* source) OVERRIDE;
   virtual content::WebContents* OpenURLFromTab(
       content::WebContents* source,
@@ -70,7 +69,8 @@ public:
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
-                              bool user_gesture) OVERRIDE;
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
 
 private:
@@ -226,13 +226,15 @@ void WebDialogWindowDelegateBridge::AddNewContents(
     content::WebContents* new_contents,
     WindowOpenDisposition disposition,
     const gfx::Rect& initial_pos,
-    bool user_gesture) {
+    bool user_gesture,
+    bool* was_blocked) {
   if (delegate_ && delegate_->HandleAddNewContents(
           source, new_contents, disposition, initial_pos, user_gesture)) {
     return;
   }
   WebDialogWebContentsDelegate::AddNewContents(
-      source, new_contents, disposition, initial_pos, user_gesture);
+      source, new_contents, disposition, initial_pos, user_gesture,
+      was_blocked);
 }
 
 void WebDialogWindowDelegateBridge::LoadingStateChanged(
@@ -250,6 +252,7 @@ void WebDialogWindowDelegateBridge::MoveContents(WebContents* source,
 // We don't handle global keyboard shortcuts here, but that's fine since
 // they're all browser-specific. (This may change in the future.)
 void WebDialogWindowDelegateBridge::HandleKeyboardEvent(
+    content::WebContents* source,
     const NativeWebKeyboardEvent& event) {
   if (event.skip_in_browser || event.type == NativeWebKeyboardEvent::Char)
     return;
@@ -336,21 +339,19 @@ void WebDialogWindowDelegateBridge::HandleKeyboardEvent(
 }
 
 - (void)loadDialogContents {
-  tabContents_.reset(new TabContents(WebContents::Create(
-      delegate_->browser_context(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
-  [[self window]
-      setContentView:tabContents_->web_contents()->GetNativeView()];
-  tabContents_->web_contents()->SetDelegate(delegate_.get());
+  webContents_.reset(WebContents::Create(
+      WebContents::CreateParams(delegate_->browser_context())));
+  [[self window] setContentView:webContents_->GetNativeView()];
+  webContents_->SetDelegate(delegate_.get());
 
   // This must be done before loading the page; see the comments in
   // WebDialogUI.
-  WebDialogUI::GetPropertyAccessor().SetProperty(
-      tabContents_->web_contents()->GetPropertyBag(), delegate_.get());
+  WebDialogUI::SetDelegate(webContents_.get(), delegate_.get());
 
-  tabContents_->web_contents()->GetController().LoadURL(
+  webContents_->GetController().LoadURL(
       delegate_->GetDialogContentURL(),
       content::Referrer(),
-      content::PAGE_TRANSITION_START_PAGE,
+      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
       std::string());
 
   // TODO(akalin): add accelerator for ESC to close the dialog box.

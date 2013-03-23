@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
+#include "chrome/browser/ui/views/frame/minimize_button_metrics_win.h"
 #include "chrome/browser/ui/views/frame/native_browser_frame.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/native_widget_win.h"
@@ -44,14 +45,16 @@ class BrowserFrameWin : public views::NativeWidgetWin,
 
  protected:
   // Overridden from views::NativeWidgetWin:
-  virtual int GetShowState() const OVERRIDE;
-  virtual gfx::Insets GetClientAreaInsets() const OVERRIDE;
-  virtual void UpdateFrameAfterFrameChange() OVERRIDE;
-  virtual void OnEndSession(BOOL ending, UINT logoff) OVERRIDE;
-  virtual void OnInitMenuPopup(HMENU menu,
-                               UINT position,
-                               BOOL is_system_menu) OVERRIDE;
-  virtual void OnWindowPosChanged(WINDOWPOS* window_pos) OVERRIDE;
+  virtual int GetInitialShowState() const OVERRIDE;
+  virtual bool GetClientAreaInsets(gfx::Insets* insets) const OVERRIDE;
+  virtual void HandleFrameChanged() OVERRIDE;
+  virtual bool PreHandleMSG(UINT message,
+                            WPARAM w_param,
+                            LPARAM l_param,
+                            LRESULT* result) OVERRIDE;
+  virtual void PostHandleMSG(UINT message,
+                             WPARAM w_param,
+                             LPARAM l_param) OVERRIDE;
   virtual void OnScreenReaderDetected() OVERRIDE;
   virtual bool ShouldUseNativeFrame() const OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -59,9 +62,9 @@ class BrowserFrameWin : public views::NativeWidgetWin,
       const gfx::Rect& restored_bounds) OVERRIDE;
   virtual void ShowWithWindowState(ui::WindowShowState show_state) OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void OnActivate(UINT action, BOOL minimized, HWND window) OVERRIDE;
   virtual void FrameTypeChanged() OVERRIDE;
   virtual void SetFullscreen(bool fullscreen) OVERRIDE;
+  virtual void Activate() OVERRIDE;
 
   // Overridden from NativeBrowserFrame:
   virtual views::NativeWidget* AsNativeWidget() OVERRIDE;
@@ -72,12 +75,7 @@ class BrowserFrameWin : public views::NativeWidgetWin,
 
   // Overriden from views::ImageButton override:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event) OVERRIDE;
-
-  // Overridden from WindowImpl:
-  virtual LRESULT OnWndProc(UINT message,
-                            WPARAM w_param,
-                            LPARAM l_param) OVERRIDE;
+                             const ui::Event& event) OVERRIDE;
 
  private:
   // Updates the DWM with the frame bounds.
@@ -103,11 +101,6 @@ class BrowserFrameWin : public views::NativeWidgetWin,
   // Called when the frame is closed. Only applies to Windows 8 metro mode.
   void CloseImmersiveFrame();
 
-  // Calculates and caches the minimize button delta, i.e. the offset to be
-  // applied to the left/right coordinates of the client rectangle in case
-  // we fail to retrieve the offset of the minimize button.
-  void CacheMinimizeButtonDelta();
-
   // The BrowserView is our ClientView. This is a pointer to it.
   BrowserView* browser_view_;
 
@@ -121,8 +114,7 @@ class BrowserFrameWin : public views::NativeWidgetWin,
   // The wrapped system menu itself.
   scoped_ptr<views::NativeMenuWin> system_menu_;
 
-  // See CacheMinimizeButtonDelta() for details about this member.
-  int cached_minimize_button_x_delta_;
+  MinimizeButtonMetrics minimize_button_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserFrameWin);
 };

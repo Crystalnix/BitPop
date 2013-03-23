@@ -5,9 +5,12 @@
 #ifndef CHROME_BROWSER_NET_CHROME_NETWORK_DELEGATE_H_
 #define CHROME_BROWSER_NET_CHROME_NETWORK_DELEGATE_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/values.h"
 #include "net/base/network_delegate.h"
 
 class CookieSettings;
@@ -17,12 +20,20 @@ template<class T> class PrefMember;
 
 typedef PrefMember<bool> BooleanPrefMember;
 
+namespace base {
+class Value;
+}
+
 namespace chrome_browser_net {
-class CacheStats;
+class LoadTimeStats;
 }
 
 namespace extensions {
 class EventRouterForwarder;
+}
+
+namespace net {
+class URLRequest;
 }
 
 namespace policy {
@@ -33,36 +44,76 @@ class URLBlacklistManager;
 // add hooks into the network stack.
 class ChromeNetworkDelegate : public net::NetworkDelegate {
  public:
-  // If |profile| is NULL, events will be broadcasted to all profiles,
-  // otherwise they will only be sent to the specified profile.
-  // |enable_referrers| should be initialized on the UI thread (see below)
-  // beforehand. This object's owner is responsible for cleaning it up at
-  // shutdown. If |cookie_settings| is NULL, all cookies are enabled,
-  // otherwise, the settings are enforced on all observed network requests.
-  ChromeNetworkDelegate(
-      extensions::EventRouterForwarder* event_router,
-      ExtensionInfoMap* extension_info_map,
-      const policy::URLBlacklistManager* url_blacklist_manager,
-      void* profile,
-      CookieSettings* cookie_settings,
-      BooleanPrefMember* enable_referrers,
-      chrome_browser_net::CacheStats* cache_stats);
+  // |enable_referrers| (and all of the other optional PrefMembers) should be
+  // initialized on the UI thread (see below) beforehand. This object's owner is
+  // responsible for cleaning them up at shutdown.
+  ChromeNetworkDelegate(extensions::EventRouterForwarder* event_router,
+                        BooleanPrefMember* enable_referrers);
   virtual ~ChromeNetworkDelegate();
+
+  // Not inlined because we assign a scoped_refptr, which requires us to include
+  // the header file.
+  void set_extension_info_map(ExtensionInfoMap* extension_info_map);
+
+  void set_url_blacklist_manager(
+      const policy::URLBlacklistManager* url_blacklist_manager) {
+    url_blacklist_manager_ = url_blacklist_manager;
+  }
+
+  // If |profile| is NULL or not set, events will be broadcast to all profiles,
+  // otherwise they will only be sent to the specified profile.
+  void set_profile(void* profile) {
+    profile_ = profile;
+  }
+
+  // If |cookie_settings| is NULL or not set, all cookies are enabled,
+  // otherwise the settings are enforced on all observed network requests.
+  // Not inlined because we assign a scoped_refptr, which requires us to include
+  // the header file. Here we just forward-declare it.
+  void set_cookie_settings(CookieSettings* cookie_settings);
+
+  void set_load_time_stats(chrome_browser_net::LoadTimeStats* load_time_stats) {
+    load_time_stats_ = load_time_stats;
+  }
+
+  void set_enable_do_not_track(BooleanPrefMember* enable_do_not_track) {
+    enable_do_not_track_ = enable_do_not_track;
+  }
+
+  void set_force_google_safe_search(
+      BooleanPrefMember* force_google_safe_search) {
+    force_google_safe_search_ = force_google_safe_search;
+  }
 
   // Causes |OnCanThrottleRequest| to always return false, for all
   // instances of this object.
   static void NeverThrottleRequests();
 
-  // Binds |enable_referrers| to |pref_service| and moves it to the IO thread.
+  // Binds the pref members to |pref_service| and moves them to the IO thread.
+  // |enable_referrers| cannot be NULL, the others can.
   // This method should be called on the UI thread.
-  static void InitializeReferrersEnabled(BooleanPrefMember* enable_referrers,
-                                         PrefService* pref_service);
+  static void InitializePrefsOnUIThread(
+      BooleanPrefMember* enable_referrers,
+      BooleanPrefMember* enable_do_not_track,
+      BooleanPrefMember* force_google_safe_search,
+      PrefService* pref_service);
 
   // When called, all file:// URLs will now be accessible.  If this is not
   // called, then some platforms restrict access to file:// paths.
   static void AllowAccessToAllFiles();
 
+  // Creates a Value summary of the persistent state of the network session.
+  // The caller is responsible for deleting the returned value.
+  // Must be called on the UI thread.
+  static Value* HistoricNetworkStatsInfoToValue();
+
+  // Creates a Value summary of the state of the network session. The caller is
+  // responsible for deleting the returned value.
+  Value* SessionNetworkStatsInfoToValue() const;
+
  private:
+  friend class ChromeNetworkDelegateTest;
+
   // NetworkDelegate implementation.
   virtual int OnBeforeURLRequest(net::URLRequest* request,
                                  const net::CompletionCallback& callback,
@@ -75,7 +126,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual int OnHeadersReceived(
       net::URLRequest* request,
       const net::CompletionCallback& callback,
-      net::HttpResponseHeaders* original_response_headers,
+      const net::HttpResponseHeaders* original_response_headers,
       scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
       OVERRIDE;
   virtual void OnBeforeRedirect(net::URLRequest* request,
@@ -104,8 +155,11 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual int OnBeforeSocketStreamConnect(
       net::SocketStream* stream,
       const net::CompletionCallback& callback) OVERRIDE;
-  virtual void OnCacheWaitStateChange(const net::URLRequest& request,
-                                      CacheWaitState state) OVERRIDE;
+  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
+                                        RequestWaitState state) OVERRIDE;
+
+  void AccumulateContentLength(
+      int64 received_payload_byte_count, int64 original_payload_byte_count);
 
   scoped_refptr<extensions::EventRouterForwarder> event_router_;
   void* profile_;
@@ -115,6 +169,8 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
 
   // Weak, owned by our owner.
   BooleanPrefMember* enable_referrers_;
+  BooleanPrefMember* enable_do_not_track_;
+  BooleanPrefMember* force_google_safe_search_;
 
   // Weak, owned by our owner.
   const policy::URLBlacklistManager* url_blacklist_manager_;
@@ -131,7 +187,14 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   static bool g_never_throttle_requests_;
 
   // Pointer to IOThread global, should outlive ChromeNetworkDelegate.
-  chrome_browser_net::CacheStats* cache_stats_;
+  chrome_browser_net::LoadTimeStats* load_time_stats_;
+
+  // Total size of all content (excluding headers) that has been received
+  // over the network.
+  int64 received_content_length_;
+
+  // Total original size of all content before it was transferred.
+  int64 original_content_length_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNetworkDelegate);
 };

@@ -6,27 +6,22 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/balloon_collection_impl.h"
+#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
-#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/panels/base_panel_browser_test.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
-#include "chrome/browser/ui/panels/test_panel_mouse_watcher.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/common/show_desktop_notification_params.h"
 #include "ui/gfx/screen.h"
 
-
-// Refactor has only been done for Win and Mac panels so far.
-#if defined(OS_WIN) || defined(OS_MACOSX)
-
 // Desktop notification code subscribes to various panel change notifications
 // so that it knows when to adjusts balloon positions. In order to give
 // desktop notification code a chance to process the change notifications,
-// we call MessageLoopForUI::current()->RunAllPending() after any panel change
+// we call MessageLoopForUI::current()->RunUntilIdle() after any panel change
 // has been made.
 class PanelAndDesktopNotificationTest : public BasePanelBrowserTest {
  public:
@@ -45,16 +40,16 @@ class PanelAndDesktopNotificationTest : public BasePanelBrowserTest {
 
     g_browser_process->local_state()->SetInteger(
         prefs::kDesktopNotificationPosition, BalloonCollection::LOWER_RIGHT);
-    balloons_ = new BalloonCollectionImpl();
-    ui_manager_.reset(NotificationUIManager::Create(
-        g_browser_process->local_state(), balloons_));
+    ui_manager_.reset(new BalloonNotificationUIManager(
+        g_browser_process->local_state()));
+    ui_manager_->SetBalloonCollection(BalloonCollection::Create());
     service_.reset(new DesktopNotificationService(browser()->profile(),
                    ui_manager_.get()));
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
-    balloons_->RemoveAll();
-    MessageLoopForUI::current()->RunAllPending();
+    ui_manager_->balloon_collection()->RemoveAll();
+    MessageLoopForUI::current()->RunUntilIdle();
 
     service_.reset();
     ui_manager_.reset();
@@ -79,7 +74,7 @@ class PanelAndDesktopNotificationTest : public BasePanelBrowserTest {
         StandardTestNotification();
     EXPECT_TRUE(service()->ShowDesktopNotification(
           params, 0, 0, DesktopNotificationService::PageNotification));
-    MessageLoopForUI::current()->RunAllPending();
+    MessageLoopForUI::current()->RunUntilIdle();
     return balloons().front();
   }
 
@@ -88,7 +83,8 @@ class PanelAndDesktopNotificationTest : public BasePanelBrowserTest {
     // The position returned by the notification balloon is based on Mac's
     // vertically inverted orientation. We need to flip it so that it can
     // be compared against the position returned by the panel.
-    gfx::Size screen_size = gfx::Screen::GetPrimaryDisplay().size();
+    gfx::Size screen_size =
+        gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().size();
     return screen_size.height() - balloon->GetPosition().y();
 #else
     return balloon->GetPosition().y() + balloon->GetViewSize().height();
@@ -105,22 +101,21 @@ class PanelAndDesktopNotificationTest : public BasePanelBrowserTest {
 
   static void ResizePanelByMouseWithDelta(Panel* panel,
                                           panel::ResizingSides side,
-                                          const gfx::Point& delta) {
+                                          const gfx::Vector2d& delta) {
     PanelManager* panel_manager = PanelManager::GetInstance();
     gfx::Point mouse_location = panel->GetBounds().origin();
     panel_manager->StartResizingByMouse(panel, mouse_location, side);
-    panel_manager->ResizeByMouse(mouse_location.Add(delta));
+    panel_manager->ResizeByMouse(mouse_location + delta);
     panel_manager->EndResizingByMouse(false);
   }
 
   DesktopNotificationService* service() const { return service_.get(); }
   const BalloonCollection::Balloons& balloons() const {
-    return balloons_->GetActiveBalloons();
+    return ui_manager_->balloon_collection()->GetActiveBalloons();
   }
 
  private:
-  BalloonCollectionImpl* balloons_;  // Owned by NotificationUIManager.
-  scoped_ptr<NotificationUIManager> ui_manager_;
+  scoped_ptr<BalloonNotificationUIManager> ui_manager_;
   scoped_ptr<DesktopNotificationService> service_;
 };
 
@@ -131,7 +126,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, AddAndClosePanel) {
   // Create a docked panel. Expect that the notification balloon moves up to be
   // above the panel.
   Panel* panel = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom, panel->GetBounds().y());
   EXPECT_LT(balloon_bottom, original_balloon_bottom);
@@ -139,31 +134,25 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, AddAndClosePanel) {
   // Close the panel. Expect the notification balloon moves back to its original
   // position.
   panel->Close();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   EXPECT_EQ(original_balloon_bottom, GetBalloonBottomPosition(balloon));
 }
 
 IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest,
                        ExpandAndCollapsePanel) {
-  // Disable mouse watcher since we don't want mouse movements to affect panel
-  // testing for title-only state.
-  PanelManager* panel_manager = PanelManager::GetInstance();
-  PanelMouseWatcher* mouse_watcher = new TestPanelMouseWatcher();
-  panel_manager->SetMouseWatcherForTesting(mouse_watcher);
-
   Balloon* balloon = CreateBalloon();
 
   // Create a docked panel. Expect that the notification balloon moves up to be
   // above the panel.
   Panel* panel = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_on_expanded = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_on_expanded, panel->GetBounds().y());
 
   // Minimize the panel. Expect that the notification balloon moves down, but
   // still above the minimized panel.
   panel->Minimize();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_on_minimized = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_on_minimized, panel->GetBounds().y());
   EXPECT_LT(balloon_bottom_on_expanded, balloon_bottom_on_minimized);
@@ -172,7 +161,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest,
   // notification balloon moves up a little bit to be still above the title-only
   // panel.
   panel->FlashFrame(true);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_on_title_only = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_on_title_only, panel->GetBounds().y());
   EXPECT_LT(balloon_bottom_on_title_only, balloon_bottom_on_minimized);
@@ -181,7 +170,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest,
   // Expand the panel. Expect that the notification balloon moves up to go back
   // to the same position when the panel is expanded.
   panel->Restore();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   EXPECT_EQ(balloon_bottom_on_expanded, GetBalloonBottomPosition(balloon));
 
   PanelManager::GetInstance()->CloseAll();
@@ -198,14 +187,14 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, DragNarrowPanel) {
   Panel* tall_panel = CreateDockedPanel("1", gfx::Rect(0, 0, panel_width, 300));
   Panel* short_panel = CreateDockedPanel(
       "2", gfx::Rect(0, 0, panel_width, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom, tall_panel->GetBounds().y());
 
   // Swap 2 docked panels by dragging. Expect that the notificaition balloon
   // remains at the same position.
   DragPanelToMouseLocation(tall_panel, short_panel->GetBounds().origin());
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   EXPECT_EQ(balloon_bottom, GetBalloonBottomPosition(balloon));
 
   PanelManager::GetInstance()->CloseAll();
@@ -222,14 +211,14 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, DragWidePanel) {
   Panel* tall_panel = CreateDockedPanel("1", gfx::Rect(0, 0, panel_width, 300));
   Panel* short_panel = CreateDockedPanel(
       "2", gfx::Rect(0, 0, panel_width, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_before_drag = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_before_drag, tall_panel->GetBounds().y());
 
   // Swap 2 docked panels by dragging. Expect that the notificaiton balloon
   // moves down to be just above the short panel.
   DragPanelToMouseLocation(tall_panel, short_panel->GetBounds().origin());
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_drag = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_after_drag, short_panel->GetBounds().y());
   EXPECT_LT(balloon_bottom_before_drag, balloon_bottom_after_drag);
@@ -245,25 +234,25 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, DetachAndAttachPanel) {
   // Create a docked panel. Expect that the notification balloon moves up to be
   // above the panel.
   Panel* panel = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_panel_created = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_after_panel_created, panel->GetBounds().y());
   EXPECT_LT(balloon_bottom_after_panel_created, original_balloon_bottom);
 
   // Detach the panel. Expect that the notification balloon moves down to its
   // original position.
-  panel_manager->MovePanelToStrip(
-      panel, PanelStrip::DETACHED, PanelStrip::DEFAULT_POSITION);
-  MessageLoopForUI::current()->RunAllPending();
-  EXPECT_EQ(PanelStrip::DETACHED, panel->panel_strip()->type());
+  panel_manager->MovePanelToCollection(
+      panel, PanelCollection::DETACHED, PanelCollection::DEFAULT_POSITION);
+  MessageLoopForUI::current()->RunUntilIdle();
+  EXPECT_EQ(PanelCollection::DETACHED, panel->collection()->type());
   EXPECT_EQ(original_balloon_bottom, GetBalloonBottomPosition(balloon));
 
   // Reattach the panel. Expect that the notification balloon moves above the
   // panel.
-  panel_manager->MovePanelToStrip(
-      panel, PanelStrip::DOCKED, PanelStrip::DEFAULT_POSITION);
-  MessageLoopForUI::current()->RunAllPending();
-  EXPECT_EQ(PanelStrip::DOCKED, panel->panel_strip()->type());
+  panel_manager->MovePanelToCollection(
+      panel, PanelCollection::DOCKED, PanelCollection::DEFAULT_POSITION);
+  MessageLoopForUI::current()->RunUntilIdle();
+  EXPECT_EQ(PanelCollection::DOCKED, panel->collection()->type());
   EXPECT_EQ(balloon_bottom_after_panel_created,
             GetBalloonBottomPosition(balloon));
 
@@ -277,7 +266,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, ResizePanel) {
   // Create a docked panel. Expect that the notification balloon moves up to be
   // above the panel.
   Panel* panel = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom = GetBalloonBottomPosition(balloon);
   gfx::Rect original_bounds = panel->GetBounds();
   EXPECT_LT(balloon_bottom, original_bounds.y());
@@ -289,7 +278,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, ResizePanel) {
   new_bounds.set_width(new_bounds.width() + resize_delta.x());
   new_bounds.set_height(new_bounds.height() + resize_delta.y());
   panel->SetBounds(new_bounds);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom2 = GetBalloonBottomPosition(balloon);
   EXPECT_EQ(balloon_bottom - resize_delta.y(), balloon_bottom2);
 
@@ -299,7 +288,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, ResizePanel) {
   new_bounds.set_width(new_bounds.width() + resize_delta.x());
   new_bounds.set_height(new_bounds.height() + resize_delta.y());
   panel->SetBounds(new_bounds);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom3 = GetBalloonBottomPosition(balloon);
   EXPECT_EQ(balloon_bottom2 - resize_delta.y(), balloon_bottom3);
 
@@ -312,23 +301,23 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, ResizePanelByMouse) {
   // Create a docked panel. Expect that the notification balloon moves up to be
   // above the panel.
   Panel* panel = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom = GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom, panel->GetBounds().y());
 
   // Resize the panel to make it taller. Expect that the notification balloon
   // moves further up by the amount of enlarge offset.
-  gfx::Point drag_delta(-50, -100);
+  gfx::Vector2d drag_delta(-50, -100);
   ResizePanelByMouseWithDelta(panel, panel::RESIZE_TOP_LEFT, drag_delta);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom2 = GetBalloonBottomPosition(balloon);
   EXPECT_EQ(balloon_bottom + drag_delta.y(), balloon_bottom2);
 
   // Resize the panel to make it shorter. Expect that the notification balloon
   // moves down by the amount of shrink offset.
-  drag_delta = gfx::Point(0, 60);
+  drag_delta = gfx::Vector2d(0, 60);
   ResizePanelByMouseWithDelta(panel, panel::RESIZE_TOP, drag_delta);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom3 = GetBalloonBottomPosition(balloon);
   EXPECT_EQ(balloon_bottom2 + drag_delta.y(), balloon_bottom3);
 
@@ -346,7 +335,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, InteractWithTwoPanels) {
   // above the short panel.
   Panel* short_panel = CreateDockedPanel(
       "1", gfx::Rect(0, 0, panel_width, 150));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_short_panel_created =
       GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_after_short_panel_created,
@@ -356,7 +345,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, InteractWithTwoPanels) {
   // Create a tall panel. Expect that the notification balloon moves further up
   // to be above the tall panel.
   Panel* tall_panel = CreateDockedPanel("2", gfx::Rect(0, 0, panel_width, 200));
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_tall_panel_created =
       GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_after_tall_panel_created,
@@ -367,7 +356,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, InteractWithTwoPanels) {
   // Minimize tall panel. Expect that the notification balloon moves down to the
   // same position when short panel is first created.
   tall_panel->Minimize();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_tall_panel_minimized =
       GetBalloonBottomPosition(balloon);
   EXPECT_EQ(balloon_bottom_after_short_panel_created,
@@ -376,7 +365,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, InteractWithTwoPanels) {
   // Minimize short panel. Expect that the notification balloon moves further
   // down.
   short_panel->Minimize();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_both_panels_minimized =
       GetBalloonBottomPosition(balloon);
   EXPECT_LT(balloon_bottom_after_both_panels_minimized,
@@ -391,7 +380,7 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, InteractWithTwoPanels) {
   // Expand short panel. Expect that the notification balloon moves further up
   // to the same position when short panel is first created.
   short_panel->Restore();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   int balloon_bottom_after_short_panel_expanded =
       GetBalloonBottomPosition(balloon);
   EXPECT_EQ(balloon_bottom_after_short_panel_created,
@@ -400,15 +389,13 @@ IN_PROC_BROWSER_TEST_F(PanelAndDesktopNotificationTest, InteractWithTwoPanels) {
   // Close tall panel. Expect that the notification balloon moves down to the
   // same position when short panel is first created.
   tall_panel->Close();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   EXPECT_EQ(balloon_bottom_after_short_panel_created,
             GetBalloonBottomPosition(balloon));
 
   // Close short panel. Expect that the notification balloo moves back to its
   // original position.
   short_panel->Close();
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
   EXPECT_EQ(original_balloon_bottom, GetBalloonBottomPosition(balloon));
 }
-
-#endif // OS_WIN || OS_MACOSX

@@ -49,9 +49,6 @@ class UITestBase {
   enum ProfileType {
     DEFAULT_THEME = 0,
     COMPLEX_THEME = 1,
-    NATIVE_THEME = 2,
-    CUSTOM_FRAME = 3,
-    CUSTOM_FRAME_NATIVE_THEME = 4,
   };
 
   // ********* Utility functions *********
@@ -140,12 +137,6 @@ class UITestBase {
   // Polls up to kWaitForActionMaxMsec ms to attain a specific tab count. Will
   // assert that the tab count is valid at the end of the wait.
   void WaitUntilTabCount(int tab_count);
-
-  // Waits until the Bookmark bar has stopped animating and become fully visible
-  // (if |wait_for_open| is true) or fully hidden (if |wait_for_open| is false).
-  // This function can time out (in which case it returns false).
-  bool WaitForBookmarkBarVisibilityChange(BrowserProxy* browser,
-                                          bool wait_for_open);
 
   // Closes the specified browser.  Returns true if the browser was closed.
   // This call is blocking.  |application_closed| is set to true if this was

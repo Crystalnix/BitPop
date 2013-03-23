@@ -10,15 +10,14 @@
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "content/common/indexed_db/indexed_db_dispatcher.h"
 
-using content::IndexedDBKey;
-using content::SerializedScriptValue;
 using WebKit::WebExceptionCode;
 using WebKit::WebIDBCallbacks;
 using WebKit::WebIDBKey;
-using WebKit::WebSerializedScriptValue;
 
-RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(int32 idb_cursor_id)
-    : idb_cursor_id_(idb_cursor_id),
+namespace content {
+
+RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(int32 ipc_cursor_id)
+    : ipc_cursor_id_(ipc_cursor_id),
       continue_count_(0),
       used_prefetches_(0),
       pending_onsuccess_callbacks_(0),
@@ -31,22 +30,10 @@ RendererWebIDBCursorImpl::~RendererWebIDBCursorImpl() {
   // this object. But, if that ever changed, then we'd need to invalidate
   // any such pointers.
   IndexedDBDispatcher::Send(new IndexedDBHostMsg_CursorDestroyed(
-      idb_cursor_id_));
+      ipc_cursor_id_));
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->CursorDestroyed(idb_cursor_id_);
-}
-
-WebIDBKey RendererWebIDBCursorImpl::key() const {
-  return key_;
-}
-
-WebIDBKey RendererWebIDBCursorImpl::primaryKey() const {
-  return primary_key_;
-}
-
-WebSerializedScriptValue RendererWebIDBCursorImpl::value() const {
-  return value_;
+  dispatcher->CursorDestroyed(ipc_cursor_id_);
 }
 
 void RendererWebIDBCursorImpl::advance(unsigned long count,
@@ -57,7 +44,7 @@ void RendererWebIDBCursorImpl::advance(unsigned long count,
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
   ResetPrefetchCache();
   dispatcher->RequestIDBCursorAdvance(count, callbacks.release(),
-                                      idb_cursor_id_, &ec);
+                                      ipc_cursor_id_, &ec);
 }
 
 void RendererWebIDBCursorImpl::continueFunction(const WebIDBKey& key,
@@ -81,7 +68,7 @@ void RendererWebIDBCursorImpl::continueFunction(const WebIDBKey& key,
       // Request pre-fetch.
       dispatcher->RequestIDBCursorPrefetch(prefetch_amount_,
                                            callbacks.release(),
-                                           idb_cursor_id_, &ec);
+                                           ipc_cursor_id_, &ec);
 
       // Increase prefetch_amount_ exponentially.
       prefetch_amount_ *= 2;
@@ -97,14 +84,14 @@ void RendererWebIDBCursorImpl::continueFunction(const WebIDBKey& key,
 
   dispatcher->RequestIDBCursorContinue(IndexedDBKey(key),
                                        callbacks.release(),
-                                       idb_cursor_id_, &ec);
+                                       ipc_cursor_id_, &ec);
 }
 
 void RendererWebIDBCursorImpl::deleteFunction(WebIDBCallbacks* callbacks,
                                               WebExceptionCode& ec) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->RequestIDBCursorDelete(callbacks, idb_cursor_id_, &ec);
+  dispatcher->RequestIDBCursorDelete(callbacks, ipc_cursor_id_, &ec);
 }
 
 void RendererWebIDBCursorImpl::postSuccessHandlerCallback() {
@@ -118,15 +105,6 @@ void RendererWebIDBCursorImpl::postSuccessHandlerCallback() {
 
   if (pending_onsuccess_callbacks_ == 0)
     ResetPrefetchCache();
-}
-
-void RendererWebIDBCursorImpl::SetKeyAndValue(
-    const IndexedDBKey& key,
-    const IndexedDBKey& primary_key,
-    const SerializedScriptValue& value) {
-  key_ = key;
-  primary_key_ = primary_key;
-  value_ = value;
 }
 
 void RendererWebIDBCursorImpl::SetPrefetchData(
@@ -147,9 +125,9 @@ void RendererWebIDBCursorImpl::CachedContinue(
   DCHECK(prefetch_primary_keys_.size() == prefetch_keys_.size());
   DCHECK(prefetch_values_.size() == prefetch_keys_.size());
 
-  key_ = prefetch_keys_.front();
-  primary_key_ = prefetch_primary_keys_.front();
-  value_ = prefetch_values_.front();
+  IndexedDBKey key = prefetch_keys_.front();
+  IndexedDBKey primary_key = prefetch_primary_keys_.front();
+  SerializedScriptValue value = prefetch_values_.front();
 
   prefetch_keys_.pop_front();
   prefetch_primary_keys_.pop_front();
@@ -157,7 +135,8 @@ void RendererWebIDBCursorImpl::CachedContinue(
   used_prefetches_++;
 
   pending_onsuccess_callbacks_++;
-  callbacks->onSuccessWithContinuation();
+
+  callbacks->onSuccess(key, primary_key, value);
 }
 
 void RendererWebIDBCursorImpl::ResetPrefetchCache() {
@@ -173,10 +152,12 @@ void RendererWebIDBCursorImpl::ResetPrefetchCache() {
       IndexedDBDispatcher::ThreadSpecificInstance();
   dispatcher->RequestIDBCursorPrefetchReset(used_prefetches_,
                                             prefetch_keys_.size(),
-                                            idb_cursor_id_);
+                                            ipc_cursor_id_);
   prefetch_keys_.clear();
   prefetch_primary_keys_.clear();
   prefetch_values_.clear();
 
   pending_onsuccess_callbacks_ = 0;
 }
+
+}  // namespace content

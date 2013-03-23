@@ -154,18 +154,18 @@ const char kImagePngType[] = "image/png";
 class CWSIntentsRegistryTest : public testing::Test {
  public:
   virtual void SetUp() {
-    scoped_refptr<TestURLRequestContextGetter> context_getter(
-        new TestURLRequestContextGetter(ui_loop_.message_loop_proxy()));
+    scoped_refptr<net::TestURLRequestContextGetter> context_getter(
+        new net::TestURLRequestContextGetter(ui_loop_.message_loop_proxy()));
     registry_.reset(context_getter);
   }
 
   virtual void TearDown() {
     // Pump messages posted by the main thread.
-    ui_loop_.RunAllPending();
+    ui_loop_.RunUntilIdle();
   }
 
   CWSIntentsRegistry::IntentExtensionList WaitForResults() {
-    ui_loop_.RunAllPending();
+    ui_loop_.RunUntilIdle();
     return extensions_;
   }
 
@@ -208,8 +208,7 @@ TEST_F(CWSIntentsRegistryTest, ValidQuery) {
   EXPECT_EQ(0, extensions_[0].num_ratings);
   EXPECT_EQ(0.0, extensions_[0].average_rating);
   EXPECT_EQ(std::string(kValidManifest), UTF16ToUTF8(extensions_[0].manifest));
-  EXPECT_EQ(std::string("nhkckhebbbncbkefhcpcgepcgfaclehe"),
-            UTF16ToUTF8(extensions_[0].id) );
+  EXPECT_EQ(std::string("nhkckhebbbncbkefhcpcgepcgfaclehe"), extensions_[0].id);
   EXPECT_EQ(std::string("Sidd's Intent App"),
             UTF16ToUTF8(extensions_[0].name));
   EXPECT_EQ(std::string(kValidIconURL), extensions_[0].icon_url.spec());

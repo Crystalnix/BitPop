@@ -8,14 +8,18 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "ui/views/focus/focus_manager.h"
-#include "ui/views/view.h"
 
 using views::FocusManager;
-using views::View;
 
 typedef InProcessBrowserTest BrowserViewTest;
 
-IN_PROC_BROWSER_TEST_F(BrowserViewTest, DISABLED_FullscreenClearsFocus) {
+// Active window and focus testing is not reliable on Windows crbug.com/79493
+#if defined(OS_WIN)
+#define MAYBE_FullscreenClearsFocus DISABLED_FullscreenClearsFocus
+#else
+#define MAYBE_FullscreenClearsFocus FullscreenClearsFocus
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserViewTest, MAYBE_FullscreenClearsFocus) {
   BrowserView* browser_view = static_cast<BrowserView*>(browser()->window());
   LocationBarView* location_bar_view = browser_view->GetLocationBarView();
   FocusManager* focus_manager = browser_view->GetFocusManager();

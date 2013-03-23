@@ -8,7 +8,9 @@
 #include "base/bind_helpers.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/win/win_util.h"
 #include "chrome/browser/first_run/first_run.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
@@ -25,6 +27,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/install_util.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
@@ -36,6 +39,7 @@
 #include "ui/base/l10n/l10n_font_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/font.h"
+#include "ui/views/widget/widget.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 
 using content::BrowserThread;
@@ -50,10 +54,12 @@ const char kSetAsDefaultBrowserHistogram[] = "DefaultBrowser.InteractionResult";
 // ACCEPTED: user pressed Next and made Chrome default.
 // DECLINED: user simply closed the dialog without making Chrome default.
 // REGRETTED: user pressed Next but then elected a different default browser.
+// ACCEPTED_IMMERSE: as above with a switch to metro mode.
 enum MakeChromeDefaultResult {
   MAKE_CHROME_DEFAULT_ACCEPTED,
   MAKE_CHROME_DEFAULT_DECLINED,
   MAKE_CHROME_DEFAULT_REGRETTED,
+  MAKE_CHROME_DEFAULT_ACCEPTED_IMMERSE,
   MAKE_CHROME_DEFAULT_MAX
 };
 
@@ -79,7 +85,6 @@ ChromeWebUIDataSource* CreateSetAsDefaultBrowserUIHTMLSource() {
 // interaction.
 class ResponseDelegate {
  public:
-  virtual void SetChromeShutdownRequired(bool shutdown_chrome) = 0;
   virtual void SetDialogInteractionResult(MakeChromeDefaultResult result) = 0;
 
  protected:
@@ -111,12 +116,11 @@ class SetAsDefaultBrowserHandler
   void HandleLaunchSetDefaultBrowserFlow(const ListValue* args);
 
   // Close this web ui.
-  void ConcludeInteraction(bool mark_success);
+  void ConcludeInteraction(MakeChromeDefaultResult interaction_result);
 
-  // If required and possible, spawns a new Chrome in Metro mode and closes the
-  // current instance. Windows 8 only, on earlier systems it will simply close
-  // this UI.
-  void ActivateMetroChrome();
+  // Returns true if Chrome should be restarted in immersive mode upon being
+  // made the default browser.
+  bool ShouldAttemptImmersiveRestart();
 
   scoped_refptr<ShellIntegration::DefaultBrowserWorker> default_browser_worker_;
   bool set_default_returned_;
@@ -155,29 +159,15 @@ void SetAsDefaultBrowserHandler::SetDefaultWebClientUIState(
   if (state == ShellIntegration::STATE_NOT_DEFAULT && set_default_result_) {
     // The operation concluded, but Chrome is still not the default.
     // If the call has succeeded, this suggests user has decided not to make
-    // chrome the default. We fold this UI and move on.
-    if (response_delegate_) {
-      response_delegate_->SetDialogInteractionResult(
-          MAKE_CHROME_DEFAULT_REGRETTED);
-    }
-
-    ConcludeInteraction(false);
+    // chrome the default.
+    ConcludeInteraction(MAKE_CHROME_DEFAULT_REGRETTED);
   } else if (state == ShellIntegration::STATE_IS_DEFAULT) {
-    if (response_delegate_) {
-      response_delegate_->SetDialogInteractionResult(
-          MAKE_CHROME_DEFAULT_ACCEPTED);
-    }
-
-    if (!Profile::FromWebUI(web_ui())->GetPrefs()->GetBoolean(
-            prefs::kSuppressSwitchToMetroModeOnSetDefault)) {
-      BrowserThread::PostTask(
-          BrowserThread::FILE, FROM_HERE,
-          base::Bind(&SetAsDefaultBrowserHandler::ActivateMetroChrome,
-                     base::Unretained(this)));
-    } else {
-      ConcludeInteraction(false);
-    }
+    ConcludeInteraction(ShouldAttemptImmersiveRestart() ?
+        MAKE_CHROME_DEFAULT_ACCEPTED_IMMERSE : MAKE_CHROME_DEFAULT_ACCEPTED);
   }
+
+  // Otherwise, keep the dialog open since the user probably didn't make a
+  // choice.
 }
 
 void SetAsDefaultBrowserHandler::OnSetAsDefaultConcluded(bool call_result) {
@@ -196,11 +186,14 @@ void SetAsDefaultBrowserHandler::HandleLaunchSetDefaultBrowserFlow(
   default_browser_worker_->StartSetAsDefault();
 }
 
-void SetAsDefaultBrowserHandler::ConcludeInteraction(bool close_chrome) {
+void SetAsDefaultBrowserHandler::ConcludeInteraction(
+    MakeChromeDefaultResult interaction_result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  WebContents* contents = web_ui()->GetWebContents();
+
   if (response_delegate_)
-    response_delegate_->SetChromeShutdownRequired(close_chrome);
+    response_delegate_->SetDialogInteractionResult(interaction_result);
+
+  WebContents* contents = web_ui()->GetWebContents();
 
   if (contents) {
     content::WebContentsDelegate* delegate = contents->GetDelegate();
@@ -209,26 +202,10 @@ void SetAsDefaultBrowserHandler::ConcludeInteraction(bool close_chrome) {
   }
 }
 
-void SetAsDefaultBrowserHandler::ActivateMetroChrome() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  FilePath cur_chrome_exe;
-  bool sentinel_removed = false;
-  if (PathService::Get(base::FILE_EXE, &cur_chrome_exe) &&
-      first_run::IsChromeFirstRun() &&
-      InstallUtil::IsPerUserInstall(cur_chrome_exe.value().c_str())) {
-    // If this is per-user install, we will have to remove the sentinel file
-    // to assure the user goes through the intended 'first-run flow'.
-    sentinel_removed = first_run::RemoveSentinel();
-  }
-
-  bool metro_chrome_activated = ShellIntegration::ActivateMetroChrome();
-  if (!metro_chrome_activated && sentinel_removed)
-      first_run::CreateSentinel();
-
-  BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&SetAsDefaultBrowserHandler::ConcludeInteraction,
-                   base::Unretained(this), metro_chrome_activated));
+bool SetAsDefaultBrowserHandler::ShouldAttemptImmersiveRestart() {
+  return (base::win::IsMachineATablet() &&
+          !Profile::FromWebUI(web_ui())->GetPrefs()->GetBoolean(
+              prefs::kSuppressSwitchToMetroModeOnSetDefault));
 }
 
 // A web dialog delegate implementation for when 'Make Chrome Metro' UI
@@ -258,16 +235,20 @@ class SetAsDefaultBrowserDialogImpl : public ui::WebDialogDelegate,
       const content::ContextMenuParams& params) OVERRIDE;
 
   // Overridden from ResponseDelegate:
-  virtual void SetChromeShutdownRequired(bool shutdown_chrome);
   virtual void SetDialogInteractionResult(MakeChromeDefaultResult result);
 
  private:
+  // Reset the first-run sentinel file, so must be called on the FILE thread.
+  // This is needed if the browser should be restarted in immersive mode.
+  // The method is static because the dialog could be destroyed
+  // before the task arrives on the FILE thread.
+  static void AttemptImmersiveFirstRunRestartOnFileThread();
+
   Profile* profile_;
   Browser* browser_;
   mutable bool owns_handler_;
   SetAsDefaultBrowserHandler* handler_;
-  MakeChromeDefaultResult dialog_interation_result_;
-  bool response_is_close_chrome_;
+  MakeChromeDefaultResult dialog_interaction_result_;
 
   DISALLOW_COPY_AND_ASSIGN(SetAsDefaultBrowserDialogImpl);
 };
@@ -278,8 +259,7 @@ SetAsDefaultBrowserDialogImpl::SetAsDefaultBrowserDialogImpl(Profile* profile,
       browser_(browser),
       owns_handler_(true),
       handler_(new SetAsDefaultBrowserHandler(this)),
-      dialog_interation_result_(MAKE_CHROME_DEFAULT_DECLINED),
-      response_is_close_chrome_(false) {
+      dialog_interaction_result_(MAKE_CHROME_DEFAULT_DECLINED) {
 }
 
 SetAsDefaultBrowserDialogImpl::~SetAsDefaultBrowserDialogImpl() {
@@ -288,8 +268,15 @@ SetAsDefaultBrowserDialogImpl::~SetAsDefaultBrowserDialogImpl() {
 }
 
 void SetAsDefaultBrowserDialogImpl::ShowDialog() {
-  chrome::ShowWebDialog(browser_->window()->GetNativeWindow(),
-                        browser_->profile(), this);
+  // Use a NULL parent window to make sure that the dialog will have an item
+  // in the Windows task bar. The code below will make it highlight if the
+  // dialog is not in the foreground.
+  gfx::NativeWindow native_window = chrome::ShowWebDialog(NULL,
+                                                          browser_->profile(),
+                                                          this);
+  views::Widget* widget = views::Widget::GetWidgetForNativeWindow(
+      native_window);
+  widget->FlashFrame(true);
 }
 
 ui::ModalType SetAsDefaultBrowserDialogImpl::GetDialogModalType() const {
@@ -330,20 +317,25 @@ void SetAsDefaultBrowserDialogImpl::OnDialogClosed(
     const std::string& json_retval) {
   // Register the user's response in UMA.
   UMA_HISTOGRAM_ENUMERATION(kSetAsDefaultBrowserHistogram,
-                            dialog_interation_result_,
+                            dialog_interaction_result_,
                             MAKE_CHROME_DEFAULT_MAX);
 
-  if (response_is_close_chrome_) {
-    // If Metro Chrome has been activated, we should close this process.
-    // We are restarting as metro now.
-    BrowserList::CloseAllBrowsersWithProfile(profile_);
+  if (dialog_interaction_result_ == MAKE_CHROME_DEFAULT_ACCEPTED_IMMERSE) {
+    BrowserThread::PostTask(
+        BrowserThread::FILE, FROM_HERE,
+        base::Bind(&SetAsDefaultBrowserDialogImpl::
+            AttemptImmersiveFirstRunRestartOnFileThread));
   } else {
-    // This will be false if the user closed the dialog without doing anything
-    // or if operation failed for any reason (including invocation under a
-    // Windows version earlier than 8).
-    // In such case we just carry on with a normal chrome session. However, for
-    // the purpose of surfacing this dialog the actual browser window had to
-    // remain hidden. Now it's the time to show it.
+    // If the user explicitly elected *not to* make Chrome default, we won't
+    // ask again.
+    if (dialog_interaction_result_ == MAKE_CHROME_DEFAULT_REGRETTED) {
+      PrefService* prefs = profile_->GetPrefs();
+      prefs->SetBoolean(prefs::kCheckDefaultBrowser, false);
+    }
+
+    // Carry on with a normal chrome session. For the purpose of surfacing this
+    // dialog the actual browser window had to remain hidden. Now it's time to
+    // show it.
     BrowserWindow* window = browser_->window();
     WebContents* contents = chrome::GetActiveWebContents(browser_);
     window->Show();
@@ -368,14 +360,28 @@ bool SetAsDefaultBrowserDialogImpl::HandleContextMenu(
   return true;
 }
 
-void SetAsDefaultBrowserDialogImpl::SetChromeShutdownRequired(
-    bool shutdown_chrome) {
-  response_is_close_chrome_ = shutdown_chrome;
-}
-
 void SetAsDefaultBrowserDialogImpl::SetDialogInteractionResult(
     MakeChromeDefaultResult result) {
-  dialog_interation_result_ = result;
+  dialog_interaction_result_ = result;
+}
+
+void SetAsDefaultBrowserDialogImpl::
+    AttemptImmersiveFirstRunRestartOnFileThread() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  // If the sentinel was created for this launch, remove it before restarting
+  // in immersive mode so that the user is taken through the full first-run
+  // flow there.
+  if (first_run::IsChromeFirstRun())
+    first_run::RemoveSentinel();
+
+  // Do a straight-up restart rather than a mode-switch restart.
+  // delegate_execute.exe will choose an immersive launch on the basis of the
+  // same IsMachineATablet check, but will not store this as the user's
+  // choice.
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&browser::AttemptRestart));
 }
 
 }  // namespace

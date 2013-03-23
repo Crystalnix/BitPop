@@ -8,6 +8,7 @@
 #include "chrome/browser/chromeos/contacts/contact_database.h"
 
 #include "chrome/browser/chromeos/contacts/contact.pb.h"
+#include "chrome/browser/chromeos/contacts/contact_map.h"
 
 namespace contacts {
 
@@ -16,7 +17,8 @@ class FakeContactDatabase : public ContactDatabaseInterface {
  public:
   FakeContactDatabase();
 
-  const ScopedVector<Contact>& contacts() const { return contacts_; }
+  const ContactMap& contacts() const { return contacts_; }
+  const UpdateMetadata& metadata() const { return metadata_; }
 
   void set_init_success(bool success) { init_success_ = success; }
   void set_save_success(bool success) { save_success_ = success; }
@@ -34,7 +36,8 @@ class FakeContactDatabase : public ContactDatabaseInterface {
   virtual void DestroyOnUIThread() OVERRIDE;
   virtual void Init(const FilePath& database_dir,
                     InitCallback callback) OVERRIDE;
-  virtual void SaveContacts(scoped_ptr<ContactPointers> contacts,
+  virtual void SaveContacts(scoped_ptr<ContactPointers> contacts_to_save,
+                            scoped_ptr<ContactIds> contact_ids_to_delete,
                             scoped_ptr<UpdateMetadata> metadata,
                             bool is_full_update,
                             SaveCallback callback) OVERRIDE;
@@ -44,8 +47,10 @@ class FakeContactDatabase : public ContactDatabaseInterface {
   virtual ~FakeContactDatabase();
 
  private:
-  // Merges |updated_contacts| into |contacts_|.
-  void MergeContacts(const ContactPointers& updated_contacts);
+  // Merges |updated_contacts| into |contacts_| and deletes contacts with IDs in
+  // |contact_ids_to_delete|.
+  void MergeContacts(const ContactPointers& updated_contacts,
+                     const ContactIds& contact_ids_to_delete);
 
   // Should we report success in response to various requests?
   bool init_success_;
@@ -57,7 +62,7 @@ class FakeContactDatabase : public ContactDatabaseInterface {
   int num_saved_contacts_;
 
   // Currently-stored contacts and metadata.
-  ScopedVector<Contact> contacts_;
+  ContactMap contacts_;
   UpdateMetadata metadata_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeContactDatabase);

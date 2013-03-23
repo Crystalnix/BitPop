@@ -54,8 +54,8 @@
 #endif  // defined(OS_WIN)
 
 using media::VideoDecodeAccelerator;
-using video_test_util::RenderingHelper;
 
+namespace content {
 namespace {
 
 // Values optionally filled in from flags; see main() below.
@@ -226,6 +226,8 @@ class GLRenderingVDAClient : public VideoDecodeAccelerator::Client {
 
   // Simple getters for inspecting the state of the Client.
   int num_done_bitstream_buffers() { return num_done_bitstream_buffers_; }
+  int num_skipped_fragments() { return num_skipped_fragments_; }
+  int num_queued_fragments() { return num_queued_fragments_; }
   int num_decoded_frames() { return num_decoded_frames_; }
   double frames_per_second();
   bool decoder_deleted() { return !decoder_.get(); }
@@ -238,11 +240,15 @@ class GLRenderingVDAClient : public VideoDecodeAccelerator::Client {
   // Delete the associated OMX decoder helper.
   void DeleteDecoder();
 
+  // Compute & return the first encoded bytes (including a start frame) to send
+  // to the decoder, starting at |start_pos| and returning
+  // |num_fragments_per_decode| units. Skips to the first decodable position.
+  std::string GetBytesForFirstFragments(size_t start_pos, size_t* end_pos);
   // Compute & return the next encoded bytes to send to the decoder (based on
   // |start_pos| & |num_fragments_per_decode_|).
   std::string GetBytesForNextFragments(size_t start_pos, size_t* end_pos);
   // Helpers for GetRangeForNextFragments above.
-  void GetBytesForNextNALUs(size_t start_pos, size_t* end_pos);  // For h.264.
+  void GetBytesForNextNALU(size_t start_pos, size_t* end_pos);  // For h.264.
   std::string GetBytesForNextFrames(
       size_t start_pos, size_t* end_pos);  // For VP8.
 
@@ -264,6 +270,8 @@ class GLRenderingVDAClient : public VideoDecodeAccelerator::Client {
   int reset_after_frame_num_;
   int delete_decoder_state_;
   ClientState state_;
+  int num_skipped_fragments_;
+  int num_queued_fragments_;
   int num_decoded_frames_;
   int num_done_bitstream_buffers_;
   PictureBufferById picture_buffers_by_id_;
@@ -296,6 +304,7 @@ GLRenderingVDAClient::GLRenderingVDAClient(
       reset_after_frame_num_(reset_after_frame_num),
       delete_decoder_state_(delete_decoder_state),
       state_(CS_CREATED),
+      num_skipped_fragments_(0), num_queued_fragments_(0),
       num_decoded_frames_(0), num_done_bitstream_buffers_(0),
       profile_(profile) {
   CHECK_GT(num_fragments_per_decode, 0);
@@ -310,7 +319,7 @@ GLRenderingVDAClient::~GLRenderingVDAClient() {
   SetState(CS_DESTROYED);
 }
 
-#if !defined(OS_MACOSX) && defined(ARCH_CPU_X86_FAMILY)
+#if !defined(OS_MACOSX)
 static bool DoNothingReturnTrue() { return true; }
 #endif
 
@@ -328,7 +337,8 @@ void GLRenderingVDAClient::CreateDecoder() {
       new OmxVideoDecodeAccelerator(
           static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
           static_cast<EGLContext>(rendering_helper_->GetGLContext()),
-          this));
+          this,
+          base::Bind(&DoNothingReturnTrue)));
 #elif defined(ARCH_CPU_X86_FAMILY)
   decoder_.reset(new VaapiVideoDecodeAccelerator(
       static_cast<Display*>(rendering_helper_->GetGLDisplay()),
@@ -468,8 +478,7 @@ void GLRenderingVDAClient::NotifyError(VideoDecodeAccelerator::Error error) {
 }
 
 static bool LookingAtNAL(const std::string& encoded, size_t pos) {
-  return pos + 3 < encoded.size() &&
-      encoded[pos] == 0 && encoded[pos + 1] == 0 &&
+  return encoded[pos] == 0 && encoded[pos + 1] == 0 &&
       encoded[pos + 2] == 0 && encoded[pos + 3] == 1;
 }
 
@@ -497,31 +506,54 @@ void GLRenderingVDAClient::DeleteDecoder() {
     SetState(static_cast<ClientState>(i));
 }
 
+std::string GLRenderingVDAClient::GetBytesForFirstFragments(
+    size_t start_pos, size_t* end_pos) {
+  if (profile_ < media::H264PROFILE_MAX) {
+    *end_pos = start_pos;
+    while (*end_pos + 4 < encoded_data_.size()) {
+      if ((encoded_data_[*end_pos + 4] & 0x1f) == 0x7) // SPS start frame
+        return GetBytesForNextFragments(*end_pos, end_pos);
+      GetBytesForNextNALU(*end_pos, end_pos);
+      num_skipped_fragments_++;
+    }
+    *end_pos = start_pos;
+    return std::string();
+  }
+  DCHECK_LE(profile_, media::VP8PROFILE_MAX);
+  return GetBytesForNextFragments(start_pos, end_pos);
+}
+
 std::string GLRenderingVDAClient::GetBytesForNextFragments(
     size_t start_pos, size_t* end_pos) {
   if (profile_ < media::H264PROFILE_MAX) {
-    GetBytesForNextNALUs(start_pos, end_pos);
+    size_t new_end_pos = start_pos;
+    *end_pos = start_pos;
+    for (int i = 0; i < num_fragments_per_decode_; ++i) {
+      GetBytesForNextNALU(*end_pos, &new_end_pos);
+      if (*end_pos == new_end_pos)
+        break;
+      *end_pos = new_end_pos;
+      num_queued_fragments_++;
+    }
     return encoded_data_.substr(start_pos, *end_pos - start_pos);
   }
   DCHECK_LE(profile_, media::VP8PROFILE_MAX);
   return GetBytesForNextFrames(start_pos, end_pos);
 }
 
-void GLRenderingVDAClient::GetBytesForNextNALUs(
+void GLRenderingVDAClient::GetBytesForNextNALU(
     size_t start_pos, size_t* end_pos) {
   *end_pos = start_pos;
+  if (*end_pos + 4 > encoded_data_.size())
+    return;
   CHECK(LookingAtNAL(encoded_data_, start_pos));
-  for (int i = 0; i < num_fragments_per_decode_; ++i) {
-    *end_pos += 4;
-    while (*end_pos + 3 < encoded_data_.size() &&
-           !LookingAtNAL(encoded_data_, *end_pos)) {
-      ++*end_pos;
-    }
-    if (*end_pos + 3 >= encoded_data_.size()) {
-      *end_pos = encoded_data_.size();
-      return;
-    }
+  *end_pos += 4;
+  while (*end_pos + 4 <= encoded_data_.size() &&
+         !LookingAtNAL(encoded_data_, *end_pos)) {
+    ++*end_pos;
   }
+  if (*end_pos + 3 >= encoded_data_.size())
+    *end_pos = encoded_data_.size();
 }
 
 std::string GLRenderingVDAClient::GetBytesForNextFrames(
@@ -534,8 +566,9 @@ std::string GLRenderingVDAClient::GetBytesForNextFrames(
   for (int i = 0; i < num_fragments_per_decode_; ++i) {
     uint32 frame_size = *reinterpret_cast<uint32*>(&encoded_data_[*end_pos]);
     *end_pos += 12;  // Skip frame header.
-    bytes.append(encoded_data_.substr(*end_pos, *end_pos + frame_size));
+    bytes.append(encoded_data_.substr(*end_pos, frame_size));
     *end_pos += frame_size;
+    num_queued_fragments_++;
     if (*end_pos + 12 >= encoded_data_.size())
       return bytes;
   }
@@ -553,8 +586,13 @@ void GLRenderingVDAClient::DecodeNextFragments() {
     return;
   }
   size_t end_pos;
-  std::string next_fragment_bytes =
-      GetBytesForNextFragments(encoded_data_next_pos_to_decode_, &end_pos);
+  std::string next_fragment_bytes;
+  if (encoded_data_next_pos_to_decode_ == 0) {
+    next_fragment_bytes = GetBytesForFirstFragments(0, &end_pos);
+  } else {
+    next_fragment_bytes =
+        GetBytesForNextFragments(encoded_data_next_pos_to_decode_, &end_pos);
+  }
   size_t next_fragment_size = next_fragment_bytes.size();
 
   // Populate the shared memory buffer w/ the fragments, duplicate its handle,
@@ -565,7 +603,9 @@ void GLRenderingVDAClient::DecodeNextFragments() {
   base::SharedMemoryHandle dup_handle;
   CHECK(shm.ShareToProcess(base::Process::Current().handle(), &dup_handle));
   media::BitstreamBuffer bitstream_buffer(
-      next_bitstream_buffer_id_++, dup_handle, next_fragment_size);
+      next_bitstream_buffer_id_, dup_handle, next_fragment_size);
+  // Mask against 30 bits, to avoid (undefined) wraparound on signed integer.
+  next_bitstream_buffer_id_ = (next_bitstream_buffer_id_ + 1) & 0x3FFFFFFF;
   decoder_->Decode(bitstream_buffer);
   ++outstanding_decodes_;
   encoded_data_next_pos_to_decode_ = end_pos;
@@ -755,9 +795,11 @@ TEST_P(VideoDecodeAcceleratorTest, TestSimpleDecode) {
     GLRenderingVDAClient* client = clients[i];
     if (num_frames > 0)
       EXPECT_EQ(client->num_decoded_frames(), num_frames);
-    if (num_fragments > 0 && reset_after_frame_num < 0) {
+    if (reset_after_frame_num < 0) {
+      EXPECT_EQ(num_fragments, client->num_skipped_fragments() +
+                client->num_queued_fragments());
       EXPECT_EQ(client->num_done_bitstream_buffers(),
-                ceil(static_cast<double>(num_fragments) /
+                ceil(static_cast<double>(client->num_queued_fragments()) /
                      num_fragments_per_decode));
     }
     LOG(INFO) << "Decoder " << i << " fps: " << client->frames_per_second();
@@ -856,6 +898,7 @@ INSTANTIATE_TEST_CASE_P(
 // - Test frame size changes mid-stream
 
 }  // namespace
+}  // namespace content
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);  // Removes gtest-specific args.
@@ -876,7 +919,7 @@ int main(int argc, char **argv) {
   for (CommandLine::SwitchMap::const_iterator it = switches.begin();
        it != switches.end(); ++it) {
     if (it->first == "test_video_data") {
-      test_video_data = it->second.c_str();
+      content::test_video_data = it->second.c_str();
       continue;
     }
     if (it->first == "v" || it->first == "vmodule")
@@ -885,14 +928,18 @@ int main(int argc, char **argv) {
   }
 
   base::ShadowingAtExitManager at_exit_manager;
-  RenderingHelper::InitializePlatform();
+  content::RenderingHelper::InitializePlatform();
 
 #if defined(OS_WIN)
-  DXVAVideoDecodeAccelerator::PreSandboxInitialization();
+  base::WaitableEvent event(true, false);
+  content::DXVAVideoDecodeAccelerator::PreSandboxInitialization(
+      base::Bind(&base::WaitableEvent::Signal,
+                 base::Unretained(&event)));
+  event.Wait();
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
-  OmxVideoDecodeAccelerator::PreSandboxInitialization();
+  content::OmxVideoDecodeAccelerator::PreSandboxInitialization();
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
-  VaapiVideoDecodeAccelerator::PreSandboxInitialization();
+  content::VaapiVideoDecodeAccelerator::PreSandboxInitialization();
 #endif
 
   return RUN_ALL_TESTS();

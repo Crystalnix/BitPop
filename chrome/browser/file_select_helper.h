@@ -61,12 +61,8 @@ class FileSelectHelper
           id_(id) {}
     virtual ~DirectoryListerDispatchDelegate() {}
     virtual void OnListFile(
-        const net::DirectoryLister::DirectoryListerData& data) OVERRIDE {
-      parent_->OnListFile(id_, data);
-    }
-    virtual void OnListDone(int error) OVERRIDE {
-      parent_->OnListDone(id_, error);
-    }
+        const net::DirectoryLister::DirectoryListerData& data) OVERRIDE;
+    virtual void OnListDone(int error) OVERRIDE;
    private:
     // This FileSelectHelper owns this object.
     FileSelectHelper* parent_;
@@ -76,7 +72,7 @@ class FileSelectHelper
   };
 
   void RunFileChooser(content::RenderViewHost* render_view_host,
-                      content::WebContents* tab_contents,
+                      content::WebContents* web_contents,
                       const content::FileChooserParams& params);
   void RunFileChooserOnFileThread(
       const content::FileChooserParams& params);
@@ -130,8 +126,8 @@ class FileSelectHelper
   //   http://whatwg.org/html/number-state.html#attr-input-accept
   // |accept_types| contains only valid lowercased MIME types or file extensions
   // beginning with a period (.).
-  ui::SelectFileDialog::FileTypeInfo* GetFileTypesFromAcceptType(
-      const std::vector<string16>& accept_types);
+  static scoped_ptr<ui::SelectFileDialog::FileTypeInfo>
+      GetFileTypesFromAcceptType(const std::vector<string16>& accept_types);
 
   // Check the accept type is valid. It is expected to be all lower case with
   // no whitespace.

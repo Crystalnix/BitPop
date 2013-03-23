@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/common/content_settings.h"
@@ -99,6 +100,43 @@ class SimplePolicyHandler : public TypeCheckingPolicyHandler {
   DISALLOW_COPY_AND_ASSIGN(SimplePolicyHandler);
 };
 
+// A policy handler implementation that maps a string enum list to an int enum
+// list as specified by a mapping table.
+class StringToIntEnumListPolicyHandler : public TypeCheckingPolicyHandler {
+ public:
+  struct MappingEntry {
+    const char* enum_value;
+    int int_value;
+  };
+
+  StringToIntEnumListPolicyHandler(const char* policy_name,
+                                   const char* pref_path,
+                                   const MappingEntry* mapping_begin,
+                                   const MappingEntry* mapping_end);
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  // Attempts to convert the list in |input| to |output| according to the table,
+  // returns false on errors.
+  bool Convert(const base::Value* input,
+               base::ListValue* output,
+               PolicyErrorMap* errors);
+
+  // Name of the pref to write.
+  const char* pref_path_;
+
+  // The mapping table.
+  const MappingEntry* mapping_begin_;
+  const MappingEntry* mapping_end_;
+
+  DISALLOW_COPY_AND_ASSIGN(StringToIntEnumListPolicyHandler);
+};
+
 // Implements additional checks for policies that are lists of extension IDs.
 class ExtensionListPolicyHandler : public TypeCheckingPolicyHandler {
  public:
@@ -119,13 +157,34 @@ class ExtensionListPolicyHandler : public TypeCheckingPolicyHandler {
   // Runs sanity checks on the policy value and returns it in |extension_ids|.
   bool CheckAndGetList(const PolicyMap& policies,
                        PolicyErrorMap* errors,
-                       const base::ListValue** extension_ids);
+                       scoped_ptr<base::ListValue>* extension_ids);
 
  private:
   const char* pref_path_;
   bool allow_wildcards_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionListPolicyHandler);
+};
+
+class ExtensionInstallForcelistPolicyHandler
+    : public TypeCheckingPolicyHandler {
+ public:
+  ExtensionInstallForcelistPolicyHandler();
+  virtual ~ExtensionInstallForcelistPolicyHandler();
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  // Parses the data in |policy_value| and writes them to |extension_dict|.
+  bool ParseList(const base::Value* policy_value,
+                 base::DictionaryValue* extension_dict,
+                 PolicyErrorMap* errors);
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionInstallForcelistPolicyHandler);
 };
 
 // Implements additional checks for policies that are lists of extension
@@ -285,9 +344,13 @@ class DefaultSearchPolicyHandler : public ConfigurationPolicyHandler {
                                const Value** url_value,
                                std::string* url_string);
 
-  // Make sure that the |path| if present in |prefs_|.  If not, set it to
+  // Make sure that the |path| is present in |prefs_|.  If not, set it to
   // a blank string.
   void EnsureStringPrefExists(PrefValueMap* prefs, const std::string& path);
+
+  // Make sure that the |path| is present in |prefs_| and is a ListValue.  If
+  // not, set it to an empty list.
+  void EnsureListPrefExists(PrefValueMap* prefs, const std::string& path);
 
   // The ConfigurationPolicyHandler handlers for each default search policy.
   std::vector<ConfigurationPolicyHandler*> handlers_;

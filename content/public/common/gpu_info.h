@@ -76,6 +76,10 @@ struct CONTENT_EXPORT GPUInfo {
   // The version of the vertex shader used by the gpu.
   std::string vertex_shader_version;
 
+  // The machine model identifier with format "name major.minor".
+  // Name should not contain any whitespaces.
+  std::string machine_model;
+
   // The version of OpenGL we are using.
   // TODO(zmo): should be able to tell if it's GL or GLES.
   std::string gl_version;
@@ -103,6 +107,9 @@ struct CONTENT_EXPORT GPUInfo {
   GpuPerformanceStats performance_stats;
 
   bool software_rendering;
+
+  // Whether the gpu process is running in a sandbox.
+  bool sandboxed;
 
 #if defined(OS_WIN)
   // The information returned by the DirectX Diagnostics Tool.

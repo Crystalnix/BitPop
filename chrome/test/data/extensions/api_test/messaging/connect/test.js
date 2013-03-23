@@ -65,6 +65,9 @@ chrome.test.getConfig(function(config) {
     // Tests that postMessage from the tab and its response works.
     function postMessageFromTab() {
       chrome.extension.onConnect.addListener(function(port) {
+        chrome.test.assertTrue(Boolean(port.sender.tab.url));
+        chrome.test.assertTrue(Boolean(port.sender.tab.title));
+        chrome.test.assertTrue(Boolean(port.sender.tab.id));
         port.onMessage.addListener(function(msg) {
           chrome.test.assertTrue(msg.testPostMessageFromTab);
           port.postMessage({success: true, portName: port.name});
@@ -82,15 +85,15 @@ chrome.test.getConfig(function(config) {
     },
 
     // Tests receiving a request from a content script and responding.
-    function sendRequestFromTab() {
+    function sendMessageFromTab() {
       var doneListening = chrome.test.listenForever(
-        chrome.extension.onRequest,
+        chrome.extension.onMessage,
         function(request, sender, sendResponse) {
           chrome.test.assertTrue("url" in sender.tab, "no tab available.");
           chrome.test.assertEq(sender.id, location.host);
           if (request.step == 1) {
             // Step 1: Page should send another request for step 2.
-            chrome.test.log("sendRequestFromTab: got step 1");
+            chrome.test.log("sendMessageFromTab: got step 1");
             sendResponse({nextStep: true});
           } else {
             // Step 2.
@@ -101,16 +104,16 @@ chrome.test.getConfig(function(config) {
       });
 
       var port = chrome.tabs.connect(testTab.id);
-      port.postMessage({testSendRequestFromTab: true});
+      port.postMessage({testSendMessageFromTab: true});
       port.disconnect();
-      chrome.test.log("sendRequestFromTab: sent first message to tab");
+      chrome.test.log("sendMessageFromTab: sent first message to tab");
     },
 
     // Tests error handling when sending a request from a content script to an
     // invalid extension.
-    function sendRequestFromTabError() {
+    function sendMessageFromTabError() {
       chrome.test.listenOnce(
-        chrome.extension.onRequest,
+        chrome.extension.onMessage,
         function(request, sender, sendResponse) {
           if (!request.success)
             chrome.test.fail();
@@ -118,16 +121,16 @@ chrome.test.getConfig(function(config) {
       );
 
       var port = chrome.tabs.connect(testTab.id);
-      port.postMessage({testSendRequestFromTabError: true});
+      port.postMessage({testSendMessageFromTabError: true});
       port.disconnect();
-      chrome.test.log("testSendRequestFromTabError: send 1st message to tab");
+      chrome.test.log("testSendMessageFromTabError: send 1st message to tab");
     },
 
     // Tests error handling when connecting to an invalid extension from a
     // content script.
     function connectFromTabError() {
       chrome.test.listenOnce(
-        chrome.extension.onRequest,
+        chrome.extension.onMessage,
         function(request, sender, sendResponse) {
           if (!request.success)
             chrome.test.fail();
@@ -141,8 +144,8 @@ chrome.test.getConfig(function(config) {
     },
 
     // Tests sending a request to a tab and receiving a response.
-    function sendRequest() {
-      chrome.tabs.sendRequest(testTab.id, {step2: 1}, function(response) {
+    function sendMessage() {
+      chrome.tabs.sendMessage(testTab.id, {step2: 1}, function(response) {
         chrome.test.assertTrue(response.success);
         chrome.test.succeed();
       });
@@ -166,5 +169,27 @@ chrome.test.getConfig(function(config) {
         testTab = null; // the tab is about:blank now.
       });
     },
+
+    // Tests that the sendRequest API is disabled.
+    function sendRequest() {
+      var error;
+      try {
+        chrome.extension.sendRequest("hi");
+      } catch(e) {
+        error = e;
+      }
+      chrome.test.assertTrue(error != undefined);
+
+      error = undefined;
+      try {
+        chrome.extension.onRequest.addListener(function() {});
+      } catch(e) {
+        error = e;
+      }
+      chrome.test.assertTrue(error != undefined);
+
+      chrome.test.succeed();
+    },
+
   ]);
 });

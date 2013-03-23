@@ -4,7 +4,6 @@
 
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
 
-#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -14,14 +13,12 @@ TEST_F(ExtensionManifestTest, PageActionManifestVersion2) {
   scoped_refptr<extensions::Extension> extension(
       LoadAndExpectSuccess("page_action_manifest_version_2.json"));
   ASSERT_TRUE(extension.get());
-  ASSERT_TRUE(extension->page_action());
+  ASSERT_TRUE(extension->page_action_info());
 
-  EXPECT_EQ("", extension->page_action()->id());
-  EXPECT_EQ(0u, extension->page_action()->icon_paths()->size());
-  EXPECT_EQ("", extension->page_action()->GetTitle(
-      ExtensionAction::kDefaultTabId));
-  EXPECT_FALSE(extension->page_action()->HasPopup(
-      ExtensionAction::kDefaultTabId));
+  EXPECT_EQ("", extension->page_action_info()->id);
+  EXPECT_TRUE(extension->page_action_info()->default_icon.empty());
+  EXPECT_EQ("", extension->page_action_info()->default_title);
+  EXPECT_TRUE(extension->page_action_info()->default_popup_url.is_empty());
 
   LoadAndExpectError("page_action_manifest_version_2b.json",
                      errors::kInvalidPageActionPopup);

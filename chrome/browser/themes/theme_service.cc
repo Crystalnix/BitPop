@@ -6,13 +6,16 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/sequenced_task_runner.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
+#include "chrome/browser/themes/theme_syncable_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
@@ -24,8 +27,8 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include "ui/views/widget/native_widget_win.h"
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
 #endif
 
 #if defined(USE_AURA) && !defined(USE_ASH) && defined(OS_LINUX)
@@ -91,11 +94,7 @@ const SkColor kDefaultColorToolbar = SkColorSetRGB(230, 230, 230);
 #else
 const SkColor kDefaultColorToolbar = SkColorSetRGB(223, 223, 223);
 #endif
-#if defined(USE_AURA)
-const SkColor kDefaultColorToolbarSeparator = SkColorSetRGB(128, 128, 128);
-#else
-const SkColor kDefaultColorToolbarSeparator = SkColorSetRGB(182, 186, 192);
-#endif
+const SkColor kDefaultColorToolbarSeparator = SkColorSetRGB(170, 170, 171);
 const SkColor kDefaultColorTabText = SK_ColorBLACK;
 #if defined(OS_MACOSX)
 const SkColor kDefaultColorBackgroundTabText = SK_ColorBLACK;
@@ -120,21 +119,15 @@ const SkColor kDefaultColorNTPHeader = SkColorSetRGB(150, 150, 150);
 const SkColor kDefaultColorNTPSection = SkColorSetRGB(229, 229, 229);
 const SkColor kDefaultColorNTPSectionText = SK_ColorBLACK;
 const SkColor kDefaultColorNTPSectionLink = SkColorSetRGB(6, 55, 116);
-const SkColor kDefaultColorControlBackground = SkColorSetARGB(0, 0, 0, 0);
+const SkColor kDefaultColorControlBackground = SK_ColorWHITE;
 const SkColor kDefaultColorButtonBackground = SkColorSetARGB(0, 0, 0, 0);
-const SkColor kDefaultColorSearchNTPBackground = SkColorSetRGB(245, 245, 245);
-const SkColor kDefaultColorSearchSearchBackground =
-    SkColorSetRGB(245, 245, 245);
-const SkColor kDefaultColorSearchDefaultBackground =
-    SkColorSetRGB(245, 245, 245);
-const SkColor kDefaultColorSearchSeparator = SkColorSetRGB(200, 200, 200);
 #if defined(OS_MACOSX)
 const SkColor kDefaultColorToolbarButtonStroke = SkColorSetARGB(75, 81, 81, 81);
 const SkColor kDefaultColorToolbarButtonStrokeInactive =
     SkColorSetARGB(75, 99, 99, 99);
-const SkColor kDefaultColorToolbarBezel = SkColorSetRGB(247, 247, 247);
+const SkColor kDefaultColorToolbarBezel = SkColorSetRGB(204, 204, 204);
 const SkColor kDefaultColorToolbarStroke = SkColorSetRGB(103, 103, 103);
-const SkColor kDefaultColorToolbarStrokeInactive = SkColorSetRGB(123, 123, 123);
+const SkColor kDefaultColorToolbarStrokeInactive = SkColorSetRGB(163, 163, 163);
 #endif
 
 // Default tints.
@@ -203,7 +196,8 @@ const int kToolbarButtonIDs[] = {
 };
 
 // Writes the theme pack to disk on a separate thread.
-void WritePackToDiskCallback(BrowserThemePack* pack, const FilePath& path) {
+void WritePackToDiskCallback(BrowserThemePack* pack,
+                             const FilePath& path) {
   if (!pack->WriteToDisk(path))
     NOTREACHED() << "Could not write theme pack to disk";
 }
@@ -230,18 +224,12 @@ void ThemeService::Init(Profile* profile) {
   DCHECK(CalledOnValidThread());
   profile_ = profile;
 
-  // Listen to EXTENSION_LOADED instead of EXTENSION_INSTALLED because
-  // the extension cannot yet be found via GetExtensionById() if it is
-  // installed but not loaded (which may confuse listeners to
-  // BROWSER_THEME_CHANGED).
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile_));
-
   LoadThemePrefs();
+
+  theme_syncable_service_.reset(new ThemeSyncableService(profile_, this));
 }
 
-const gfx::Image* ThemeService::GetImageNamed(int id) const {
+gfx::Image ThemeService::GetImageNamed(int id) const {
   DCHECK(CalledOnValidThread());
 
   const gfx::Image* image = NULL;
@@ -258,24 +246,16 @@ const gfx::Image* ThemeService::GetImageNamed(int id) const {
   if (!image)
     image = &rb_.GetNativeImageNamed(id);
 
-  return image;
-}
-
-SkBitmap* ThemeService::GetBitmapNamed(int id) const {
-  const gfx::Image* image = GetImageNamed(id);
-  if (!image)
-    return NULL;
-
-  return const_cast<SkBitmap*>(image->ToSkBitmap());
+  return image ? *image : gfx::Image();
 }
 
 gfx::ImageSkia* ThemeService::GetImageSkiaNamed(int id) const {
-  const gfx::Image* image = GetImageNamed(id);
-  if (!image)
+  gfx::Image image = GetImageNamed(id);
+  if (image.IsEmpty())
     return NULL;
   // TODO(pkotwicz): Remove this const cast.  The gfx::Image interface returns
   // its images const. GetImageSkiaNamed() also should but has many callsites.
-  return const_cast<gfx::ImageSkia*>(image->ToImageSkia());
+  return const_cast<gfx::ImageSkia*>(image.ToImageSkia());
 }
 
 SkColor ThemeService::GetColor(int id) const {
@@ -319,8 +299,8 @@ bool ThemeService::GetDisplayProperty(int id, int* result) const {
 bool ThemeService::ShouldUseNativeFrame() const {
   if (HasCustomImage(IDR_THEME_FRAME))
     return false;
-#if defined(OS_WIN) && !defined(USE_AURA)
-  return views::NativeWidgetWin::IsAeroGlassEnabled();
+#if defined(OS_WIN)
+  return ui::win::IsAeroGlassEnabled();
 #else
   return false;
 #endif
@@ -349,7 +329,7 @@ base::RefCountedMemory* ThemeService::GetRawData(
   if (theme_pack_.get())
     data = theme_pack_->GetRawData(id, scale_factor);
   if (!data)
-    data = rb_.LoadDataResourceBytes(id, ui::SCALE_FACTOR_100P);
+    data = rb_.LoadDataResourceBytesForScale(id, ui::SCALE_FACTOR_100P);
 
   return data;
 }
@@ -360,6 +340,12 @@ void ThemeService::SetTheme(const Extension* extension) {
 
   DCHECK(extension);
   DCHECK(extension->is_theme());
+  if (DCHECK_IS_ON()) {
+    ExtensionService* service =
+        extensions::ExtensionSystem::Get(profile_)->extension_service();
+    DCHECK(service);
+    DCHECK(service->GetExtensionById(extension->id(), false));
+  }
 
   BuildFromExtension(extension);
   SaveThemeID(extension->id());
@@ -540,14 +526,6 @@ SkColor ThemeService::GetDefaultColor(int id) {
       return kDefaultColorControlBackground;
     case COLOR_BUTTON_BACKGROUND:
       return kDefaultColorButtonBackground;
-    case COLOR_SEARCH_NTP_BACKGROUND:
-      return kDefaultColorSearchNTPBackground;
-    case COLOR_SEARCH_SEARCH_BACKGROUND:
-      return kDefaultColorSearchSearchBackground;
-    case COLOR_SEARCH_DEFAULT_BACKGROUND:
-      return kDefaultColorSearchDefaultBackground;
-    case COLOR_SEARCH_SEPARATOR_LINE:
-      return kDefaultColorSearchSeparator;
 #if defined(OS_MACOSX)
     case COLOR_TOOLBAR_BUTTON_STROKE:
       return kDefaultColorToolbarButtonStroke;
@@ -633,7 +611,8 @@ void ThemeService::LoadThemePrefs() {
     } else {
       // TODO(erg): We need to pop up a dialog informing the user that their
       // theme is being migrated.
-      ExtensionService* service = profile_->GetExtensionService();
+      ExtensionService* service =
+          extensions::ExtensionSystem::Get(profile_)->extension_service();
       if (service) {
         const Extension* extension =
             service->GetExtensionById(current_id, false);
@@ -662,6 +641,11 @@ void ThemeService::NotifyThemeChanged() {
 #if defined(OS_MACOSX)
   NotifyPlatformThemeChanged();
 #endif  // OS_MACOSX
+
+  // Notify sync that theme has changed.
+  if (theme_syncable_service_.get()) {
+    theme_syncable_service_->OnThemeChange();
+  }
 }
 
 #if defined(OS_WIN) || defined(USE_AURA)
@@ -669,17 +653,6 @@ void ThemeService::FreePlatformCaches() {
   // Views (Skia) has no platform image cache to clear.
 }
 #endif
-
-void ThemeService::Observe(int type,
-                           const content::NotificationSource& source,
-                           const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED);
-  const Extension* extension = content::Details<const Extension>(details).ptr();
-  if (!extension->is_theme()) {
-    return;
-  }
-  SetTheme(extension);
-}
 
 void ThemeService::SavePackName(const FilePath& pack_path) {
   profile_->GetPrefs()->SetFilePath(
@@ -700,10 +673,15 @@ void ThemeService::BuildFromExtension(const Extension* extension) {
     return;
   }
 
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
+  if (!service)
+    return;
+
   // Write the packed file to disk.
   FilePath pack_path = extension->path().Append(chrome::kThemePackFilename);
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
+  service->GetFileTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&WritePackToDiskCallback, pack, pack_path));
 
   SavePackName(pack_path);
@@ -719,4 +697,8 @@ void ThemeService::OnInfobarDestroyed() {
 
   if (number_of_infobars_ == 0)
     RemoveUnusedThemes();
+}
+
+ThemeSyncableService* ThemeService::GetThemeSyncableService() const {
+  return theme_syncable_service_.get();
 }

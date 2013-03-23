@@ -9,8 +9,8 @@ body {
   margin: 0;
 }
 
-.gallery {
-  background: black;
+.gallery,
+.gallery .content {
   bottom: 0;
   left: 0;
   overflow: hidden;
@@ -19,12 +19,20 @@ body {
   top: 0;
 }
 
+/* Common background for both mosaic and slide mode. */
+.gallery .content {
+  background-color: black;
+}
+
 /* Close button */
+
+/* We actually want (left,top) to be (0,0) but for some weird reason
+  this triggers :hover style on page reload which is ugly. */
 .gallery > .close {
   cursor: pointer;
+  left: 1px;
   position: absolute;
-  right: 5px;
-  top: 5px;
+  top: 1px;
   z-index: 200;
 }
 
@@ -33,13 +41,13 @@ body {
    overlaps it) */
 .gallery > .close div {
   background-image: -webkit-image-set(
-    url('../images/gallery/close_x.png') 1x,
-    url('../images/gallery/2x/close_x.png') 2x);
+    url('../images/gallery/back_to_files.png') 1x,
+    url('../images/gallery/2x/back_to_files.png') 2x);
   background-position: center center;
   background-repeat: no-repeat;
-  height: 20px;
+  height: 40px;
   opacity: 0;
-  width: 20px;
+  width: 64px;
 }
 
 .gallery[tools] > .close div {
@@ -47,14 +55,12 @@ body {
 }
 
 .gallery[tools] > .close div:hover {
-  background-color: rgba(81, 81, 81, 1);
-  opacity: 0.7;
+  opacity: 1;
 }
 
 /* Image container and canvas elements */
 
-.gallery > .image-container {
-  background-color: rgba(0, 0, 0, 1);
+.gallery .image-container {
   cursor: none;   /* Only visible when the toolbar is active */
   height: 100%;
   position: absolute;
@@ -71,44 +77,91 @@ body {
 }
 
 .gallery[tools] .image-container[cursor='move'] {
-  cursor: url('../images/gallery/cursor_move.png') 18 18;
+  cursor: -webkit-image-set(
+    url('../images/gallery/cursor_move.png') 1x,
+    url('../images/gallery/2x/cursor_move.png') 2x) 15 15;
 }
 
 .gallery[tools] .image-container[cursor='crop'] {
-  cursor: url('../images/gallery/cursor_crop.png') 18 18;
+  cursor: -webkit-image-set(
+    url('../images/gallery/cursor_crop.png') 1x,
+    url('../images/gallery/2x/cursor_crop.png') 2x) 15 15;
 }
 
 .gallery[tools] .image-container[cursor='n-resize'],
 .gallery[tools] .image-container[cursor='s-resize'] {
-  cursor: url('../images/gallery/cursor_updown.png') 18 18;
+  cursor: -webkit-image-set(
+    url('../images/gallery/cursor_updown.png') 1x,
+    url('../images/gallery/2x/cursor_updown.png') 2x) 15 15;
 }
 
 .gallery[tools] .image-container[cursor='e-resize'],
 .gallery[tools] .image-container[cursor='w-resize'] {
-  cursor: url('../images/gallery/cursor_leftright.png') 18 18;
+  cursor: -webkit-image-set(
+    url('../images/gallery/cursor_leftright.png') 1x,
+    url('../images/gallery/2x/cursor_leftright.png') 2x) 15 15;
 }
 
 .gallery[tools] .image-container[cursor='nw-resize'],
 .gallery[tools] .image-container[cursor='se-resize'] {
-  cursor: url('../images/gallery/cursor_nwse.png') 18 18;
+  cursor: -webkit-image-set(
+    url('../images/gallery/cursor_nwse.png') 1x,
+    url('../images/gallery/2x/cursor_nwse.png') 2x) 15 15;
 }
 
 .gallery[tools] .image-container[cursor='ne-resize'],
 .gallery[tools] .image-container[cursor='sw-resize'] {
-  cursor: url('../images/gallery/cursor_swne.png') 18 18;
+  cursor: -webkit-image-set(
+    url('../images/gallery/cursor_swne.png') 1x,
+    url('../images/gallery/2x/cursor_swne.png') 2x) 15 15;
 }
 
-.gallery > .image-container > .image {
-  /* Keep in sync with ImageView.ANIMATION_DURATION in image_view.js*/
-  -webkit-transition-duration: 180ms;
+.gallery .image-container > .image {
+  /* Duration and timing function are set in Javascript. */
   -webkit-transition-property: -webkit-transform, opacity;
-  -webkit-transition-timing-function: ease-in-out;
   pointer-events: none;
   position: absolute;
 }
 
-.gallery > .image-container > .image[fade] {
+.gallery .image-container > .image[fade] {
   opacity: 0;
+}
+
+/* Full resolution image is invisible unless printing. */
+.gallery .image-container > canvas.fullres {
+  display: none;
+}
+
+@media print {
+  /* Do not print anything but the image content. */
+  .gallery > :not(.content) {
+    display: none !important;
+  }
+
+  /* Center the printed image. */
+  .gallery .image-container {
+    -webkit-box-align: center;
+    -webkit-box-orient: horizontal;
+    -webkit-box-pack: center;
+    display: -webkit-box;
+  }
+
+  /* Do not print the screen resolution image. */
+  .gallery .image-container > canvas.image {
+    display: none !important;
+  }
+
+  /* Print the full resolution image instead. */
+  .gallery .image-container > canvas.fullres {
+    display: block !important;
+    max-height: 100%;
+    max-width: 100%;
+  }
+
+  /* Print video at the center of the page */
+  .gallery .image-container > video.image {
+    position: auto !important;
+  }
 }
 
 /* Toolbar */
@@ -117,10 +170,7 @@ body {
   -webkit-box-align: stretch;
   -webkit-box-orient: horizontal;
   -webkit-box-pack: start;
-  -webkit-transform: translate(0, 0);
-  -webkit-transition-duration: 300ms;
-  -webkit-transition-property: webkit-transform, opacity;
-  -webkit-transition-timing-function: ease;
+  -webkit-transition: opacity 300ms ease;
   background-color: rgba(18, 18, 18, 0.875);
   border-top: 1px solid rgba(31, 31, 31, 0.875);
   bottom: 0;
@@ -132,10 +182,14 @@ body {
   width: 100%;
 }
 
-.gallery[tools] > .toolbar {
-  -webkit-transform: translate(0, 0);
+.gallery[tools]:not([slideshow]) > .toolbar {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Hide immediately when entering the slideshow. */
+.gallery[tools][slideshow] > .toolbar {
+  -webkit-transition-duration: 0;
 }
 
 .gallery[tools][locked] > .toolbar {
@@ -155,6 +209,7 @@ body {
 }
 
 .gallery .arrow-box .arrow {
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -163,8 +218,9 @@ body {
   pointer-events: none;
 }
 
-.gallery[tools] .arrow[active] {
+.gallery[tools] .arrow-box[active] .arrow {
   cursor: pointer;
+  opacity: 1;
   pointer-events: auto;
 }
 
@@ -179,11 +235,11 @@ body {
   width: 105px;
 }
 
-.gallery[tools] .arrow[active] div {
+.gallery[tools] .arrow-box[active] .arrow div {
   opacity: 0.25;
 }
 
-.gallery[tools] .arrow[active] div:hover {
+.gallery[tools] .arrow-box[active] .arrow div:hover {
   opacity: 1;
 }
 
@@ -230,9 +286,8 @@ body {
 }
 
 .gallery .filename-spacer > * {
-  -webkit-transition: top linear 180ms;
+  -webkit-transition: visibility 0 linear 180ms, all 180ms linear;
   background-color: transparent;
-  height: 21px;
   left: 10px;
   overflow: hidden;
   position: absolute;
@@ -241,77 +296,69 @@ body {
 
 .gallery .filename-spacer * {
   color: white;
-  font-family: Open Sans, Droid Sans Fallback, sans-serif;
 }
 
 .gallery .filename-spacer .namebox {
+  height: 22px;
   top: 15px;
 }
 
 .gallery[editing] .filename-spacer .namebox {
+  height: 21px;
   top: 5px;
 }
 
-.gallery .filename-spacer .options {
-  top: 50px;
-}
 
-.gallery[editing] .filename-spacer .options {
-  top: 27px;
-}
-
-.gallery .filename-spacer[renaming] .namebox div,
-.gallery .filename-spacer .namebox input {
-  opacity: 0;
-  z-index: 0;
-}
-
-.gallery .filename-spacer .namebox div,
-.gallery .filename-spacer[renaming] .namebox input {
-  opacity: 1;
-  z-index: 1;
-}
-
-.gallery .filename-spacer .namebox input,
-.gallery .filename-spacer .namebox div {
+.gallery .filename-spacer .namebox {
+  background-color: transparent;
   border: none;
   box-sizing: border-box;
+  cursor: pointer;
+  display: block;
   font-size: 120%;
-  height: 100%;
   outline: none;
   overflow: hidden;
+  padding: 0 3px;
   position: absolute;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 100%;
 }
 
-.gallery .filename-spacer .namebox div {
-  padding: 1px 3px 0 3px;
+.gallery .filename-spacer .namebox[disabled] {
+  -webkit-user-select: none;
+  cursor: default;
 }
 
-.gallery .filename-spacer .namebox input {
-  padding: 0 3px 0 2px;
-}
-
-.gallery .filename-spacer .namebox div:hover {
+.gallery .filename-spacer .namebox:not([disabled]):not(:focus):hover {
   background-color: rgba(48, 48, 48, 1.0);
-  cursor: pointer;
 }
 
-.gallery .filename-spacer .namebox input:focus,
-.gallery .filename-spacer .namebox input:focus:hover {
+.gallery .filename-spacer .namebox:focus {
   background-color: white;
-  border-bottom: 1px solid white;
-  border-right: 1px solid white;
   color: black;
+  cursor: text;
+}
+
+.gallery .filename-spacer .options {
+  -webkit-box-align: center;
+  -webkit-box-orient: horizontal;
+  -webkit-box-pack: start;
+  display: -webkit-box;
+  opacity: 0;
+  top: 50px;
+  visibility: hidden;
+}
+
+.gallery[editing] .filename-spacer .options {
+  opacity: 1;
+  top: 28px;
+  visibility: visible;
 }
 
 .gallery .filename-spacer .saved,
 .gallery .filename-spacer .overwrite-original {
   -webkit-transition: all linear 120ms;
   cursor: inherit;
-  display: inline-block;
   font-size: 90%;
   margin-left: 3px;
   margin-right: 18px;
@@ -320,8 +367,8 @@ body {
 }
 
 .gallery[editing] .filename-spacer .saved {
-  color: gray;
-  opacity: 1;
+  color: white;
+  opacity: 0.5;
 }
 
 .gallery[editing] .filename-spacer .overwrite-original,
@@ -331,8 +378,12 @@ body {
   pointer-events: auto;
 }
 
-.gallery[editing] .filename-spacer[saved] .overwrite-original,
-.gallery[editing] .filename-spacer[saved] .overwrite-original > * {
+.gallery[editing] .options[saved] .overwrite-original {
+  opacity: 0.5;
+}
+
+.gallery[editing] .options[saved] .overwrite-original,
+.gallery[editing] .options[saved] .overwrite-original > * {
   cursor: default;
   pointer-events: none;
 }
@@ -344,7 +395,7 @@ body {
 
 .gallery .filename-spacer .saved[highlighted] {
   -webkit-transform: scaleX(1.1) scaleY(1.1) rotate(0);
-  color: white;
+  opacity: 1;
 }
 
 /* Bubble */
@@ -399,7 +450,7 @@ body {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
   -webkit-box-pack: center;
-  -webkit-transition: margin-left 180ms linear;
+  -webkit-transition: all 180ms linear;
   border: 2px solid rgba(255, 255, 255, 0);  /* transparent white */
   cursor: pointer;
   display: -webkit-box;
@@ -407,6 +458,14 @@ body {
   margin: 2px;
   overflow: hidden;
   width: 47px;
+}
+
+.ribbon-image[vanishing='smooth'] {
+  border-left-width: 0;
+  border-right-width: 0;
+  margin-left: 0;
+  margin-right: 0;
+  width: 0;
 }
 
 .gallery .ribbon-image[selected] {
@@ -448,7 +507,7 @@ body {
 .gallery .toolbar .edit-bar {
   -webkit-box-orient: horizontal;
   -webkit-box-pack: center;
-  -webkit-transition: opacity 180ms linear;
+  -webkit-transition: opacity 180ms linear, visibility 180ms linear 180ms;
   color: white;
   display: -webkit-box;
   height: 55px;
@@ -457,11 +516,13 @@ body {
   pointer-events: none;
   position: absolute;
   right: 0;
+  visibility: hidden;
   width: 100%;
 }
 
 .gallery[editing] .toolbar .edit-bar {
   opacity: 1;
+  visibility: visible;
 }
 
 .gallery .edit-main {
@@ -476,160 +537,213 @@ body {
   pointer-events: auto;
 }
 
-.gallery > .toolbar .button {
+.gallery > .toolbar button {
   -webkit-box-align: center;
   -webkit-box-flex: 0;
   -webkit-box-orient: horizontal;
   -webkit-box-pack: end;
+  background-color: rgba(0, 0, 0, 0);
   background-position: 5px center;
   background-repeat: no-repeat;
+  border: none;
+  box-sizing: content-box;
+  color: white;
   cursor: pointer;
   display: -webkit-box;
   height: 40px;
   margin: 8px 0 7px 3px;
   max-width: 90px;
+  min-width: 0;
   opacity: 0.99;  /* Workaround for http://crosbug.com/21065 */
   padding: 0 10px 0 35px;
 }
 
-.gallery > .toolbar .button {
-  background-color: rgba(0, 0, 0, 0);
-  color: white;
-}
-
-.gallery > .toolbar .button:hover {
+.gallery > .toolbar button:hover {
   background-color: rgba(31, 31, 31, 1);
   color: white;
 }
 
-.gallery > .toolbar .button[pressed] {
+.gallery > .toolbar button:active,
+.gallery > .toolbar button[pressed],
+.gallery > .toolbar button[pressed]:hover {
   background-color: rgba(240, 240, 240, 1);
   color: black;
 }
 
-.gallery > .toolbar .button[pressed]:hover {
-  background-color: rgba(240, 240, 240, 1);
-  color: black;
-}
-
-.gallery > .toolbar .button.autofix {
+.gallery > .toolbar button.autofix {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_autofix.png') 1x,
     url('../images/gallery/2x/icon_autofix.png') 2x);
 }
 
-.gallery > .toolbar .button.autofix[pressed] {
+.gallery > .toolbar button.autofix[pressed] {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_autofix_selected.png') 1x,
     url('../images/gallery/2x/icon_autofix_selected.png') 2x);
 }
 
-.gallery > .toolbar .button.crop {
+.gallery > .toolbar button.crop {
   background-image:  -webkit-image-set(
     url('../images/gallery/icon_crop.png') 1x,
     url('../images/gallery/2x/icon_crop.png') 2x);
 }
 
-.gallery > .toolbar .button.crop[pressed] {
+.gallery > .toolbar button.crop[pressed] {
   background-image:  -webkit-image-set(
     url('../images/gallery/icon_crop_selected.png') 1x,
     url('../images/gallery/2x/icon_crop_selected.png') 2x);
 }
 
-.gallery > .toolbar .button.exposure {
+.gallery > .toolbar button.exposure {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_brightness.png') 1x,
     url('../images/gallery/2x/icon_brightness.png') 2x);
 }
 
-.gallery > .toolbar .button.exposure[pressed] {
+.gallery > .toolbar button.exposure[pressed] {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_brightness_selected.png') 1x,
     url('../images/gallery/2x/icon_brightness_selected.png') 2x);
 }
 
-.gallery > .toolbar .button.rotate_right {
+.gallery > .toolbar button.rotate_right {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_rotate.png') 1x,
     url('../images/gallery/2x/icon_rotate.png') 2x);
 }
 
-.gallery > .toolbar .button.rotate_right[pressed] {
+.gallery > .toolbar button.rotate_right[pressed] {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_rotate_selected.png') 1x,
     url('../images/gallery/2x/icon_rotate_selected.png') 2x);
 }
 
-.gallery > .toolbar .button.rotate_left {
+.gallery > .toolbar button.rotate_left {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_rotate_left.png') 1x,
     url('../images/gallery/2x/icon_rotate_left.png') 2x);
 }
 
-.gallery > .toolbar .button.rotate_left[pressed] {
+.gallery > .toolbar button.rotate_left[pressed] {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_rotate_left_selected.png') 1x,
     url('../images/gallery/2x/icon_rotate_left_selected.png') 2x);
 }
 
-.gallery > .toolbar .button.undo {
+.gallery > .toolbar button.undo {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_undo.png') 1x,
     url('../images/gallery/2x/icon_undo.png') 2x);
 }
 
-.gallery > .toolbar .button.redo {
+.gallery > .toolbar button.redo {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_redo.png') 1x,
     url('../images/gallery/2x/icon_redo.png') 2x);
   position: absolute;  /* Exclude from center-packing*/
 }
 
-.gallery > .toolbar .button[disabled] {
+.gallery > .toolbar button[disabled] {
   opacity: 0.5;
   pointer-events: none;
 }
 
-.gallery > .toolbar .button[hidden] {
+.gallery > .toolbar button[hidden] {
   display: none;
 }
 
-.gallery > .toolbar > .button.edit {
-  background-image: -webkit-image-set(
-    url('../images/gallery/icon_edit.png') 1x,
-    url('../images/gallery/2x/icon_edit.png') 2x);
+.gallery > .toolbar > button {
+  background-position: center;
+  padding: 0;
   position: relative;
+  width: 40px;
   z-index: 10;
 }
 
-.gallery > .toolbar > .button.edit[pressed] {
+.gallery[mode='slide'] > .toolbar > button.mode {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_mosaic.png') 1x,
+    url('../images/gallery/2x/icon_mosaic.png') 2x);
+}
+
+.gallery[mode='slide'] > .toolbar > button.mode:active {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_mosaic_selected.png') 1x,
+    url('../images/gallery/2x/icon_mosaic_selected.png') 2x);
+}
+
+.gallery[mode='mosaic'] > .toolbar > button.mode {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_1up.png') 1x,
+    url('../images/gallery/2x/icon_1up.png') 2x);
+}
+
+.gallery[mode='mosaic'] > .toolbar > button.mode:active {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_1up_selected.png') 1x,
+    url('../images/gallery/2x/icon_1up_selected.png') 2x);
+}
+
+.gallery > .toolbar > button.slideshow {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_slideshow.png') 1x,
+    url('../images/gallery/2x/icon_slideshow.png') 2x);
+}
+
+.gallery > .toolbar > button.slideshow:active,
+.gallery > .toolbar > button.slideshow[pressed] {
+    background-image: -webkit-image-set(
+        url('../images/gallery/icon_slideshow_selected.png') 1x,
+        url('../images/gallery/2x/icon_slideshow_selected.png') 2x);
+}
+
+.gallery > .toolbar > button.delete {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_delete.png') 1x,
+    url('../images/gallery/2x/icon_delete.png') 2x);
+}
+
+.gallery > .toolbar > button.delete:active {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_delete_selected.png') 1x,
+    url('../images/gallery/2x/icon_delete_selected.png') 2x);
+}
+
+.gallery > .toolbar > button.edit {
+  background-image: -webkit-image-set(
+    url('../images/gallery/icon_edit.png') 1x,
+    url('../images/gallery/2x/icon_edit.png') 2x);
+}
+
+.gallery > .toolbar > button.edit:active,
+.gallery > .toolbar > button.edit[pressed] {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_edit_selected.png') 1x,
     url('../images/gallery/2x/icon_edit_selected.png') 2x);
 }
 
-.gallery > .toolbar > .button.share {
+.gallery > .toolbar > button.share {
   background-image: -webkit-image-set(
     url('../images/gallery/icon_share.png') 1x,
     url('../images/gallery/2x/icon_share.png') 2x);
-  position: relative;
-  z-index: 10;
 }
 
-.gallery > .toolbar > .button.share[pressed] {
-  background-image: -webkit-image-set(
-    url('../images/gallery/icon_share_selected.png') 1x,
-    url('../images/gallery/2x/icon_share_selected.png') 2x);
+.gallery > .toolbar > button.share:hover {
+  background-color: rgba(31, 31, 31, 1);
 }
 
-.gallery[error] > .toolbar .button.edit,
-.gallery[error] > .toolbar .button.share {
+.gallery[error] > .toolbar button.edit,
+.gallery[error] > .toolbar button.share {
   opacity: 0.7;
   pointer-events: none;
 }
 
-.gallery > .toolbar > .button:last-child {
+.gallery > .toolbar > button.share {
   margin-right: 8px;
+}
+
+.gallery > .toolbar > button.share[disabled] {
+  width: 0;
 }
 
 /* Secondary toolbar (mode-specific tools) */
@@ -894,16 +1008,16 @@ body {
   pointer-events: none;
 }
 
-.gallery .share-menu > div {
-  -webkit-box-align: center;
-  -webkit-box-pack: start;
+.gallery .share-menu > .item {
   background-color: rgba(0, 0, 0, 0);
+  background-position: 5px center;
+  background-repeat: no-repeat;
   cursor: pointer;
-  display: -webkit-box;
   padding: 5px;
+  padding-left: 26px;
 }
 
-.gallery .share-menu > div:hover {
+.gallery .share-menu > .item:hover {
   background-color: rgba(240, 240, 240, 1);
 }
 
@@ -941,7 +1055,6 @@ body {
     url('../images/media/2x/error.png') 2x);
   background-position: 25px center;
   background-repeat: no-repeat;
-  color: white;
   display: -webkit-box;
   height: 54px;
   padding-left: 70px;
@@ -994,21 +1107,165 @@ body {
   display: -webkit-box;
 }
 
-.gallery[video] > .toolbar .button.edit,
 .gallery[video] > .toolbar .edit-bar {
   display: none;
 }
 
-@media print {
-  .image-container > .image {
-    left: 0 !important;
-    max-height: 100%;
-    max-width: 100%;
-    object-fit: contain;
-    top: 0 !important;
-  }
+/* Mosaic view. */
+.mosaic {
+  /* -webkit-transition-duration is set in Javascript. */
+  -webkit-transition-property: -webkit-transform;
+  -webkit-transition-timing-function: linear;
 
-  .gallery .tool {
-    opacity: 0 !important;
-  }
+  bottom: 0;
+  left: 0;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.mosaic::-webkit-scrollbar {
+  background: transparent;
+}
+
+.mosaic::-webkit-scrollbar-thumb {
+  background: rgb(31, 31, 31);
+}
+
+.gallery:not([mode='mosaic']) .mosaic::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.mosaic-tile {
+  /* Tile's zoom factor is animated on hover. We apply the transform to
+  the entire tile so that the image outline is included into the animation. */
+  -webkit-transition: -webkit-transform 150ms linear;
+  position: absolute;
+}
+
+/* Mosaic tile's opacity is controlled by |visible| attribute which changes
+   separately from .gallery[mode] */
+.mosaic:not([visible]) .mosaic-tile .img-border {
+  opacity: 0;
+}
+
+/* Animate tile's opacity, except for the selected tile which should show/hide
+  instantly (this looks better when zooming to/from the slide mode). */
+.mosaic-tile:not([selected]) .img-border {
+  -webkit-transition: opacity 350ms linear;
+}
+
+/* Must be in sync with mosaic_mode.js.
+  Mosaic.Layout.SPACING should be equal to
+    top + bottom + border-top-width + border-bottom-width AND
+    left + right + border-left-width + border-right-width */
+.mosaic-tile .img-border {
+  border: 1px solid transparent;  /* Space between the outline and the image. */
+  bottom: 4px;
+  left: 4px;
+  outline: 2px solid transparent;
+  overflow: hidden;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+/* Selected and hover state are only visible when zoom transition is over. */
+.mosaic[visible='normal'] .mosaic-tile[selected] .img-border {
+  outline-color: rgb(51, 153, 255);
+}
+
+.mosaic[visible='normal'].hover-visible .mosaic-tile:hover {
+  -webkit-transform: scale(1.05);
+}
+
+.mosaic[visible='normal'].hover-visible
+                          .mosaic-tile:hover:not([selected]) .img-border {
+  outline-color: rgb(182, 212, 252);
+}
+
+.mosaic-tile .img-wrapper {
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.mosaic-tile img {
+  -webkit-user-drag: none;
+  position: absolute;
+}
+
+/* In order to do mode animated transitions smoothly we keep both mosaic and
+  image-container but transparent. */
+.gallery:not([mode='mosaic']) .mosaic,
+.gallery:not([mode='slide']) .image-container {
+  pointer-events: none;
+}
+
+.gallery:not([mode='slide']) .ribbon,
+.gallery:not([mode='slide']) .arrow-box {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Temporary. Remove this along with the delete confirmation dialog
+  when Undo delete is implemented. */
+.cr-dialog-shield {
+  background-color: black;
+}
+
+/* Slideshow controls */
+
+.slideshow-toolbar {
+  -webkit-box-align: center;
+  -webkit-box-orient: horizontal;
+  -webkit-box-pack: center;
+  bottom: 0;
+  display: none;
+  left: 0;
+  padding-bottom: 6px;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+
+.gallery[tools][slideshow] .slideshow-toolbar {
+  display: -webkit-box;
+}
+
+.slideshow-toolbar > div {
+  background-position: center;
+  background-repeat: no-repeat;
+  height: 68px;
+  opacity: 0.5;
+  pointer-events: auto;
+  width: 68px;
+}
+
+.slideshow-toolbar > div:hover {
+  opacity: 1;
+}
+
+.slideshow-toolbar > .slideshow-play {
+  background-image: -webkit-image-set(
+    url('../images/gallery/slideshow-play.png') 1x,
+    url('../images/gallery/2x/slideshow-play.png') 2x);
+  margin-right: -2px;
+}
+
+.gallery[slideshow='playing'] .slideshow-toolbar > .slideshow-play {
+  background-image: -webkit-image-set(
+    url('../images/gallery/slideshow-pause.png') 1x,
+    url('../images/gallery/2x/slideshow-pause.png') 2x);
+}
+
+.slideshow-toolbar > .slideshow-end {
+  background-image: -webkit-image-set(
+    url('../images/gallery/slideshow-end.png') 1x,
+    url('../images/gallery/2x/slideshow-end.png') 2x);
+  margin-left: -2px;
 }

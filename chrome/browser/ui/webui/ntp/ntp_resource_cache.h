@@ -8,8 +8,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/string16.h"
-#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -37,15 +37,18 @@ class NTPResourceCache : public content::NotificationObserver,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
-  Profile* profile_;
+  void OnPreferenceChanged();
 
   void CreateNewTabHTML();
-  scoped_refptr<base::RefCountedMemory> new_tab_html_;
 
   // Helper to determine if the resource cache should be invalidated.
   // This is called on every page load, and can be used to check values that
   // don't generate a notification when changed (e.g., system preferences).
   bool NewTabCacheNeedsRefresh();
+
+  Profile* profile_;
+
+  scoped_refptr<base::RefCountedMemory> new_tab_html_;
 
 #if !defined(OS_ANDROID)
   // Returns a message describing any newly-added sync types, or an empty
@@ -53,13 +56,14 @@ class NTPResourceCache : public content::NotificationObserver,
   string16 GetSyncTypeMessage();
 
   void CreateNewTabIncognitoHTML();
-  scoped_refptr<base::RefCountedMemory> new_tab_incognito_html_;
 
   void CreateNewTabIncognitoCSS();
-  scoped_refptr<base::RefCountedMemory> new_tab_incognito_css_;
-  void CreateNewTabCSS();
-  scoped_refptr<base::RefCountedMemory> new_tab_css_;
 
+  void CreateNewTabCSS();
+
+  scoped_refptr<base::RefCountedMemory> new_tab_incognito_html_;
+  scoped_refptr<base::RefCountedMemory> new_tab_incognito_css_;
+  scoped_refptr<base::RefCountedMemory> new_tab_css_;
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
 #endif

@@ -38,7 +38,13 @@ const char* kPrefToManageType[] = {
   NULL,  // No policy for default value of mouse lock requests
   NULL,  // No policy for default value of mixed script blocking
   prefs::kManagedDefaultMediaStreamSetting,
+  NULL,  // No policy for default value of media stream mic
+  NULL,  // No policy for default value of media stream camera
   NULL,  // No policy for default value of protocol handlers
+  NULL,  // No policy for default value of PPAPI broker
+#if defined(OS_WIN)
+  NULL,  // No policy for default value of "switch to desktop"
+#endif
 };
 COMPILE_ASSERT(arraysize(kPrefToManageType) == CONTENT_SETTINGS_NUM_TYPES,
                managed_content_settings_pref_names_array_size_incorrect);
@@ -173,20 +179,26 @@ PolicyProvider::PolicyProvider(PrefService* prefs) : prefs_(prefs) {
   ReadManagedContentSettings(false);
 
   pref_change_registrar_.Init(prefs_);
-  pref_change_registrar_.Add(prefs::kManagedAutoSelectCertificateForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedCookiesBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedCookiesAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedCookiesSessionOnlyForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedImagesBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedImagesAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedJavaScriptBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedJavaScriptAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPluginsBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPluginsAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPopupsBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPopupsAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedNotificationsAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedNotificationsBlockedForUrls, this);
+  PrefChangeRegistrar::NamedChangeCallback callback =
+      base::Bind(&PolicyProvider::OnPreferenceChanged, base::Unretained(this));
+  pref_change_registrar_.Add(
+      prefs::kManagedAutoSelectCertificateForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedCookiesBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedCookiesAllowedForUrls, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedCookiesSessionOnlyForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedImagesBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedImagesAllowedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedJavaScriptBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedJavaScriptAllowedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPluginsBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPluginsAllowedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPopupsBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPopupsAllowedForUrls, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedNotificationsAllowedForUrls, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedNotificationsBlockedForUrls, callback);
   // The following preferences are only used to indicate if a
   // default content setting is managed and to hold the managed default setting
   // value. If the value for any of the following perferences is set then the
@@ -194,14 +206,17 @@ PolicyProvider::PolicyProvider(PrefService* prefs) : prefs_(prefs) {
   // in parallel to the preference default content settings.  If a
   // default content settings type is managed any user defined excpetions
   // (patterns) for this type are ignored.
-  pref_change_registrar_.Add(prefs::kManagedDefaultCookiesSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultImagesSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultJavaScriptSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultPluginsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultPopupsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultGeolocationSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultNotificationsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultMediaStreamSetting, this);
+  pref_change_registrar_.Add(prefs::kManagedDefaultCookiesSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultImagesSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultJavaScriptSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultPluginsSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultPopupsSetting, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedDefaultGeolocationSetting, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedDefaultNotificationsSetting, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedDefaultMediaStreamSetting, callback);
 }
 
 PolicyProvider::~PolicyProvider() {
@@ -421,51 +436,43 @@ void PolicyProvider::ShutdownOnUIThread() {
   prefs_ = NULL;
 }
 
-void PolicyProvider::Observe(int type,
-                             const content::NotificationSource& source,
-                             const content::NotificationDetails& details) {
+void PolicyProvider::OnPreferenceChanged(const std::string& name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (type == chrome::NOTIFICATION_PREF_CHANGED) {
-    DCHECK_EQ(prefs_, content::Source<PrefService>(source).ptr());
-    std::string* name = content::Details<std::string>(details).ptr();
-    if (*name == prefs::kManagedDefaultCookiesSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_COOKIES);
-    } else if (*name == prefs::kManagedDefaultImagesSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_IMAGES);
-    } else if (*name == prefs::kManagedDefaultJavaScriptSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_JAVASCRIPT);
-    } else if (*name == prefs::kManagedDefaultPluginsSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_PLUGINS);
-    } else if (*name == prefs::kManagedDefaultPopupsSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_POPUPS);
-    } else if (*name == prefs::kManagedDefaultGeolocationSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_GEOLOCATION);
-    } else if (*name == prefs::kManagedDefaultNotificationsSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-    } else if (*name == prefs::kManagedDefaultMediaStreamSetting) {
-      UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_MEDIASTREAM);
-    } else if (*name == prefs::kManagedAutoSelectCertificateForUrls ||
-        *name == prefs::kManagedCookiesAllowedForUrls ||
-        *name == prefs::kManagedCookiesBlockedForUrls ||
-        *name == prefs::kManagedCookiesSessionOnlyForUrls ||
-        *name == prefs::kManagedImagesAllowedForUrls ||
-        *name == prefs::kManagedImagesBlockedForUrls ||
-        *name == prefs::kManagedJavaScriptAllowedForUrls ||
-        *name == prefs::kManagedJavaScriptBlockedForUrls ||
-        *name == prefs::kManagedPluginsAllowedForUrls ||
-        *name == prefs::kManagedPluginsBlockedForUrls ||
-        *name == prefs::kManagedPopupsAllowedForUrls ||
-        *name == prefs::kManagedPopupsBlockedForUrls ||
-        *name == prefs::kManagedNotificationsAllowedForUrls ||
-        *name == prefs::kManagedNotificationsBlockedForUrls) {
-      ReadManagedContentSettings(true);
-      ReadManagedDefaultSettings();
-    }
-  } else {
-    NOTREACHED() << "Unexpected notification";
-    return;
+  if (name == prefs::kManagedDefaultCookiesSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_COOKIES);
+  } else if (name == prefs::kManagedDefaultImagesSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_IMAGES);
+  } else if (name == prefs::kManagedDefaultJavaScriptSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_JAVASCRIPT);
+  } else if (name == prefs::kManagedDefaultPluginsSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_PLUGINS);
+  } else if (name == prefs::kManagedDefaultPopupsSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_POPUPS);
+  } else if (name == prefs::kManagedDefaultGeolocationSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_GEOLOCATION);
+  } else if (name == prefs::kManagedDefaultNotificationsSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+  } else if (name == prefs::kManagedDefaultMediaStreamSetting) {
+    UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_MEDIASTREAM);
+  } else if (name == prefs::kManagedAutoSelectCertificateForUrls ||
+             name == prefs::kManagedCookiesAllowedForUrls ||
+             name == prefs::kManagedCookiesBlockedForUrls ||
+             name == prefs::kManagedCookiesSessionOnlyForUrls ||
+             name == prefs::kManagedImagesAllowedForUrls ||
+             name == prefs::kManagedImagesBlockedForUrls ||
+             name == prefs::kManagedJavaScriptAllowedForUrls ||
+             name == prefs::kManagedJavaScriptBlockedForUrls ||
+             name == prefs::kManagedPluginsAllowedForUrls ||
+             name == prefs::kManagedPluginsBlockedForUrls ||
+             name == prefs::kManagedPopupsAllowedForUrls ||
+             name == prefs::kManagedPopupsBlockedForUrls ||
+             name == prefs::kManagedNotificationsAllowedForUrls ||
+             name == prefs::kManagedNotificationsBlockedForUrls) {
+    ReadManagedContentSettings(true);
+    ReadManagedDefaultSettings();
   }
+
   NotifyObservers(ContentSettingsPattern(),
                   ContentSettingsPattern(),
                   CONTENT_SETTINGS_TYPE_DEFAULT,

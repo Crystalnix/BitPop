@@ -21,8 +21,10 @@
 #include "installer_util_strings.h"  // NOLINT
 
 namespace {
+
 const wchar_t kChromeAppHostGuid[] = L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
-}
+
+}  // namespace
 
 ChromeAppHostDistribution::ChromeAppHostDistribution()
     : BrowserDistribution(CHROME_APP_HOST) {
@@ -48,6 +50,11 @@ string16 ChromeAppHostDistribution::GetAlternateApplicationName() {
   return product_name;
 }
 
+string16 ChromeAppHostDistribution::GetBaseAppId() {
+  // Should be same as AppListController::GetAppModelId().
+  return L"ChromeAppList";
+}
+
 string16 ChromeAppHostDistribution::GetInstallSubDir() {
   return BrowserDistribution::GetSpecificDistribution(
       BrowserDistribution::CHROME_BINARIES)->GetInstallSubDir();
@@ -60,15 +67,15 @@ string16 ChromeAppHostDistribution::GetPublisherName() {
 }
 
 string16 ChromeAppHostDistribution::GetAppDescription() {
-  NOTREACHED() << "This should never be accessed due to no start-menu/task-bar "
-               << "shortcuts.";
-  return L"A standalone platform for Chrome apps.";
+  const string16& app_description =
+      installer::GetLocalizedString(IDS_APP_LAUNCHER_SHORTCUT_TOOLTIP_BASE);
+  return app_description;
 }
 
 string16 ChromeAppHostDistribution::GetLongAppDescription() {
-  NOTREACHED() << "This should never be accessed as Chrome App Host is not a "
-               << "default browser option.";
-  return L"A standalone platform for Chrome apps.";
+  const string16& app_description =
+      installer::GetLocalizedString(IDS_APP_LAUNCHER_PRODUCT_DESCRIPTION_BASE);
+  return app_description;
 }
 
 std::string ChromeAppHostDistribution::GetSafeBrowsingName() {
@@ -102,14 +109,12 @@ std::string ChromeAppHostDistribution::GetHttpPipeliningTestServer() const {
 }
 
 string16 ChromeAppHostDistribution::GetUninstallLinkName() {
-  NOTREACHED() << "This should never be accessed as Chrome App Host has no "
-               << "uninstall entry.";
-  return L"Uninstall Chrome App Host";
+  const string16& link_name =
+      installer::GetLocalizedString(IDS_UNINSTALL_APP_LAUNCHER_BASE);
+  return link_name;
 }
 
 string16 ChromeAppHostDistribution::GetUninstallRegPath() {
-  NOTREACHED() << "This should never be accessed as Chrome App Host has no "
-               << "uninstall entry.";
   return L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
          L"Google Chrome App Host";
 }
@@ -126,14 +131,15 @@ bool ChromeAppHostDistribution::CanSetAsDefault() {
 }
 
 bool ChromeAppHostDistribution::CanCreateDesktopShortcuts() {
-  return false;
+  return true;
 }
 
-bool ChromeAppHostDistribution::GetDelegateExecuteHandlerData(
-    string16* handler_class_uuid,
-    string16* type_lib_uuid,
-    string16* type_lib_version,
-    string16* interface_uuid) {
+string16 ChromeAppHostDistribution::GetIconFilename() {
+  return installer::kChromeAppHostExe;
+}
+
+bool ChromeAppHostDistribution::GetCommandExecuteImplClsid(
+    string16* handler_class_uuid) {
   return false;
 }
 

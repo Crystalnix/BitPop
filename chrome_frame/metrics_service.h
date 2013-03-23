@@ -29,8 +29,6 @@ class MetricsService : public MetricsServiceBase {
   static MetricsService* GetInstance();
   // Start/stop the metrics recording and uploading machine.  These should be
   // used on startup and when the user clicks the checkbox in the prefs.
-  // StartRecordingOnly starts the metrics recording but not reporting, for use
-  // in tests only.
   static void Start();
   static void Stop();
   // Set up client ID, session ID, etc.
@@ -49,9 +47,6 @@ class MetricsService : public MetricsServiceBase {
     ACTIVE,                 // Accumalating log data
     STOPPED,                // Service has stopped
   };
-
-  // Maintain a map of histogram names to the sample stats we've sent.
-  typedef std::map<std::string, base::Histogram::SampleSet> LoggedSampleMap;
 
   // Sets and gets whether metrics recording is active.
   // SetRecording(false) also forces a persistent save of logging state (if

@@ -6,12 +6,13 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_INFOBAR_DELEGATE_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class Browser;
 class GURL;
+class InfoBarService;
 
 namespace extensions {
 class Extension;
@@ -33,7 +34,7 @@ class ExtensionInfoBarDelegate : public InfoBarDelegate,
   };
 
   ExtensionInfoBarDelegate(Browser* browser,
-                           InfoBarTabHelper* infobar_helper,
+                           InfoBarService* infobar_service,
                            const extensions::Extension* extension,
                            const GURL& url,
                            int height);
@@ -50,7 +51,7 @@ class ExtensionInfoBarDelegate : public InfoBarDelegate,
   virtual ~ExtensionInfoBarDelegate();
 
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(InfoBarTabHelper* owner) OVERRIDE;
+  virtual InfoBar* CreateInfoBar(InfoBarService* owner) OVERRIDE;
   virtual bool EqualsDelegate(InfoBarDelegate* delegate) const OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;

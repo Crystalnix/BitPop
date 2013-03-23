@@ -12,6 +12,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/web_resource/notification_promo.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -22,23 +23,26 @@
 namespace {
 
 // Delay on first fetch so we don't interfere with startup.
-static const int kStartResourceFetchDelay = 5000;
+const int kStartResourceFetchDelay = 5000;
 
-// Delay between calls to update the cache (12 hours), and 3 min in debug mode.
-static const int kCacheUpdateDelay = 12 * 60 * 60 * 1000;
-static const int kTestCacheUpdateDelay = 3 * 60 * 1000;
+// Delay between calls to fetch the promo json: 6 hours in production, and 3 min
+// in debug.
+const int kCacheUpdateDelay = 6 * 60 * 60 * 1000;
+const int kTestCacheUpdateDelay = 3 * 60 * 1000;
 
 // The version of the service (used to expire the cache when upgrading Chrome
 // to versions with different types of promos).
-static const int kPromoServiceVersion = 7;
+const int kPromoServiceVersion = 7;
 
 // The promotion type used for Unpack() and ScheduleNotificationOnInit.
-static const NotificationPromo::PromoType kDefaultPromoType =
+const NotificationPromo::PromoType kValidPromoTypes[] = {
 #if defined(OS_ANDROID) || defined(OS_IOS)
-    NotificationPromo::MOBILE_NTP_SYNC_PROMO;
+    NotificationPromo::MOBILE_NTP_SYNC_PROMO,
 #else
-    NotificationPromo::NTP_NOTIFICATION_PROMO;
+    NotificationPromo::NTP_NOTIFICATION_PROMO,
+    NotificationPromo::NTP_BUBBLE_PROMO,
 #endif
+};
 
 GURL GetPromoResourceURL() {
   const std::string promo_server_url = CommandLine::ForCurrentProcess()->
@@ -59,8 +63,14 @@ int GetCacheUpdateDelay() {
 
 // static
 void PromoResourceService::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterIntegerPref(prefs::kNtpPromoVersion, 0);
-  local_state->RegisterStringPref(prefs::kNtpPromoLocale, std::string());
+  // TODO(achuith): Delete this in M26. http://crbug.com/143773
+  // The promo service version number, and last locale.
+  const char kNtpPromoVersion[] = "ntp.promo_version";
+  const char kNtpPromoLocale[] = "ntp.promo_locale";
+  local_state->RegisterIntegerPref(kNtpPromoVersion, 0);
+  local_state->RegisterStringPref(kNtpPromoLocale, std::string());
+  local_state->ClearPref(kNtpPromoVersion);
+  local_state->ClearPref(kNtpPromoLocale);
 }
 
 // static
@@ -69,16 +79,6 @@ void PromoResourceService::RegisterUserPrefs(PrefService* prefs) {
                             "0",
                             PrefService::UNSYNCABLE_PREF);
   NotificationPromo::RegisterUserPrefs(prefs);
-
-  // TODO(achuith): Delete this in M22.
-  prefs->RegisterDoublePref(prefs::kNtpCustomLogoStart,
-                            0,
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterDoublePref(prefs::kNtpCustomLogoEnd,
-                            0,
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->ClearPref(prefs::kNtpCustomLogoStart);
-  prefs->ClearPref(prefs::kNtpCustomLogoEnd);
 }
 
 PromoResourceService::PromoResourceService(Profile* profile)
@@ -97,8 +97,11 @@ PromoResourceService::PromoResourceService(Profile* profile)
 PromoResourceService::~PromoResourceService() {
 }
 
-void PromoResourceService::ScheduleNotification(double promo_start,
-                                                double promo_end) {
+void PromoResourceService::ScheduleNotification(
+    const NotificationPromo& notification_promo) {
+  const double promo_start = notification_promo.StartTimeForGroup();
+  const double promo_end = notification_promo.EndTime();
+
   if (promo_start > 0 && promo_end > 0) {
     const int64 ms_until_start =
         static_cast<int64>((base::Time::FromDoubleT(
@@ -127,26 +130,12 @@ void PromoResourceService::ScheduleNotification(double promo_start,
 }
 
 void PromoResourceService::ScheduleNotificationOnInit() {
-  std::string locale = g_browser_process->GetApplicationLocale();
-  if (GetPromoServiceVersion() != kPromoServiceVersion ||
-      GetPromoLocale() != locale) {
-    // If the promo service has been upgraded or Chrome switched locales,
-    // refresh the promos.
-    // TODO(achuith): Mixing local_state and prefs does not work for
-    // multi-profile case. We should probably store version/locale in prefs_
-    // as well.
-    PrefService* local_state = g_browser_process->local_state();
-    local_state->SetInteger(prefs::kNtpPromoVersion, kPromoServiceVersion);
-    local_state->SetString(prefs::kNtpPromoLocale, locale);
-    prefs_->ClearPref(prefs::kNtpPromoResourceCacheUpdate);
-    PostNotification(0);
-  } else {
-    // If the promo start is in the future, set a notification task to
-    // invalidate the NTP cache at the time of the promo start.
+  // If the promo start is in the future, set a notification task to
+  // invalidate the NTP cache at the time of the promo start.
+  for (size_t i = 0; i < arraysize(kValidPromoTypes); ++i) {
     NotificationPromo notification_promo(profile_);
-    notification_promo.InitFromPrefs(kDefaultPromoType);
-    ScheduleNotification(notification_promo.StartTimeForGroup(),
-                         notification_promo.EndTime());
+    notification_promo.InitFromPrefs(kValidPromoTypes[i]);
+    ScheduleNotification(notification_promo);
   }
 }
 
@@ -176,22 +165,11 @@ void PromoResourceService::PromoResourceStateChange() {
                   content::NotificationService::NoDetails());
 }
 
-int PromoResourceService::GetPromoServiceVersion() {
-  PrefService* local_state = g_browser_process->local_state();
-  return local_state->GetInteger(prefs::kNtpPromoVersion);
-}
-
-std::string PromoResourceService::GetPromoLocale() {
-  PrefService* local_state = g_browser_process->local_state();
-  return local_state->GetString(prefs::kNtpPromoLocale);
-}
-
 void PromoResourceService::Unpack(const DictionaryValue& parsed_json) {
-  NotificationPromo notification_promo(profile_);
-  notification_promo.InitFromJson(parsed_json, kDefaultPromoType);
-
-  if (notification_promo.new_notification()) {
-    ScheduleNotification(notification_promo.StartTimeForGroup(),
-                         notification_promo.EndTime());
+  for (size_t i = 0; i < arraysize(kValidPromoTypes); ++i) {
+    NotificationPromo notification_promo(profile_);
+    notification_promo.InitFromJson(parsed_json, kValidPromoTypes[i]);
+    if (notification_promo.new_notification())
+      ScheduleNotification(notification_promo);
   }
 }

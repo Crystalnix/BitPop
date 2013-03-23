@@ -21,6 +21,7 @@
 #include "base/win/registry.h"
 #endif
 
+namespace content {
 namespace {
 
 void SetUrlRequestMock(const FilePath& path) {
@@ -28,8 +29,6 @@ void SetUrlRequestMock(const FilePath& path) {
 }
 
 }
-
-namespace content {
 
 class PluginTest : public ContentBrowserTest {
  protected:
@@ -166,7 +165,8 @@ IN_PROC_BROWSER_TEST_F(PluginTest,
   string16 expected_title(ASCIIToUTF16("OK"));
   TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   title_watcher.AlsoWaitForTitle(ASCIIToUTF16("FAIL"));
-  SimulateMouseClick(shell()->web_contents());
+  SimulateMouseClick(shell()->web_contents(), 0,
+      WebKit::WebMouseEvent::ButtonLeft);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
 #endif
@@ -224,7 +224,7 @@ IN_PROC_BROWSER_TEST_F(PluginTest, GetJavaScriptURL2) {
 }
 
 // Test is flaky on linux/cros/win builders.  http://crbug.com/71904
-IN_PROC_BROWSER_TEST_F(PluginTest, GetURLRedirectNotification) {
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_GetURLRedirectNotification) {
   LoadAndWait(GetURL("geturl_redirect_notify.html"));
 }
 
@@ -282,12 +282,7 @@ IN_PROC_BROWSER_TEST_F(PluginTest, CreateInstanceInPaint) {
 }
 
 // Tests that putting up an alert in response to a paint doesn't deadlock.
-#if defined(OS_WIN)
-#define MAYBE_AlertInWindowMessage DISABLED_AlertInWindowMessage
-#else
-#define MAYBE_AlertInWindowMessage AlertInWindowMessage
-#endif
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE_AlertInWindowMessage) {
+IN_PROC_BROWSER_TEST_F(PluginTest, AlertInWindowMessage) {
   NavigateToURL(shell(), GetURL("alert_in_window_message.html"));
 
   WaitForAppModalDialog(shell());
@@ -419,12 +414,12 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_FlashSecurity) {
 // TODO(port) Port the following tests to platforms that have the required
 // plugins.
 // Flaky: http://crbug.com/55915
-IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Quicktime) {
+IN_PROC_BROWSER_TEST_F(PluginTest, Quicktime) {
   TestPlugin("quicktime.html");
 }
 
 // Disabled - http://crbug.com/44662
-IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_MediaPlayerNew) {
+IN_PROC_BROWSER_TEST_F(PluginTest, MediaPlayerNew) {
   TestPlugin("wmp_new.html");
 }
 
@@ -434,7 +429,7 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_MediaPlayerOld) {
 }
 
 // Disabled - http://crbug.com/44673
-IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Real) {
+IN_PROC_BROWSER_TEST_F(PluginTest, Real) {
   TestPlugin("real.html");
 }
 

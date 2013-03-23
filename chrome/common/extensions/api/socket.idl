@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// File-level comment to appease parser. Eventually this will not be necessary.
-
 namespace socket {
   enum SocketType {
     tcp,
@@ -24,6 +22,16 @@ namespace socket {
   callback ConnectCallback = void (long result);
 
   callback BindCallback = void (long result);
+
+  callback ListenCallback = void (long result);
+
+  dictionary AcceptInfo {
+    long resultCode;
+    // The id of the accepted socket.
+    long? socketId;
+  };
+
+  callback AcceptCallback = void (AcceptInfo acceptInfo);
 
   dictionary ReadInfo {
     // The resultCode returned from the underlying read() call.
@@ -85,6 +93,15 @@ namespace socket {
     long? localPort;
   };
 
+  dictionary NetworkInterface {
+    // The underlying name of the adapter. On *nix, this will typically be
+    // "eth0", "lo", etc.
+    DOMString name;
+
+    // The available IPv4/6 address.
+    DOMString address;
+  };
+
   callback RecvFromCallback = void (RecvFromInfo recvFromInfo);
 
   callback SendToCallback = void (WriteInfo writeInfo);
@@ -94,6 +111,8 @@ namespace socket {
   callback SetNoDelayCallback = void (boolean result);
 
   callback GetInfoCallback = void (SocketInfo result);
+
+  callback GetNetworkCallback = void (NetworkInterface[] result);
 
   interface Functions {
     // Creates a socket of the specified type that will connect to the specified
@@ -178,6 +197,30 @@ namespace socket {
                        long port,
                        SendToCallback callback);
 
+    // This method applies to TCP sockets only.
+    // Listens for connections on the specified port and address. This
+    // effectively makes this a server socket, and client socket
+    // functions (connect, read, write) can no longer be used on this socket.
+    // |socketId| : The socketId.
+    // |address| : The address of the local machine.
+    // |port| : The port of the local machine.
+    // |backlog| : Length of the socket's listen queue.
+    static void listen(long socketId,
+                       DOMString address,
+                       long port,
+                       optional long backlog,
+                       ListenCallback callback);
+
+    // This method applies to TCP sockets only.
+    // Registers a callback function to be called when a connection is
+    // accepted on this listening server socket. Listen must be called first.
+    // If there is already an active accept callback, this callback will be
+    // invoked immediately with an error as the resultCode.
+    // |socketId| : The socketId.
+    // |callback| : The callback is invoked when a new socket is accepted.
+    static void accept(long socketId,
+                       AcceptCallback callback);
+
     // Enables or disables the keep-alive functionality for a TCP connection.
     // |socketId| : The socketId.
     // |enable| : If true, enable keep-alive functionality.
@@ -203,6 +246,10 @@ namespace socket {
     // |callback| : Called when the state is available.
     static void getInfo(long socketId,
                         GetInfoCallback callback);
+
+    // Retrieves information about local adapters on this system.
+    // |callback| : Called when local adapter information is available.
+    static void getNetworkList(GetNetworkCallback callback);
   };
 
 };

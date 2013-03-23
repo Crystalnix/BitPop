@@ -11,7 +11,6 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -61,17 +60,18 @@ DownloadRequestLimiter::TabDownloadState::~TabDownloadState() {
 
 void DownloadRequestLimiter::TabDownloadState::DidGetUserGesture() {
   if (is_showing_prompt()) {
-    // Don't change the state if the user clicks on the page some where.
+    // Don't change the state if the user clicks on the page somewhere.
     return;
   }
 
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents());
-  // See PromptUserForDownload(): if there's no TabContents, then
+  InfoBarTabHelper* infobar_helper =
+      InfoBarTabHelper::FromWebContents(web_contents());
+  // See PromptUserForDownload(): if there's no InfoBarTabHelper, then
   // DOWNLOADS_NOT_ALLOWED is functionally equivalent to PROMPT_BEFORE_DOWNLOAD.
-  if ((tab_contents &&
+  if ((infobar_helper &&
        status_ != DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS &&
        status_ != DownloadRequestLimiter::DOWNLOADS_NOT_ALLOWED) ||
-      (!tab_contents &&
+      (!infobar_helper &&
        status_ != DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS)) {
     // Revert to default status.
     host_->Remove(this);
@@ -91,11 +91,13 @@ void DownloadRequestLimiter::TabDownloadState::PromptUserForDownload(
     NotifyCallbacks(DownloadRequestLimiter::delegate_->ShouldAllowDownload());
     return;
   }
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
-  if (!tab_contents) {
-    // If |web_contents| doesn't have a TabContents, then it isn't what a user
-    // thinks of as a tab, it's actually a "raw" WebContents like those used
-    // for extension popups/bubbles and hosted apps etc.
+
+  InfoBarTabHelper* infobar_helper =
+      InfoBarTabHelper::FromWebContents(web_contents);
+  if (!infobar_helper) {
+    // |web_contents| may not have a InfoBarTabHelper if it's actually a
+    // WebContents like those used for extension popups/bubbles and hosted apps
+    // etc.
     // TODO(benjhayden): If this is an automatic download from an extension,
     // it would be convenient for the extension author if we send a message to
     // the extension's DevTools console (as we do for CSP) about how
@@ -104,7 +106,6 @@ void DownloadRequestLimiter::TabDownloadState::PromptUserForDownload(
     Cancel();
     return;
   }
-  InfoBarTabHelper* infobar_helper = tab_contents->infobar_tab_helper();
   infobar_ = new DownloadRequestInfoBarDelegate(infobar_helper, this);
   infobar_helper->AddInfoBar(infobar_);
 }
@@ -117,65 +118,50 @@ void DownloadRequestLimiter::TabDownloadState::Accept() {
   NotifyCallbacks(true);
 }
 
+DownloadRequestLimiter::TabDownloadState::TabDownloadState()
+    : host_(NULL),
+      status_(DownloadRequestLimiter::ALLOW_ONE_DOWNLOAD),
+      download_count_(0),
+      infobar_(NULL) {
+}
+
 void DownloadRequestLimiter::TabDownloadState::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  if (type != content::NOTIFICATION_NAV_ENTRY_PENDING &&
-      type != content::NOTIFICATION_WEB_CONTENTS_DESTROYED) {
-    NOTREACHED();
-    return;
-  }
   content::NavigationController* controller = &web_contents()->GetController();
-  if (type == content::NOTIFICATION_NAV_ENTRY_PENDING &&
-      content::Source<NavigationController>(source).ptr() != controller) {
-    NOTREACHED();
-    return;
-  }
-  if (type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED &&
-      &content::Source<content::WebContents>(source).ptr()->
-          GetController() != controller) {
-    NOTREACHED();
-    return;
-  }
+  if (type == content::NOTIFICATION_NAV_ENTRY_PENDING) {
+    DCHECK_EQ(controller, content::Source<NavigationController>(source).ptr());
 
-  switch (type) {
-    case content::NOTIFICATION_NAV_ENTRY_PENDING: {
-      // NOTE: resetting state on a pending navigate isn't ideal. In particular
-      // it is possible that queued up downloads for the page before the
-      // pending navigate will be delivered to us after we process this
-      // request. If this happens we may let a download through that we
-      // shouldn't have. But this is rather rare, and it is difficult to get
-      // 100% right, so we don't deal with it.
-      NavigationEntry* entry = controller->GetPendingEntry();
-      if (!entry)
+    // NOTE: Resetting state on a pending navigate isn't ideal. In particular it
+    // is possible that queued up downloads for the page before the pending
+    // navigation will be delivered to us after we process this request. If this
+    // happens we may let a download through that we shouldn't have. But this is
+    // rather rare, and it is difficult to get 100% right, so we don't deal with
+    // it.
+    NavigationEntry* entry = controller->GetPendingEntry();
+    if (!entry)
+      return;
+
+    // Redirects don't count.
+    if (content::PageTransitionIsRedirect(entry->GetTransitionType()))
+      return;
+
+    if (status_ == DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS ||
+        status_ == DownloadRequestLimiter::DOWNLOADS_NOT_ALLOWED) {
+      // User has either allowed all downloads or canceled all downloads. Only
+      // reset the download state if the user is navigating to a different host
+      // (or host is empty).
+      if (!initial_page_host_.empty() && !entry->GetURL().host().empty() &&
+          entry->GetURL().host() == initial_page_host_)
         return;
-
-      if (content::PageTransitionIsRedirect(entry->GetTransitionType())) {
-        // Redirects don't count.
-        return;
-      }
-
-      if (status_ == DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS ||
-          status_ == DownloadRequestLimiter::DOWNLOADS_NOT_ALLOWED) {
-        // User has either allowed all downloads or canceled all downloads. Only
-        // reset the download state if the user is navigating to a different
-        // host (or host is empty).
-        if (!initial_page_host_.empty() && !entry->GetURL().host().empty() &&
-            entry->GetURL().host() == initial_page_host_) {
-          return;
-        }
-      }
-      break;
     }
-
-    case content::NOTIFICATION_WEB_CONTENTS_DESTROYED:
-      // Tab closed, no need to handle closing the dialog as it's owned by the
-      // WebContents, break so that we get deleted after switch.
-      break;
-
-    default:
-      NOTREACHED();
+  } else {
+    DCHECK_EQ(content::NOTIFICATION_WEB_CONTENTS_DESTROYED, type);
+    DCHECK_EQ(controller,
+              &content::Source<content::WebContents>(source)->GetController());
+    // Tab closed, no need to handle closing the dialog as it's owned by the
+    // WebContents.
   }
 
   NotifyCallbacks(false);
@@ -316,14 +302,12 @@ void DownloadRequestLimiter::CanDownloadImpl(WebContents* originating_contents,
   // If the tab requesting the download is a constrained popup that is not
   // shown, treat the request as if it came from the parent.
   WebContents* effective_contents = originating_contents;
-  TabContents* originating_tab_contents =
-     TabContents::FromWebContents(originating_contents);
-  if (originating_tab_contents &&
-      originating_tab_contents->blocked_content_tab_helper()->delegate()) {
-    effective_contents =
-        originating_tab_contents->blocked_content_tab_helper()->delegate()->
-            GetConstrainingTabContents(originating_tab_contents)->
-                web_contents();
+  BlockedContentTabHelper* blocked_content_tab_helper =
+      BlockedContentTabHelper::FromWebContents(originating_contents);
+  if (blocked_content_tab_helper &&
+      blocked_content_tab_helper->delegate()) {
+    effective_contents = blocked_content_tab_helper->delegate()->
+        GetConstrainingWebContents(originating_contents);
   }
 
   TabDownloadState* state = GetDownloadState(

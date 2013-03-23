@@ -12,13 +12,18 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
-#include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "chrome/service/cloud_print/job_status_updater.h"
 #include "googleurl/src/gurl.h"
+#include "grit/generated_resources.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
+#include "printing/backend/print_backend.h"
+#include "ui/base/l10n/l10n_util.h"
+
+namespace cloud_print {
 
 PrinterJobHandler::JobDetails::JobDetails() {}
 
@@ -37,7 +42,7 @@ PrinterJobHandler::PrinterJobHandler(
     const printing::PrinterBasicInfo& printer_info,
     const PrinterInfoFromCloud& printer_info_cloud,
     const GURL& cloud_print_server_url,
-    cloud_print::PrintSystem* print_system,
+    PrintSystem* print_system,
     Delegate* delegate)
     : print_system_(print_system),
       printer_info_(printer_info),
@@ -158,7 +163,7 @@ CloudPrintURLFetcher::ResponseAction PrinterJobHandler::OnRequestAuthError() {
 }
 
 std::string PrinterJobHandler::GetAuthHeader() {
-  return CloudPrintHelpers::GetCloudPrintAuthHeaderFromStore();
+  return GetCloudPrintAuthHeaderFromStore();
 }
 
 // JobStatusUpdater::Delegate implementation
@@ -205,8 +210,7 @@ void PrinterJobHandler::OnJobChanged() {
   }
 }
 
-void PrinterJobHandler::OnJobSpoolSucceeded(
-    const cloud_print::PlatformJobId& job_id) {
+void PrinterJobHandler::OnJobSpoolSucceeded(const PlatformJobId& job_id) {
   DCHECK(MessageLoop::current() == print_thread_.message_loop());
   job_spooler_ = NULL;
   job_handler_message_loop_proxy_->PostTask(
@@ -420,7 +424,7 @@ void PrinterJobHandler::Start() {
         SetNextJSONHandler(&PrinterJobHandler::HandleJobMetadataResponse);
         request_ = new CloudPrintURLFetcher;
         request_->StartGetRequest(
-            CloudPrintHelpers::GetUrlForJobFetch(
+            GetUrlForJobFetch(
                 cloud_print_server_url_, printer_info_cloud_.printer_id,
                 job_fetch_reason_),
             this,
@@ -475,7 +479,7 @@ void PrinterJobHandler::Reset() {
   print_thread_.Stop();
 }
 
-void PrinterJobHandler::UpdateJobStatus(cloud_print::PrintJobStatus status,
+void PrinterJobHandler::UpdateJobStatus(PrintJobStatus status,
                                         PrintJobError error) {
   VLOG(1) << "CP_CONNECTOR: Updating job status"
           << ", printer id: " << printer_info_cloud_.printer_id
@@ -501,10 +505,9 @@ void PrinterJobHandler::UpdateJobStatus(cloud_print::PrintJobStatus status,
         &PrinterJobHandler::HandleFailureStatusUpdateResponse);
   }
   request_ = new CloudPrintURLFetcher;
-  request_->StartGetRequest(
-      CloudPrintHelpers::GetUrlForJobStatusUpdate(cloud_print_server_url_,
-                                                  job_details_.job_id_,
-                                                  status),
+  request_->StartGetRequest(GetUrlForJobStatusUpdate(cloud_print_server_url_,
+                                                     job_details_.job_id_,
+                                                     status),
       this,
       kCloudPrintAPIMaxRetryCount,
       std::string());
@@ -526,19 +529,19 @@ void PrinterJobHandler::JobFailed(PrintJobError error) {
           << ", job id: " << job_details_.job_id_
           << ", error: " << error;
   if (!shutting_down_) {
-    UpdateJobStatus(cloud_print::PRINT_JOB_STATUS_ERROR, error);
+    UpdateJobStatus(PRINT_JOB_STATUS_ERROR, error);
     // This job failed, but others may be pending.  Schedule a check.
     job_check_pending_ = true;
   }
 }
 
-void PrinterJobHandler::JobSpooled(cloud_print::PlatformJobId local_job_id) {
+void PrinterJobHandler::JobSpooled(PlatformJobId local_job_id) {
   VLOG(1) << "CP_CONNECTOR: Job spooled"
           << ", printer id: " << printer_info_cloud_.printer_id
           << ", job id: " << local_job_id;
   if (!shutting_down_) {
     local_job_id_ = local_job_id;
-    UpdateJobStatus(cloud_print::PRINT_JOB_STATUS_IN_PROGRESS, SUCCESS);
+    UpdateJobStatus(PRINT_JOB_STATUS_IN_PROGRESS, SUCCESS);
     print_thread_.Stop();
   }
 }
@@ -594,7 +597,7 @@ void PrinterJobHandler::OnReceivePrinterCaps(
 
   std::string post_data;
   std::string mime_boundary;
-  cloud_print::CreateMimeBoundaryForUpload(&mime_boundary);
+  CreateMimeBoundaryForUpload(&mime_boundary);
 
   if (succeeded) {
     std::string caps_hash =
@@ -603,13 +606,13 @@ void PrinterJobHandler::OnReceivePrinterCaps(
       // Hashes don't match, we need to upload new capabilities (the defaults
       // go for free along with the capabilities)
       printer_info_cloud_.caps_hash = caps_hash;
-      cloud_print::AddMultipartValueForUpload(kPrinterCapsValue,
+      AddMultipartValueForUpload(kPrinterCapsValue,
           caps_and_defaults.printer_capabilities, mime_boundary,
           caps_and_defaults.caps_mime_type, &post_data);
-      cloud_print::AddMultipartValueForUpload(kPrinterDefaultsValue,
+      AddMultipartValueForUpload(kPrinterDefaultsValue,
           caps_and_defaults.printer_defaults, mime_boundary,
           caps_and_defaults.defaults_mime_type, &post_data);
-      cloud_print::AddMultipartValueForUpload(kPrinterCapsHashValue,
+      AddMultipartValueForUpload(kPrinterCapsHashValue,
           caps_hash, mime_boundary, std::string(), &post_data);
     }
   } else {
@@ -617,30 +620,28 @@ void PrinterJobHandler::OnReceivePrinterCaps(
                << ", printer name: " << printer_name;
   }
 
-  std::string tags_hash =
-      CloudPrintHelpers::GenerateHashOfStringMap(printer_info.options);
+  std::string tags_hash = GetHashOfPrinterInfo(printer_info);
   if (tags_hash != printer_info_cloud_.tags_hash) {
     printer_info_cloud_.tags_hash = tags_hash;
-    CloudPrintHelpers::GenerateMultipartPostDataForPrinterTags(
-        printer_info.options, mime_boundary, &post_data);
-    // Remove all the exising proxy tags.
-    std::string cp_tag_wildcard(kProxyTagPrefix);
+    post_data += GetPostDataForPrinterInfo(printer_info, mime_boundary);
+    // Remove all the existing proxy tags.
+    std::string cp_tag_wildcard(kCloudPrintServiceProxyTagPrefix);
     cp_tag_wildcard += ".*";
-    cloud_print::AddMultipartValueForUpload(kPrinterRemoveTagValue,
+    AddMultipartValueForUpload(kPrinterRemoveTagValue,
         cp_tag_wildcard, mime_boundary, std::string(), &post_data);
   }
 
   if (printer_info.printer_name != printer_info_.printer_name) {
-    cloud_print::AddMultipartValueForUpload(kPrinterNameValue,
+    AddMultipartValueForUpload(kPrinterNameValue,
         printer_info.printer_name, mime_boundary, std::string(), &post_data);
   }
   if (printer_info.printer_description != printer_info_.printer_description) {
-    cloud_print::AddMultipartValueForUpload(kPrinterDescValue,
+    AddMultipartValueForUpload(kPrinterDescValue,
       printer_info.printer_description, mime_boundary,
       std::string(), &post_data);
   }
   if (printer_info.printer_status != printer_info_.printer_status) {
-    cloud_print::AddMultipartValueForUpload(kPrinterStatusValue,
+    AddMultipartValueForUpload(kPrinterStatusValue,
         base::StringPrintf("%d", printer_info.printer_status), mime_boundary,
         std::string(), &post_data);
   }
@@ -653,7 +654,7 @@ void PrinterJobHandler::OnReceivePrinterCaps(
     SetNextJSONHandler(&PrinterJobHandler::HandlePrinterUpdateResponse);
     request_ = new CloudPrintURLFetcher;
     request_->StartPostRequest(
-        CloudPrintHelpers::GetUrlForPrinterUpdate(
+        GetUrlForPrinterUpdate(
             cloud_print_server_url_, printer_info_cloud_.printer_id),
         this,
         kCloudPrintAPIMaxRetryCount,
@@ -676,13 +677,24 @@ void PrinterJobHandler::DoPrint(const JobDetails& job_details,
                                 const std::string& printer_name) {
   job_spooler_ = print_system_->CreateJobSpooler();
   DCHECK(job_spooler_);
-  if (!job_spooler_ || !job_spooler_->Spool(job_details.print_ticket_,
-                                            job_details.print_data_file_path_,
-                                            job_details.print_data_mime_type_,
-                                            printer_name,
-                                            job_details.job_title_,
-                                            job_details.tags_,
-                                            this)) {
+  if (!job_spooler_)
+    return;
+  string16 document_name =
+      printing::PrintBackend::SimplifyDocumentTitle(
+          UTF8ToUTF16(job_details.job_title_));
+  if (document_name.empty()) {
+    document_name = printing::PrintBackend::SimplifyDocumentTitle(
+        l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE));
+  }
+  if (!job_spooler_->Spool(job_details.print_ticket_,
+                           job_details.print_data_file_path_,
+                           job_details.print_data_mime_type_,
+                           printer_name,
+                           UTF16ToUTF8(document_name),
+                           job_details.tags_,
+                           this)) {
     OnJobSpoolFailed();
   }
 }
+
+}  // namespace cloud_print

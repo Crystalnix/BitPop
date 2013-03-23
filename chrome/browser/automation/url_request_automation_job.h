@@ -17,6 +17,7 @@ struct AutomationURLResponse;
 namespace net {
 class HttpResponseHeaders;
 class HttpResponseInfo;
+class HttpUserAgentSettings;
 class HostPortPair;
 }
 
@@ -28,9 +29,14 @@ class Message;
 // automation.
 class URLRequestAutomationJob : public net::URLRequestJob {
  public:
-  URLRequestAutomationJob(net::URLRequest* request, int tab, int request_id,
-                          AutomationResourceMessageFilter* filter,
-                          bool is_pending);
+  URLRequestAutomationJob(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const net::HttpUserAgentSettings* http_user_agent_settings,
+      int tab,
+      int request_id,
+      AutomationResourceMessageFilter* filter,
+      bool is_pending);
 
   // Register our factory for HTTP/HTTPs requests.
   static void EnsureProtocolFactoryRegistered();
@@ -45,7 +51,7 @@ class URLRequestAutomationJob : public net::URLRequestJob {
   virtual void GetResponseInfo(net::HttpResponseInfo* info);
   virtual int GetResponseCode() const;
   virtual bool IsRedirectResponse(GURL* location, int* http_status_code);
-  virtual uint64 GetUploadProgress() const;
+  virtual net::UploadProgress GetUploadProgress() const;
   virtual net::HostPortPair GetSocketAddress() const;
 
   // Peek and process automation messages for URL requests.
@@ -94,6 +100,7 @@ class URLRequestAutomationJob : public net::URLRequestJob {
   // function, which completes the job.
   void NotifyJobCompletionTask();
 
+  const net::HttpUserAgentSettings* http_user_agent_settings_;
   int id_;
   int tab_;
   scoped_refptr<AutomationResourceMessageFilter> message_filter_;
@@ -126,6 +133,9 @@ class URLRequestAutomationJob : public net::URLRequestJob {
 
   // Contains the ip address and port of the destination host.
   net::HostPortPair socket_address_;
+
+  // Size of the upload data appended to the request.
+  uint64 upload_size_;
 
   base::WeakPtrFactory<URLRequestAutomationJob> weak_factory_;
 

@@ -15,6 +15,7 @@ class MessageLoop;
 
 namespace net {
 class HostResolver;
+class MappedHostResolver;
 class NetworkDelegate;
 class ProxyConfigService;
 class URLRequestContextStorage;
@@ -25,6 +26,7 @@ namespace content {
 class ShellURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
   ShellURLRequestContextGetter(
+      bool ignore_certificate_errors,
       const FilePath& base_path,
       MessageLoop* io_loop,
       MessageLoop* file_loop);
@@ -40,6 +42,7 @@ class ShellURLRequestContextGetter : public net::URLRequestContextGetter {
   virtual ~ShellURLRequestContextGetter();
 
  private:
+  bool ignore_certificate_errors_;
   FilePath base_path_;
   MessageLoop* io_loop_;
   MessageLoop* file_loop_;

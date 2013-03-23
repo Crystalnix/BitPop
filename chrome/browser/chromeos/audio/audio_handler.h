@@ -6,12 +6,14 @@
 #define CHROME_BROWSER_CHROMEOS_AUDIO_AUDIO_HANDLER_H_
 
 #include "base/basictypes.h"
-#include "base/observer_list.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
+#include "base/prefs/public/pref_change_registrar.h"
 #include "base/threading/thread.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
+class PrefChangeRegistrar;
 class PrefService;
 
 namespace chromeos {
@@ -46,7 +48,9 @@ class AudioHandler {
   // Gets volume level in our internal 0-100% range, 0 being pure silence.
   double GetVolumePercent();
 
-  // Sets volume level from 0-100%.
+  // Sets volume level from 0-100%. If less than kMuteThresholdPercent, then
+  // mutes the sound. If it was muted, and |volume_percent| is larger than
+  // the threshold, then the sound is unmuted.
   void SetVolumePercent(double volume_percent);
 
   // Adjusts volume up (positive percentage) or down (negative percentage).
@@ -57,6 +61,13 @@ class AudioHandler {
 
   // Mutes or unmutes all audio.
   void SetMuted(bool do_mute);
+
+  // Is the capture volume currently muted?
+  bool IsCaptureMuted();
+
+  // Mutes or unmutes all capture devices. If unmutes and the volume was set
+  // to 0, then increases volume to a minimum value (5%).
+  void SetCaptureMuted(bool do_mute);
 
   void AddVolumeObserver(VolumeObserver* observer);
   void RemoveVolumeObserver(VolumeObserver* observer);
@@ -70,11 +81,23 @@ class AudioHandler {
   explicit AudioHandler(AudioMixer* mixer);
   virtual ~AudioHandler();
 
+  // Initializes the observers for the policy prefs.
+  void InitializePrefObservers();
+
+  // Applies the audio muting policies whenever the user logs in or policy
+  // change notification is received.
+  void ApplyAudioPolicy();
+
+  // Sets volume to specified value and notifies observers.
+  void SetVolumePercentInternal(double volume_percent);
+
   scoped_ptr<AudioMixer> mixer_;
 
   ObserverList<VolumeObserver> volume_observers_;
 
-  PrefService* prefs_;  // not owned
+  PrefService* local_state_;  // not owned
+
+  PrefChangeRegistrar pref_change_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioHandler);
 };

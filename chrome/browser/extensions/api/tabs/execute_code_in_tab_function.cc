@@ -11,16 +11,14 @@
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/file_reader.h"
 #include "chrome/browser/extensions/script_executor.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -28,9 +26,11 @@
 #include "chrome/common/extensions/message_bundle.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/error_utils.h"
 
 using content::BrowserThread;
 using extensions::api::tabs::InjectDetails;
+using extensions::ErrorUtils;
 using extensions::ScriptExecutor;
 using extensions::UserScript;
 
@@ -63,7 +63,7 @@ bool ExecuteCodeInTabFunction::RunImpl() {
     return false;
   }
 
-  TabContents* contents = NULL;
+  content::WebContents* contents = NULL;
 
   // If |tab_id| is specified, look for the tab. Otherwise default to selected
   // tab in the current window.
@@ -77,8 +77,11 @@ bool ExecuteCodeInTabFunction::RunImpl() {
   // NOTE: This can give the wrong answer due to race conditions, but it is OK,
   // we check again in the renderer.
   CHECK(contents);
-  if (!GetExtension()->CanExecuteScriptOnPage(
-          contents->web_contents()->GetURL(), execute_tab_id_, NULL, &error_)) {
+  if (!GetExtension()->CanExecuteScriptOnPage(contents->GetURL(),
+                                              contents->GetURL(),
+                                              execute_tab_id_,
+                                              NULL,
+                                              &error_)) {
     return false;
   }
 
@@ -142,8 +145,8 @@ bool ExecuteCodeInTabFunction::Init() {
     Browser* browser = GetCurrentBrowser();
     if (!browser)
       return false;
-    TabContents* tab_contents = NULL;
-    if (!ExtensionTabUtil::GetDefaultTab(browser, &tab_contents, &tab_id))
+    content::WebContents* web_contents = NULL;
+    if (!ExtensionTabUtil::GetDefaultTab(browser, &web_contents, &tab_id))
       return false;
   }
 
@@ -208,10 +211,10 @@ void ExecuteCodeInTabFunction::DidLoadAndLocalizeFile(bool success,
 #if defined(OS_POSIX)
     // TODO(viettrungluu): bug: there's no particular reason the path should be
     // UTF-8, in which case this may fail.
-    error_ = ExtensionErrorUtils::FormatErrorMessage(keys::kLoadFileError,
+    error_ = ErrorUtils::FormatErrorMessage(keys::kLoadFileError,
         resource_.relative_path().value());
 #elif defined(OS_WIN)
-    error_ = ExtensionErrorUtils::FormatErrorMessage(keys::kLoadFileError,
+    error_ = ErrorUtils::FormatErrorMessage(keys::kLoadFileError,
         WideToUTF8(resource_.relative_path().value()));
 #endif  // OS_WIN
     SendResponse(false);
@@ -219,7 +222,7 @@ void ExecuteCodeInTabFunction::DidLoadAndLocalizeFile(bool success,
 }
 
 bool ExecuteCodeInTabFunction::Execute(const std::string& code_string) {
-  TabContents* contents = NULL;
+  content::WebContents* contents = NULL;
   Browser* browser = NULL;
 
   bool success = ExtensionTabUtil::GetTabById(
@@ -261,13 +264,14 @@ bool ExecuteCodeInTabFunction::Execute(const std::string& code_string) {
   }
   CHECK_NE(UserScript::UNDEFINED, run_at);
 
-  contents->extension_tab_helper()->script_executor()->ExecuteScript(
-      extension->id(),
-      script_type,
-      code_string,
-      frame_scope,
-      run_at,
-      ScriptExecutor::ISOLATED_WORLD,
-      base::Bind(&ExecuteCodeInTabFunction::OnExecuteCodeFinished, this));
+  extensions::TabHelper::FromWebContents(contents)->
+      script_executor()->ExecuteScript(
+          extension->id(),
+          script_type,
+          code_string,
+          frame_scope,
+          run_at,
+          ScriptExecutor::ISOLATED_WORLD,
+          base::Bind(&ExecuteCodeInTabFunction::OnExecuteCodeFinished, this));
   return true;
 }

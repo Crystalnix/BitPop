@@ -10,12 +10,14 @@
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "googleurl/src/gurl.h"
+#include "ui/gfx/rect.h"
 
 class Profile;
-class TabContents;
 class WebAuthFlowTest;
 
 namespace content {
@@ -35,7 +37,8 @@ namespace extensions {
 // The provider can show any UI to the user if needed before redirecting
 // to an appropriate URL.
 // TODO(munjal): Add link to the design doc here.
-class WebAuthFlow : public content::NotificationObserver {
+class WebAuthFlow : public content::NotificationObserver,
+                    public content::WebContentsObserver {
  public:
   enum Mode {
     INTERACTIVE,  // Show UI to the user if necessary.
@@ -63,7 +66,9 @@ class WebAuthFlow : public content::NotificationObserver {
               Profile* profile,
               const std::string& extension_id,
               const GURL& provider_url,
-              Mode mode);
+              Mode mode,
+              const gfx::Rect& initial_bounds,
+              chrome::HostDesktopType host_desktop_type);
   virtual ~WebAuthFlow();
 
   // Starts the flow.
@@ -71,6 +76,7 @@ class WebAuthFlow : public content::NotificationObserver {
   virtual void Start();
 
  protected:
+  // Overridable for testing.
   virtual content::WebContents* CreateWebContents();
   virtual void ShowAuthFlowPopup();
 
@@ -81,6 +87,15 @@ class WebAuthFlow : public content::NotificationObserver {
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // WebContentsObserver implementation.
+  virtual void ProvisionalChangeToMainFrameUrl(
+      const GURL& url,
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DidStopLoading(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void WebContentsDestroyed(
+      content::WebContents* web_contents) OVERRIDE;
 
   bool BeforeUrlLoaded(const GURL& url);
   void AfterUrlLoaded();
@@ -96,11 +111,13 @@ class WebAuthFlow : public content::NotificationObserver {
   Profile* profile_;
   GURL provider_url_;
   Mode mode_;
+  gfx::Rect initial_bounds_;
+  chrome::HostDesktopType host_desktop_type_;
+  bool popup_shown_;
   // List of valid redirect URL prefixes.
   std::vector<std::string> valid_prefixes_;
 
   content::WebContents* contents_;
-  TabContents* tab_contents_;
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WebAuthFlow);

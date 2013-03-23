@@ -6,6 +6,7 @@
 
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
+#include "chrome/browser/predictors/resource_prefetch_common.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
@@ -37,10 +38,11 @@ ResourcePrefetchPredictorFactory::~ResourcePrefetchPredictorFactory() {}
 ProfileKeyedService*
     ResourcePrefetchPredictorFactory::BuildServiceInstanceFor(
         Profile* profile) const {
-  return ResourcePrefetchPredictor::IsEnabled(profile) ?
-          new ResourcePrefetchPredictor(ResourcePrefetchPredictor::Config(),
-                                        profile) :
-          NULL;
+  ResourcePrefetchPredictorConfig config;
+  if (!IsSpeculativeResourcePrefetchingEnabled(profile, &config))
+    return NULL;
+
+  return new ResourcePrefetchPredictor(config, profile);
 }
 
 }  // namespace predictors

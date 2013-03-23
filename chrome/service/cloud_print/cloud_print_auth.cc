@@ -6,18 +6,19 @@
 
 #include "base/bind.h"
 #include "base/string_util.h"
-#include "chrome/common/net/gaia/gaia_urls.h"
-#include "chrome/service/cloud_print/cloud_print_consts.h"
-#include "chrome/service/cloud_print/cloud_print_helpers.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
+#include "chrome/common/cloud_print/cloud_print_helpers.h"
 #include "chrome/service/cloud_print/cloud_print_token_store.h"
 #include "chrome/service/gaia/service_gaia_authenticator.h"
 #include "chrome/service/net/service_url_request_context.h"
 #include "chrome/service/service_process.h"
+#include "google_apis/gaia/gaia_urls.h"
+
+namespace cloud_print {
 
 CloudPrintAuth::CloudPrintAuth(
     Client* client,
     const GURL& cloud_print_server_url,
-    const base::DictionaryValue* print_sys_settings,
     const gaia::OAuthClientInfo& oauth_client_info,
     const std::string& proxy_id)
       : client_(client),
@@ -25,10 +26,6 @@ CloudPrintAuth::CloudPrintAuth(
         cloud_print_server_url_(cloud_print_server_url),
         proxy_id_(proxy_id) {
   DCHECK(client);
-  if (print_sys_settings) {
-    // It is possible to have no print settings specified.
-    print_system_settings_.reset(print_sys_settings->DeepCopy());
-  }
 }
 
 void CloudPrintAuth::AuthenticateWithLsid(
@@ -70,10 +67,9 @@ void CloudPrintAuth::AuthenticateWithToken(
   client_login_token_ = cloud_print_token;
 
   // We need to get the credentials of the robot here.
-  GURL get_authcode_url =
-      CloudPrintHelpers::GetUrlForGetAuthCode(cloud_print_server_url_,
-                                              oauth_client_info_.client_id,
-                                              proxy_id_);
+  GURL get_authcode_url = GetUrlForGetAuthCode(cloud_print_server_url_,
+                                               oauth_client_info_.client_id,
+                                               proxy_id_);
   request_ = new CloudPrintURLFetcher;
   request_->StartGetRequest(get_authcode_url,
                             this,
@@ -202,3 +198,4 @@ std::string CloudPrintAuth::GetAuthHeader() {
 
 CloudPrintAuth::~CloudPrintAuth() {}
 
+}  // namespace cloud_print

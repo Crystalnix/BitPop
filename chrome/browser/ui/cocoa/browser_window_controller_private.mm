@@ -32,7 +32,7 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/search/search_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -64,14 +64,11 @@ const CGFloat kLocBarBottomInset = 1;
 
 @implementation BrowserWindowController(Private)
 
-// Create the appropriate tab strip controller based on whether or not side
-// tabs are enabled.
+// Create the tab strip controller.
 - (void)createTabStripController {
-  Class factory = [TabStripController class];
-
   DCHECK([previewableContentsController_ activeContainer]);
   DCHECK([[previewableContentsController_ activeContainer] window]);
-  tabStripController_.reset([[factory alloc]
+  tabStripController_.reset([[TabStripController alloc]
       initWithView:[self tabStripView]
         switchView:[previewableContentsController_ activeContainer]
            browser:browser_.get()
@@ -113,7 +110,7 @@ const CGFloat kLocBarBottomInset = 1;
 
   // Only save main window information to preferences.
   PrefService* prefs = browser_->profile()->GetPrefs();
-  if (!prefs || browser_ != browser::GetLastActiveBrowser())
+  if (!prefs || browser_ != chrome::GetLastActiveBrowser())
     return;
 
   // Save the current work area, in flipped coordinates.
@@ -147,21 +144,18 @@ willPositionSheet:(NSWindow*)sheet
   //    the sheet below the bookmark bar.
   //  - If the bookmark bar is currently animating, position the sheet according
   //    to where the bar will be when the animation ends.
-  switch ([bookmarkBarController_ visualState]) {
-    case bookmarks::kShowingState: {
+  switch ([bookmarkBarController_ state]) {
+    case BookmarkBar::SHOW: {
       NSRect bookmarkBarFrame = [[bookmarkBarController_ view] frame];
       defaultSheetRect.origin.y = bookmarkBarFrame.origin.y;
       break;
     }
-    case bookmarks::kHiddenState:
-    case bookmarks::kDetachedState: {
+    case BookmarkBar::HIDDEN:
+    case BookmarkBar::DETACHED: {
       NSRect toolbarFrame = [[toolbarController_ view] frame];
       defaultSheetRect.origin.y = toolbarFrame.origin.y;
       break;
     }
-    case bookmarks::kInvalidState:
-    default:
-      NOTREACHED();
   }
   return defaultSheetRect;
 }
@@ -212,7 +206,7 @@ willPositionSheet:(NSWindow*)sheet
   // immediately below the toolbar.
   BOOL placeBookmarkBarBelowInfoBar = [self placeBookmarkBarBelowInfoBar];
   if (!placeBookmarkBarBelowInfoBar)
-    maxY = [self layoutBookmarkBarAtMinX:minX maxY:maxY width:width];
+    maxY = [self layoutTopBookmarkBarAtMinX:minX maxY:maxY width:width];
 
   // The floating bar backing view doesn't actually add any height.
   NSRect floatingBarBackingRect =
@@ -235,12 +229,18 @@ willPositionSheet:(NSWindow*)sheet
   // presentation mode in which case it's at the top of the visual content area.
   maxY = [self layoutInfoBarAtMinX:minX maxY:maxY width:width];
 
-  // If the bookmark bar is detached, place it next in the visual content area.
-  if (placeBookmarkBarBelowInfoBar)
-    maxY = [self layoutBookmarkBarAtMinX:minX maxY:maxY width:width];
-
   // Place the download shelf, if any, at the bottom of the view.
   minY = [self layoutDownloadShelfAtMinX:minX minY:minY width:width];
+
+  // Place the bookmark bar.
+  if (placeBookmarkBarBelowInfoBar) {
+    if ([bookmarkBarController_ shouldShowAtBottomWhenDetached]) {
+      [self layoutBottomBookmarkBarInContentFrame:
+          NSMakeRect(minX, minY, width, maxY - minY)];
+    } else {
+      maxY = [self layoutTopBookmarkBarAtMinX:minX maxY:maxY width:width];
+    }
+  }
 
   // Finally, the content area takes up all of the remaining space.
   NSRect contentAreaRect = NSMakeRect(minX, minY, width, maxY - minY);
@@ -290,6 +290,25 @@ willPositionSheet:(NSWindow*)sheet
   [tabStripController_ setLeftIndentForControls:(fullscreen ? 0 :
       [[tabStripController_ class] defaultLeftIndentForControls])];
 
+  // Lay out the icognito/avatar badge because calculating the indentation on
+  // the right depends on it.
+  if ([self shouldShowAvatar]) {
+    NSView* avatarButton = [avatarButtonController_ view];
+    CGFloat buttonHeight = std::min(
+        static_cast<CGFloat>(profiles::kAvatarIconHeight), tabStripHeight);
+    [avatarButton setFrameSize:NSMakeSize(profiles::kAvatarIconWidth,
+                                          buttonHeight)];
+
+    // Actually place the badge *above* |maxY|, by +2 to miss the divider.
+    CGFloat badgeXOffset = -kAvatarRightOffset;
+    CGFloat badgeYOffset = 2 * [[avatarButton superview] cr_lineWidth];
+    NSPoint origin =
+        NSMakePoint(width - NSWidth([avatarButton frame]) + badgeXOffset,
+                    maxY + badgeYOffset);
+    [avatarButton setFrameOrigin:origin];
+    [avatarButton setHidden:NO];  // Make sure it's shown.
+  }
+
   // Calculate the right indentation.  The default indentation built into the
   // tabstrip leaves enough room for the fullscreen button or presentation mode
   // toggle button on Lion.  On non-Lion systems, the right indent needs to be
@@ -307,24 +326,6 @@ willPositionSheet:(NSWindow*)sheet
 
   // Go ahead and layout the tabs.
   [tabStripController_ layoutTabsWithoutAnimation];
-
-  // Now lay out incognito badge together with the tab strip.
-  if ([self shouldShowAvatar]) {
-    NSView* avatarButton = [avatarButtonController_ view];
-    CGFloat buttonHeight = std::min(
-        static_cast<CGFloat>(profiles::kAvatarIconHeight), tabStripHeight);
-    [avatarButton setFrameSize:NSMakeSize(profiles::kAvatarIconWidth,
-                                          buttonHeight)];
-
-    // Actually place the badge *above* |maxY|, by +2 to miss the divider.
-    CGFloat badgeXOffset = -kAvatarRightOffset;
-    CGFloat badgeYOffset = 2 * [[avatarButton superview] cr_lineWidth];
-    NSPoint origin =
-        NSMakePoint(width - NSWidth([avatarButton frame]) + badgeXOffset,
-                    maxY + badgeYOffset);
-    [avatarButton setFrameOrigin:origin];
-    [avatarButton setHidden:NO];  // Make sure it's shown.
-  }
 
   return maxY;
 }
@@ -365,31 +366,55 @@ willPositionSheet:(NSWindow*)sheet
   // If we are currently displaying the NTP detached bookmark bar or animating
   // to/from it (from/to anything else), we display the bookmark bar below the
   // infobar.
-  return [bookmarkBarController_ isInState:bookmarks::kDetachedState] ||
-      [bookmarkBarController_ isAnimatingToState:bookmarks::kDetachedState] ||
-      [bookmarkBarController_ isAnimatingFromState:bookmarks::kDetachedState];
+  return [bookmarkBarController_ isInState:BookmarkBar::DETACHED] ||
+         [bookmarkBarController_ isAnimatingToState:BookmarkBar::DETACHED] ||
+         [bookmarkBarController_ isAnimatingFromState:BookmarkBar::DETACHED];
 }
 
-- (CGFloat)layoutBookmarkBarAtMinX:(CGFloat)minX
-                              maxY:(CGFloat)maxY
-                             width:(CGFloat)width {
+- (CGFloat)layoutTopBookmarkBarAtMinX:(CGFloat)minX
+                                 maxY:(CGFloat)maxY
+                               width:(CGFloat)width {
+  [bookmarkBarController_ updateHiddenState];
+
   NSView* bookmarkBarView = [bookmarkBarController_ view];
-  NSRect bookmarkBarFrame = [bookmarkBarView frame];
-  BOOL oldHidden = [bookmarkBarView isHidden];
-  BOOL newHidden = ![self isBookmarkBarVisible];
-  if (oldHidden != newHidden)
-    [bookmarkBarView setHidden:newHidden];
-  bookmarkBarFrame.origin.x = minX;
-  bookmarkBarFrame.origin.y = maxY - NSHeight(bookmarkBarFrame);
-  bookmarkBarFrame.size.width = width;
-  [bookmarkBarView setFrame:bookmarkBarFrame];
-  maxY -= NSHeight(bookmarkBarFrame);
+  NSRect frame = [bookmarkBarView frame];
+  frame.origin.x = minX;
+  frame.origin.y = maxY - NSHeight(frame);
+  frame.size.width = width;
+  [bookmarkBarView setFrame:frame];
+  maxY -= NSHeight(frame);
+
+  // Pin the bookmark bar to the top of the window and make the width flexible.
+  [bookmarkBarView setAutoresizingMask:NSViewWidthSizable | NSViewMinYMargin];
 
   // TODO(viettrungluu): Does this really belong here? Calling it shouldn't be
   // necessary in the non-NTP case.
   [bookmarkBarController_ layoutSubviews];
 
   return maxY;
+}
+
+- (void)layoutBottomBookmarkBarInContentFrame:(NSRect)contentFrame {
+  [bookmarkBarController_ updateHiddenState];
+
+  NSView* bookmarkBarView = [bookmarkBarController_ view];
+  NSRect frame;
+  frame.size.width = NSWidth(contentFrame) -
+      chrome::search::kHorizontalPaddingForBottomBookmarkBar * 2;
+  frame.size.width = std::min(frame.size.width,
+      static_cast<CGFloat>(chrome::search::kMaxWidthForBottomBookmarkBar));
+  frame.size.height = NSHeight([bookmarkBarView frame]);
+  frame.origin.x = NSMinX(contentFrame) +
+      roundf((NSWidth(contentFrame)- frame.size.width) / 2.0);
+  frame.origin.y = NSMinY(contentFrame);
+  [bookmarkBarView setFrame:frame];
+
+  // Disable auto-resizing.
+  [bookmarkBarView setAutoresizingMask:0];
+
+  // TODO(viettrungluu): Does this really belong here? Calling it shouldn't be
+  // necessary in the non-NTP case.
+  [bookmarkBarController_ layoutSubviews];
 }
 
 - (void)layoutFloatingBarBackingView:(NSRect)frame
@@ -478,19 +503,6 @@ willPositionSheet:(NSWindow*)sheet
   }
 }
 
-- (BOOL)shouldShowBookmarkBar {
-  DCHECK(browser_.get());
-  return browser_->profile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar) ?
-      YES : NO;
-}
-
-- (BOOL)shouldShowDetachedBookmarkBar {
-  DCHECK(browser_.get());
-  TabContents* tab = chrome::GetActiveTabContents(browser_.get());
-  return (tab && tab->bookmark_tab_helper()->ShouldShowBookmarkBar() &&
-          ![previewableContentsController_ isShowingPreview]);
-}
-
 - (void)adjustToolbarAndBookmarkBarForCompression:(CGFloat)compression {
   CGFloat newHeight =
       [toolbarController_ desiredHeightForCompression:compression];
@@ -514,11 +526,11 @@ willPositionSheet:(NSWindow*)sheet
   return base::mac::IsOSLionOrLater() && [self isFullscreen];
 }
 
-- (void)moveViewsForFullscreenForSnowLeopardOrEarlier:(BOOL)fullscreen
+- (void)moveViewsForFullscreenForSnowLeopard:(BOOL)fullscreen
     regularWindow:(NSWindow*)regularWindow
     fullscreenWindow:(NSWindow*)fullscreenWindow {
-  // This method is only for Snow Leopard and earlier.
-  DCHECK(base::mac::IsOSSnowLeopardOrEarlier());
+  // This method is only for Snow Leopard.
+  DCHECK(base::mac::IsOSSnowLeopard());
 
   NSWindow* sourceWindow = fullscreen ? regularWindow : fullscreenWindow;
   NSWindow* destWindow = fullscreen ? fullscreenWindow : regularWindow;
@@ -534,10 +546,6 @@ willPositionSheet:(NSWindow*)sheet
 
   // While we move views (and focus) around, disable any bar visibility changes.
   [self disableBarVisibilityUpdates];
-
-  // Destroy the tab strip's sheet controller.  We will recreate it in the new
-  // window when needed.
-  [tabStripController_ destroySheetController];
 
   // Retain the tab strip view while we remove it from its superview.
   scoped_nsobject<NSView> tabStripView;
@@ -634,8 +642,8 @@ willPositionSheet:(NSWindow*)sheet
   [self layoutSubviews];
 }
 
-- (void)enterFullscreenForSnowLeopardOrEarlier {
-  DCHECK(base::mac::IsOSSnowLeopardOrEarlier());
+- (void)enterFullscreenForSnowLeopard {
+  DCHECK(base::mac::IsOSSnowLeopard());
 
   // Fade to black.
   const CGDisplayReservationInterval kFadeDurationSeconds = 0.6;
@@ -654,9 +662,9 @@ willPositionSheet:(NSWindow*)sheet
   savedRegularWindow_ = [[self window] retain];
   savedRegularWindowFrame_ = [savedRegularWindow_ frame];
 
-  [self moveViewsForFullscreenForSnowLeopardOrEarlier:YES
-                                        regularWindow:[self window]
-                                     fullscreenWindow:fullscreenWindow_.get()];
+  [self moveViewsForFullscreenForSnowLeopard:YES
+                               regularWindow:[self window]
+                            fullscreenWindow:fullscreenWindow_.get()];
   [self adjustUIForPresentationMode:YES];
   [self setPresentationModeInternal:YES forceDropdown:NO];
   [self layoutSubviews];
@@ -671,8 +679,8 @@ willPositionSheet:(NSWindow*)sheet
   }
 }
 
-- (void)exitFullscreenForSnowLeopardOrEarlier {
-  DCHECK(base::mac::IsOSSnowLeopardOrEarlier());
+- (void)exitFullscreenForSnowLeopard {
+  DCHECK(base::mac::IsOSSnowLeopard());
 
   // Fade to black.
   const CGDisplayReservationInterval kFadeDurationSeconds = 0.6;
@@ -687,7 +695,7 @@ willPositionSheet:(NSWindow*)sheet
 
   [self windowWillExitFullScreen:nil];
 
-  [self moveViewsForFullscreenForSnowLeopardOrEarlier:NO
+  [self moveViewsForFullscreenForSnowLeopard:NO
                                         regularWindow:savedRegularWindow_
                                      fullscreenWindow:fullscreenWindow_.get()];
 

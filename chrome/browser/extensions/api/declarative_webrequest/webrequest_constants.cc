@@ -11,10 +11,14 @@ namespace declarative_webrequest_constants {
 const char kOnRequest[] = "declarativeWebRequest.onRequest";
 
 // Keys of dictionaries.
+const char kAgeLowerBoundKey[] = "ageLowerBound";
+const char kAgeUpperBoundKey[] = "ageUpperBound";
 const char kCookieKey[] = "cookie";
 const char kContentTypeKey[] = "contentType";
-const char kDirectionKey[] = "direction";
 const char kDomainKey[] = "domain";
+const char kExcludeContentTypeKey[] = "excludeContentType";
+const char kExcludeRequestHeadersKey[] = "excludeRequestHeaders";
+const char kExcludeResponseHeadersKey[] = "excludeResponseHeaders";
 const char kExpiresKey[] = "expires";
 const char kFilterKey[] ="filter";
 const char kFromKey[] = "from";
@@ -23,14 +27,33 @@ const char kInstanceTypeKey[] = "instanceType";
 const char kLowerPriorityThanKey[] = "lowerPriorityThan";
 const char kMaxAgeKey[] = "maxAge";
 const char kModificationKey[] = "modification";
+const char kNameContainsKey[] = "nameContains";
+const char kNameEqualsKey[] = "nameEquals";
 const char kNameKey[] = "name";
+const char kNamePrefixKey[] = "namePrefix";
+const char kNameSuffixKey[] = "nameSuffix";
 const char kPathKey[] = "path";
 const char kRedirectUrlKey[] = "redirectUrl";
+const char kRequestHeadersKey[] = "requestHeaders";
 const char kResourceTypeKey[] = "resourceType";
+const char kResponseHeadersKey[] = "responseHeaders";
 const char kSecureKey[] = "secure";
+const char kSessionCookieKey[] = "sessionCookie";
+const char kStagesKey[] = "stages";
+const char kThirdPartyKey[] = "thirdPartyForCookies";
 const char kToKey[] = "to";
 const char kUrlKey[] = "url";
+const char kValueContainsKey[] = "valueContains";
+const char kValueEqualsKey[] = "valueEquals";
 const char kValueKey[] = "value";
+const char kValuePrefixKey[] = "valuePrefix";
+const char kValueSuffixKey[] = "valueSuffix";
+
+// Enum string values
+const char kOnBeforeRequestEnum[] = "onBeforeRequest";
+const char kOnBeforeSendHeadersEnum[] = "onBeforeSendHeaders";
+const char kOnHeadersReceivedEnum[] = "onHeadersReceived";
+const char kOnAuthRequiredEnum[] = "onAuthRequired";
 
 // Values of dictionaries, in particular instance types
 const char kAddRequestCookieType[] = "declarativeWebRequest.AddRequestCookie";

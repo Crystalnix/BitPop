@@ -16,7 +16,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/string16.h"
-#include "base/threading/thread.h"
 #include "base/win/scoped_comptr.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
@@ -394,28 +393,6 @@ STDMETHODIMP QueryInterfaceIfDelegateSupports(void* obj, REFIID iid,
 // Queries the delegated COM object for an interface, bypassing the wrapper.
 #define COM_INTERFACE_BLIND_DELEGATE() \
     COM_INTERFACE_ENTRY_FUNC_BLIND(0, CheckOutgoingInterface<_ComMapClass>)
-
-// Thread that enters STA and has a UI message loop.
-class STAThread : public base::Thread {
- public:
-  explicit STAThread(const char *name) : Thread(name) {}
-  ~STAThread() {
-    Stop();
-  }
-  bool Start() {
-    return StartWithOptions(Options(MessageLoop::TYPE_UI, 0));
-  }
- protected:
-  // Called just prior to starting the message loop
-  virtual void Init() {
-    ::CoInitialize(0);
-  }
-
-  // Called just after the message loop ends
-  virtual void CleanUp() {
-    ::CoUninitialize();
-  }
-};
 
 std::wstring GuidToString(const GUID& guid);
 

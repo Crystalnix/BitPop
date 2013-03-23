@@ -4,7 +4,15 @@
 
 #include "chrome/browser/net/chrome_network_delegate.h"
 
+#include <vector>
+
+#include "base/base_paths.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
+#include "base/path_service.h"
+#include "base/prefs/public/pref_member.h"
+#include "base/string_number_conversions.h"
+#include "base/string_split.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -14,8 +22,11 @@
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/net/cache_stats.h"
-#include "chrome/browser/prefs/pref_member.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/net/load_time_stats.h"
+#include "chrome/browser/performance_monitor/performance_monitor.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
@@ -23,6 +34,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/common/constants.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
@@ -35,6 +47,8 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/chromeos/chromeos_version.h"
+#include "base/command_line.h"
+#include "chrome/common/chrome_switches.h"
 #endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -45,9 +59,9 @@ using content::BrowserThread;
 using content::RenderViewHost;
 using content::ResourceRequestInfo;
 
-// By default we don't allow access to all file:// urls on ChromeOS but we do on
-// other platforms.
-#if defined(OS_CHROMEOS)
+// By default we don't allow access to all file:// urls on ChromeOS and
+// Android.
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
 bool ChromeNetworkDelegate::g_allow_file_access_ = false;
 #else
 bool ChromeNetworkDelegate::g_allow_file_access_ = true;
@@ -58,6 +72,8 @@ bool ChromeNetworkDelegate::g_allow_file_access_ = true;
 bool ChromeNetworkDelegate::g_never_throttle_requests_ = false;
 
 namespace {
+
+const char kDNTHeader[] = "DNT";
 
 // If the |request| failed due to problems with a proxy, forward the error to
 // the proxy extension API.
@@ -75,6 +91,75 @@ void ForwardProxyErrors(net::URLRequest* request,
   }
 }
 
+// Returns whether a URL parameter, |first_parameter| (e.g. foo=bar), has the
+// same key as the the |second_parameter| (e.g. foo=baz). Both parameters
+// must be in key=value form.
+bool HasSameParameterKey(const std::string& first_parameter,
+                         const std::string& second_parameter) {
+  DCHECK(second_parameter.find("=") != std::string::npos);
+  // Prefix for "foo=bar" is "foo=".
+  std::string parameter_prefix = second_parameter.substr(
+      0, second_parameter.find("=") + 1);
+  return StartsWithASCII(first_parameter, parameter_prefix, false);
+}
+
+// Examines the query string containing parameters and adds the necessary ones
+// so that SafeSearch is active. |query| is the string to examine and the
+// return value is the |query| string modified such that SafeSearch is active.
+std::string AddSafeSearchParameters(const std::string& query) {
+  std::vector<std::string> new_parameters;
+  std::string safe_parameter = chrome::kSafeSearchSafeParameter;
+  std::string ssui_parameter = chrome::kSafeSearchSsuiParameter;
+
+  std::vector<std::string> parameters;
+  base::SplitString(query, '&', &parameters);
+
+  std::vector<std::string>::iterator it;
+  for (it = parameters.begin(); it < parameters.end(); ++it) {
+    if (!HasSameParameterKey(*it, safe_parameter) &&
+        !HasSameParameterKey(*it, ssui_parameter)) {
+      new_parameters.push_back(*it);
+    }
+  }
+
+  new_parameters.push_back(safe_parameter);
+  new_parameters.push_back(ssui_parameter);
+  return JoinString(new_parameters, '&');
+}
+
+// If |request| is a request to Google Web Search the function
+// enforces that the SafeSearch query parameters are set to active.
+// Sets the query part of |new_url| with the new value of the parameters.
+void ForceGoogleSafeSearch(net::URLRequest* request,
+                           GURL* new_url) {
+  if (!google_util::IsGoogleSearchUrl(request->url().spec()) &&
+      !google_util::IsGoogleHomePageUrl(request->url().spec()))
+    return;
+
+  std::string query = request->url().query();
+  std::string new_query = AddSafeSearchParameters(query);
+  if (query == new_query)
+    return;
+
+  GURL::Replacements replacements;
+  replacements.SetQueryStr(new_query);
+  *new_url = request->url().ReplaceComponents(replacements);
+}
+
+// Gets called when the extensions finish work on the URL. If the extensions
+// did not do a redirect (so |new_url| is empty) then we enforce the
+// SafeSearch parameters. Otherwise we will get called again after the
+// redirect and we enforce SafeSearch then.
+void ForceGoogleSafeSearchCallbackWrapper(
+    const net::CompletionCallback& callback,
+    net::URLRequest* request,
+    GURL* new_url,
+    int rv) {
+  if (rv == net::OK && new_url->is_empty())
+    ForceGoogleSafeSearch(request, new_url);
+  callback.Run(rv);
+}
+
 enum RequestStatus { REQUEST_STARTED, REQUEST_DONE };
 
 // Notifies the ExtensionProcessManager that a request has started or stopped
@@ -89,7 +174,7 @@ void NotifyEPMRequestStatus(RequestStatus status,
     return;
 
   ExtensionProcessManager* extension_process_manager =
-      profile->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(profile)->process_manager();
   // This may be NULL in unit tests.
   if (!extension_process_manager)
     return;
@@ -123,29 +208,89 @@ void ForwardRequestStatus(
   }
 }
 
+void UpdateContentLengthPrefs(int received_content_length,
+                              int original_content_length) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_GE(received_content_length, 0);
+  DCHECK_GE(original_content_length, 0);
+
+  // Can be NULL in a unit test.
+  if (!g_browser_process)
+    return;
+
+  PrefService* prefs = g_browser_process->local_state();
+  if (!prefs)
+    return;
+
+  int64 total_received = prefs->GetInt64(prefs::kHttpReceivedContentLength);
+  int64 total_original = prefs->GetInt64(prefs::kHttpOriginalContentLength);
+  total_received += received_content_length;
+  total_original += original_content_length;
+  prefs->SetInt64(prefs::kHttpReceivedContentLength, total_received);
+  prefs->SetInt64(prefs::kHttpOriginalContentLength, total_original);
+}
+
+void StoreAccumulatedContentLength(int received_content_length,
+                                   int original_content_length) {
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+      base::Bind(&UpdateContentLengthPrefs,
+                 received_content_length, original_content_length));
+}
+
+void RecordContentLengthHistograms(
+    int64 received_content_length, int64 original_content_length) {
+#if defined(OS_ANDROID)
+  // Add the current resource to these histograms only when a valid
+  // X-Original-Content-Length header is present.
+  if (original_content_length >= 0) {
+    UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthWithValidOCL",
+                         received_content_length);
+    UMA_HISTOGRAM_COUNTS("Net.HttpOriginalContentLengthWithValidOCL",
+                         original_content_length);
+    UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthDifferenceWithValidOCL",
+                         original_content_length - received_content_length);
+  } else {
+    // Presume the original content length is the same as the received content
+    // length if the X-Original-Content-Header is not present.
+    original_content_length = received_content_length;
+  }
+  UMA_HISTOGRAM_COUNTS("Net.HttpContentLength", received_content_length);
+  UMA_HISTOGRAM_COUNTS("Net.HttpOriginalContentLength",
+                       original_content_length);
+  UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthDifference",
+                       original_content_length - received_content_length);
+#endif
+}
+
 }  // namespace
 
 ChromeNetworkDelegate::ChromeNetworkDelegate(
     extensions::EventRouterForwarder* event_router,
-    ExtensionInfoMap* extension_info_map,
-    const policy::URLBlacklistManager* url_blacklist_manager,
-    void* profile,
-    CookieSettings* cookie_settings,
-    BooleanPrefMember* enable_referrers,
-    chrome_browser_net::CacheStats* cache_stats)
+    BooleanPrefMember* enable_referrers)
     : event_router_(event_router),
-      profile_(profile),
-      cookie_settings_(cookie_settings),
-      extension_info_map_(extension_info_map),
+      profile_(NULL),
       enable_referrers_(enable_referrers),
-      url_blacklist_manager_(url_blacklist_manager),
-      cache_stats_(cache_stats) {
+      enable_do_not_track_(NULL),
+      force_google_safe_search_(NULL),
+      url_blacklist_manager_(NULL),
+      load_time_stats_(NULL),
+      received_content_length_(0),
+      original_content_length_(0) {
   DCHECK(event_router);
   DCHECK(enable_referrers);
-  DCHECK(!profile || cookie_settings);
 }
 
 ChromeNetworkDelegate::~ChromeNetworkDelegate() {}
+
+void ChromeNetworkDelegate::set_extension_info_map(
+    ExtensionInfoMap* extension_info_map) {
+  extension_info_map_ = extension_info_map;
+}
+
+void ChromeNetworkDelegate::set_cookie_settings(
+    CookieSettings* cookie_settings) {
+  cookie_settings_ = cookie_settings;
+}
 
 // static
 void ChromeNetworkDelegate::NeverThrottleRequests() {
@@ -153,17 +298,56 @@ void ChromeNetworkDelegate::NeverThrottleRequests() {
 }
 
 // static
-void ChromeNetworkDelegate::InitializeReferrersEnabled(
+void ChromeNetworkDelegate::InitializePrefsOnUIThread(
     BooleanPrefMember* enable_referrers,
+    BooleanPrefMember* enable_do_not_track,
+    BooleanPrefMember* force_google_safe_search,
     PrefService* pref_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  enable_referrers->Init(prefs::kEnableReferrers, pref_service, NULL);
-  enable_referrers->MoveToThread(BrowserThread::IO);
+  enable_referrers->Init(prefs::kEnableReferrers, pref_service);
+  enable_referrers->MoveToThread(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+  if (enable_do_not_track) {
+    enable_do_not_track->Init(prefs::kEnableDoNotTrack, pref_service);
+    enable_do_not_track->MoveToThread(
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+  }
+  if (force_google_safe_search) {
+    force_google_safe_search->Init(prefs::kForceSafeSearch, pref_service);
+    force_google_safe_search->MoveToThread(
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+  }
 }
 
 // static
 void ChromeNetworkDelegate::AllowAccessToAllFiles() {
   g_allow_file_access_ = true;
+}
+
+// static
+Value* ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  PrefService* prefs = g_browser_process->local_state();
+  int64 total_received = prefs->GetInt64(prefs::kHttpReceivedContentLength);
+  int64 total_original = prefs->GetInt64(prefs::kHttpOriginalContentLength);
+
+  DictionaryValue* dict = new DictionaryValue();
+  // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
+  dict->SetString("historic_received_content_length",
+                  base::Int64ToString(total_received));
+  dict->SetString("historic_original_content_length",
+                  base::Int64ToString(total_original));
+  return dict;
+}
+
+Value* ChromeNetworkDelegate::SessionNetworkStatsInfoToValue() const {
+  DictionaryValue* dict = new DictionaryValue();
+  // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
+  dict->SetString("session_received_content_length",
+                  base::Int64ToString(received_content_length_));
+  dict->SetString("session_original_content_length",
+                  base::Int64ToString(original_content_length_));
+  return dict;
 }
 
 int ChromeNetworkDelegate::OnBeforeURLRequest(
@@ -189,8 +373,28 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
 
   if (!enable_referrers_->GetValue())
     request->set_referrer(std::string());
-  return ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRequest(
-      profile_, extension_info_map_.get(), request, callback, new_url);
+  if (enable_do_not_track_ && enable_do_not_track_->GetValue())
+    request->SetExtraRequestHeaderByName(kDNTHeader, "1", true /* override */);
+
+  bool force_safe_search = force_google_safe_search_ &&
+                           force_google_safe_search_->GetValue();
+
+  net::CompletionCallback wrapped_callback = callback;
+  if (force_safe_search) {
+    wrapped_callback = base::Bind(&ForceGoogleSafeSearchCallbackWrapper,
+                                  callback,
+                                  base::Unretained(request),
+                                  base::Unretained(new_url));
+  }
+
+  int rv = ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRequest(
+      profile_, extension_info_map_.get(), request, wrapped_callback,
+      new_url);
+
+  if (force_safe_search && rv == net::OK && new_url->is_empty())
+    ForceGoogleSafeSearch(request, new_url);
+
+  return rv;
 }
 
 int ChromeNetworkDelegate::OnBeforeSendHeaders(
@@ -211,7 +415,7 @@ void ChromeNetworkDelegate::OnSendHeaders(
 int ChromeNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
-    net::HttpResponseHeaders* original_response_headers,
+    const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
   return ExtensionWebRequestEventRouter::GetInstance()->OnHeadersReceived(
       profile_, extension_info_map_.get(), request, callback,
@@ -233,6 +437,9 @@ void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request) {
 
 void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
                                            int bytes_read) {
+  performance_monitor::PerformanceMonitor::GetInstance()->BytesReadOnIOThread(
+      request, bytes_read);
+
 #if defined(ENABLE_TASK_MANAGER)
   TaskManager::GetInstance()->model()->NotifyBytesRead(request, bytes_read);
 #endif  // defined(ENABLE_TASK_MANAGER)
@@ -240,8 +447,37 @@ void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
 
 void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
                                         bool started) {
-  if (request->status().status() == net::URLRequestStatus::SUCCESS ||
-      request->status().status() == net::URLRequestStatus::HANDLED_EXTERNALLY) {
+  if (request->status().status() == net::URLRequestStatus::SUCCESS) {
+    // For better accuracy, we use the actual bytes read instead of the length
+    // specified with the Content-Length header, which may be inaccurate,
+    // or missing, as is the case with chunked encoding.
+    int64 received_content_length = request->received_response_content_length();
+
+    // Only record for http or https urls.
+    bool is_http = request->url().SchemeIs("http");
+    bool is_https = request->url().SchemeIs("https");
+
+    if (!request->was_cached() &&         // Don't record cached content
+        received_content_length &&        // Zero-byte responses aren't useful.
+        (is_http || is_https)) {          // Only record for HTTP or HTTPS urls.
+      int64 original_content_length =
+          request->response_info().headers->GetInt64HeaderValue(
+              "x-original-content-length");
+      // Since there was no indication of the original content length, presume
+      // it is no different from the number of bytes read.
+      int64 adjusted_original_content_length = original_content_length;
+      if (adjusted_original_content_length == -1)
+        adjusted_original_content_length = received_content_length;
+      AccumulateContentLength(received_content_length,
+                              adjusted_original_content_length);
+      RecordContentLengthHistograms(received_content_length,
+                                    original_content_length);
+      DVLOG(2) << __FUNCTION__
+          << " received content length: " << received_content_length
+          << " original content length: " << original_content_length
+          << " url: " << request->url();
+    }
+
     bool is_redirect = request->response_headers() &&
         net::HttpResponseHeaders::IsRedirectResponseCode(
             request->response_headers()->response_code());
@@ -264,6 +500,8 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
 void ChromeNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
   ExtensionWebRequestEventRouter::GetInstance()->OnURLRequestDestroyed(
       profile_, request);
+  if (load_time_stats_)
+    load_time_stats_->OnURLRequestDestroyed(*request);
 }
 
 void ChromeNetworkDelegate::OnPACScriptError(int line_number,
@@ -338,9 +576,19 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
   if (g_allow_file_access_)
     return true;
 
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
+  return true;
+#else
 #if defined(OS_CHROMEOS)
-  // ChromeOS uses a whitelist to only allow access to files residing in the
-  // list of directories below.
+  // If we're running Chrome for ChromeOS on Linux, we want to allow file
+  // access.
+  if (!base::chromeos::IsRunningOnChromeOS() ||
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+    return true;
+  }
+
+  // Use a whitelist to only allow access to files residing in the list of
+  // directories below.
   static const char* const kLocalAccessWhiteList[] = {
       "/home/chronos/user/Downloads",
       "/home/chronos/user/log",
@@ -350,11 +598,19 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
       "/tmp",
       "/var/log",
   };
-
-  // If we're running Chrome for ChromeOS on Linux, we want to allow file
-  // access.
-  if (!base::chromeos::IsRunningOnChromeOS())
+#elif defined(OS_ANDROID)
+  // Access to files in external storage is allowed.
+  FilePath external_storage_path;
+  PathService::Get(base::DIR_ANDROID_EXTERNAL_STORAGE, &external_storage_path);
+  if (external_storage_path.IsParent(path))
     return true;
+
+  // Whitelist of other allowed directories.
+  static const char* const kLocalAccessWhiteList[] = {
+      "/sdcard",
+      "/mnt/sdcard",
+  };
+#endif
 
   for (size_t i = 0; i < arraysize(kLocalAccessWhiteList); ++i) {
     const FilePath white_listed_path(kLocalAccessWhiteList[i]);
@@ -364,10 +620,10 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
       return true;
     }
   }
+
+  DVLOG(1) << "File access denied - " << path.value().c_str();
   return false;
-#else
-  return true;
-#endif  // defined(OS_CHROMEOS)
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 }
 
 bool ChromeNetworkDelegate::OnCanThrottleRequest(
@@ -377,7 +633,7 @@ bool ChromeNetworkDelegate::OnCanThrottleRequest(
   }
 
   return request.first_party_for_cookies().scheme() ==
-      chrome::kExtensionScheme;
+      extensions::kExtensionScheme;
 }
 
 int ChromeNetworkDelegate::OnBeforeSocketStreamConnect(
@@ -397,9 +653,19 @@ int ChromeNetworkDelegate::OnBeforeSocketStreamConnect(
   return net::OK;
 }
 
-void ChromeNetworkDelegate::OnCacheWaitStateChange(
+void ChromeNetworkDelegate::OnRequestWaitStateChange(
     const net::URLRequest& request,
-    CacheWaitState state) {
-  if (cache_stats_)
-    cache_stats_->OnCacheWaitStateChange(request, state);
+    RequestWaitState state) {
+  if (load_time_stats_)
+    load_time_stats_->OnRequestWaitStateChange(request, state);
+}
+
+void ChromeNetworkDelegate::AccumulateContentLength(
+    int64 received_content_length, int64 original_content_length) {
+  DCHECK_GE(received_content_length, 0);
+  DCHECK_GE(original_content_length, 0);
+  StoreAccumulatedContentLength(received_content_length,
+                                original_content_length);
+  received_content_length_ += received_content_length;
+  original_content_length_ += original_content_length;
 }

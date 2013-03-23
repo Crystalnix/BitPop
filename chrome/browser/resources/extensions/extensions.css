@@ -19,6 +19,10 @@ html.loading * {
   overflow: hidden;
 }
 
+#dev-controls button {
+  white-space: nowrap;
+}
+
 #extension-settings.dev-mode #dev-controls {
   -webkit-transition-duration: 250ms;
   height: 32px;
@@ -106,6 +110,10 @@ html[dir='rtl'] .extension-list-item {
   font-weight: 500;
 }
 
+.inactive-extension .extension-title {
+  color: inherit;
+}
+
 .extension-version {
   -webkit-padding-end: 7px;
   font-size: 13px;
@@ -126,6 +134,7 @@ html[dir='rtl'] .extension-list-item {
 
 .extension-description,
 .extension-list-item-wrapper.inactive-extension .extension-details,
+.location-text,
 .enable-checkbox input:disabled + .enable-checkbox-text {
   color: rgb(151, 156, 160);
 }
@@ -161,7 +170,8 @@ html[dir='rtl'] .extension-list-item {
 }
 
 .terminated-reload-link {
-  -webkit-margin-end: 2em;
+  -webkit-margin-end: 2.5em;
+  padding-top: 7px;
 }
 
 .extension-list-item a {
@@ -225,6 +235,21 @@ html[dir='rtl'] .extension-list-item {
   margin: 1em;
 }
 
+/* Disabled extensions banner and related elements. */
+
+.page:not(.sideload-wipeout) #sideload-wipeout-banner {
+  display: none;
+}
+
+.extension-disable-reason {
+  padding-left: 12px;
+}
+
+.location-text {
+  display: block;
+  width: 100px;
+}
+
 /* Trash */
 
 #extension-settings .trash {
@@ -250,16 +275,39 @@ html[dir='rtl'] #extension-settings .trash {
   visibility: hidden;
 }
 
-.may-not-disable .optional-controls {
+.extension-highlight {
+  background: rgb(238, 238, 238);
+  background-position: auto;
+  background-repeat: auto;
+  border-radius: 3px;
+  padding: 5px 0 5px 5px;
+}
+
+.may-not-disable .optional-controls .optional-controls-disableable {
   display: none;
 }
 
 /* Managed mode */
 
-.page:not(.managed-mode) #managed-mode-banner {
+.page:not(.managed-mode) .managed-mode-banner {
   display: none;
+}
+
+.managed-mode-banner .page-banner-text {
+  background-image: url('chrome://theme/IDR_WARNING');
 }
 
 .managed-mode .more-extensions-link {
   display: none;
+}
+
+/* Sideload Wipeout */
+
+.sideload-wipeout-learn-more {
+  text-decoration: none;
+}
+
+.sideload-wipeout-banner .page-banner-text {
+  -webkit-padding-start: 8px;
+  background-image: none;
 }

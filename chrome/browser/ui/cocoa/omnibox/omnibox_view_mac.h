@@ -12,10 +12,7 @@
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 
-class OmniboxEditController;
-class OmniboxPopupViewMac;
-class Profile;
-class ToolbarModel;
+class OmniboxPopupView;
 
 namespace ui {
 class Clipboard;
@@ -33,22 +30,10 @@ class OmniboxViewMac : public OmniboxView,
   virtual ~OmniboxViewMac();
 
   // OmniboxView:
-  virtual OmniboxEditModel* model() OVERRIDE;
-  virtual const OmniboxEditModel* model() const OVERRIDE;
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
   virtual void Update(
       const content::WebContents* tab_for_state_restoring) OVERRIDE;
-  virtual void OpenMatch(const AutocompleteMatch& match,
-                         WindowOpenDisposition disposition,
-                         const GURL& alternate_nav_url,
-                         size_t index) OVERRIDE;
   virtual string16 GetText() const OVERRIDE;
-  virtual bool IsEditingOrEmpty() const OVERRIDE;
-  virtual int GetIcon() const OVERRIDE;
-  virtual void SetUserText(const string16& text) OVERRIDE;
-  virtual void SetUserText(const string16& text,
-                           const string16& display_text,
-                           bool update_popup) OVERRIDE;
   virtual void SetWindowTextAndCaretPos(const string16& text,
                                         size_t caret_pos,
                                         bool update_popup,
@@ -61,8 +46,9 @@ class OmniboxViewMac : public OmniboxView,
   virtual void SelectAll(bool reversed) OVERRIDE;
   virtual void RevertAll() OVERRIDE;
   virtual void UpdatePopup() OVERRIDE;
-  virtual void ClosePopup() OVERRIDE;
+  virtual void CloseOmniboxPopup() OVERRIDE;
   virtual void SetFocus() OVERRIDE;
+  virtual void ApplyCaretVisibility() OVERRIDE;
   virtual void OnTemporaryTextMaybeChanged(
       const string16& display_text,
       bool save_original_selection) OVERRIDE;
@@ -74,9 +60,7 @@ class OmniboxViewMac : public OmniboxView,
   virtual bool OnAfterPossibleChange() OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE;
-  virtual CommandUpdater* GetCommandUpdater() OVERRIDE;
-  virtual void SetInstantSuggestion(const string16& input,
-                                    bool animate_to_complete) OVERRIDE;
+  virtual void SetInstantSuggestion(const string16& input) OVERRIDE;
   virtual string16 GetInstantSuggestion() const OVERRIDE;
   virtual int TextWidth() const OVERRIDE;
   virtual bool IsImeComposing() const OVERRIDE;
@@ -87,11 +71,14 @@ class OmniboxViewMac : public OmniboxView,
   virtual void OnControlKeyChanged(bool pressed) OVERRIDE;
   virtual bool CanCopy() OVERRIDE;
   virtual void CopyToPasteboard(NSPasteboard* pboard) OVERRIDE;
+  virtual void CopyURLToPasteboard(NSPasteboard* pboard) OVERRIDE;
   virtual void OnPaste() OVERRIDE;
+  virtual bool ShouldEnableCopyURL() OVERRIDE;
   virtual bool CanPasteAndGo() OVERRIDE;
   virtual int GetPasteActionStringId() OVERRIDE;
   virtual void OnPasteAndGo() OVERRIDE;
   virtual void OnFrameChanged() OVERRIDE;
+  virtual void ClosePopup() OVERRIDE;
   virtual void OnDidBeginEditing() OVERRIDE;
   virtual void OnBeforeChange() OVERRIDE;
   virtual void OnDidChange() OVERRIDE;
@@ -99,6 +86,7 @@ class OmniboxViewMac : public OmniboxView,
   virtual bool OnDoCommandBySelector(SEL cmd) OVERRIDE;
   virtual void OnSetFocus(bool control_down) OVERRIDE;
   virtual void OnKillFocus() OVERRIDE;
+  virtual void OnMouseDown(NSInteger button_number) OVERRIDE;
 
   // Helper for LocationBarViewMac.  Optionally selects all in |field_|.
   void FocusLocation(bool select_all);
@@ -110,6 +98,8 @@ class OmniboxViewMac : public OmniboxView,
   // If |resource_id| has a PDF image which can be used, return it.
   // Otherwise return the PNG image from the resource bundle.
   static NSImage* ImageForResource(int resource_id);
+
+  AutocompleteTextField* field() const { return field_; }
 
  private:
   // Called when the user hits backspace in |field_|.  Checks whether
@@ -156,10 +146,7 @@ class OmniboxViewMac : public OmniboxView,
   // Pass the current content of |field_| to SetText(), maintaining
   // any selection.  Named to be consistent with GTK and Windows,
   // though here we cannot really do the in-place operation they do.
-  void EmphasizeURLComponents();
-
-  // Internally invoked whenever the text changes in some way.
-  void TextChanged();
+  virtual void EmphasizeURLComponents() OVERRIDE;
 
   // Calculates text attributes according to |display_text| and applies them
   // to the given |as| object.
@@ -168,23 +155,13 @@ class OmniboxViewMac : public OmniboxView,
 
   // Return the number of UTF-16 units in the current buffer, excluding the
   // suggested text.
+  virtual int GetOmniboxTextLength() const OVERRIDE;
   NSUInteger GetTextLength() const;
-
-  // Places the caret at the given position. This clears any selection.
-  void PlaceCaretAt(NSUInteger pos);
 
   // Returns true if the caret is at the end of the content.
   bool IsCaretAtEnd() const;
 
-  scoped_ptr<OmniboxEditModel> model_;
-  scoped_ptr<OmniboxPopupViewMac> popup_view_;
-
-  OmniboxEditController* controller_;
-  ToolbarModel* toolbar_model_;
-
-  // The object that handles additional command functionality exposed on the
-  // edit, such as invoking the keyword editor.
-  CommandUpdater* command_updater_;
+  scoped_ptr<OmniboxPopupView> popup_view_;
 
   AutocompleteTextField* field_;  // owned by tab controller
 

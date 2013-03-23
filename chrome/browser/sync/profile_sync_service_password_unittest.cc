@@ -26,15 +26,17 @@
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/profile_mock.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/common/password_form.h"
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_browser_thread.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
 #include "sync/internal_api/public/write_node.h"
@@ -42,13 +44,13 @@
 #include "sync/protocol/password_specifics.pb.h"
 #include "sync/test/engine/test_id_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "webkit/forms/password_form.h"
 
 using base::Time;
 using browser_sync::PasswordChangeProcessor;
 using browser_sync::PasswordDataTypeController;
 using browser_sync::PasswordModelAssociator;
 using content::BrowserThread;
+using content::PasswordForm;
 using syncer::syncable::WriteTransaction;
 using testing::_;
 using testing::AtLeast;
@@ -56,7 +58,6 @@ using testing::DoAll;
 using testing::InvokeWithoutArgs;
 using testing::Return;
 using testing::SetArgumentPointee;
-using webkit::forms::PasswordForm;
 
 ACTION_P3(MakePasswordSyncComponents, service, ps, dtc) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
@@ -80,30 +81,62 @@ static void QuitMessageLoop() {
   MessageLoop::current()->Quit();
 }
 
+class NullPasswordStore : public MockPasswordStore {
+ public:
+  NullPasswordStore() {}
+
+  static scoped_refptr<RefcountedProfileKeyedService> Build(Profile* profile) {
+    return scoped_refptr<RefcountedProfileKeyedService>();
+  }
+
+ protected:
+  virtual ~NullPasswordStore() {}
+};
+
 class PasswordTestProfileSyncService : public TestProfileSyncService {
  public:
   PasswordTestProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      SigninManager* signin,
-      bool synchronous_backend_initialization,
-      const base::Closure& initial_condition_setup_cb,
-      const base::Closure& passphrase_accept_cb)
+      SigninManager* signin)
       : TestProfileSyncService(factory,
                                profile,
                                signin,
                                ProfileSyncService::AUTO_START,
-                               synchronous_backend_initialization,
-                               initial_condition_setup_cb),
-        callback_(passphrase_accept_cb) {}
+                               false) {}
 
   virtual ~PasswordTestProfileSyncService() {}
 
-  virtual void OnPassphraseAccepted() {
+  virtual void OnPassphraseRequired(
+      syncer::PassphraseRequiredReason reason,
+      const sync_pb::EncryptedData& pending_keys) OVERRIDE {
+    // We purposely don't let passphrase_required_reason_ get set here, in order
+    // to let the datatype manager get blocked later (at which point we then
+    // set the encryption passphrase).
+    // On a normal client, we would have initialized the cryptographer with the
+    // login credentials.
+  }
+
+  virtual void OnPassphraseAccepted() OVERRIDE {
     if (!callback_.is_null())
       callback_.Run();
 
     TestProfileSyncService::OnPassphraseAccepted();
+  }
+
+  virtual void OnConfigureBlocked() OVERRIDE {
+    QuitMessageLoop();
+  }
+
+  static ProfileKeyedService* Build(Profile* profile) {
+    SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
+    ProfileSyncComponentsFactoryMock* factory =
+        new ProfileSyncComponentsFactoryMock();
+    return new PasswordTestProfileSyncService(factory, profile, signin);
+  }
+
+  void set_passphrase_accept_callback(const base::Closure& callback) {
+    callback_ = callback;
   }
 
  private:
@@ -113,11 +146,11 @@ class PasswordTestProfileSyncService : public TestProfileSyncService {
 class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
  public:
   syncer::UserShare* GetUserShare() {
-    return service_->GetUserShare();
+    return sync_service_->GetUserShare();
   }
 
   void AddPasswordSyncNode(const PasswordForm& entry) {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode password_root(&trans);
     ASSERT_EQ(syncer::BaseNode::INIT_OK,
               password_root.InitByTagLookup(browser_sync::kPasswordTag));
@@ -139,20 +172,15 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
     password_store_ = static_cast<MockPasswordStore*>(
         PasswordStoreFactory::GetInstance()->SetTestingFactoryAndUse(
             &profile_, MockPasswordStore::Build).get());
-
-    registrar_.Add(&observer_,
-        chrome::NOTIFICATION_SYNC_CONFIGURE_DONE,
-        content::NotificationService::AllSources());
-    registrar_.Add(&observer_,
-        chrome::NOTIFICATION_SYNC_CONFIGURE_BLOCKED,
-        content::NotificationService::AllSources());
   }
 
   virtual void TearDown() {
-    password_store_->ShutdownOnUIThread();
-    service_.reset();
-    profile_.ResetRequestContext();
-    AbstractProfileSyncServiceTest::TearDown();
+    if (password_store_.get())
+      password_store_->ShutdownOnUIThread();
+      ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(
+          &profile_, NULL);
+      profile_.ResetRequestContext();
+      AbstractProfileSyncServiceTest::TearDown();
   }
 
   static void SignalEvent(base::WaitableEvent* done) {
@@ -169,58 +197,64 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
 
   void StartSyncService(const base::Closure& root_callback,
                         const base::Closure& node_callback) {
-    if (!service_.get()) {
+    if (!sync_service_) {
       SigninManager* signin = SigninManagerFactory::GetForProfile(&profile_);
       signin->SetAuthenticatedUsername("test_user");
       token_service_ = static_cast<TokenService*>(
           TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
               &profile_, BuildTokenService));
-      ProfileSyncComponentsFactoryMock* factory =
-          new ProfileSyncComponentsFactoryMock();
-      service_.reset(new PasswordTestProfileSyncService(
-          factory, &profile_, signin, false,
-          root_callback, node_callback));
-      syncer::ModelTypeSet preferred_types = service_->GetPreferredDataTypes();
-      preferred_types.Put(syncer::PASSWORDS);
-      service_->ChangePreferredDataTypes(preferred_types);
-      PasswordDataTypeController* data_type_controller =
-          new PasswordDataTypeController(factory,
-                                         &profile_,
-                                         service_.get());
 
-      EXPECT_CALL(*factory, CreatePasswordSyncComponents(_, _, _)).
-          Times(AtLeast(1)).  // Can be more if we hit NEEDS_CRYPTO.
-          WillRepeatedly(MakePasswordSyncComponents(service_.get(),
-                                                    password_store_.get(),
-                                                    data_type_controller));
-      EXPECT_CALL(*factory, CreateDataTypeManager(_, _)).
+      PasswordTestProfileSyncService* sync =
+          static_cast<PasswordTestProfileSyncService*>(
+              ProfileSyncServiceFactory::GetInstance()->
+                  SetTestingFactoryAndUse(&profile_,
+                      &PasswordTestProfileSyncService::Build));
+      sync->set_backend_init_callback(root_callback);
+      sync->set_passphrase_accept_callback(node_callback);
+      sync_service_ = sync;
+
+      syncer::ModelTypeSet preferred_types =
+          sync_service_->GetPreferredDataTypes();
+      preferred_types.Put(syncer::PASSWORDS);
+      sync_service_->ChangePreferredDataTypes(preferred_types);
+      PasswordDataTypeController* data_type_controller =
+          new PasswordDataTypeController(sync_service_->factory(),
+                                         &profile_,
+                                         sync_service_);
+      ProfileSyncComponentsFactoryMock* components =
+          sync_service_->components_factory_mock();
+      if (password_store_.get()) {
+        EXPECT_CALL(*components, CreatePasswordSyncComponents(_, _, _)).
+            Times(AtLeast(1)).  // Can be more if we hit NEEDS_CRYPTO.
+            WillRepeatedly(MakePasswordSyncComponents(sync_service_,
+                                                      password_store_.get(),
+                                                      data_type_controller));
+      } else {
+        // When the password store is unavailable, password sync components must
+        // not be created.
+        EXPECT_CALL(*components, CreatePasswordSyncComponents(_, _, _))
+            .Times(0);
+      }
+      EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _)).
           WillOnce(ReturnNewDataTypeManager());
 
       // We need tokens to get the tests going
       token_service_->IssueAuthTokenForTest(
           GaiaConstants::kSyncService, "token");
 
-      EXPECT_CALL(observer_,
-          Observe(
-              int(chrome::NOTIFICATION_SYNC_CONFIGURE_DONE),_,_));
-      EXPECT_CALL(observer_,
-          Observe(
-              int(
-              chrome::NOTIFICATION_SYNC_CONFIGURE_BLOCKED),_,_))
-          .WillOnce(InvokeWithoutArgs(QuitMessageLoop));
-
-      service_->RegisterDataTypeController(data_type_controller);
-      service_->Initialize();
+      sync_service_->RegisterDataTypeController(data_type_controller);
+      sync_service_->Initialize();
       MessageLoop::current()->Run();
       FlushLastDBTask();
 
-      service_->SetEncryptionPassphrase("foo", ProfileSyncService::IMPLICIT);
+      sync_service_->SetEncryptionPassphrase("foo",
+                                             ProfileSyncService::IMPLICIT);
       MessageLoop::current()->Run();
     }
   }
 
   void GetPasswordEntriesFromSyncDB(std::vector<PasswordForm>* entries) {
-    syncer::ReadTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode password_root(&trans);
     ASSERT_EQ(syncer::BaseNode::INIT_OK,
               password_root.InitByTagLookup(browser_sync::kPasswordTag));
@@ -278,7 +312,18 @@ void AddPasswordEntriesCallback(ProfileSyncServicePasswordTest* test,
 
 TEST_F(ProfileSyncServicePasswordTest, FailModelAssociation) {
   StartSyncService(base::Closure(), base::Closure());
-  EXPECT_TRUE(service_->HasUnrecoverableError());
+  EXPECT_TRUE(sync_service_->HasUnrecoverableError());
+}
+
+TEST_F(ProfileSyncServicePasswordTest, FailPasswordStoreLoad) {
+  password_store_ = static_cast<NullPasswordStore*>(
+      PasswordStoreFactory::GetInstance()->SetTestingFactoryAndUse(
+          &profile_, NullPasswordStore::Build).get());
+  StartSyncService(base::Closure(), base::Closure());
+  EXPECT_FALSE(sync_service_->HasUnrecoverableError());
+  syncer::ModelTypeSet failed_types =
+      sync_service_->failed_datatypes_handler().GetFailedTypes();
+  EXPECT_TRUE(failed_types.Equals(syncer::ModelTypeSet(syncer::PASSWORDS)));
 }
 
 TEST_F(ProfileSyncServicePasswordTest, EmptyNativeEmptySync) {

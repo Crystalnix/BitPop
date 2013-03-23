@@ -31,12 +31,11 @@ class Browser;
 class BrowserWindow;
 class BrowserWindowCocoa;
 @class ChromeToMobileBubbleController;
-class ConstrainedWindowMac;
 @class DevToolsController;
 @class DownloadShelfController;
+class ExtensionKeybindingRegistryCocoa;
 @class FindBarCocoaController;
 @class FullscreenWindow;
-@class GTMWindowSheetController;
 @class InfoBarContainerController;
 class LocationBarViewMac;
 @class PresentationModeController;
@@ -160,6 +159,10 @@ class WebContents;
   // -windowDidEnterFullScreen: gets called.
   GURL fullscreenUrl_;
   FullscreenExitBubbleType fullscreenBubbleType_;
+
+  // The Extension Command Registry used to determine which keyboard events to
+  // handle.
+  scoped_ptr<ExtensionKeybindingRegistryCocoa> extension_keybinding_registry_;
 }
 
 // A convenience class method which gets the |BrowserWindowController| for a
@@ -217,6 +220,11 @@ class WebContents;
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
 
+// Happens when the zoom level is changed in the active tab, the active tab is
+// changed, or a new browser window or tab is created. |canShowBubble| denotes
+// whether it would be appropriate to show a zoom bubble or not.
+- (void)zoomChangedForActiveTab:(BOOL)canShowBubble;
+
 // Return the rect, in WebKit coordinates (flipped), of the window's grow box
 // in the coordinate system of the content area of the currently selected tab.
 - (NSRect)selectedTabGrowBoxRect;
@@ -249,9 +257,7 @@ class WebContents;
 // Returns YES if the bookmark bar is currently animating.
 - (BOOL)isBookmarkBarAnimating;
 
-// Called after bookmark bar visibility changes (due to pref change or change in
-// tab/tab contents).
-- (void)updateBookmarkBarVisibilityWithAnimation:(BOOL)animate;
+- (BookmarkBarController*)bookmarkBarController;
 
 - (BOOL)isDownloadShelfVisible;
 
@@ -271,6 +277,10 @@ class WebContents;
 // "chrome/app/chrome_command_ids.h" file.
 - (void)executeCommand:(int)command;
 
+// Consults the Command Registry to see if this |event| needs to be handled as
+// an extension command and returns YES if so (NO otherwise).
+- (BOOL)handledByExtensionCommand:(NSEvent*)event;
+
 // Delegate method for the status bubble to query its base frame.
 - (NSRect)statusBubbleBaseFrame;
 
@@ -281,23 +291,12 @@ class WebContents;
 // Show the Chrome To Mobile bubble (e.g. user just clicked on the icon)
 - (void)showChromeToMobileBubble;
 
-// Returns the (lazily created) window sheet controller of this window. Used
-// for the per-tab sheets.
-- (GTMWindowSheetController*)sheetController;
-
-// Requests that |window| is opened as a per-tab sheet to the current tab.
-- (void)attachConstrainedWindow:(ConstrainedWindowMac*)window;
-// Closes the tab sheet |window| and potentially shows the next sheet in the
-// tab's sheet queue.
-- (void)removeConstrainedWindow:(ConstrainedWindowMac*)window;
-// Returns NO if constrained windows cannot be attached to this window.
-- (BOOL)canAttachConstrainedWindow;
+// Nil out the weak Chrome To Mobile bubble controller reference.
+// This should be called by the ChromeToMobileBubbleController on close.
+- (void)chromeToMobileBubbleWindowWillClose;
 
 // Shows or hides the docked web inspector depending on |contents|'s state.
 - (void)updateDevToolsForContents:(content::WebContents*)contents;
-
-// Specifies whether devtools should dock to right.
-- (void)setDevToolsDockToRight:(bool)dock_to_right;
 
 // Gets the current theme provider.
 - (ui::ThemeProvider*)themeProvider;
@@ -312,14 +311,9 @@ class WebContents;
 // coordinates.
 - (NSPoint)bookmarkBubblePoint;
 
-// Return the Chrome To Mobile bubble window's arrow anchor point, in window
-// coordinates.
-- (NSPoint)chromeToMobileBubblePoint;
-
 // Shows or hides the Instant preview contents.
-- (void)showInstant:(content::WebContents*)previewContents;
-- (void)hideInstant;
 - (void)commitInstant;
+- (BOOL)isInstantTabShowing;
 
 // Returns the frame, in Cocoa (unflipped) screen coordinates, of the area where
 // Instant results are.  If Instant is not showing, returns the frame of where

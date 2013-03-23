@@ -15,6 +15,8 @@
 
 using WebKit::WebBindings;
 
+namespace content {
+
 // true if the current process is a plugin process, false otherwise.
 static bool g_plugin_process;
 
@@ -146,7 +148,7 @@ void CreateNPVariantParam(const NPVariant& variant,
                           NPChannelBase* channel,
                           NPVariant_Param* param,
                           bool release,
-                          gfx::NativeViewId containing_window,
+                          int render_view_id,
                           const GURL& page_url) {
   switch (variant.type) {
     case NPVariantType_Void:
@@ -198,8 +200,8 @@ void CreateNPVariantParam(const NPVariant& variant,
           } else {
             route_id = channel->GenerateRouteID();
             new NPObjectStub(
-                variant.value.objectValue, channel, route_id,
-                containing_window, page_url);
+                variant.value.objectValue, channel, route_id, render_view_id,
+                page_url);
             param->npobject_routing_id = route_id;
           }
         } else {
@@ -219,7 +221,7 @@ void CreateNPVariantParam(const NPVariant& variant,
 bool CreateNPVariant(const NPVariant_Param& param,
                      NPChannelBase* channel,
                      NPVariant* result,
-                     gfx::NativeViewId containing_window,
+                     int render_view_id,
                      const GURL& page_url) {
   switch (param.type) {
     case NPVARIANT_PARAM_VOID:
@@ -260,7 +262,7 @@ bool CreateNPVariant(const NPVariant_Param& param,
         result->value.objectValue =
             NPObjectProxy::Create(channel,
                                   param.npobject_routing_id,
-                                  containing_window,
+                                  render_view_id,
                                   page_url);
       }
       break;
@@ -286,3 +288,5 @@ bool CreateNPVariant(const NPVariant_Param& param,
   }
   return true;
 }
+
+}  // namespace content

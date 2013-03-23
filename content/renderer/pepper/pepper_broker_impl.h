@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_PEPPER_PEPPER_BROKER_IMPL_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/process.h"
 #include "content/common/content_export.h"
 #include "ppapi/proxy/proxy_channel.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
@@ -37,7 +38,8 @@ class CONTENT_EXPORT PepperBrokerDispatcherWrapper {
   PepperBrokerDispatcherWrapper();
   ~PepperBrokerDispatcherWrapper();
 
-  bool Init(const IPC::ChannelHandle& channel_handle);
+  bool Init(base::ProcessId broker_pid,
+            const IPC::ChannelHandle& channel_handle);
 
   int32_t SendHandleToBroker(PP_Instance instance,
                              base::SyncSocket::Handle handle);
@@ -53,32 +55,47 @@ class PepperBrokerImpl : public webkit::ppapi::PluginDelegate::Broker,
   PepperBrokerImpl(webkit::ppapi::PluginModule* plugin_module,
                    PepperPluginDelegateImpl* delegate_);
 
-  // PepperBroker implementation.
-  virtual void Connect(webkit::ppapi::PPB_Broker_Impl* client) OVERRIDE;
+  // webkit::ppapi::PluginDelegate::Broker implementation.
   virtual void Disconnect(webkit::ppapi::PPB_Broker_Impl* client) OVERRIDE;
 
+  // Adds a pending connection to the broker. Balances out Disconnect() calls.
+  void AddPendingConnect(webkit::ppapi::PPB_Broker_Impl* client);
+
   // Called when the channel to the broker has been established.
-  void OnBrokerChannelConnected(const IPC::ChannelHandle& channel_handle);
+  void OnBrokerChannelConnected(base::ProcessId broker_pid,
+                                const IPC::ChannelHandle& channel_handle);
+
+  // Called when we know whether permission to access the PPAPI broker was
+  // granted.
+  void OnBrokerPermissionResult(webkit::ppapi::PPB_Broker_Impl* client,
+                                bool result);
+
+ private:
+  friend class base::RefCountedThreadSafe<PepperBrokerImpl>;
+
+  struct PendingConnection {
+    PendingConnection();
+    ~PendingConnection();
+
+    bool is_authorized;
+    base::WeakPtr<webkit::ppapi::PPB_Broker_Impl> client;
+  };
+
+  virtual ~PepperBrokerImpl();
+
+  // Reports failure to all clients that had pending operations.
+  void ReportFailureToClients(int error_code);
 
   // Connects the plugin to the broker via a pipe.
   void ConnectPluginToBroker(webkit::ppapi::PPB_Broker_Impl* client);
-
-  // Asynchronously sends a pipe to the broker.
-  int32_t SendHandleToBroker(PP_Instance instance,
-                             base::SyncSocket::Handle handle);
-
- protected:
-  friend class base::RefCountedThreadSafe<PepperBrokerImpl>;
-
-  virtual ~PepperBrokerImpl();
 
   scoped_ptr<PepperBrokerDispatcherWrapper> dispatcher_;
 
   // A map of pointers to objects that have requested a connection to the weak
   // pointer we can use to reference them. The mapping is needed so we can clean
   // up entries for objects that may have been deleted.
-  typedef std::map<webkit::ppapi::PPB_Broker_Impl*,
-                   base::WeakPtr<webkit::ppapi::PPB_Broker_Impl> > ClientMap;
+  typedef std::map<webkit::ppapi::PPB_Broker_Impl*, PendingConnection>
+      ClientMap;
   ClientMap pending_connects_;
 
   // Pointer to the associated plugin module.

@@ -69,13 +69,6 @@
 </head>
 
 <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
-  <button id="login-container" class="custom-appearance" hidden>
-    <div id="login-status-header-container" class="login-status-row">
-      <div id="login-status-header"></div>
-    </div>
-    <div id="login-status-sub-header"></div>
-  </button>
-
   <div id="notification-container" class="inactive" hidden>
     <div id="notification">
       <span></span>
@@ -102,24 +95,25 @@
   <div id="footer">
     <div id="footer-border"></div>
     <div id="footer-content">
-      <img id="logo-img" src="chrome://theme/IDR_PRODUCT_LOGO">
+      <div id="logo-img">
+        <img alt="" src="chrome://theme/IDR_PRODUCT_LOGO">
+        <div id="promo-bubble-anchor"></div>
+      </div>
 
       <ul id="dot-list">
       </ul>
 
-      <div class="menu-container">
+      <div id="footer-menu-container" class="menu-container">
+        <button id="other-sessions-menu-button"
+            class="footer-menu-button custom-appearance" hidden>
+          <span i18n-content="otherSessions"></span>
+          <div class="disclosure-triangle"></div>
+        </button>
         <button id="recently-closed-menu-button"
             class="footer-menu-button custom-appearance">
           <span i18n-content="recentlyclosed"></span>
           <div class="disclosure-triangle"></div>
         </button>
-
-        <button id="other-sessions-menu-button"
-            class="footer-menu-button custom-appearance invisible">
-          <span i18n-content="otherSessions"></span>
-          <div class="disclosure-triangle"></div>
-        </button>
-
         <div id="vertical-separator"></div>
       </div>
 
@@ -135,16 +129,17 @@
       </div>
     </div>
   </div>
+
+  <button id="login-container" class="custom-appearance" hidden>
+    <div id="login-status-header-container" class="login-status-row">
+      <div id="login-status-header"></div>
+    </div>
+    <div id="login-status-sub-header"></div>
+  </button>
 </body>
 
 <!-- A div to hold all the templates, and in the darkness bind them. -->
 <div hidden>
-
-<!-- NTP4 intro bubble -->
-<div id="ntp4-intro-bubble-contents">
-  <div></div>
-  <a i18n-content="learn_more" target="_blank"></a>
-</div>
 
 <!-- Login status bubble -->
 <div id="login-status-bubble-contents">
@@ -165,17 +160,17 @@
 
 <!-- App Contents w/ Large Icon -->
 <div id="app-large-icon-template" class="app-contents">
-  <div class="app-img-container">
-    <img class="invisible">
+  <div class="app-img-container" aria-hidden="true">
+    <img class="invisible" alt="">
   </div>
   <span class="title"></span>
 </div>
 
 <!-- App Contents w/ Small Icon -->
 <div id="app-small-icon-template" class="app-contents">
-  <div class="app-icon-div">
+  <div class="app-icon-div" aria-hidden="true">
     <div class="app-img-container">
-      <img class="invisible">
+      <img class="invisible" alt="">
     </div>
     <div class="color-stripe"></div>
   </div>

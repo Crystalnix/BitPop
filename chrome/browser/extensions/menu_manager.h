@@ -18,9 +18,9 @@
 #include "base/string16.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
-#include "chrome/common/extensions/url_pattern_set.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/url_pattern_set.h"
 
 
 class Profile;
@@ -71,6 +71,7 @@ class MenuItem {
     VIDEO = 64,
     AUDIO = 128,
     FRAME = 256,
+    LAUNCHER = 512
   };
 
   // An item can be only one of these types.
@@ -181,9 +182,8 @@ class MenuItem {
                             std::string* error);
 
   // Sets any document and target URL patterns from |properties|.
-  bool PopulateURLPatterns(const base::DictionaryValue& properties,
-                           const char* document_url_patterns_key,
-                           const char* target_url_patterns_key,
+  bool PopulateURLPatterns(std::vector<std::string>* document_url_patterns,
+                           std::vector<std::string>* target_url_patterns,
                            std::string* error);
 
  protected:
@@ -314,6 +314,9 @@ class MenuManager : public content::NotificationObserver,
   // items are ignored.
   void ReadFromStorage(const std::string& extension_id,
                        scoped_ptr<base::Value> value);
+
+  // Removes all "incognito" "split" mode context items.
+  void RemoveAllIncognitoContextItems();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(MenuManagerTest, DeleteParent);

@@ -9,14 +9,17 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/message_loop.h"
 #include "base/threading/platform_thread.h"
-#include "content/browser/renderer_host/render_widget_host_view_mac.h"
+#include "content/common/content_constants_internal.h"
 #include "content/public/browser/browser_thread.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_switches.h"
+#include "ui/gl/gpu_switching_manager.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/surface/io_surface_support_mac.h"
 
 #ifdef NDEBUG
@@ -105,6 +108,44 @@ GLuint CreateProgramGLSL(const char* vertex_shader_str,
   return program;
 }
 
+bool HasAppleFenceExtension() {
+  static bool initialized_has_fence = false;
+  static bool has_fence = false;
+
+  if (!initialized_has_fence) {
+    has_fence =
+        strstr(reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)),
+               "GL_APPLE_fence") != NULL;
+    initialized_has_fence = true;
+  }
+  return has_fence;
+}
+
+bool HasPixelBufferObjectExtension() {
+  static bool initialized_has_pbo = false;
+  static bool has_pbo = false;
+
+  if (!initialized_has_pbo) {
+    has_pbo =
+        strstr(reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)),
+               "GL_ARB_pixel_buffer_object") != NULL;
+    initialized_has_pbo = true;
+  }
+  return has_pbo;
+}
+
+bool IsVendorIntel() {
+  static bool initialized_is_intel = false;
+  static bool is_intel = false;
+
+  if (!initialized_is_intel) {
+    is_intel = strstr(reinterpret_cast<const char*>(glGetString(GL_VENDOR)),
+                      "Intel") != NULL;
+    initialized_is_intel = true;
+  }
+  return is_intel;
+}
+
 }  // namespace
 
 CVReturn DisplayLinkCallback(CVDisplayLinkRef display_link,
@@ -119,7 +160,15 @@ CVReturn DisplayLinkCallback(CVDisplayLinkRef display_link,
   return kCVReturnSuccess;
 }
 
-CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
+CompositingIOSurfaceMac::CopyContext::CopyContext() {
+  Reset();
+}
+
+CompositingIOSurfaceMac::CopyContext::~CopyContext() {
+}
+
+// static
+CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(SurfaceOrder order) {
   TRACE_EVENT0("browser", "CompositingIOSurfaceMac::Create");
   IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
   if (!io_surface_support) {
@@ -131,7 +180,7 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
   attributes.push_back(NSOpenGLPFADoubleBuffer);
   // We don't need a depth buffer - try setting its size to 0...
   attributes.push_back(NSOpenGLPFADepthSize); attributes.push_back(0);
-  if (gfx::GLContext::SupportsDualGpus())
+  if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus())
     attributes.push_back(NSOpenGLPFAAllowOfflineRenderers);
   attributes.push_back(0);
 
@@ -150,10 +199,13 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
     return NULL;
   }
 
-  // We "punch a hole" in the window, and have the WindowServer render the
-  // OpenGL surface underneath so we can draw over it.
-  GLint belowWindow = -1;
-  [glContext setValues:&belowWindow forParameter:NSOpenGLCPSurfaceOrder];
+  // If requested, ask the WindowServer to render the OpenGL surface underneath
+  // the window. This, combined with a hole punched in the window, will allow
+  // for views to "overlap" the GL surface from the user's point of view.
+  if (order == SURFACE_ORDER_BELOW_WINDOW) {
+    GLint belowWindow = -1;
+    [glContext setValues:&belowWindow forParameter:NSOpenGLCPSurfaceOrder];
+  }
 
   CGLContextObj cglContext = (CGLContextObj)[glContext CGLContextObj];
   if (!cglContext) {
@@ -187,21 +239,6 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
   CVReturn ret = CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
   if (ret != kCVReturnSuccess) {
     LOG(ERROR) << "CVDisplayLinkCreateWithActiveCGDisplays failed: " << ret;
-    return NULL;
-  }
-
-  // Set the display link for the current renderer
-  CGLPixelFormatObj cglPixelFormat =
-      (CGLPixelFormatObj)[glPixelFormat CGLPixelFormatObj];
-  ret = CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(display_link,
-                                                          cglContext,
-                                                          cglPixelFormat);
-  // This can fail with kCVReturnInvalidDisplay on mirrored displays, so
-  // ignore that failure and continue. http://crbug.com/152525
-  if (ret != kCVReturnSuccess && ret != kCVReturnInvalidDisplay) {
-    CVDisplayLinkRelease(display_link);
-    LOG(ERROR) << "CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext failed: "
-               << ret;
     return NULL;
   }
 
@@ -263,6 +300,7 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
 void CompositingIOSurfaceMac::GetVSyncParameters(base::TimeTicks* timebase,
                                                  uint32* interval_numerator,
                                                  uint32* interval_denominator) {
+  base::AutoLock lock(lock_);
   *timebase = vsync_timebase_;
   *interval_numerator = vsync_interval_numerator_;
   *interval_denominator = vsync_interval_denominator_;
@@ -270,10 +308,15 @@ void CompositingIOSurfaceMac::GetVSyncParameters(base::TimeTicks* timebase,
 
 CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
   CVDisplayLinkRelease(display_link_);
-  UnrefIOSurface();
+  CGLSetCurrentContext(cglContext_);
+  CleanupResourcesForCopy();
+  UnrefIOSurfaceWithContextCurrent();
+  CGLSetCurrentContext(0);
 }
 
-void CompositingIOSurfaceMac::SetIOSurface(uint64 io_surface_handle) {
+void CompositingIOSurfaceMac::SetIOSurface(uint64 io_surface_handle,
+                                           const gfx::Size& size) {
+  pixel_io_surface_size_ = size;
   CGLSetCurrentContext(cglContext_);
   MapIOSurfaceToTexture(io_surface_handle);
   CGLSetCurrentContext(0);
@@ -289,12 +332,14 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
 
   [glContext_ setView:view];
   gfx::Size window_size(NSSizeToCGSize([view frame].size));
-  gfx::Size pixel_window_size = window_size.Scale(scale_factor);
+  gfx::Size pixel_window_size = gfx::ToFlooredSize(
+      gfx::ScaleSize(window_size, scale_factor));
   glViewport(0, 0, pixel_window_size.width(), pixel_window_size.height());
 
   // TODO: After a resolution change, the DPI-ness of the view and the
   // IOSurface might not be in sync.
-  io_surface_size_ = pixel_io_surface_size_.Scale(1.0 / scale_factor);
+  io_surface_size_ = gfx::ToFlooredSize(
+      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor));
   quad_.set_size(io_surface_size_, pixel_io_surface_size_);
 
   glMatrixMode(GL_PROJECTION);
@@ -341,6 +386,12 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
       }
     }
 
+    // Workaround for issue 158469. Issue a dummy draw call with texture_ not
+    // bound to blit_rgb_sampler_location_, in order to shake all references
+    // to the IOSurface out of the driver.
+    glBegin(GL_TRIANGLES);
+    glEnd();
+
     glUseProgram(0); CHECK_GL_ERROR();
   } else {
     // Should match the clear color of RenderWidgetHostViewMac.
@@ -353,12 +404,11 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
 
   if (!initialized_workaround) {
     use_glfinish_workaround =
-        (strstr(reinterpret_cast<const char*>(
-            glGetString(GL_VENDOR)), "Intel") ||
+        (IsVendorIntel() ||
          CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kForceGLFinishWorkaround)) &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableGpuDriverBugWorkarounds);
+         !CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kDisableGpuDriverBugWorkarounds);
 
     initialized_workaround = true;
   }
@@ -384,14 +434,198 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
     RateLimitDraws();
 }
 
-bool CompositingIOSurfaceMac::CopyTo(
+void CompositingIOSurfaceMac::CopyTo(
+      const gfx::Rect& src_pixel_subrect,
+      const gfx::Size& dst_pixel_size,
+      void* out,
+      const base::Callback<void(bool)>& callback) {
+  CGLSetCurrentContext(cglContext_);
+  bool async_copy = HasPixelBufferObjectExtension() && !IsVendorIntel();
+  bool ret = false;
+  if (async_copy)
+    ret = AsynchronousCopyTo(src_pixel_subrect, dst_pixel_size, out, callback);
+  else
+    ret = SynchronousCopyTo(src_pixel_subrect, dst_pixel_size, out);
+  CGLSetCurrentContext(0);
+
+  if (!ret) {
+    VLOG(1) << "Failed to copy IOSurface, asynchronous mode: " << async_copy;
+  }
+
+  if (async_copy) {
+    if (!ret)
+      callback.Run(false);
+  } else {
+    callback.Run(ret);
+  }
+}
+
+bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
+    uint64 io_surface_handle) {
+  if (io_surface_.get() && io_surface_handle == io_surface_handle_)
+    return true;
+
+  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::MapIOSurfaceToTexture");
+  UnrefIOSurfaceWithContextCurrent();
+
+  io_surface_.reset(io_surface_support_->IOSurfaceLookup(
+      static_cast<uint32>(io_surface_handle)));
+  // Can fail if IOSurface with that ID was already released by the gpu
+  // process.
+  if (!io_surface_.get()) {
+    io_surface_handle_ = 0;
+    return false;
+  }
+
+  io_surface_handle_ = io_surface_handle;
+
+  // Actual IOSurface size is rounded up to reduce reallocations during window
+  // resize. Get the actual size to properly map the texture.
+  gfx::Size rounded_size(
+      io_surface_support_->IOSurfaceGetWidth(io_surface_),
+      io_surface_support_->IOSurfaceGetHeight(io_surface_));
+
+  // TODO(thakis): Keep track of the view size over IPC. At the moment,
+  // the correct view units are computed on first paint.
+  io_surface_size_ = pixel_io_surface_size_;
+
+  GLenum target = GL_TEXTURE_RECTANGLE_ARB;
+  glGenTextures(1, &texture_);
+  glBindTexture(target, texture_);
+  glTexParameterf(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameterf(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST); CHECK_GL_ERROR();
+  GLuint plane = 0;
+  CGLError cglerror = io_surface_support_->CGLTexImageIOSurface2D(
+      cglContext_,
+      target,
+      GL_RGBA,
+      rounded_size.width(),
+      rounded_size.height(),
+      GL_BGRA,
+      GL_UNSIGNED_INT_8_8_8_8_REV,
+      io_surface_.get(),
+      plane);
+  CHECK_GL_ERROR();
+  if (cglerror != kCGLNoError) {
+    LOG(ERROR) << "CGLTexImageIOSurface2D: " << cglerror;
+    return false;
+  }
+
+  return true;
+}
+
+void CompositingIOSurfaceMac::UnrefIOSurface() {
+  CGLSetCurrentContext(cglContext_);
+  UnrefIOSurfaceWithContextCurrent();
+  CGLSetCurrentContext(0);
+}
+
+void CompositingIOSurfaceMac::DrawQuad(const SurfaceQuad& quad) {
+  glEnableClientState(GL_VERTEX_ARRAY); CHECK_GL_ERROR();
+  glEnableClientState(GL_TEXTURE_COORD_ARRAY); CHECK_GL_ERROR();
+
+  glVertexPointer(2, GL_FLOAT, sizeof(SurfaceVertex), &quad.verts_[0].x_);
+  glTexCoordPointer(2, GL_FLOAT, sizeof(SurfaceVertex), &quad.verts_[0].tx_);
+  glDrawArrays(GL_QUADS, 0, 4); CHECK_GL_ERROR();
+
+  glDisableClientState(GL_VERTEX_ARRAY);
+  glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+}
+
+void CompositingIOSurfaceMac::UnrefIOSurfaceWithContextCurrent() {
+  if (texture_) {
+    glDeleteTextures(1, &texture_);
+    texture_ = 0;
+  }
+
+  io_surface_.reset();
+
+  // Forget the ID, because even if it is still around when we want to use it
+  // again, OSX may have reused the same ID for a new tab and we don't want to
+  // blit random tab contents.
+  io_surface_handle_ = 0;
+}
+
+void CompositingIOSurfaceMac::GlobalFrameDidChange() {
+  [glContext_ update];
+}
+
+void CompositingIOSurfaceMac::ClearDrawable() {
+  [glContext_ clearDrawable];
+  UnrefIOSurface();
+}
+
+void CompositingIOSurfaceMac::DisplayLinkTick(CVDisplayLinkRef display_link,
+                                              const CVTimeStamp* time) {
+  TRACE_EVENT0("gpu", "CompositingIOSurfaceMac::DisplayLinkTick");
+  base::AutoLock lock(lock_);
+  // Increment vsync_count but don't let it get ahead of swap_count.
+  vsync_count_ = std::min(vsync_count_ + 1, swap_count_);
+
+  CalculateVsyncParametersLockHeld(time);
+}
+
+void CompositingIOSurfaceMac::CalculateVsyncParametersLockHeld(
+    const CVTimeStamp* time) {
+  lock_.AssertAcquired();
+  vsync_interval_numerator_ = static_cast<uint32>(time->videoRefreshPeriod);
+  vsync_interval_denominator_ = time->videoTimeScale;
+  // Verify that videoRefreshPeriod is 32 bits.
+  DCHECK((time->videoRefreshPeriod & ~0xffffFFFFull) == 0ull);
+
+  vsync_timebase_ =
+      base::TimeTicks::FromInternalValue(time->hostTime / 1000);
+}
+
+void CompositingIOSurfaceMac::RateLimitDraws() {
+  int64 vsync_count;
+  int64 swap_count;
+
+  {
+    base::AutoLock lock(lock_);
+    vsync_count = vsync_count_;
+    swap_count = ++swap_count_;
+  }
+
+  // It's OK for swap_count to get 2 ahead of vsync_count, but any more
+  // indicates that it has become unthrottled. This happens when, for example,
+  // the window is obscured by another opaque window.
+  if (swap_count > vsync_count + 2) {
+    TRACE_EVENT0("gpu", "CompositingIOSurfaceMac::RateLimitDraws");
+    // Sleep for one vsync interval. This will prevent spinning while the window
+    // is not visible, but will also allow quick recovery when the window
+    // becomes visible again.
+    int64 sleep_us = 16666;  // default to 60hz if display link API fails.
+    if (vsync_interval_denominator_ > 0) {
+      sleep_us = (static_cast<int64>(vsync_interval_numerator_) * 1000000) /
+                 vsync_interval_denominator_;
+    }
+    base::PlatformThread::Sleep(base::TimeDelta::FromMicroseconds(sleep_us));
+  }
+}
+
+void CompositingIOSurfaceMac::StartOrContinueDisplayLink() {
+  if (!CVDisplayLinkIsRunning(display_link_)) {
+    vsync_count_ = swap_count_ = 0;
+    CVDisplayLinkStart(display_link_);
+  }
+  display_link_stop_timer_.Reset();
+}
+
+void CompositingIOSurfaceMac::StopDisplayLink() {
+  if (CVDisplayLinkIsRunning(display_link_))
+    CVDisplayLinkStop(display_link_);
+}
+
+bool CompositingIOSurfaceMac::SynchronousCopyTo(
       const gfx::Rect& src_pixel_subrect,
       const gfx::Size& dst_pixel_size,
       void* out) {
   if (!MapIOSurfaceToTexture(io_surface_handle_))
     return false;
 
-  CGLSetCurrentContext(cglContext_);
+  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::SynchronousCopyTo()");
+
   GLuint target = GL_TEXTURE_RECTANGLE_ARB;
 
   GLuint dst_texture = 0;
@@ -454,163 +688,170 @@ bool CompositingIOSurfaceMac::CopyTo(
 
   glDeleteFramebuffersEXT(1, &dst_framebuffer);
   glDeleteTextures(1, &dst_texture);
-
-  CGLSetCurrentContext(0);
   return true;
 }
 
-bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
-    uint64 io_surface_handle) {
-  if (io_surface_.get() && io_surface_handle == io_surface_handle_)
-    return true;
-
-  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::MapIOSurfaceToTexture");
-  UnrefIOSurfaceWithContextCurrent();
-
-  io_surface_.reset(io_surface_support_->IOSurfaceLookup(
-      static_cast<uint32>(io_surface_handle)));
-  // Can fail if IOSurface with that ID was already released by the gpu
-  // process.
-  if (!io_surface_.get()) {
-    io_surface_handle_ = 0;
+bool CompositingIOSurfaceMac::AsynchronousCopyTo(
+      const gfx::Rect& src_pixel_subrect,
+      const gfx::Size& dst_pixel_size,
+      void* out,
+      const base::Callback<void(bool)>& callback) {
+  if (copy_context_.started)
     return false;
+
+  if (!MapIOSurfaceToTexture(io_surface_handle_))
+    return false;
+
+  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::AsynchronousCopyTo()");
+
+  copy_context_.started = true;
+  copy_context_.src_rect = src_pixel_subrect;
+  copy_context_.dest_size = dst_pixel_size;
+  copy_context_.out_buf = out;
+  copy_context_.callback = callback;
+
+  const bool use_fence = HasAppleFenceExtension();
+  if (use_fence) {
+    glGenFencesAPPLE(1, &copy_context_.fence); CHECK_GL_ERROR();
+    copy_context_.use_fence = true;
+    copy_context_.cycles_elapsed = 0;
   }
 
-  io_surface_handle_ = io_surface_handle;
-  pixel_io_surface_size_.SetSize(
-      io_surface_support_->IOSurfaceGetWidth(io_surface_),
-      io_surface_support_->IOSurfaceGetHeight(io_surface_));
+  // Create an offscreen framebuffer.
+  // This is used to render and scale a subrect of IOSurface.
+  const GLenum kTarget = GL_TEXTURE_RECTANGLE_ARB;
+  const int dest_width = copy_context_.dest_size.width();
+  const int dest_height = copy_context_.dest_size.height();
 
-  // TODO(thakis): Keep track of the view size over IPC. At the moment,
-  // the correct view units are computed on first paint.
-  io_surface_size_ = pixel_io_surface_size_;
-
-  quad_.set_size(pixel_io_surface_size_, pixel_io_surface_size_);
-
-  GLenum target = GL_TEXTURE_RECTANGLE_ARB;
-  glGenTextures(1, &texture_);
-  glBindTexture(target, texture_);
-  glTexParameterf(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameterf(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST); CHECK_GL_ERROR();
-  GLuint plane = 0;
-  CGLError cglerror = io_surface_support_->CGLTexImageIOSurface2D(
-      cglContext_,
-      target,
-      GL_RGBA,
-      pixel_io_surface_size_.width(),
-      pixel_io_surface_size_.height(),
-      GL_BGRA,
-      GL_UNSIGNED_INT_8_8_8_8_REV,
-      io_surface_.get(),
-      plane);
+  glGenTextures(1, &copy_context_.frame_buffer_texture); CHECK_GL_ERROR();
+  glBindTexture(kTarget, copy_context_.frame_buffer_texture); CHECK_GL_ERROR();
+  glGenFramebuffersEXT(1, &copy_context_.frame_buffer); CHECK_GL_ERROR();
+  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, copy_context_.frame_buffer);
   CHECK_GL_ERROR();
-  if (cglerror != kCGLNoError) {
-    LOG(ERROR) << "CGLTexImageIOSurface2D: " << cglerror;
-    return false;
-  }
 
+  glTexImage2D(kTarget,
+               0,
+               GL_RGBA,
+               dest_width,
+               dest_height,
+               0,
+               GL_BGRA,
+               GL_UNSIGNED_INT_8_8_8_8_REV,
+               NULL); CHECK_GL_ERROR();
+  glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
+                            GL_COLOR_ATTACHMENT0_EXT,
+                            kTarget,
+                            copy_context_.frame_buffer_texture,
+                            0); CHECK_GL_ERROR();
+
+  glViewport(0, 0, dest_width, dest_height); CHECK_GL_ERROR();
+  glMatrixMode(GL_PROJECTION); CHECK_GL_ERROR();
+  glLoadIdentity(); CHECK_GL_ERROR();
+  glOrtho(0, dest_width, 0, dest_height, -1, 1); CHECK_GL_ERROR();
+  glMatrixMode(GL_MODELVIEW); CHECK_GL_ERROR();
+  glLoadIdentity(); CHECK_GL_ERROR();
+
+  glDisable(GL_DEPTH_TEST); CHECK_GL_ERROR();
+  glDisable(GL_BLEND); CHECK_GL_ERROR();
+
+  glUseProgram(shader_program_blit_rgb_); CHECK_GL_ERROR();
+
+  const int kTextureUnit = 0;
+  glUniform1i(blit_rgb_sampler_location_, kTextureUnit); CHECK_GL_ERROR();
+  glActiveTexture(GL_TEXTURE0 + kTextureUnit); CHECK_GL_ERROR();
+  glBindTexture(kTarget, texture_); CHECK_GL_ERROR();
+  glTexParameterf(kTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR); CHECK_GL_ERROR();
+  glTexParameterf(kTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST); CHECK_GL_ERROR();
+
+  SurfaceQuad quad;
+  quad.set_rect(0.0f, 0.0f, dest_width, dest_height); CHECK_GL_ERROR();
+  quad.set_texcoord_rect(
+      copy_context_.src_rect.x(), copy_context_.src_rect.y(),
+      copy_context_.src_rect.right(), copy_context_.src_rect.bottom());
+  DrawQuad(quad);
+
+  glBindTexture(kTarget, 0); CHECK_GL_ERROR();
+  glUseProgram(0); CHECK_GL_ERROR();
+
+  // Copy the offscreen framebuffer to a PBO.
+  glGenBuffersARB(1, &copy_context_.pixel_buffer); CHECK_GL_ERROR();
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, copy_context_.pixel_buffer);
+  CHECK_GL_ERROR();
+  glBufferDataARB(GL_PIXEL_PACK_BUFFER_ARB,
+                  dest_width * dest_height * 4,
+                  NULL, GL_STREAM_READ_ARB); CHECK_GL_ERROR();
+  glReadPixels(0, 0, dest_width, dest_height, GL_BGRA,
+               GL_UNSIGNED_INT_8_8_8_8_REV, 0); CHECK_GL_ERROR();
+
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0); CHECK_GL_ERROR();
+  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); CHECK_GL_ERROR();
+
+  if (use_fence) {
+    glSetFenceAPPLE(copy_context_.fence); CHECK_GL_ERROR();
+  }
+  glFlush(); CHECK_GL_ERROR();
+
+  // 20ms is an estimate assuming most hardware can complete asynchronous
+  // readback within this time limit. The timer will keep running until
+  // operation is completed.
+  const int kIntervalMilliseconds = 20;
+  copy_timer_.Start(FROM_HERE,
+                    base::TimeDelta::FromMilliseconds(kIntervalMilliseconds),
+                    this, &CompositingIOSurfaceMac::FinishCopy);
   return true;
 }
 
-void CompositingIOSurfaceMac::UnrefIOSurface() {
+void CompositingIOSurfaceMac::FinishCopy() {
+  CHECK(copy_context_.started);
+  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::FinishCopy()");
+
   CGLSetCurrentContext(cglContext_);
-  UnrefIOSurfaceWithContextCurrent();
-  CGLSetCurrentContext(0);
-}
 
-void CompositingIOSurfaceMac::DrawQuad(const SurfaceQuad& quad) {
-  glEnableClientState(GL_VERTEX_ARRAY); CHECK_GL_ERROR();
-  glEnableClientState(GL_TEXTURE_COORD_ARRAY); CHECK_GL_ERROR();
+  if (copy_context_.use_fence) {
+    bool copy_completed = glTestFenceAPPLE(copy_context_.fence);
+    CHECK_GL_ERROR();
 
-  glVertexPointer(2, GL_FLOAT, sizeof(SurfaceVertex), &quad.verts_[0].x_);
-  glTexCoordPointer(2, GL_FLOAT, sizeof(SurfaceVertex), &quad.verts_[0].tx_);
-  glDrawArrays(GL_QUADS, 0, 4); CHECK_GL_ERROR();
+    // Allow 1s for the operation to complete.
+    const int kRetryCycles = 50;
 
-  glDisableClientState(GL_VERTEX_ARRAY);
-  glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-}
-
-void CompositingIOSurfaceMac::UnrefIOSurfaceWithContextCurrent() {
-  if (texture_) {
-    glDeleteTextures(1, &texture_);
-    texture_ = 0;
-  }
-
-  io_surface_.reset();
-
-  // Forget the ID, because even if it is still around when we want to use it
-  // again, OSX may have reused the same ID for a new tab and we don't want to
-  // blit random tab contents.
-  io_surface_handle_ = 0;
-}
-
-void CompositingIOSurfaceMac::GlobalFrameDidChange() {
-  [glContext_ update];
-}
-
-void CompositingIOSurfaceMac::ClearDrawable() {
-  [glContext_ clearDrawable];
-  UnrefIOSurface();
-}
-
-void CompositingIOSurfaceMac::DisplayLinkTick(CVDisplayLinkRef display_link,
-                                              const CVTimeStamp* output_time) {
-  base::AutoLock lock(lock_);
-  // Increment vsync_count but don't let it get ahead of swap_count.
-  vsync_count_ = std::min(vsync_count_ + 1, swap_count_);
-
-  CalculateVsyncParametersLockHeld(output_time);
-}
-
-void CompositingIOSurfaceMac::CalculateVsyncParametersLockHeld(
-    const CVTimeStamp* time) {
-  vsync_interval_numerator_ = static_cast<uint32>(time->videoRefreshPeriod);
-  vsync_interval_denominator_ = time->videoTimeScale;
-  // Verify that videoRefreshPeriod is 32 bits.
-  DCHECK((time->videoRefreshPeriod & ~0xffffFFFFull) == 0ull);
-
-  vsync_timebase_ =
-      base::TimeTicks::FromInternalValue(time->hostTime / 1000);
-}
-
-void CompositingIOSurfaceMac::RateLimitDraws() {
-  int64 vsync_count;
-  int64 swap_count;
-
-  {
-    base::AutoLock lock(lock_);
-    vsync_count = vsync_count_;
-    swap_count = ++swap_count_;
-  }
-
-  // It's OK for swap_count to get 2 ahead of vsync_count, but any more
-  // indicates that it has become unthrottled. This happens when, for example,
-  // the window is obscured by another opaque window.
-  if (swap_count > vsync_count + 2) {
-    TRACE_EVENT0("gpu", "CompositingIOSurfaceMac::RateLimitDraws");
-    // Sleep for one vsync interval. This will prevent spinning while the window
-    // is not visible, but will also allow quick recovery when the window
-    // becomes visible again.
-    int64 sleep_us = 16666;  // default to 60hz if display link API fails.
-    if (vsync_interval_denominator_ > 0) {
-      sleep_us = (static_cast<int64>(vsync_interval_numerator_) * 1000000) /
-                 vsync_interval_denominator_;
+    if (!copy_completed && copy_context_.cycles_elapsed < kRetryCycles) {
+      ++copy_context_.cycles_elapsed;
+      CGLSetCurrentContext(0);
+      return;
     }
-    base::PlatformThread::Sleep(base::TimeDelta::FromMicroseconds(sleep_us));
   }
+  copy_timer_.Stop();
+
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, copy_context_.pixel_buffer);
+  CHECK_GL_ERROR();
+
+  void* buf = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY_ARB);
+  CHECK_GL_ERROR();
+
+  if (buf) {
+    memcpy(copy_context_.out_buf, buf, copy_context_.dest_size.GetArea() * 4);
+    glUnmapBufferARB(GL_PIXEL_PACK_BUFFER_ARB); CHECK_GL_ERROR();
+  }
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0); CHECK_GL_ERROR();
+
+  base::Callback<void(bool)> callback = copy_context_.callback;
+  CleanupResourcesForCopy();
+  CGLSetCurrentContext(0);
+
+  callback.Run(buf != NULL);
 }
 
-void CompositingIOSurfaceMac::StartOrContinueDisplayLink() {
-  if (!CVDisplayLinkIsRunning(display_link_)) {
-    vsync_count_ = swap_count_ = 0;
-    CVDisplayLinkStart(display_link_);
-  }
-  display_link_stop_timer_.Reset();
-}
+void CompositingIOSurfaceMac::CleanupResourcesForCopy() {
+  if (!copy_context_.started)
+    return;
 
-void CompositingIOSurfaceMac::StopDisplayLink() {
-  if (CVDisplayLinkIsRunning(display_link_))
-    CVDisplayLinkStop(display_link_);
+  glDeleteFramebuffersEXT(1, &copy_context_.frame_buffer); CHECK_GL_ERROR();
+  glDeleteTextures(1, &copy_context_.frame_buffer_texture); CHECK_GL_ERROR();
+  glDeleteBuffers(1, &copy_context_.pixel_buffer); CHECK_GL_ERROR();
+  if (copy_context_.use_fence) {
+    glDeleteFencesAPPLE(1, &copy_context_.fence); CHECK_GL_ERROR();
+  }
+  copy_context_.Reset();
 }
 
 }  // namespace content

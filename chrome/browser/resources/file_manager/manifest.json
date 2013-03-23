@@ -1,6 +1,7 @@
 {
   // chrome-extension://hhaomjibdihmijegdhdafkllkbggdgoj/
   "key": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDlhpGghtnNJ7pluQN0RDwbUxwwi99oM35ZEaFYvxPLrf0fIEC18cfDdJi6u4aJ+UoSpgzK731L0P/k4LvK2Rz9kVKOy0+IvuRrWkT7lbrLfA1UEBh02OA1AAshjmyRg4IxCqgl8ia8XWq6HKegS1y1KXZYGgb4qp7Bh9VC4cIzswIBIw==",
+  "manifest_version": 2,
   "name": "Files",
   "version": "0.1",
   "description": "File Manager",
@@ -10,25 +11,23 @@
     "128": "images/icon128.png"
   },
   "permissions": [
+    "storage",
     "fileBrowserHandler",
     "fileBrowserPrivate",
     "mediaPlayerPrivate",
     "metricsPrivate",
     "unlimitedStorage",
+    // Comment out chrome:// permissions to debug on a desktop browser.
     "chrome://extension-icon/",
     "chrome://resources/",
+    "chrome://theme/",
     "tabs",
     "clipboardWrite",
     "clipboardRead",
-    "https://*.googleusercontent.com/"
+    "https://docs.google.com/",
+    "https://*.googleusercontent.com/",
+    "https://drive.google.com/"
   ],
-  "content_security_policy": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' about:; img-src 'self' data: filesystem: https://docs.google.com https://*.googleusercontent.com chrome://extension-icon; media-src filesystem: https://*.googleusercontent.com;",
-  "app": {
-    "launch": {
-      "container": "panel",
-      "local_path": "main.html"
-    }
-  },
   "file_browser_handlers": [
     {
       "id": "play",
@@ -135,26 +134,50 @@
       ]
     },
     {
-      "id": "open-hosted",
+      "id": "open-hosted-generic",
       "default_title": "__MSG_HOSTED__",
       "default_icon": "images/filetype_generic.png",
       "file_filters": [
-        "filesystem:*.gdoc",
-        "filesystem:*.gsheet",
-        "filesystem:*.gslides",
         "filesystem:*.gdraw",
         "filesystem:*.gtable"
+      ]
+    },
+    {
+      "id": "open-hosted-gdoc",
+      "default_title": "__MSG_HOSTED__",
+      "default_icon": "images/filetype_generic.png",
+      "file_filters": [
+        "filesystem:*.gdoc"
+      ]
+    },
+    {
+      "id": "open-hosted-gsheet",
+      "default_title": "__MSG_HOSTED__",
+      "default_icon": "images/filetype_generic.png",
+      "file_filters": [
+        "filesystem:*.gsheet"
+      ]
+    },
+    {
+      "id": "open-hosted-gslides",
+      "default_title": "__MSG_HOSTED__",
+      "default_icon": "images/filetype_generic.png",
+      "file_filters": [
+        "filesystem:*.gslides"
       ]
     }
   ],
   "chrome_url_overrides": {
     "files": "main.html"
   },
-  "background": {
-    "transient": true,
-    "persistent": false,
-    "scripts": ["js/file_copy_manager.js",
-                "js/path_util.js",
-                "js/util.js"]
+  "app": {
+    "background": {
+      "scripts": [
+        "js/file_copy_manager.js",
+        "js/path_util.js",
+        "js/util.js",
+        "js/background.js"]
+    },
+    "content_security_policy": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' about:; img-src 'self' chrome://resources chrome://theme data: https://docs.google.com https://*.googleusercontent.com chrome://extension-icon; media-src 'self' https://*.googleusercontent.com; connect-src https://drive.google.com"
   }
 }

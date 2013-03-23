@@ -12,14 +12,19 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/singleton_tabs.h"
-#include "chrome/browser/ui/webui/options2/content_settings_handler.h"
+#include "chrome/browser/ui/webui/options/content_settings_handler.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
+#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/common/net/url_util.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/user_metrics.h"
+#include "google_apis/gaia/gaia_urls.h"
+#include "googleurl/src/gurl.h"
 
 using content::UserMetricsAction;
 
@@ -38,6 +43,12 @@ void OpenBookmarkManagerWithHash(Browser* browser,
       GURL(kChromeUIBookmarksURL).Resolve(
       StringPrintf("/#%s%s", action.c_str(),
       base::Int64ToString(node_id).c_str()))));
+  params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
+  ShowSingletonTabOverwritingNTP(browser, params);
+}
+
+void NavigateToSingletonTab(Browser* browser, const GURL& url) {
+  NavigateParams params(GetSingletonTabNavigateParams(browser, url));
   params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
   ShowSingletonTabOverwritingNTP(browser, params);
 }
@@ -108,6 +119,10 @@ void ShowHelp(Browser* browser, HelpSource source) {
   ShowSingletonTab(browser, url);
 }
 
+void ShowPolicy(Browser* browser) {
+  ShowSingletonTab(browser, GURL(kChromeUIPolicyURL));
+}
+
 void ShowSettings(Browser* browser) {
   content::RecordAction(UserMetricsAction("ShowOptions"));
   ShowSettingsSubPage(browser, std::string());
@@ -133,7 +148,7 @@ void ShowContentSettings(Browser* browser,
   ShowSettingsSubPage(
       browser,
       kContentSettingsExceptionsSubPage + std::string(kHashMark) +
-      options2::ContentSettingsHandler::ContentSettingsTypeToGroupName(
+      options::ContentSettingsHandler::ContentSettingsTypeToGroupName(
           content_settings_type));
 }
 
@@ -152,10 +167,6 @@ void ShowImportDialog(Browser* browser) {
   ShowSettingsSubPage(browser, kImportDataSubPage);
 }
 
-void ShowInstantConfirmDialog(Browser* browser) {
-  ShowSettingsSubPage(browser, kInstantConfirmPage);
-}
-
 void ShowAboutChrome(Browser* browser) {
   content::RecordAction(UserMetricsAction("AboutChrome"));
   NavigateParams params(
@@ -170,24 +181,56 @@ void ShowSearchEngineSettings(Browser* browser) {
 }
 
 void ShowSyncSetup(Browser* browser, SyncPromoUI::Source source) {
+  Profile* original_profile = browser->profile()->GetOriginalProfile();
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(
-          browser->profile()->GetOriginalProfile());
-  LoginUIService* login_service = LoginUIServiceFactory::GetForProfile(
-      browser->profile()->GetOriginalProfile());
+          original_profile);
   if (service->HasSyncSetupCompleted()) {
     ShowSettings(browser);
-  } else if (SyncPromoUI::ShouldShowSyncPromo(browser->profile()) &&
-             login_service->current_login_ui() == NULL) {
-    // There is no currently active login UI, so display a new promo page.
-    GURL url(SyncPromoUI::GetSyncPromoURL(GURL(), source, false));
-    NavigateParams params(GetSingletonTabNavigateParams(browser, GURL(url)));
-    params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
-    ShowSingletonTabOverwritingNTP(browser, params);
   } else {
-    LoginUIServiceFactory::GetForProfile(
-        browser->profile()->GetOriginalProfile())->ShowLoginUI(browser);
+    // If the browser's profile is an incognito profile, make sure to use
+    // a browser window from the original profile.  The user cannot sign in
+    // from an incognito window.
+    if (browser->profile()->IsOffTheRecord()) {
+      browser =
+          browser::FindOrCreateTabbedBrowser(original_profile,
+                                             chrome::HOST_DESKTOP_TYPE_NATIVE);
+    }
+
+    const bool use_web_flow = SyncPromoUI::UseWebBasedSigninFlow();
+    const bool show_promo =
+        SyncPromoUI::ShouldShowSyncPromo(browser->profile());
+
+    LoginUIService* login = LoginUIServiceFactory::GetForProfile(
+        original_profile);
+    if (use_web_flow || (show_promo && login->current_login_ui() == NULL)) {
+      NavigateToSingletonTab(browser,
+                             GURL(SyncPromoUI::GetSyncPromoURL(GURL(),
+                                                               source,
+                                                               false)));
+    } else {
+      if (login->current_login_ui()) {
+        login->current_login_ui()->FocusUI();
+      } else {
+        // Need to navigate to the settings page and display the UI.
+        chrome::ShowSettingsSubPage(browser, chrome::kSyncSetupSubPage);
+      }
+    }
+
+    DCHECK_GT(browser->tab_count(), 0);
   }
+}
+
+void ShowGaiaSignin(Browser* browser,
+                    const std::string& service,
+                    const GURL& continue_url) {
+  GURL url(GaiaUrls::GetInstance()->service_login_url());
+  url = chrome_common_net::AppendQueryParameter(url, "service", service);
+  if (continue_url.is_valid())
+    url = chrome_common_net::AppendQueryParameter(url,
+                                                  "continue",
+                                                  continue_url.spec());
+  NavigateToSingletonTab(browser, url);
 }
 
 }  // namespace chrome

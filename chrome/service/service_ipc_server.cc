@@ -99,10 +99,6 @@ bool ServiceIPCServer::OnMessageReceived(const IPC::Message& msg) {
                         OnGetCloudPrintProxyInfo)
     IPC_MESSAGE_HANDLER(ServiceMsg_Shutdown, OnShutdown);
     IPC_MESSAGE_HANDLER(ServiceMsg_UpdateAvailable, OnUpdateAvailable);
-    IPC_MESSAGE_HANDLER(ServiceMsg_EnableVirtualDriver,
-                        OnEnableVirtualDriver);
-    IPC_MESSAGE_HANDLER(ServiceMsg_DisableVirtualDriver,
-                        OnDisableVirtualDriver);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -115,11 +111,12 @@ void ServiceIPCServer::OnEnableCloudPrintProxy(const std::string& lsid) {
 void ServiceIPCServer::OnEnableCloudPrintProxyWithRobot(
     const std::string& robot_auth_code,
     const std::string& robot_email,
-    const std::string& user_email) {
+    const std::string& user_email,
+    bool connect_new_printers,
+    const std::vector<std::string>& printer_blacklist) {
   g_service_process->GetCloudPrintProxy()->EnableForUserWithRobot(
-      robot_auth_code,
-      robot_email,
-      user_email);
+      robot_auth_code, robot_email, user_email, connect_new_printers,
+      printer_blacklist);
 }
 
 void ServiceIPCServer::OnGetCloudPrintProxyInfo() {
@@ -141,13 +138,5 @@ void ServiceIPCServer::OnShutdown() {
 
 void ServiceIPCServer::OnUpdateAvailable() {
   g_service_process->SetUpdateAvailable();
-}
-
-void ServiceIPCServer::OnEnableVirtualDriver() {
-  g_service_process->EnableVirtualPrintDriver();
-}
-
-void ServiceIPCServer::OnDisableVirtualDriver() {
-  g_service_process->DisableVirtualPrintDriver();
 }
 

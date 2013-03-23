@@ -6,7 +6,6 @@
 
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
-#include "chrome/browser/extensions/browser_event_router.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,8 +19,11 @@ void extensions::ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(
 }
 
 ExtensionKeybindingRegistryViews::ExtensionKeybindingRegistryViews(
-    Profile* profile, views::FocusManager* focus_manager)
-    : ExtensionKeybindingRegistry(profile),
+    Profile* profile,
+    views::FocusManager* focus_manager,
+    ExtensionFilter extension_filter,
+    Delegate* delegate)
+    : ExtensionKeybindingRegistry(profile, extension_filter, delegate),
       profile_(profile),
       focus_manager_(focus_manager) {
   Init();
@@ -85,16 +87,13 @@ void ExtensionKeybindingRegistryViews::RemoveExtensionKeybinding(
 
 bool ExtensionKeybindingRegistryViews::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
-  ExtensionService* service = profile_->GetExtensionService();
-
   EventTargets::iterator it = event_targets_.find(accelerator);
   if (it == event_targets_.end()) {
     NOTREACHED();  // Shouldn't get this event for something not registered.
     return false;
   }
 
-  service->browser_event_router()->CommandExecuted(
-      profile_, it->second.first, it->second.second);
+  CommandExecuted(it->second.first, it->second.second);
 
   return true;
 }

@@ -6,18 +6,17 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/browser/profiles/profile.h"
-#include "content/public/browser/notification_service.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/ui/ui_test.h"
+#include "content/public/browser/notification_service.h"
 #include "net/test/test_server.h"
 
 class InfoBarsTest : public InProcessBrowserTest {
@@ -40,7 +39,7 @@ class InfoBarsTest : public InProcessBrowserTest {
         content::NotificationService::AllSources());
 
     ExtensionInstallPrompt* client =
-        chrome::CreateExtensionInstallPromptWithBrowser(browser());
+        new ExtensionInstallPrompt(chrome::GetActiveWebContents(browser()));
     scoped_refptr<extensions::CrxInstaller> installer(
         extensions::CrxInstaller::Create(service, client));
     installer->set_install_cause(extension_misc::INSTALL_CAUSE_AUTOMATION);
@@ -75,8 +74,8 @@ IN_PROC_BROWSER_TEST_F(InfoBarsTest, TestInfoBarsCloseOnNewTheme) {
   infobar_added_2.Wait();
   infobar_removed_1.Wait();
   EXPECT_EQ(0u,
-            chrome::GetTabContentsAt(browser(), 0)->infobar_tab_helper()->
-                infobar_count());
+            InfoBarTabHelper::FromWebContents(
+                chrome::GetWebContentsAt(browser(), 0))->GetInfoBarCount());
 
   content::WindowedNotificationObserver infobar_removed_2(
       chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
@@ -84,6 +83,6 @@ IN_PROC_BROWSER_TEST_F(InfoBarsTest, TestInfoBarsCloseOnNewTheme) {
   ThemeServiceFactory::GetForProfile(browser()->profile())->UseDefaultTheme();
   infobar_removed_2.Wait();
   EXPECT_EQ(0u,
-            chrome::GetActiveTabContents(browser())->infobar_tab_helper()->
-                infobar_count());
+            InfoBarTabHelper::FromWebContents(
+                chrome::GetActiveWebContents(browser()))->GetInfoBarCount());
 }

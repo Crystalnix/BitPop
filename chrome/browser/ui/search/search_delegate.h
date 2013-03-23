@@ -8,9 +8,12 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "chrome/browser/ui/search/toolbar_search_animator.h"
 
-class TabContents;
+class ToolbarModel;
+
+namespace content {
+class WebContents;
+}
 
 namespace chrome {
 namespace search {
@@ -25,43 +28,36 @@ class SearchModel;
 // Browser-level model.
 class SearchDelegate : public SearchModelObserver {
  public:
-  explicit SearchDelegate(SearchModel* model);
+  SearchDelegate(SearchModel* browser_search_model,
+                 ToolbarModel* toolbar_model);
   virtual ~SearchDelegate();
 
   // Overrides for SearchModelObserver:
-  virtual void ModeChanged(const Mode& mode) OVERRIDE;
+  virtual void ModeChanged(const Mode& old_mode, const Mode& new_mode) OVERRIDE;
 
   // When the active tab is changed, the model state of this new active tab is
   // propagated to the browser.
-  void OnTabActivated(TabContents* contents);
+  void OnTabActivated(content::WebContents* web_contents);
 
   // When a tab is deactivated, this class no longer observes changes to the
   // tab's model.
-  void OnTabDeactivated(TabContents* contents);
+  void OnTabDeactivated(content::WebContents* web_contents);
 
   // When a tab is detached, this class no longer observes changes to the
   // tab's model.
-  void OnTabDetached(TabContents* contents);
-
-  ToolbarSearchAnimator& toolbar_search_animator() {
-    return toolbar_search_animator_;
-  }
+  void OnTabDetached(content::WebContents* web_contents);
 
  private:
   // Stop observing tab.
-  void StopObserveringTab(TabContents* contents);
+  void StopObservingTab(content::WebContents* web_contents);
 
   // Weak.  The Browser class owns this.  The active |tab_model_| state is
   // propagated to the |browser_model_|.
   SearchModel* browser_model_;
 
-  // Weak.  The TabContents owns this.  It is the model of the active
+  // Weak.  The WebContents owns this.  It is the model of the active
   // tab.  Changes to this model are propagated through to the |browser_model_|.
   SearchModel* tab_model_;
-
-  // Animator for fading in toolbar and tab backgrounds when mode changes from
-  // NTP to SEARCH.
-  ToolbarSearchAnimator toolbar_search_animator_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchDelegate);
 };

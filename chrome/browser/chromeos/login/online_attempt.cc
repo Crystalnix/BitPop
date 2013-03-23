@@ -7,17 +7,19 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state_resolver.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/net/gaia/gaia_auth_consumer.h"
-#include "chrome/common/net/gaia/gaia_auth_fetcher.h"
-#include "chrome/common/net/gaia/gaia_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/gaia/gaia_auth_consumer.h"
+#include "google_apis/gaia/gaia_auth_fetcher.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
@@ -47,6 +49,7 @@ OnlineAttempt::OnlineAttempt(bool using_oauth,
       resolver_(callback),
       weak_factory_(this),
       try_again_(true) {
+  DCHECK(attempt_->user_type == User::USER_TYPE_REGULAR);
 }
 
 OnlineAttempt::~OnlineAttempt() {
@@ -168,7 +171,7 @@ void OnlineAttempt::TryClientLogin() {
           GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
     } else {
       oauth_fetcher_->StartOAuthLogin(GaiaConstants::kChromeOSSource,
-                                      GaiaConstants::kPicasaService,
+                                      GaiaConstants::kSyncService,
                                       attempt_->oauth1_access_token(),
                                       attempt_->oauth1_access_secret());
     }
@@ -176,7 +179,7 @@ void OnlineAttempt::TryClientLogin() {
     client_fetcher_->StartClientLogin(
         attempt_->username,
         attempt_->password,
-        GaiaConstants::kPicasaService,
+        GaiaConstants::kSyncService,
         attempt_->login_token,
         attempt_->login_captcha,
         attempt_->hosted_policy());

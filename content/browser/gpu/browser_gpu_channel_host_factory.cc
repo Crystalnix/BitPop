@@ -13,6 +13,7 @@
 #include "content/common/child_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_client.h"
+#include "ipc/ipc_forwarding_message_filter.h"
 
 namespace content {
 
@@ -79,7 +80,7 @@ base::WaitableEvent* BrowserGpuChannelHostFactory::GetShutDownEvent() {
 }
 
 scoped_ptr<base::SharedMemory>
-BrowserGpuChannelHostFactory::AllocateSharedMemory(uint32 size) {
+BrowserGpuChannelHostFactory::AllocateSharedMemory(size_t size) {
   scoped_ptr<base::SharedMemory> shm(new base::SharedMemory());
   if (!shm->CreateAnonymous(size))
     return scoped_ptr<base::SharedMemory>();
@@ -132,6 +133,72 @@ int32 BrowserGpuChannelHostFactory::CreateViewCommandBuffer(
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
   request.event.Wait();
   return request.route_id;
+}
+
+void BrowserGpuChannelHostFactory::CreateImageOnIO(
+    gfx::PluginWindowHandle window,
+    int32 image_id,
+    const CreateImageCallback& callback) {
+  GpuProcessHost* host = GpuProcessHost::FromID(gpu_host_id_);
+  if (!host) {
+    ImageCreatedOnIO(callback, gfx::Size());
+    return;
+  }
+
+  host->CreateImage(
+      window,
+      gpu_client_id_,
+      image_id,
+      base::Bind(&BrowserGpuChannelHostFactory::ImageCreatedOnIO, callback));
+}
+
+// static
+void BrowserGpuChannelHostFactory::ImageCreatedOnIO(
+    const CreateImageCallback& callback, const gfx::Size size) {
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&BrowserGpuChannelHostFactory::OnImageCreated,
+                 callback, size));
+}
+
+// static
+void BrowserGpuChannelHostFactory::OnImageCreated(
+    const CreateImageCallback& callback, const gfx::Size size) {
+  callback.Run(size);
+}
+
+void BrowserGpuChannelHostFactory::CreateImage(
+    gfx::PluginWindowHandle window,
+    int32 image_id,
+    const CreateImageCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  GetIOLoopProxy()->PostTask(FROM_HERE, base::Bind(
+        &BrowserGpuChannelHostFactory::CreateImageOnIO,
+        base::Unretained(this),
+        window,
+        image_id,
+        callback));
+}
+
+void BrowserGpuChannelHostFactory::DeleteImageOnIO(
+    int32 image_id, int32 sync_point) {
+  GpuProcessHost* host = GpuProcessHost::FromID(gpu_host_id_);
+  if (!host) {
+    return;
+  }
+
+  host->DeleteImage(gpu_client_id_, image_id, sync_point);
+}
+
+void BrowserGpuChannelHostFactory::DeleteImage(
+    int32 image_id, int32 sync_point) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  GetIOLoopProxy()->PostTask(FROM_HERE, base::Bind(
+        &BrowserGpuChannelHostFactory::DeleteImageOnIO,
+        base::Unretained(this),
+        image_id,
+        sync_point));
 }
 
 void BrowserGpuChannelHostFactory::EstablishGpuChannelOnIO(
@@ -216,12 +283,40 @@ GpuChannelHost* BrowserGpuChannelHostFactory::EstablishGpuChannelSync(
 
   gpu_channel_ = new GpuChannelHost(this, request.gpu_host_id, gpu_client_id_);
   gpu_channel_->set_gpu_info(request.gpu_info);
-  content::GetContentClient()->SetGpuInfo(request.gpu_info);
+  GetContentClient()->SetGpuInfo(request.gpu_info);
 
   // Connect to the GPU process if a channel name was received.
   gpu_channel_->Connect(request.channel_handle);
 
   return gpu_channel_.get();
+}
+
+// static
+void BrowserGpuChannelHostFactory::AddFilterOnIO(
+    int host_id,
+    scoped_refptr<IPC::ChannelProxy::MessageFilter> filter) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  GpuProcessHost* host = GpuProcessHost::FromID(host_id);
+  if (host)
+    host->AddFilter(filter);
+}
+
+void BrowserGpuChannelHostFactory::SetHandlerForControlMessages(
+      const uint32* message_ids,
+      size_t num_messages,
+      const base::Callback<void(const IPC::Message&)>& handler,
+      base::TaskRunner* target_task_runner) {
+  scoped_refptr<IPC::ForwardingMessageFilter> filter =
+      new IPC::ForwardingMessageFilter(message_ids,
+                                       num_messages,
+                                       target_task_runner);
+  filter->AddRoute(MSG_ROUTING_CONTROL, handler);
+
+  GetIOLoopProxy()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserGpuChannelHostFactory::AddFilterOnIO,
+                 gpu_host_id_,
+                 filter));
 }
 
 }  // namespace content

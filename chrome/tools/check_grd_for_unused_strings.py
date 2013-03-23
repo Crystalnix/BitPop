@@ -134,11 +134,14 @@ def main():
     ui_base_strings_dir = os.path.join(ui_base_dir, 'strings')
     grd_files = [
       os.path.join(ash_base_dir, 'ash_strings.grd'),
+      os.path.join(ash_base_dir, 'resources', 'ash_resources.grd'),
+      os.path.join(ash_base_dir, 'resources', 'ash_wallpaper_resources.grd'),
       os.path.join(chrome_app_dir, 'chromium_strings.grd'),
       os.path.join(chrome_app_dir, 'generated_resources.grd'),
       os.path.join(chrome_app_dir, 'google_chrome_strings.grd'),
       os.path.join(chrome_app_res_dir, 'locale_settings.grd'),
-      os.path.join(chrome_app_res_dir, 'locale_settings_cros.grd'),
+      os.path.join(chrome_app_res_dir, 'locale_settings_chromiumos.grd'),
+      os.path.join(chrome_app_res_dir, 'locale_settings_google_chromeos.grd'),
       os.path.join(chrome_app_res_dir, 'locale_settings_linux.grd'),
       os.path.join(chrome_app_res_dir, 'locale_settings_mac.grd'),
       os.path.join(chrome_app_res_dir, 'locale_settings_win.grd'),
@@ -146,9 +149,9 @@ def main():
       os.path.join(chrome_dir, 'browser', 'browser_resources.grd'),
       os.path.join(chrome_dir, 'browser', 'resources', 'shared_resources.grd'),
       os.path.join(chrome_dir, 'common', 'common_resources.grd'),
-      os.path.join(chrome_dir, 'renderer', 'renderer_resources.grd'),
+      os.path.join(chrome_dir, 'renderer', 'resources',
+                   'renderer_resources.grd'),
       os.path.join(src_dir, 'ui', 'resources', 'ui_resources.grd'),
-      os.path.join(src_dir, 'ui', 'resources', 'ui_resources_wallpapers.grd'),
       os.path.join(ui_base_strings_dir, 'app_locale_settings.grd'),
       os.path.join(ui_base_strings_dir, 'ui_strings.grd'),
     ]
@@ -157,6 +160,7 @@ def main():
   if len(src_dirs) == 0:
     src_dirs = [
       os.path.join(src_dir, 'app'),
+      os.path.join(src_dir, 'ash'),
       os.path.join(src_dir, 'chrome'),
       os.path.join(src_dir, 'chrome_frame'),
       os.path.join(src_dir, 'content'),

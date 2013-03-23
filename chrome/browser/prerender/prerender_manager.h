@@ -9,12 +9,12 @@
 #include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
@@ -49,7 +49,8 @@ struct hash<content::WebContents*> {
     return reinterpret_cast<std::size_t>(value);
   }
 };
-}
+
+}  // namespace BASE_HASH_NAMESPACE
 
 #endif
 
@@ -69,16 +70,16 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
                          public base::NonThreadSafe,
                          public ProfileKeyedService {
  public:
-  // PrerenderManagerMode is used in a UMA_HISTOGRAM, so please do not
-  // add in the middle.
+  // NOTE: New values need to be appended, since they are used in histograms.
   enum PrerenderManagerMode {
-    PRERENDER_MODE_DISABLED,
-    PRERENDER_MODE_ENABLED,
-    PRERENDER_MODE_EXPERIMENT_CONTROL_GROUP,
-    PRERENDER_MODE_EXPERIMENT_PRERENDER_GROUP,
-    PRERENDER_MODE_EXPERIMENT_5MIN_TTL_GROUP,
-    PRERENDER_MODE_EXPERIMENT_NO_USE_GROUP,
-    PRERENDER_MODE_EXPERIMENT_MULTI_PRERENDER_GROUP,
+    PRERENDER_MODE_DISABLED = 0,
+    PRERENDER_MODE_ENABLED = 1,
+    PRERENDER_MODE_EXPERIMENT_CONTROL_GROUP = 2,
+    PRERENDER_MODE_EXPERIMENT_PRERENDER_GROUP = 3,
+    // Obsolete: PRERENDER_MODE_EXPERIMENT_5MIN_TTL_GROUP = 4,
+    PRERENDER_MODE_EXPERIMENT_NO_USE_GROUP = 5,
+    PRERENDER_MODE_EXPERIMENT_MULTI_PRERENDER_GROUP = 6,
+    PRERENDER_MODE_EXPERIMENT_15MIN_TTL_GROUP = 7,
     PRERENDER_MODE_MAX
   };
 
@@ -98,7 +99,7 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
 
   virtual ~PrerenderManager();
 
-  // ProfileKeyedService implementation.
+  // From ProfileKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // Entry points for adding prerenders.
@@ -144,8 +145,8 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
 
   // Moves a PrerenderContents to the pending delete list from the list of
   // active prerenders when prerendering should be cancelled.
-  void MoveEntryToPendingDelete(PrerenderContents* entry,
-                                FinalStatus final_status);
+  virtual void MoveEntryToPendingDelete(PrerenderContents* entry,
+                                        FinalStatus final_status);
 
   // Records the perceived page load time for a page - effectively the time from
   // when the user navigates to a page to when it finishes loading. The actual
@@ -158,6 +159,11 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
       double fraction_plt_elapsed_at_swap_in,
       content::WebContents* web_contents,
       const GURL& url);
+
+  // Records the percentage of pixels of the final page in place at swap-in.
+  void RecordFractionPixelsFinalAtSwapin(
+      content::WebContents* web_contents,
+      double fraction);
 
   // Set whether prerendering is currently enabled for this manager.
   // Must be called on the UI thread.
@@ -175,24 +181,43 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   static const char* GetModeString();
   static bool IsPrerenderingPossible();
   static bool ActuallyPrerendering();
-  static bool IsControlGroup();
+  static bool IsControlGroup(uint8 experiment_id);
   static bool IsNoUseGroup();
-  static size_t GetMaxConcurrency();
 
   // Query the list of current prerender pages to see if the given web contents
-  // is prerendering a page.
-  bool IsWebContentsPrerendering(content::WebContents* web_contents) const;
+  // is prerendering a page. The optional parameter |origin| is an output
+  // parameter which, if a prerender is found, is set to the Origin of the
+  // prerender |web_contents|.
+  bool IsWebContentsPrerendering(content::WebContents* web_contents,
+                                 Origin* origin) const;
+
+  // Returns the PrerenderContents object for the given web_contents if it's
+  // used for an active prerender page, otherwise returns NULL.
+  PrerenderContents* GetPrerenderContents(
+      content::WebContents* web_contents) const;
+
+  // Returns a list of all WebContents being prerendered.
+  const std::vector<content::WebContents*> GetAllPrerenderingContents() const;
 
   // Maintaining and querying the set of WebContents belonging to this
   // PrerenderManager that are currently showing prerendered pages.
-  void MarkWebContentsAsPrerendered(content::WebContents* web_contents);
-  void MarkWebContentsAsWouldBePrerendered(content::WebContents* web_contents);
+  void MarkWebContentsAsPrerendered(content::WebContents* web_contents,
+                                    Origin origin);
+  void MarkWebContentsAsWouldBePrerendered(content::WebContents* web_contents,
+                                           Origin origin);
   void MarkWebContentsAsNotPrerendered(content::WebContents* web_contents);
-  bool IsWebContentsPrerendered(content::WebContents* web_contents) const;
-  bool WouldWebContentsBePrerendered(content::WebContents* web_contents) const;
+
+  // Returns true if |web_contents| was originally a prerender that has since
+  // been swapped in. The optional parameter |origin| is an output parameter
+  // which, if a prerender is found, is set to the Origin of the prerender of
+  // |web_contents|.
+  bool IsWebContentsPrerendered(content::WebContents* web_contents,
+                                Origin* origin) const;
+  bool WouldWebContentsBePrerendered(content::WebContents* web_contents,
+                                     Origin* origin) const;
 
   // Checks whether |url| has been recently navigated to.
-  bool HasRecentlyBeenNavigatedTo(const GURL& url);
+  bool HasRecentlyBeenNavigatedTo(Origin origin, const GURL& url);
 
   // Returns true if the method given is invalid for prerendering.
   static bool IsValidHttpMethod(const std::string& method);
@@ -238,47 +263,66 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
 
   Profile* profile() const { return profile_; }
 
-  PrerenderHistograms* histograms() const { return histograms_.get(); }
+  // Classes which will be tested in prerender unit browser tests should use
+  // these methods to get times for comparison, so that the test framework can
+  // mock advancing/retarding time.
+  virtual base::Time GetCurrentTime() const;
+  virtual base::TimeTicks GetCurrentTimeTicks() const;
 
  protected:
   class PrerenderData : public base::SupportsWeakPtr<PrerenderData> {
    public:
-    // Constructor for a pending prerender, which will get its contents later.
-    explicit PrerenderData(PrerenderManager* manager);
+    struct OrderByExpiryTime;
 
-    // Constructor for an active prerender.
-    PrerenderData(PrerenderManager* manager, PrerenderContents* contents);
+    PrerenderData(PrerenderManager* manager,
+                  PrerenderContents* contents,
+                  base::TimeTicks expiry_time);
 
     ~PrerenderData();
 
+    // Turn this PrerenderData into a Match Complete replacement for itself,
+    // placing the current prerender contents into |to_delete_prerenders_|.
+    void MakeIntoMatchCompleteReplacement();
+
     // A new PrerenderHandle has been created for this PrerenderData.
-    void OnNewHandle();
+    void OnHandleCreated(PrerenderHandle* prerender_handle);
 
     // The launcher associated with a handle is navigating away from the context
     // that launched this prerender. If the prerender is active, it may stay
     // alive briefly though, in case we we going through a redirect chain that
     // will eventually land at it.
-    void OnNavigateAwayByHandle();
+    void OnHandleNavigatedAway(PrerenderHandle* prerender_handle);
 
     // The launcher associated with a handle has taken explicit action to cancel
     // this prerender. We may well destroy the prerender in this case if no
     // other handles continue to track it.
-    void OnCancelByHandle();
+    void OnHandleCanceled(PrerenderHandle* prerender_handle);
 
-    PrerenderContents* contents() { return contents_; }
+    PrerenderContents* contents() { return contents_.get(); }
+
+    PrerenderContents* ReleaseContents();
+
+    int handle_count() const { return handle_count_; }
+
+    base::TimeTicks expiry_time() const { return expiry_time_; }
+    void set_expiry_time(base::TimeTicks expiry_time) {
+      expiry_time_ = expiry_time;
+    }
 
    private:
-    friend class PrerenderManager;
-
     PrerenderManager* manager_;
-    PrerenderContents* contents_;
+    scoped_ptr<PrerenderContents> contents_;
 
     // The number of distinct PrerenderHandles created for |this|, including
-    // ones that have called PrerenderData::OnNavigateAwayByHandle(), but not
-    // counting the ones that have called PrerenderData::OnCancelByHandle(). For
+    // ones that have called PrerenderData::OnHandleNavigatedAway(), but not
+    // counting the ones that have called PrerenderData::OnHandleCanceled(). For
     // pending prerenders, this will always be 1, since the PrerenderManager
     // only merges handles of running prerenders.
     int handle_count_;
+
+    // After this time, this prerender is no longer fresh, and should be
+    // removed.
+    base::TimeTicks expiry_time_;
 
     DISALLOW_COPY_AND_ASSIGN(PrerenderData);
   };
@@ -286,23 +330,19 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   void SetPrerenderContentsFactory(
       PrerenderContents::Factory* prerender_contents_factory);
 
-  // Adds a prerender from a pending Prerender, called by
+  // Adds prerenders from the pending Prerenders, called by
   // PrerenderContents::StartPendingPrerenders.
-  void StartPendingPrerender(
-      PrerenderHandle* existing_prerender_handle,
-      Origin origin,
+  void StartPendingPrerenders(
       int process_id,
-      const GURL& url,
-      const content::Referrer& referrer,
-      const gfx::Size& size,
+      ScopedVector<PrerenderContents::PendingPrerenderInfo>* pending_prerenders,
       content::SessionStorageNamespace* session_storage_namespace);
 
-  void DestroyPendingPrerenderData(PrerenderData* pending_prerender_data);
-
-  // Utility method that is called from the virtual Shutdown method on this
-  // class but is called directly from the TestPrerenderManager in the unit
-  // tests.
-  void DoShutdown();
+  // Called by a PrerenderData to signal that the launcher has navigated away
+  // from the context that launched the prerender. A user may have clicked
+  // a link in a page containing a <link rel=prerender> element, or the user
+  // might have committed an omnibox navigation. This is used to possibly
+  // shorten the TTL of the prerendered page.
+  void SourceNavigatedAway(PrerenderData* prerender_data);
 
  private:
   friend class PrerenderBrowserTest;
@@ -310,10 +350,39 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   friend class PrerenderHandle;
   friend class UnitTestPrerenderManager;
 
-  class OnCloseTabContentsDeleter;
+  class OnCloseWebContentsDeleter;
   struct NavigationRecord;
 
-  typedef base::hash_map<content::WebContents*, bool> WouldBePrerenderedMap;
+  // For each WebContents that is swapped in, we store a
+  // PrerenderedWebContentsData so that we can track the origin of the
+  // prerender.
+  struct PrerenderedWebContentsData {
+    explicit PrerenderedWebContentsData(Origin origin);
+
+    Origin origin;
+  };
+
+  // In the control group experimental group for each WebContents "not swapped
+  // in" we create a WouldBePrerenderedWebContentsData to the origin of the
+  // "prerender" we did not launch. We also track a state machine to ensure
+  // the histogram reporting tracks what histograms would have done.
+  struct WouldBePrerenderedWebContentsData {
+    // When the WebContents gets a provisional load, we'd like to remove the
+    // WebContents from  the map since the new navigation would not have swapped
+    // in a prerender. But the first provisional load after the control
+    // prerender is not "swapped in" is actually to the prerendered location! So
+    // we don't remove the item from the map on the first provisional load, but
+    // we do for subsequent loads.
+    enum State {
+      WAITING_FOR_PROVISIONAL_LOAD,
+      SEEN_PROVISIONAL_LOAD,
+    };
+
+    explicit WouldBePrerenderedWebContentsData(Origin origin);
+
+    Origin origin;
+    State state;
+  };
 
   // Time interval before a new prerender is allowed.
   static const int kMinTimeBetweenPrerendersMs = 500;
@@ -352,20 +421,20 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // automatically be cancelled.
   void PostCleanupTask();
 
-  base::TimeDelta GetMaxAge() const;
-  bool IsPrerenderFresh(base::TimeTicks start) const;
+  base::TimeTicks GetExpiryTimeForNewPrerender() const;
+  base::TimeTicks GetExpiryTimeForNavigatedAwayPrerender() const;
+
   void DeleteOldEntries();
-  virtual base::Time GetCurrentTime() const;
-  virtual base::TimeTicks GetCurrentTimeTicks() const;
   virtual PrerenderContents* CreatePrerenderContents(
       const GURL& url,
       const content::Referrer& referrer,
       Origin origin,
       uint8 experiment_id);
 
-  // Deletes any PrerenderContents that have been added to the pending delete
-  // list.
-  void DeletePendingDeleteEntries();
+  // Insures the |active_prerenders_| are sorted by increasing expiry time. Call
+  // after every mutation of active_prerenders_ that can possibly make it
+  // unsorted (e.g. an insert, or changing an expiry time).
+  void SortActivePrerenders();
 
   // Finds the active PrerenderData object for a running prerender matching
   // |url| and |session_storage_namespace|.
@@ -378,25 +447,25 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // returns NULL.
   PrerenderData* FindPrerenderDataForChildAndRoute(int child_id, int route_id);
 
-  // Given the |prerender_contents|, find the iterator in active_prerender_list_
+  // Given the |prerender_contents|, find the iterator in active_prerenders_
   // correponding to the given prerender.
-  std::list<linked_ptr<PrerenderData> >::iterator
+  ScopedVector<PrerenderData>::iterator
       FindIteratorForPrerenderContents(PrerenderContents* prerender_contents);
 
-  bool DoesRateLimitAllowPrerender() const;
+  bool DoesRateLimitAllowPrerender(Origin origin) const;
 
   // Deletes old WebContents that have been replaced by prerendered ones.  This
   // is needed because they're replaced in a callback from the old WebContents,
   // so cannot immediately be deleted.
-  void DeleteOldTabContents();
+  void DeleteOldWebContents();
 
   // Cleans up old NavigationRecord's.
   void CleanUpOldNavigations();
 
-  // Arrange for the given tab contents to be deleted asap. If deleter is not
+  // Arrange for the given WebContents to be deleted asap. If deleter is not
   // NULL, deletes that as well.
-  void ScheduleDeleteOldTabContents(TabContents* tab,
-                                    OnCloseTabContentsDeleter* deleter);
+  void ScheduleDeleteOldWebContents(content::WebContents* tab,
+                                    OnCloseWebContentsDeleter* deleter);
 
   // Adds to the history list.
   void AddToHistory(PrerenderContents* contents);
@@ -442,22 +511,22 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
 
   PrerenderTracker* prerender_tracker_;
 
-  // List of all running prerenders. It is kept sorted, in increasing order by
-  // expiry time. This list owns the PrerenderData objects contained in it.
-  std::list<linked_ptr<PrerenderData> > active_prerender_list_;
+  // All running prerenders. Sorted by expiry time, in ascending order.
+  ScopedVector<PrerenderData> active_prerenders_;
 
-  // List of all pending prerenders.
-  std::list<linked_ptr<PrerenderData> > pending_prerender_list_;
+  // Prerenders awaiting deletion.
+  ScopedVector<PrerenderData> to_delete_prerenders_;
 
   // List of recent navigations in this profile, sorted by ascending
   // navigate_time_.
   std::list<NavigationRecord> navigations_;
 
-  // List of prerender elements to be deleted
-  std::list<PrerenderContents*> pending_delete_list_;
-
-  // Set of WebContents which are currently displaying a prerendered page.
-  base::hash_set<content::WebContents*> prerendered_tab_contents_set_;
+  // This map is from all WebContents which are currently displaying a
+  // prerendered page which has already been swapped in to a
+  // PrerenderedWebContentsData for tracking full lifetime information
+  // on prerenders.
+  base::hash_map<content::WebContents*, PrerenderedWebContentsData>
+      prerendered_web_contents_data_;
 
   // WebContents that would have been swapped out for a prerendered WebContents
   // if the user was not part of the control group for measurement. When the
@@ -465,10 +534,11 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // the map since the new navigation would not have swapped in a prerender.
   // However, one complication exists because the first provisional load after
   // the WebContents is marked as "Would Have Been Prerendered" is actually to
-  // the prerendered location. So, we need to keep a boolean around that does
+  // the prerendered location. So, we need to keep a state around that does
   // not clear the item from the map on the first provisional load, but does
   // for subsequent loads.
-  WouldBePrerenderedMap would_be_prerendered_map_;
+  base::hash_map<content::WebContents*, WouldBePrerenderedWebContentsData>
+      would_be_prerendered_map_;
 
   scoped_ptr<PrerenderContents::Factory> prerender_contents_factory_;
 
@@ -485,12 +555,12 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // Track time of last prerender to limit prerender spam.
   base::TimeTicks last_prerender_start_time_;
 
-  std::list<TabContents*> old_tab_contents_list_;
+  std::list<content::WebContents*> old_web_contents_list_;
 
   // Cancels pending tasks on deletion.
   base::WeakPtrFactory<PrerenderManager> weak_factory_;
 
-  ScopedVector<OnCloseTabContentsDeleter> on_close_tab_contents_deleters_;
+  ScopedVector<OnCloseWebContentsDeleter> on_close_web_contents_deleters_;
 
   scoped_ptr<PrerenderHistory> prerender_history_;
 

@@ -5,291 +5,182 @@
 cr.define('ntp', function() {
   'use strict';
 
-  // We can't pass the currently dragging tile via dataTransfer because of
-  // http://crbug.com/31037
-  var currentlyDraggingTile = null;
-  function getCurrentlyDraggingTile() {
-    return currentlyDraggingTile;
-  }
-  function setCurrentlyDraggingTile(tile) {
-    currentlyDraggingTile = tile;
-    if (tile)
-      ntp.enterRearrangeMode();
-    else
-      ntp.leaveRearrangeMode();
-  }
-
   /**
-   * Changes the current dropEffect of a drag. This modifies the native cursor
-   * and serves as an indicator of what we should do at the end of the drag as
-   * well as give indication to the user if a drop would succeed if they let go.
-   * @param {DataTransfer} dataTransfer A dataTransfer object from a drag event.
-   * @param {string} effect A drop effect to change to (i.e. copy, move, none).
+   * The maximum gap from the edge of the scrolling area which will display
+   * the shadow with transparency. After this point the shadow will become
+   * 100% opaque.
+   * @type {number}
+   * @const
    */
-  function setCurrentDropEffect(dataTransfer, effect) {
-    dataTransfer.dropEffect = effect;
-    if (currentlyDraggingTile)
-      currentlyDraggingTile.lastDropEffect = dataTransfer.dropEffect;
-  }
+  var MAX_SCROLL_SHADOW_GAP = 16;
 
   /**
-   * Creates a new Tile object. Tiles wrap content on a TilePage, providing
-   * some styling and drag functionality.
+   * @type {number}
+   * @const
+   */
+  var SCROLL_BAR_WIDTH = 12;
+
+  //----------------------------------------------------------------------------
+  // Tile
+  //----------------------------------------------------------------------------
+
+  /**
+   * A virtual Tile class. Each TilePage subclass should have its own Tile
+   * subclass implemented too (e.g. MostVisitedPage contains MostVisited
+   * tiles, and MostVisited is a Tile subclass).
    * @constructor
-   * @extends {HTMLDivElement}
    */
-  function Tile(contents) {
-    var tile = cr.doc.createElement('div');
-    tile.__proto__ = Tile.prototype;
-    tile.initialize(contents);
-
-    return tile;
+  function Tile() {
+    console.error('Tile is a virtual class and is not supposed to be ' +
+        'instantiated');
   }
+
+  /**
+   * Creates a Tile subclass. We need to use this function to create a Tile
+   * subclass because a Tile must also subclass a HTMLElement (which can be
+   * any HTMLElement), so we need to individually add methods and getters here.
+   * @param {Object} Subclass The prototype object of the class we want to be
+   *     a Tile subclass.
+   * @param {Object} The extended Subclass object.
+   */
+  Tile.subclass = function(Subclass) {
+    var Base = Tile.prototype;
+    for (var name in Base) {
+      if (!Subclass.hasOwnProperty(name))
+        Subclass[name] = Base[name];
+    }
+    for (var name in TileGetters) {
+      if (!Subclass.hasOwnProperty(name))
+        Subclass.__defineGetter__(name, TileGetters[name]);
+    }
+    return Subclass;
+  };
 
   Tile.prototype = {
+    // Tile data object.
+    data_: null,
+
+    /**
+     * Initializes a Tile.
+     */
+    initialize: function() {
+      this.classList.add('tile');
+      this.reset();
+    },
+
+    /**
+     * Resets the tile DOM.
+     */
+    reset: function() {
+    },
+
+    /**
+     * The data for this Tile.
+     * @param {Object} data A dictionary of relevant data for the page.
+     */
+    set data(data) {
+      // TODO(pedrosimonetti): Remove data.filler usage everywhere.
+      if (!data || data.filler) {
+        if (this.data_)
+          this.reset();
+        return;
+      }
+
+      this.data_ = data;
+    },
+  };
+
+  var TileGetters = {
+    /**
+     * The TileCell associated to this Tile.
+     * @type {TileCell}
+     */
+    'tileCell': function() {
+      return findAncestorByClass(this, 'tile-cell');
+    },
+
+    /**
+     * The index of the Tile.
+     * @type {number}
+     */
+    'index': function() {
+      assert(this.tileCell);
+      return this.tileCell.index;
+    },
+  };
+
+  //----------------------------------------------------------------------------
+  // TileCell
+  //----------------------------------------------------------------------------
+
+  /**
+   * Creates a new TileCell object. A TileCell represents a cell in the
+   * TilePage's grid. A TilePage uses TileCells to position Tiles in the proper
+   * place and to animate them individually. Each TileCell is associated to
+   * one Tile at a time (or none if it is a filler object), and that association
+   * might change when the grid is resized. When that happens, the grid is
+   * updated and the Tiles are moved to the proper TileCell. We cannot move the
+   * the TileCell itself during the resize because this transition is animated
+   * with CSS and there's no way to stop CSS animations, and we really want to
+   * animate with CSS to take advantage of hardware acceleration.
+   * @constructor
+   * @extends {HTMLDivElement}
+   * @param {HTMLElement} tile Tile element that will be associated to the cell.
+   */
+  function TileCell(tile) {
+    var tileCell = cr.doc.createElement('div');
+    tileCell.__proto__ = TileCell.prototype;
+    tileCell.initialize(tile);
+
+    return tileCell;
+  }
+
+  TileCell.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    initialize: function(contents) {
-      // 'real' as opposed to doppleganger.
-      this.className = 'tile real';
-      this.appendChild(contents);
-      contents.tile = this;
-
-      this.addEventListener('dragstart', this.onDragStart_);
-      this.addEventListener('drag', this.onDragMove_);
-      this.addEventListener('dragend', this.onDragEnd_);
-
-      this.firstChild.addEventListener(
-          'webkitAnimationEnd', this.onContentsAnimationEnd_.bind(this));
-
-      this.eventTracker = new EventTracker();
+    /**
+     * Initializes a TileCell.
+     * @param {Tile} tile The Tile that will be assigned to this TileCell.
+     */
+    initialize: function(tile) {
+      this.className = 'tile-cell';
+      this.assign(tile);
     },
 
+    /**
+     * The index of the TileCell.
+     * @type {number}
+     */
     get index() {
-      return Array.prototype.indexOf.call(this.tilePage.tileElements_, this);
+      return Array.prototype.indexOf.call(this.tilePage.tiles_,
+          this.tile);
     },
 
+    /**
+     * The Tile associated to this TileCell.
+     * @type {Tile}
+     */
+    get tile() {
+      return this.firstElementChild;
+    },
+
+    /**
+     * The TilePage associated to this TileCell.
+     * @type {TilePage}
+     */
     get tilePage() {
       return findAncestorByClass(this, 'tile-page');
     },
 
     /**
-     * Position the tile at |x, y|, and store this as the grid location, i.e.
-     * where the tile 'belongs' when it's not being dragged.
-     * @param {number} x The x coordinate, in pixels.
-     * @param {number} y The y coordinate, in pixels.
+     * Assigns a Tile to the this TileCell.
+     * @type {TilePage}
      */
-    setGridPosition: function(x, y) {
-      this.gridX = x;
-      this.gridY = y;
-      this.moveTo(x, y);
-    },
-
-    /**
-     * Position the tile at |x, y|.
-     * @param {number} x The x coordinate, in pixels.
-     * @param {number} y The y coordinate, in pixels.
-     */
-    moveTo: function(x, y) {
-      // left overrides right in LTR, and right takes precedence in RTL.
-      this.style.left = toCssPx(x);
-      this.style.right = toCssPx(x);
-      this.style.top = toCssPx(y);
-    },
-
-    /**
-     * The handler for dragstart events fired on |this|.
-     * @param {Event} e The event for the drag.
-     * @private
-     */
-    onDragStart_: function(e) {
-      // The user may start dragging again during a previous drag's finishing
-      // animation.
-      if (this.classList.contains('dragging'))
-        this.finalizeDrag_();
-
-      setCurrentlyDraggingTile(this);
-
-      e.dataTransfer.effectAllowed = 'copyMove';
-      this.firstChild.setDragData(e.dataTransfer);
-
-      // The drag clone is the node we use as a representation during the drag.
-      // It's attached to the top level document element so that it floats above
-      // image masks.
-      this.dragClone = this.cloneNode(true);
-      this.dragClone.style.right = '';
-      this.dragClone.classList.add('drag-representation');
-      $('card-slider-frame').appendChild(this.dragClone);
-      this.eventTracker.add(this.dragClone, 'webkitTransitionEnd',
-                            this.onDragCloneTransitionEnd_.bind(this));
-
-      this.classList.add('dragging');
-      // offsetLeft is mirrored in RTL. Un-mirror it.
-      var offsetLeft = isRTL() ?
-          this.parentNode.clientWidth - this.offsetLeft :
-          this.offsetLeft;
-      this.dragOffsetX = e.x - offsetLeft - this.parentNode.offsetLeft;
-      this.dragOffsetY = e.y - this.offsetTop -
-          // Unlike offsetTop, this value takes scroll position into account.
-          this.parentNode.getBoundingClientRect().top;
-
-      this.onDragMove_(e);
-    },
-
-    /**
-     * The handler for drag events fired on |this|.
-     * @param {Event} e The event for the drag.
-     * @private
-     */
-    onDragMove_: function(e) {
-      if (e.view != window || (e.x == 0 && e.y == 0)) {
-        this.dragClone.hidden = true;
-        return;
-      }
-
-      this.dragClone.hidden = false;
-      this.dragClone.style.left = toCssPx(e.x - this.dragOffsetX);
-      this.dragClone.style.top = toCssPx(e.y - this.dragOffsetY);
-    },
-
-    /**
-     * The handler for dragend events fired on |this|.
-     * @param {Event} e The event for the drag.
-     * @private
-     */
-    onDragEnd_: function(e) {
-      this.dragClone.hidden = false;
-      this.dragClone.classList.add('placing');
-
-      setCurrentlyDraggingTile(null);
-
-      // tilePage will be null if we've already been removed.
-      var tilePage = this.tilePage;
-      if (tilePage)
-        tilePage.positionTile_(this.index);
-
-      // Take an appropriate action with the drag clone.
-      if (this.landedOnTrash) {
-        this.dragClone.classList.add('deleting');
-      } else if (tilePage) {
-        // TODO(dbeam): Until we fix dropEffect to the correct behavior it will
-        // differ on windows - crbug.com/39399.  That's why we use the custom
-        // this.lastDropEffect instead of e.dataTransfer.dropEffect.
-        if (tilePage.selected && this.lastDropEffect != 'copy') {
-          // The drag clone can still be hidden from the last drag move event.
-          this.dragClone.hidden = false;
-          // The tile's contents may have moved following the respositioning;
-          // adjust for that.
-          var contentDiffX = this.dragClone.firstChild.offsetLeft -
-              this.firstChild.offsetLeft;
-          var contentDiffY = this.dragClone.firstChild.offsetTop -
-              this.firstChild.offsetTop;
-          this.dragClone.style.left =
-              toCssPx(this.gridX + this.parentNode.offsetLeft -
-                         contentDiffX);
-          this.dragClone.style.top =
-              toCssPx(this.gridY +
-                         this.parentNode.getBoundingClientRect().top -
-                         contentDiffY);
-        } else if (this.dragClone.hidden) {
-          this.finalizeDrag_();
-        } else {
-          // The CSS3 transitions spec intentionally leaves it up to individual
-          // user agents to determine when styles should be applied. On some
-          // platforms (at the moment, Windows), when you apply both classes
-          // immediately a transition may not occur correctly. That's why we're
-          // using a setTimeout here to queue adding the class until the
-          // previous class (currently: .placing) sets up a transition.
-          // http://dev.w3.org/csswg/css3-transitions/#starting
-          window.setTimeout(function() {
-            if (this.dragClone)
-              this.dragClone.classList.add('dropped-on-other-page');
-          }.bind(this), 0);
-        }
-      }
-
-      delete this.lastDropEffect;
-      this.landedOnTrash = false;
-    },
-
-    /**
-     * Creates a clone of this node offset by the coordinates. Used for the
-     * dragging effect where a tile appears to float off one side of the grid
-     * and re-appear on the other.
-     * @param {number} x x-axis offset, in pixels.
-     * @param {number} y y-axis offset, in pixels.
-     */
-    showDoppleganger: function(x, y) {
-      // We always have to clear the previous doppleganger to make sure we get
-      // style updates for the contents of this tile.
-      this.clearDoppleganger();
-
-      var clone = this.cloneNode(true);
-      clone.classList.remove('real');
-      clone.classList.add('doppleganger');
-      var clonelets = clone.querySelectorAll('.real');
-      for (var i = 0; i < clonelets.length; i++) {
-        clonelets[i].classList.remove('real');
-      }
-
-      this.appendChild(clone);
-      this.doppleganger_ = clone;
-
-      if (isRTL())
-        x *= -1;
-
-      this.doppleganger_.style.WebkitTransform = 'translate(' + x + 'px, ' +
-                                                                y + 'px)';
-    },
-
-    /**
-     * Destroys the current doppleganger.
-     */
-    clearDoppleganger: function() {
-      if (this.doppleganger_) {
-        this.removeChild(this.doppleganger_);
-        this.doppleganger_ = null;
-      }
-    },
-
-    /**
-     * Returns status of doppleganger.
-     * @return {boolean} True if there is a doppleganger showing for |this|.
-     */
-    hasDoppleganger: function() {
-      return !!this.doppleganger_;
-    },
-
-    /**
-     * Cleans up after the drag is over. This is either called when the
-     * drag representation finishes animating to the final position, or when
-     * the next drag starts (if the user starts a 2nd drag very quickly).
-     * @private
-     */
-    finalizeDrag_: function() {
-      assert(this.classList.contains('dragging'));
-
-      var clone = this.dragClone;
-      this.dragClone = null;
-
-      clone.parentNode.removeChild(clone);
-      this.eventTracker.remove(clone, 'webkitTransitionEnd');
-      this.classList.remove('dragging');
-      if (this.firstChild.finalizeDrag)
-        this.firstChild.finalizeDrag();
-    },
-
-    /**
-     * Called when the drag representation node is done migrating to its final
-     * resting spot.
-     * @param {Event} e The transition end event.
-     */
-    onDragCloneTransitionEnd_: function(e) {
-      if (this.classList.contains('dragging') &&
-          (e.propertyName == 'left' || e.propertyName == 'top' ||
-           e.propertyName == '-webkit-transform')) {
-        this.finalizeDrag_();
-      }
+    assign: function(tile) {
+      if (this.tile)
+        this.replaceChild(tile, this.tile);
+      else
+        this.appendChild(tile);
     },
 
     /**
@@ -297,241 +188,126 @@ cr.define('ntp', function() {
      * @param {boolean=} opt_animate Whether the animation should be animated.
      */
     doRemove: function(opt_animate) {
-      if (opt_animate)
-        this.firstChild.classList.add('removing-tile-contents');
-      else
-        this.tilePage.removeTile(this, false);
-    },
-
-    /**
-     * Callback for the webkitAnimationEnd event on the tile's contents.
-     * @param {Event} e The event object.
-     */
-    onContentsAnimationEnd_: function(e) {
-      if (this.firstChild.classList.contains('new-tile-contents'))
-        this.firstChild.classList.remove('new-tile-contents');
-      if (this.firstChild.classList.contains('removing-tile-contents'))
-        this.tilePage.removeTile(this, true);
+      this.tilePage.removeTile(this.tile, false);
     },
   };
 
-  /**
-   * Gives the proportion of the row width that is devoted to a single icon.
-   * @param {number} rowTileCount The number of tiles in a row.
-   * @param {number} tileSpacingFraction The proportion of the tile width which
-   *     will be used as spacing between tiles.
-   * @return {number} The ratio between icon width and row width.
-   */
-  function tileWidthFraction(rowTileCount, tileSpacingFraction) {
-    return rowTileCount + (rowTileCount - 1) * tileSpacingFraction;
-  }
-
-  /**
-   * Calculates an assortment of tile-related values for a grid with the
-   * given dimensions.
-   * @param {number} width The pixel width of the grid.
-   * @param {number} numRowTiles The number of tiles in a row.
-   * @param {number} tileSpacingFraction The proportion of the tile width which
-   *     will be used as spacing between tiles.
-   * @return {Object} A mapping of pixel values.
-   */
-  function tileValuesForGrid(width, numRowTiles, tileSpacingFraction) {
-    var tileWidth = width / tileWidthFraction(numRowTiles, tileSpacingFraction);
-    var offsetX = tileWidth * (1 + tileSpacingFraction);
-    var interTileSpacing = offsetX - tileWidth;
-
-    return {
-      tileWidth: tileWidth,
-      offsetX: offsetX,
-      interTileSpacing: interTileSpacing,
-    };
-  }
-
-  // The smallest amount of horizontal blank space to display on the sides when
-  // displaying a wide arrangement. There is an additional 26px of margin from
-  // the tile page padding.
-  var MIN_WIDE_MARGIN = 18;
+  //----------------------------------------------------------------------------
+  // TilePage
+  //----------------------------------------------------------------------------
 
   /**
    * Creates a new TilePage object. This object contains tiles and controls
    * their layout.
-   * @param {Object} gridValues Pixel values that define the size and layout
-   *     of the tile grid.
    * @constructor
    * @extends {HTMLDivElement}
    */
-  function TilePage(gridValues) {
+  function TilePage() {
     var el = cr.doc.createElement('div');
-    el.gridValues_ = gridValues;
     el.__proto__ = TilePage.prototype;
-    el.initialize();
 
     return el;
   }
 
-  /**
-   * Takes a collection of grid layout pixel values and updates them with
-   * additional tiling values that are calculated from TilePage constants.
-   * @param {Object} grid The grid layout pixel values to update.
-   */
-  TilePage.initGridValues = function(grid) {
-    // The amount of space we need to display a narrow grid (all narrow grids
-    // are this size).
-    grid.narrowWidth =
-        grid.minTileWidth * tileWidthFraction(grid.minColCount,
-                                              grid.tileSpacingFraction);
-    // The minimum amount of space we need to display a wide grid.
-    grid.minWideWidth =
-        grid.minTileWidth * tileWidthFraction(grid.maxColCount,
-                                              grid.tileSpacingFraction);
-    // The largest we will ever display a wide grid.
-    grid.maxWideWidth =
-        grid.maxTileWidth * tileWidthFraction(grid.maxColCount,
-                                              grid.tileSpacingFraction);
-    // Tile-related pixel values for the narrow display.
-    grid.narrowTileValues = tileValuesForGrid(grid.narrowWidth,
-                                              grid.minColCount,
-                                              grid.tileSpacingFraction);
-    // Tile-related pixel values for the minimum narrow display.
-    grid.wideTileValues = tileValuesForGrid(grid.minWideWidth,
-                                            grid.maxColCount,
-                                            grid.tileSpacingFraction);
-  };
-
   TilePage.prototype = {
     __proto__: HTMLDivElement.prototype,
 
+    /**
+     * Reference to the Tile subclass that will be used to create the tiles.
+     * @constructor
+     * @extends {Tile}
+     */
+    TileClass: Tile,
+
+    // The config object should be defined by a TilePage subclass if it
+    // wants the non-default behavior.
+    config: {
+      // The width of a cell.
+      cellWidth: 110,
+      // The start margin of a cell (left or right according to text direction).
+      cellMarginStart: 12,
+      // The maximum number of Tiles to be displayed.
+      maxTileCount: 6,
+      // Whether the TilePage content will be scrollable.
+      scrollable: false,
+    },
+
+    /**
+     * Initializes a TilePage.
+     */
     initialize: function() {
       this.className = 'tile-page';
 
-      // Div that acts as a custom scrollbar. The scrollbar has to live
-      // outside the content div so it doesn't flicker when scrolling (due to
-      // repainting after the scroll, then repainting again when moved in the
-      // onScroll handler). |scrollbar_| is only aesthetic, and it only
-      // represents the thumb. Actual events are still handled by the invisible
-      // native scrollbars. This div gives us more flexibility with the visuals.
-      this.scrollbar_ = this.ownerDocument.createElement('div');
-      this.scrollbar_.className = 'tile-page-scrollbar';
-      this.scrollbar_.hidden = true;
-      this.appendChild(this.scrollbar_);
+      // The div that wraps the scrollable element.
+      this.frame_ = this.ownerDocument.createElement('div');
+      this.frame_.className = 'tile-page-frame';
+      this.appendChild(this.frame_);
 
-      // This contains everything but the scrollbar.
+      // The content/scrollable element.
       this.content_ = this.ownerDocument.createElement('div');
       this.content_.className = 'tile-page-content';
-      this.appendChild(this.content_);
+      this.frame_.appendChild(this.content_);
 
-      // Div that sets the vertical position of the tile grid.
-      this.topMargin_ = this.ownerDocument.createElement('div');
-      this.topMargin_.className = 'top-margin';
-      this.content_.appendChild(this.topMargin_);
+      if (this.config.scrollable) {
+        this.content_.classList.add('scrollable');
 
-      // Div that holds the tiles.
+        // The scrollable shadow top.
+        this.shadowTop_ = this.ownerDocument.createElement('div');
+        this.shadowTop_.className = 'shadow-top';
+        this.content_.appendChild(this.shadowTop_);
+
+        // The scrollable shadow bottom.
+        this.shadowBottom_ = this.ownerDocument.createElement('div');
+        this.shadowBottom_.className = 'shadow-bottom';
+        this.content_.appendChild(this.shadowBottom_);
+      }
+
+      // The div that defines the tile grid viewport.
       this.tileGrid_ = this.ownerDocument.createElement('div');
       this.tileGrid_.className = 'tile-grid';
-      this.tileGrid_.style.minWidth = this.gridValues_.narrowWidth + 'px';
       this.content_.appendChild(this.tileGrid_);
 
-      // Ordered list of our tiles.
-      this.tileElements_ = this.tileGrid_.getElementsByClassName('tile real');
-      // Ordered list of the elements which want to accept keyboard focus. These
-      // elements will not be a part of the normal tab order; the tile grid
-      // initially gets focused and then these elements can be focused via the
-      // arrow keys.
-      this.focusableElements_ =
-          this.tileGrid_.getElementsByClassName('focusable');
+      // The tile grid contents, which can be scrolled.
+      this.tileGridContent_ = this.ownerDocument.createElement('div');
+      this.tileGridContent_.className = 'tile-grid-content';
+      this.tileGrid_.appendChild(this.tileGridContent_);
 
-      // These are properties used in updateTopMargin.
-      this.animatedTopMarginPx_ = 0;
-      this.topMarginPx_ = 0;
+      // The list of Tile elements which is used to fill the TileGrid cells.
+      this.tiles_ = [];
 
-      this.eventTracker = new EventTracker();
-      this.eventTracker.add(window, 'resize', this.onResize_.bind(this));
-
-      this.addEventListener('DOMNodeInsertedIntoDocument',
-                            this.onNodeInsertedIntoDocument_);
-
-      this.content_.addEventListener('scroll', this.onScroll_.bind(this));
-
-      this.dragWrapper_ = new cr.ui.DragWrapper(this.tileGrid_, this);
-
+      // TODO(pedrosimonetti): Check duplication of these methods.
       this.addEventListener('cardselected', this.handleCardSelection_);
       this.addEventListener('carddeselected', this.handleCardDeselection_);
-      this.addEventListener('focus', this.handleFocus_);
-      this.addEventListener('keydown', this.handleKeyDown_);
-      this.addEventListener('mousedown', this.handleMouseDown_);
 
-      this.focusElementIndex_ = -1;
+      this.tileGrid_.addEventListener('webkitTransitionEnd',
+          this.onTileGridTransitionEnd_.bind(this));
+
+      this.content_.addEventListener('scroll', this.onScroll.bind(this));
     },
 
+    /**
+     * The list of Tile elements.
+     * @type {Array<Tile>}
+     */
     get tiles() {
-      return this.tileElements_;
+      return this.tiles_;
     },
 
+    /**
+     * The number of Tiles in this TilePage.
+     * @type {number}
+     */
     get tileCount() {
-      return this.tileElements_.length;
+      return this.tiles_.length;
     },
 
+    /**
+     * Whether or not this TilePage is selected.
+     * @type {boolean}
+     */
     get selected() {
       return Array.prototype.indexOf.call(this.parentNode.children, this) ==
           ntp.getCardSlider().currentCard;
-    },
-
-    /**
-     * The size of the margin (unused space) on the sides of the tile grid, in
-     * pixels.
-     * @type {number}
-     */
-    get sideMargin() {
-      return this.layoutValues_.leftMargin;
-    },
-
-    /**
-     * Returns the width of the scrollbar, in pixels, if it is active, or 0
-     * otherwise.
-     * @type {number}
-     */
-    get scrollbarWidth() {
-      return this.scrollbar_.hidden ? 0 : 13;
-    },
-
-    /**
-     * Returns any extra padding to insert to the bottom of a tile page.  By
-     * default there is none, but subclasses can override.
-     * @type {number}
-     */
-    get extraBottomPadding() {
-      return 0;
-    },
-
-    /**
-     * The notification content of this tile (if any, otherwise null).
-     * @type {!HTMLElement}
-     */
-    get notification() {
-      return this.topMargin_.nextElementSibling.id == 'notification-container' ?
-          this.topMargin_.nextElementSibling : null;
-    },
-    /**
-     * The notification content of this tile (if any, otherwise null).
-     * @type {!HTMLElement}
-     */
-    set notification(node) {
-      assert(node instanceof HTMLElement, '|node| isn\'t an HTMLElement!');
-      // NOTE: Implicitly removes from DOM if |node| is inside it.
-      this.content_.insertBefore(node, this.topMargin_.nextElementSibling);
-      this.positionNotification_();
-    },
-
-    /**
-     * Fetches the size, in pixels, of the padding-top of the tile contents.
-     * @type {number}
-     */
-    get contentPadding() {
-      if (typeof this.contentPadding_ == 'undefined') {
-        this.contentPadding_ =
-            parseInt(getComputedStyle(this.content_).paddingTop, 10);
-      }
-      return this.contentPadding_;
     },
 
     /**
@@ -544,55 +320,7 @@ cr.define('ntp', function() {
       // deleting the card afterward is probably a better choice.
       assert(typeof arguments[0] != 'boolean',
              'This function takes no |opt_animate| argument.');
-      this.tearDown_();
       this.parentNode.removeChild(this);
-    },
-
-    /**
-     * Cleans up resources that are no longer needed after this TilePage
-     * instance is removed from the DOM.
-     * @private
-     */
-    tearDown_: function() {
-      this.eventTracker.removeAll();
-    },
-
-    /**
-     * Appends a tile to the end of the tile grid.
-     * @param {HTMLElement} tileElement The contents of the tile.
-     * @param {boolean} animate If true, the append will be animated.
-     * @protected
-     */
-    appendTile: function(tileElement, animate) {
-      this.addTileAt(tileElement, this.tileElements_.length, animate);
-    },
-
-    /**
-     * Adds the given element to the tile grid.
-     * @param {Node} tileElement The tile object/node to insert.
-     * @param {number} index The location in the tile grid to insert it at.
-     * @param {boolean} animate If true, the tile in question will be
-     *     animated (other tiles, if they must reposition, do not animate).
-     * @protected
-     */
-    addTileAt: function(tileElement, index, animate) {
-      this.classList.remove('animating-tile-page');
-      if (animate)
-        tileElement.classList.add('new-tile-contents');
-
-      // Make sure the index is positive and either in the the bounds of
-      // this.tileElements_ or at the end (meaning append).
-      assert(index >= 0 && index <= this.tileElements_.length);
-
-      var wrapperDiv = new Tile(tileElement);
-      // If is out of the bounds of the tile element list, .insertBefore() will
-      // act just like appendChild().
-      this.tileGrid_.insertBefore(wrapperDiv, this.tileElements_[index]);
-      this.calculateLayoutValues_();
-      this.heightChanged_();
-
-      this.repositionTiles_();
-      this.fireAddedEvent(wrapperDiv, index, animate);
     },
 
     /**
@@ -618,12 +346,11 @@ cr.define('ntp', function() {
      *     last tile is removed from it.
      */
     removeTile: function(tile, opt_animate, opt_dontNotify) {
-      if (opt_animate)
-        this.classList.add('animating-tile-page');
-      var index = tile.index;
+      var tiles = this.tiles;
+      var index = tiles.indexOf(tile);
       tile.parentNode.removeChild(tile);
-      this.calculateLayoutValues_();
-      this.cleanupDrag();
+      tiles.splice(index, 1);
+      this.renderGrid();
 
       if (!opt_dontNotify)
         this.fireRemovedEvent(tile, index, !!opt_animate);
@@ -632,7 +359,7 @@ cr.define('ntp', function() {
     /**
      * Notify interested subscribers that a tile has been removed from this
      * page.
-     * @param {Tile} tile The tile that was removed.
+     * @param {TileCell} tile The tile that was removed.
      * @param {number} oldIndex Where the tile was positioned before removal.
      * @param {boolean} wasAnimated Whether the removal was animated.
      */
@@ -649,7 +376,9 @@ cr.define('ntp', function() {
      * Removes all tiles from the page.
      */
     removeAllTiles: function() {
-      this.tileGrid_.innerHTML = '';
+      while (this.tiles.length > 0) {
+        this.removeTile(this.tiles[this.tiles.length - 1]);
+      }
     },
 
     /**
@@ -658,11 +387,7 @@ cr.define('ntp', function() {
      * @private
      */
     handleCardSelection_: function(e) {
-      this.tabIndex = 1;
-
-      // When we are selected, we re-calculate the layout values. (See comment
-      // in doDrop.)
-      this.calculateLayoutValues_();
+      ntp.layout();
     },
 
     /**
@@ -671,707 +396,737 @@ cr.define('ntp', function() {
      * @private
      */
     handleCardDeselection_: function(e) {
-      this.tabIndex = -1;
-      if (this.currentFocusElement_)
-        this.currentFocusElement_.tabIndex = -1;
+    },
+
+    // #########################################################################
+    // Extended Chrome Instant
+    // #########################################################################
+
+
+    // properties
+    // -------------------------------------------------------------------------
+
+    // The number of columns.
+    colCount_: 0,
+    // The number of rows.
+    rowCount_: 0,
+    // The number of visible rows. We initialize this value with zero so
+    // we can detect when the first time the page is rendered.
+    numOfVisibleRows_: 1,
+    // The number of the last column being animated. We initialize this value
+    // with zero so we can detect when the first time the page is rendered.
+    animatingColCount_: 0,
+    // The index of the topmost row visible.
+    pageOffset_: 0,
+    // Data object representing the tiles.
+    dataList_: null,
+
+    /**
+     * Appends a tile to the end of the tile grid.
+     * @param {Tile} tile The tile to be added.
+     * @param {number} index The location in the tile grid to insert it at.
+     * @protected
+     */
+    appendTile: function(tile) {
+      var index = this.tiles_.length;
+      this.addTileAt(tile, index);
     },
 
     /**
-     * When we get focus, pass it on to the focus element.
-     * @param {Event} e The focus event.
-     * @private
+     * Adds the given element to the tile grid.
+     * @param {Tile} tile The tile to be added.
+     * @param {number} index The location in the tile grid to insert it at.
+     * @protected
      */
-    handleFocus_: function(e) {
-      if (this.focusableElements_.length == 0)
-        return;
-
-      this.updateFocusElement_();
+    addTileAt: function(tile, index) {
+      this.tiles_.splice(index, 0, tile);
+      this.fireAddedEvent(tile, index, false);
+      this.renderGrid();
     },
 
     /**
-     * Since we are doing custom focus handling, we have to manually
-     * set focusability on click (as well as keyboard nav above).
-     * @param {Event} e The focus event.
-     * @private
+     * Create a blank tile.
+     * @protected
      */
-    handleMouseDown_: function(e) {
-      var focusable = findAncestorByClass(e.target, 'focusable');
-      if (focusable) {
-        this.focusElementIndex_ =
-            Array.prototype.indexOf.call(this.focusableElements_,
-                                         focusable);
-        this.updateFocusElement_();
-      } else {
-        // This prevents the tile page from getting focus when the user clicks
-        // inside the grid but outside of any tile.
-        e.preventDefault();
+    createTile_: function() {
+      return new this.TileClass();
+    },
+
+    /**
+     * Create blank tiles.
+     * @param {number} count The desired number of Tiles to be created. If this
+     *   value the maximum value defined in |config.maxTileCount|, the maximum
+     *   value will be used instead.
+     * @protected
+     */
+    createTiles_: function(count) {
+      count = Math.min(count, this.config.maxTileCount);
+      for (var i = 0; i < count; i++) {
+        this.appendTile(this.createTile_());
       }
     },
 
     /**
-     * Handle arrow key focus nav.
-     * @param {Event} e The focus event.
-     * @private
+     * This method will create/remove necessary/unnecessary tiles, render the
+     * grid when the number of tiles has changed, and finally will call
+     * |updateTiles_| which will in turn render the individual tiles.
+     * @protected
      */
-    handleKeyDown_: function(e) {
-      // We only handle up, down, left, right without control keys.
-      if (e.metaKey || e.shiftKey || e.altKey || e.ctrlKey)
-        return;
+    updateGrid: function() {
+      var dataListLength = this.dataList_.length;
+      var tileCount = this.tileCount;
+      // Create or remove tiles if necessary.
+      if (tileCount < dataListLength) {
+        this.createTiles_(dataListLength - tileCount);
+      } else if (tileCount > dataListLength) {
+        var tiles = this.tiles_;
+        while (tiles.length > dataListLength) {
+          var previousLength = tiles.length;
+          // It doesn't matter which tiles are being removed here because
+          // they're going to be reconstructed below when calling updateTiles_
+          // method, so the first tiles are being removed here.
+          this.removeTile(tiles[0]);
+          assert(tiles.length < previousLength);
+        }
+      }
 
-      // Wrap the given index to |this.focusableElements_|.
-      var wrap = function(idx) {
-        return (idx + this.focusableElements_.length) %
-            this.focusableElements_.length;
-      }.bind(this);
+      this.updateTiles_();
+    },
 
-      switch (e.keyIdentifier) {
-        case 'Right':
-        case 'Left':
-          var direction = e.keyIdentifier == 'Right' ? 1 : -1;
-          this.focusElementIndex_ = wrap(this.focusElementIndex_ + direction);
-          break;
-        case 'Up':
-        case 'Down':
-          // Look through all focusable elements. Find the first one that is
-          // in the same column.
-          var direction = e.keyIdentifier == 'Up' ? -1 : 1;
-          var currentIndex =
-              Array.prototype.indexOf.call(this.focusableElements_,
-                                           this.currentFocusElement_);
-          var newFocusIdx = wrap(currentIndex + direction);
-          var tile = this.currentFocusElement_.parentNode;
-          for (;; newFocusIdx = wrap(newFocusIdx + direction)) {
-            var newTile = this.focusableElements_[newFocusIdx].parentNode;
-            var rowTiles = this.layoutValues_.numRowTiles;
-            if ((newTile.index - tile.index) % rowTiles == 0)
-              break;
-          }
+    /**
+     * Update the tiles after a change to |dataList_|.
+     */
+    updateTiles_: function() {
+      var maxTileCount = this.config.maxTileCount;
+      var dataList = this.dataList_;
+      var tiles = this.tiles;
+      for (var i = 0; i < maxTileCount; i++) {
+        var data = dataList[i];
+        var tile = tiles[i];
 
-          this.focusElementIndex_ = newFocusIdx;
-          break;
-
-        default:
+        // TODO(pedrosimonetti): What do we do when there's no tile here?
+        if (!tile)
           return;
-      }
 
-      this.updateFocusElement_();
-
-      e.preventDefault();
-      e.stopPropagation();
-    },
-
-    /**
-     * Focuses the element for |this.focusElementIndex_|. Makes the current
-     * focus element, if any, no longer eligible for focus.
-     * @private
-     */
-    updateFocusElement_: function() {
-      this.focusElementIndex_ = Math.min(this.focusableElements_.length - 1,
-                                         this.focusElementIndex_);
-      this.focusElementIndex_ = Math.max(0, this.focusElementIndex_);
-
-      var newFocusElement = this.focusableElements_[this.focusElementIndex_];
-      var lastFocusElement = this.currentFocusElement_;
-      if (lastFocusElement && lastFocusElement != newFocusElement)
-        lastFocusElement.tabIndex = -1;
-
-      newFocusElement.tabIndex = 1;
-      newFocusElement.focus();
-      this.tabIndex = -1;
-    },
-
-    /**
-     * The current focus element is that element which is eligible for focus.
-     * @type {HTMLElement} The node.
-     * @private
-     */
-    get currentFocusElement_() {
-      return this.querySelector('.focusable[tabindex="1"]');
-    },
-
-    /**
-     * Makes some calculations for tile layout. These change depending on
-     * height, width, and the number of tiles.
-     * TODO(estade): optimize calls to this function. Do nothing if the page is
-     * hidden, but call before being shown.
-     * @private
-     */
-    calculateLayoutValues_: function() {
-      var grid = this.gridValues_;
-      var availableSpace = this.tileGrid_.clientWidth - 2 * MIN_WIDE_MARGIN;
-      var wide = availableSpace >= grid.minWideWidth;
-      var numRowTiles = wide ? grid.maxColCount : grid.minColCount;
-
-      var effectiveGridWidth = wide ?
-          Math.min(Math.max(availableSpace, grid.minWideWidth),
-                   grid.maxWideWidth) :
-          grid.narrowWidth;
-      var realTileValues = tileValuesForGrid(effectiveGridWidth, numRowTiles,
-                                             grid.tileSpacingFraction);
-
-      // leftMargin centers the grid within the avaiable space.
-      var minMargin = wide ? MIN_WIDE_MARGIN : 0;
-      var leftMargin =
-          Math.max(minMargin,
-                   (this.tileGrid_.clientWidth - effectiveGridWidth) / 2);
-
-      var rowHeight = this.heightForWidth(realTileValues.tileWidth) +
-          realTileValues.interTileSpacing;
-
-      this.layoutValues_ = {
-        colWidth: realTileValues.offsetX,
-        gridWidth: effectiveGridWidth,
-        leftMargin: leftMargin,
-        numRowTiles: numRowTiles,
-        rowHeight: rowHeight,
-        tileWidth: realTileValues.tileWidth,
-        wide: wide,
-      };
-
-      // We need to update the top margin as well.
-      this.updateTopMargin_();
-
-      this.firePageLayoutEvent_();
-    },
-
-    /**
-     * Dispatches the custom pagelayout event.
-     * @private
-     */
-    firePageLayoutEvent_: function() {
-      cr.dispatchSimpleEvent(this, 'pagelayout', true, true);
-    },
-
-    /**
-     * @return {number} The amount of margin that should be animated (in pixels)
-     *     for the current grid layout.
-     */
-    getAnimatedLeftMargin_: function() {
-      if (this.layoutValues_.wide)
-        return 0;
-
-      var grid = this.gridValues_;
-      return (grid.minWideWidth - MIN_WIDE_MARGIN - grid.narrowWidth) / 2;
-    },
-
-    /**
-     * Calculates the x/y coordinates for an element and moves it there.
-     * @param {number} index The index of the element to be positioned.
-     * @param {number} indexOffset If provided, this is added to |index| when
-     *     positioning the tile. The effect is that the tile will be positioned
-     *     in a non-default location.
-     * @private
-     */
-    positionTile_: function(index, indexOffset) {
-      var grid = this.gridValues_;
-      var layout = this.layoutValues_;
-
-      indexOffset = typeof indexOffset != 'undefined' ? indexOffset : 0;
-      // Add the offset _after_ the modulus division. We might want to show the
-      // tile off the side of the grid.
-      var col = index % layout.numRowTiles + indexOffset;
-      var row = Math.floor(index / layout.numRowTiles);
-      // Calculate the final on-screen position for the tile.
-      var realX = col * layout.colWidth + layout.leftMargin;
-      var realY = row * layout.rowHeight;
-
-      // Calculate the portion of the tile's position that should be animated.
-      var animatedTileValues = layout.wide ?
-          grid.wideTileValues : grid.narrowTileValues;
-      // Animate the difference between three-wide and six-wide.
-      var animatedLeftMargin = this.getAnimatedLeftMargin_();
-      var animatedX = col * animatedTileValues.offsetX + animatedLeftMargin;
-      var animatedY = row * (this.heightForWidth(animatedTileValues.tileWidth) +
-                             animatedTileValues.interTileSpacing);
-
-      var tile = this.tileElements_[index];
-      tile.setGridPosition(animatedX, animatedY);
-      tile.firstChild.setBounds(layout.tileWidth,
-                                realX - animatedX,
-                                realY - animatedY);
-
-      // This code calculates whether the tile needs to show a clone of itself
-      // wrapped around the other side of the tile grid.
-      var offTheRight = col == layout.numRowTiles ||
-          (col == layout.numRowTiles - 1 && tile.hasDoppleganger());
-      var offTheLeft = col == -1 || (col == 0 && tile.hasDoppleganger());
-      if (this.isCurrentDragTarget && (offTheRight || offTheLeft)) {
-        var sign = offTheRight ? 1 : -1;
-        tile.showDoppleganger(-layout.numRowTiles * layout.colWidth * sign,
-                              layout.rowHeight * sign);
-      } else {
-        tile.clearDoppleganger();
-      }
-
-      if (index == this.tileElements_.length - 1) {
-        this.tileGrid_.style.height = (realY + layout.rowHeight) + 'px';
-        this.queueUpdateScrollbars_();
+        if (i >= dataList.length)
+          tile.reset();
+        else
+          tile.data = data;
       }
     },
 
     /**
-     * Gets the index of the tile that should occupy coordinate (x, y). Note
-     * that this function doesn't care where the tiles actually are, and will
-     * return an index even for the space between two tiles. This function is
-     * effectively the inverse of |positionTile_|.
-     * @param {number} x The x coordinate, in pixels, relative to the left of
-     *     |this|.
-     * @param {number} y The y coordinate, in pixels, relative to the top of
-     *     |this|.
+     * Sets the dataList that will be used to create Tiles.
+     * TODO(pedrosimonetti): Use setters and getters instead.
+     */
+    setDataList: function(dataList) {
+      this.dataList_ = dataList.slice(0, this.config.maxTileCount);
+    },
+
+    // internal helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gets the required width for a Tile.
      * @private
      */
-    getWouldBeIndexForPoint_: function(x, y) {
-      var grid = this.gridValues_;
-      var layout = this.layoutValues_;
-
-      var gridClientRect = this.tileGrid_.getBoundingClientRect();
-      var col = Math.floor((x - gridClientRect.left - layout.leftMargin) /
-                           layout.colWidth);
-      if (col < 0 || col >= layout.numRowTiles)
-        return -1;
-
-      if (isRTL())
-        col = layout.numRowTiles - 1 - col;
-
-      var row = Math.floor((y - gridClientRect.top) / layout.rowHeight);
-      return row * layout.numRowTiles + col;
+    getTileRequiredWidth_: function() {
+      var config = this.config;
+      return config.cellWidth + config.cellMarginStart;
     },
 
     /**
-     * Window resize event handler. Window resizes may trigger re-layouts.
-     * @param {Object} e The resize event.
-     */
-    onResize_: function(e) {
-      if (this.lastWidth_ == this.clientWidth &&
-          this.lastHeight_ == this.clientHeight) {
-        return;
-      }
-
-      this.calculateLayoutValues_();
-
-      this.lastWidth_ = this.clientWidth;
-      this.lastHeight_ = this.clientHeight;
-      this.classList.add('animating-tile-page');
-      this.heightChanged_();
-
-      this.positionNotification_();
-      this.repositionTiles_();
-    },
-
-    /**
-     * The tile grid has an image mask which fades at the edges. We only show
-     * the mask when there is an active drag; it obscures doppleganger tiles
-     * as they enter or exit the grid.
+     * Gets the the maximum number of columns that can fit in a given width.
+     * @param {number} width The width in pixels.
      * @private
      */
-    updateMask_: function() {
-      if (!this.isCurrentDragTarget) {
-        this.tileGrid_.style.WebkitMaskBoxImage = '';
-        return;
-      }
+    getColCountForWidth_: function(width) {
+      var scrollBarIsVisible = this.config.scrollable &&
+          this.content_.scrollHeight > this.content_.clientHeight;
+      var scrollBarWidth = scrollBarIsVisible ? SCROLL_BAR_WIDTH : 0;
+      var availableWidth = width + this.config.cellMarginStart - scrollBarWidth;
 
-      var leftMargin = this.layoutValues_.leftMargin;
-      // The fade distance is the space between tiles.
-      var fadeDistance = (this.gridValues_.tileSpacingFraction *
-          this.layoutValues_.tileWidth);
-      fadeDistance = Math.min(leftMargin, fadeDistance);
-      // On Skia we don't use any fade because it works very poorly. See
-      // http://crbug.com/99373
-      if (!cr.isMac)
-        fadeDistance = 1;
-      var gradient =
-          '-webkit-linear-gradient(left,' +
-              'transparent, ' +
-              'transparent ' + (leftMargin - fadeDistance) + 'px, ' +
-              'black ' + leftMargin + 'px, ' +
-              'black ' + (this.tileGrid_.clientWidth - leftMargin) + 'px, ' +
-              'transparent ' + (this.tileGrid_.clientWidth - leftMargin +
-                                fadeDistance) + 'px, ' +
-              'transparent)';
-      this.tileGrid_.style.WebkitMaskBoxImage = gradient;
-    },
-
-    updateTopMargin_: function() {
-      var layout = this.layoutValues_;
-
-      // The top margin is set so that the vertical midpoint of the grid will
-      // be 1/3 down the page.
-      var numTiles = this.tileCount +
-          (this.isCurrentDragTarget && !this.withinPageDrag_ ? 1 : 0);
-      var numRows = Math.max(1, Math.ceil(numTiles / layout.numRowTiles));
-      var usedHeight = layout.rowHeight * numRows;
-      var newMargin = document.documentElement.clientHeight / 3 -
-          usedHeight / 3 - this.contentPadding;
-      // The 'height' style attribute of topMargin is non-zero to work around
-      // webkit's collapsing margin behavior, so we have to factor that into
-      // our calculations here.
-      newMargin = Math.max(newMargin, 0) - this.topMargin_.offsetHeight;
-
-      // |newMargin| is the final margin we actually want to show. However,
-      // part of that should be animated and part should not (for the same
-      // reason as with leftMargin). The approach is to consider differences
-      // when the layout changes from wide to narrow or vice versa as
-      // 'animatable'. These differences accumulate in animatedTopMarginPx_,
-      // while topMarginPx_ caches the real (total) margin. Either of these
-      // calculations may come out to be negative, so we use margins as the
-      // css property.
-
-      if (typeof this.topMarginIsForWide_ == 'undefined')
-        this.topMarginIsForWide_ = layout.wide;
-      if (this.topMarginIsForWide_ != layout.wide) {
-        this.animatedTopMarginPx_ += newMargin - this.topMarginPx_;
-        this.topMargin_.style.marginBottom = toCssPx(this.animatedTopMarginPx_);
-      }
-
-      this.topMarginIsForWide_ = layout.wide;
-      this.topMarginPx_ = newMargin;
-      this.topMargin_.style.marginTop =
-          toCssPx(this.topMarginPx_ - this.animatedTopMarginPx_);
+      var requiredWidth = this.getTileRequiredWidth_();
+      var colCount = Math.floor(availableWidth / requiredWidth);
+      return colCount;
     },
 
     /**
-     * Position the notification if there's one showing.
-     */
-    positionNotification_: function() {
-      var notification = this.notification;
-      if (!notification || notification.hidden)
-        return;
-
-      // Update the horizontal position.
-      var animatedLeftMargin = this.getAnimatedLeftMargin_();
-      notification.style.WebkitMarginStart = animatedLeftMargin + 'px';
-      var leftOffset = (this.layoutValues_.leftMargin - animatedLeftMargin) *
-                       (isRTL() ? -1 : 1);
-      notification.style.WebkitTransform = 'translateX(' + leftOffset + 'px)';
-
-      // Update the allowable widths of the text.
-      var buttonWidth = notification.querySelector('button').offsetWidth + 8;
-      notification.querySelector('span').style.maxWidth =
-          this.layoutValues_.gridWidth - buttonWidth + 'px';
-
-      // This makes sure the text doesn't condense smaller than the narrow size
-      // of the grid (e.g. when a user makes the window really small).
-      notification.style.minWidth =
-          this.gridValues_.narrowWidth - buttonWidth + 'px';
-
-      // Update the top position.
-      notification.style.marginTop = -notification.offsetHeight + 'px';
-    },
-
-    /**
-     * Handles final setup that can only happen after |this| is inserted into
-     * the page.
+     * Gets the width for a given number of columns.
+     * @param {number} colCount The number of columns.
      * @private
      */
-    onNodeInsertedIntoDocument_: function(e) {
-      this.calculateLayoutValues_();
-      this.heightChanged_();
-    },
-
-    /**
-     * Called when the height of |this| has changed: update the size of
-     * tileGrid.
-     * @private
-     */
-    heightChanged_: function() {
-      // The tile grid will expand to the bottom footer, or enough to hold all
-      // the tiles, whichever is greater. It would be nicer if tilePage were
-      // a flex box, and the tile grid could be box-flex: 1, but this exposes a
-      // bug where repositioning tiles will cause the scroll position to reset.
-      this.tileGrid_.style.minHeight = (this.clientHeight -
-          this.tileGrid_.offsetTop - this.content_.offsetTop -
-          this.extraBottomPadding -
-          (this.footerNode_ ? this.footerNode_.clientHeight : 0)) + 'px';
-    },
-
-     /**
-      * Places an element at the bottom of the content div. Used in bare-minimum
-      * mode to hold #footer.
-      * @param {HTMLElement} footerNode The node to append to content.
-      */
-    appendFooter: function(footerNode) {
-      this.footerNode_ = footerNode;
-      this.content_.appendChild(footerNode);
-    },
-
-    /**
-     * Scrolls the page in response to an mousewheel event, although the event
-     * may have been triggered on a different element. Return true if the
-     * event triggered scrolling, and false otherwise.
-     * This is called explicitly, which allows a consistent experience whether
-     * the user scrolls on the page or on the page switcher, because this
-     * function provides a common conversion factor between wheel delta and
-     * scroll delta.
-     * @param {Event} e The mousewheel event.
-     */
-    handleMouseWheel: function(e) {
-      if (e.wheelDeltaY == 0)
-        return false;
-
-      this.content_.scrollTop -= e.wheelDeltaY / 3;
-      return true;
-    },
-
-    /**
-     * Handler for the 'scroll' event on |content_|.
-     * @param {Event} e The scroll event.
-     * @private
-     */
-    onScroll_: function(e) {
-      this.queueUpdateScrollbars_();
-    },
-
-    /**
-     * ID of scrollbar update timer. If 0, there's no scrollbar re-calc queued.
-     * @private
-     */
-    scrollbarUpdate_: 0,
-
-    /**
-     * Queues an update on the custom scrollbar. Used for two reasons: first,
-     * coalescing of multiple updates, and second, because action like
-     * repositioning a tile can require a delay before they affect values
-     * like clientHeight.
-     * @private
-     */
-    queueUpdateScrollbars_: function() {
-      if (this.scrollbarUpdate_)
-        return;
-
-      this.scrollbarUpdate_ = window.setTimeout(
-          this.doUpdateScrollbars_.bind(this), 0);
-    },
-
-    /**
-     * Does the work of calculating the visibility, height and position of the
-     * scrollbar thumb (there is no track or buttons).
-     * @private
-     */
-    doUpdateScrollbars_: function() {
-      this.scrollbarUpdate_ = 0;
-
-      var content = this.content_;
-
-      // Adjust scroll-height to account for possible header-bar.
-      var adjustedScrollHeight = content.scrollHeight - content.offsetTop;
-
-      if (adjustedScrollHeight <= content.clientHeight) {
-        this.scrollbar_.hidden = true;
-        return;
-      } else {
-        this.scrollbar_.hidden = false;
-      }
-
-      var thumbTop = content.offsetTop +
-          content.scrollTop / adjustedScrollHeight * content.clientHeight;
-      var thumbHeight = content.clientHeight / adjustedScrollHeight *
-          this.clientHeight;
-
-      this.scrollbar_.style.top = thumbTop + 'px';
-      this.scrollbar_.style.height = thumbHeight + 'px';
-      this.firePageLayoutEvent_();
-    },
-
-    /**
-     * Get the height for a tile of a certain width. Override this function to
-     * get non-square tiles.
-     * @param {number} width The pixel width of a tile.
-     * @return {number} The height for |width|.
-     */
-    heightForWidth: function(width) {
+    getWidthForColCount_: function(colCount) {
+      var requiredWidth = this.getTileRequiredWidth_();
+      var width = colCount * requiredWidth - this.config.cellMarginStart;
       return width;
     },
 
-    /** Dragging **/
-
-    get isCurrentDragTarget() {
-      return this.dragWrapper_.isCurrentDragTarget;
+    /**
+     * Returns the position of the tile at |index|.
+     * @param {number} index Tile index.
+     * @private
+     * @return {!{top: number, left: number}} Position.
+     */
+    getTilePosition_: function(index) {
+      var colCount = this.colCount_;
+      var row = Math.floor(index / colCount);
+      var col = index % colCount;
+      if (isRTL())
+        col = colCount - col - 1;
+      var config = this.config;
+      var top = ntp.TILE_ROW_HEIGHT * row;
+      var left = col * (config.cellWidth + config.cellMarginStart);
+      return {top: top, left: left};
     },
 
-    /**
-     * Thunk for dragleave events fired on |tileGrid_|.
-     * @param {Event} e A MouseEvent for the drag.
-     */
-    doDragLeave: function(e) {
-      this.cleanupDrag();
-    },
+    // rendering
+    // -------------------------------------------------------------------------
 
     /**
-     * Performs all actions necessary when a drag enters the tile page.
-     * @param {Event} e A mouseover event for the drag enter.
+     * Renders the tile grid, and the individual tiles. Rendering the grid
+     * consists of adding/removing tile rows and tile cells according to the
+     * specified size (defined by the number of columns in the grid). While
+     * rendering the grid, the tiles are rendered in order in their respective
+     * cells and tile fillers are rendered when needed. This method sets the
+     * private properties colCount_ and rowCount_.
+     *
+     * This method should be called every time the contents of the grid changes,
+     * that is, when the number, contents or order of the tiles has changed.
+     * @param {number=} opt_colCount The number of columns.
+     * @param {number=} opt_tileCount Forces a particular number of tiles to
+     *   be drawn. This is useful for cases like the restoration/insertion
+     *   of tiles when you need to place a tile in a place of the grid that
+     *   is not rendered at the moment.
+     * @protected
      */
-    doDragEnter: function(e) {
-      // Applies the mask so doppleganger tiles disappear into the fog.
-      this.updateMask_();
+    renderGrid: function(opt_colCount, opt_tileCount) {
+      var colCount = opt_colCount || this.colCount_;
 
-      this.classList.add('animating-tile-page');
-      this.withinPageDrag_ = this.contains(currentlyDraggingTile);
-      this.dragItemIndex_ = this.withinPageDrag_ ?
-          currentlyDraggingTile.index : this.tileElements_.length;
-      this.currentDropIndex_ = this.dragItemIndex_;
+      var tileGridContent = this.tileGridContent_;
+      var tiles = this.tiles_;
+      var tileCount = opt_tileCount || tiles.length;
 
-      // The new tile may change the number of rows, hence the top margin
-      // will change.
-      if (!this.withinPageDrag_)
-        this.updateTopMargin_();
+      var rowCount = Math.ceil(tileCount / colCount);
+      var tileRows = tileGridContent.getElementsByClassName('tile-row');
 
-      this.doDragOver(e);
-    },
+      for (var tile = 0, row = 0; row < rowCount; row++) {
+        var tileRow = tileRows[row];
 
-    /**
-     * Performs all actions necessary when the user moves the cursor during
-     * a drag over the tile page.
-     * @param {Event} e A mouseover event for the drag over.
-     */
-    doDragOver: function(e) {
-      e.preventDefault();
-
-      this.setDropEffect(e.dataTransfer);
-      var newDragIndex = this.getWouldBeIndexForPoint_(e.pageX, e.pageY);
-      if (newDragIndex < 0 || newDragIndex >= this.tileElements_.length)
-        newDragIndex = this.dragItemIndex_;
-      this.updateDropIndicator_(newDragIndex);
-    },
-
-    /**
-     * Performs all actions necessary when the user completes a drop.
-     * @param {Event} e A mouseover event for the drag drop.
-     */
-    doDrop: function(e) {
-      e.stopPropagation();
-      e.preventDefault();
-
-      var index = this.currentDropIndex_;
-      // Only change data if this was not a 'null drag'.
-      if (!((index == this.dragItemIndex_) && this.withinPageDrag_)) {
-        var adjustedIndex = this.currentDropIndex_ +
-            (index > this.dragItemIndex_ ? 1 : 0);
-        if (this.withinPageDrag_) {
-          this.tileGrid_.insertBefore(
-              currentlyDraggingTile,
-              this.tileElements_[adjustedIndex]);
-          this.tileMoved(currentlyDraggingTile, this.dragItemIndex_);
-        } else {
-          var originalPage = currentlyDraggingTile ?
-              currentlyDraggingTile.tilePage : null;
-          this.addDragData(e.dataTransfer, adjustedIndex);
-          if (originalPage)
-            originalPage.cleanupDrag();
+        // Create tile row if there's no one yet.
+        if (!tileRow) {
+          tileRow = cr.doc.createElement('div');
+          tileRow.className = 'tile-row';
+          tileGridContent.appendChild(tileRow);
         }
 
-        // Dropping the icon may cause topMargin to change, but changing it
-        // now would cause everything to move (annoying), so we leave it
-        // alone. The top margin will be re-calculated next time the window is
-        // resized or the page is selected.
+        // The tiles inside the current row.
+        var tileRowTiles = tileRow.childNodes;
+
+        // Remove excessive columns from a particular tile row.
+        var maxColCount = Math.min(colCount, tileCount - tile);
+        maxColCount = Math.max(0, maxColCount);
+        while (tileRowTiles.length > maxColCount) {
+          tileRow.removeChild(tileRow.lastElementChild);
+        }
+
+        // For each column in the current row.
+        for (var col = 0; col < colCount; col++, tile++) {
+          var tileCell;
+          var tileElement;
+          if (tileRowTiles[col]) {
+            tileCell = tileRowTiles[col];
+          } else {
+            var span = cr.doc.createElement('span');
+            tileCell = new TileCell(span);
+          }
+
+          // Render Tiles.
+          tileElement = tiles[tile];
+          if (tile < tileCount && tileElement) {
+            tileCell.classList.remove('filler');
+            if (!tileCell.tile)
+              tileCell.appendChild(tileElement);
+            else if (tileElement != tileCell.tile)
+              tileCell.replaceChild(tileElement, tileCell.tile);
+          } else if (!tileCell.classList.contains('filler')) {
+            tileCell.classList.add('filler');
+            tileElement = cr.doc.createElement('span');
+            tileElement.className = 'tile';
+            if (tileCell.tile)
+              tileCell.replaceChild(tileElement, tileCell.tile);
+            else
+              tileCell.appendChild(tileElement);
+          }
+
+          if (!tileRowTiles[col])
+            tileRow.appendChild(tileCell);
+        }
       }
 
-      this.classList.remove('animating-tile-page');
-      this.cleanupDrag();
+      // Remove excessive tile rows from the tile grid.
+      while (tileRows.length > rowCount) {
+        tileGridContent.removeChild(tileGridContent.lastElementChild);
+      }
+
+      this.colCount_ = colCount;
+      this.rowCount_ = rowCount;
+
+      // If we are manually changing the tile count (which can happen during
+      // the restoration/insertion animation) we should not fire the scroll
+      // event once some cells might contain dummy tiles which will cause
+      // an error.
+      if (!opt_tileCount)
+        this.onScroll();
     },
 
+    // layout
+    // -------------------------------------------------------------------------
+
     /**
-     * Appends the currently dragged tile to the end of the page. Called
-     * from outside the page, e.g. when dropping on a nav dot.
+     * Calculates the layout of the tile page according to the current Bottom
+     * Panel's size. This method will resize the containers of the tile page,
+     * and re-render the grid when its dimension changes (number of columns or
+     * visible rows changes). This method also sets the private properties
+     * |numOfVisibleRows_| and |animatingColCount_|.
+     *
+     * This method should be called every time the dimension of the grid changes
+     * or when you need to reinforce its dimension.
+     * @param {boolean=} opt_animate Whether the layout be animated.
      */
-    appendDraggingTile: function() {
-      var originalPage = currentlyDraggingTile.tilePage;
-      if (originalPage == this)
-        return;
+    layout: function(opt_animate) {
+      var contentHeight = ntp.getContentHeight();
+      this.content_.style.height = contentHeight + 'px';
 
-      this.addDragData(null, this.tileElements_.length);
-      if (originalPage)
-        originalPage.cleanupDrag();
+      var contentWidth = ntp.getContentWidth();
+      var colCount = this.getColCountForWidth_(contentWidth);
+      var lastColCount = this.colCount_;
+      var animatingColCount = this.animatingColCount_;
+      if (colCount != animatingColCount) {
+        if (opt_animate)
+          this.tileGrid_.classList.add('animate-grid-width');
+
+        if (colCount > animatingColCount) {
+          // If the grid is expanding, it needs to be rendered first so the
+          // revealing tiles are visible as soon as the animation starts.
+          if (colCount != lastColCount)
+            this.renderGrid(colCount);
+
+          // Hides affected columns and forces the reflow.
+          this.showTileCols_(animatingColCount, false);
+          // Trigger reflow, making the tiles completely hidden.
+          this.tileGrid_.offsetTop;
+          // Fades in the affected columns.
+          this.showTileCols_(animatingColCount, true);
+        } else {
+          // Fades out the affected columns.
+          this.showTileCols_(colCount, false);
+        }
+
+        var newWidth = this.getWidthForColCount_(colCount);
+        this.tileGrid_.style.width = newWidth + 'px';
+
+        // TODO(pedrosimonetti): move to handler below.
+        var self = this;
+        this.onTileGridTransitionEndHandler_ = function() {
+          if (colCount < lastColCount)
+            self.renderGrid(colCount);
+          else
+            self.showTileCols_(0, true);
+        };
+      }
+
+      this.animatingColCount_ = colCount;
+
+      this.frame_.style.width = contentWidth + 'px';
+
+      this.onScroll();
     },
 
+    // tile repositioning animation
+    // -------------------------------------------------------------------------
+
     /**
-     * Makes sure all the tiles are in the right place after a drag is over.
+     * Tile repositioning state.
+     * @type {{index: number, isRemoving: number}}
      */
-    cleanupDrag: function() {
-      this.repositionTiles_(currentlyDraggingTile);
-      // Remove the drag mask.
-      this.updateMask_();
+    tileRepositioningState_: null,
+
+    /**
+     * Gets the repositioning state.
+     * @return {{index: number, isRemoving: number}} The repositioning data.
+     */
+    getTileRepositioningState: function() {
+      return this.tileRepositioningState_;
     },
 
     /**
-     * Reposition all the tiles (possibly ignoring one).
-     * @param {?Node} ignoreNode An optional node to ignore.
+     * Sets the repositioning state that will be used to animate the tiles.
+     * @param {number} index The tile's index.
+     * @param {boolean} isRemoving Whether the tile is being removed.
+     */
+    setTileRepositioningState: function(index, isRemoving) {
+      this.tileRepositioningState_ = {
+        index: index,
+        isRemoving: isRemoving
+      };
+    },
+
+    /**
+     * Resets the repositioning state.
+     */
+    resetTileRepositioningState: function() {
+      this.tileRepositioningState_ = null;
+    },
+
+    /**
+     * Animates a tile removal.
+     * @param {number} index The index of the tile to be removed.
+     * @param {Object} newDataList The new data list.
+     */
+    animateTileRemoval: function(index, newDataList) {
+      var tiles = this.tiles_;
+      var tileCount = tiles.length;
+      assert(tileCount > 0);
+
+      var tileCells = this.querySelectorAll('.tile-cell');
+      var extraTileIndex = tileCount - 1;
+      var extraCell = tileCells[extraTileIndex];
+      var extraTileData = newDataList[extraTileIndex];
+
+      var repositioningStartIndex = index + 1;
+      var repositioningEndIndex = tileCount;
+
+      this.initializeRepositioningAnimation_(index, repositioningEndIndex,
+          true);
+
+      var tileBeingRemoved = tiles[index];
+      tileBeingRemoved.scrollTop;
+
+      // The extra tile is the new one that will appear. It can be a normal
+      // tile (when there's extra data for it), or a filler tile.
+      var extraTile = createTile(this, extraTileData);
+      if (!extraTileData)
+        extraCell.classList.add('filler');
+      // The extra tile is being assigned in order to put it in the right spot.
+      extraCell.assign(extraTile);
+
+      this.executeRepositioningAnimation_(tileBeingRemoved, extraTile,
+          repositioningStartIndex, repositioningEndIndex, true);
+
+      // Cleans up the animation.
+      var onPositioningTransitionEnd = function(e) {
+        var propertyName = e.propertyName;
+        if (!(propertyName == '-webkit-transform' ||
+              propertyName == 'opacity')) {
+          return;
+        }
+
+        lastAnimatingTile.removeEventListener('webkitTransitionEnd',
+            onPositioningTransitionEnd);
+
+        this.finalizeRepositioningAnimation_(tileBeingRemoved,
+            repositioningStartIndex, repositioningEndIndex, true);
+
+        this.removeTile(tileBeingRemoved);
+
+        // If the extra tile is a real one (not a filler), then it needs to be
+        // added to the tile list. The tile has been placed in the right spot
+        // but the tile page still doesn't know about this new tile.
+        if (extraTileData)
+          this.appendTile(extraTile);
+
+      }.bind(this);
+
+      // Listens to the animation end.
+      var lastAnimatingTile = extraTile;
+      lastAnimatingTile.addEventListener('webkitTransitionEnd',
+          onPositioningTransitionEnd);
+    },
+
+    /**
+     * Animates a tile restoration.
+     * @param {number} index The index of the tile to be restored.
+     * @param {Object} newDataList The new data list.
+     */
+    animateTileRestoration: function(index, newDataList) {
+      var tiles = this.tiles_;
+      var tileCount = tiles.length;
+
+      var tileCells = this.getElementsByClassName('tile-cell');
+
+      // If the desired position is outside the grid, then the grid must be
+      // expanded so there will be a cell in the desired position.
+      if (index >= tileCells.length)
+        this.renderGrid(null, index + 1);
+
+      var extraTileIndex = Math.min(tileCount, this.config.maxTileCount - 1);
+      var extraCell = tileCells[extraTileIndex];
+      var extraTileData = newDataList[extraTileIndex + 1];
+
+      var repositioningStartIndex = index;
+      var repositioningEndIndex = tileCount - (extraTileData ? 1 : 0);
+
+      this.initializeRepositioningAnimation_(index, repositioningEndIndex);
+
+      var restoredData = newDataList[index];
+      var tileBeingRestored = createTile(this, restoredData);
+
+      // Temporarily assume the |index| cell so the tile can be animated in
+      // the right spot.
+      tileCells[index].appendChild(tileBeingRestored);
+
+      if (this.config.scrollable)
+        this.content_.scrollTop = tileCells[index].offsetTop;
+
+      var extraTile;
+      if (extraCell)
+        extraTile = extraCell.tile;
+
+      this.executeRepositioningAnimation_(tileBeingRestored, extraTile,
+          repositioningStartIndex, repositioningEndIndex, false);
+
+      // Cleans up the animation.
+      var onPositioningTransitionEnd = function(e) {
+        var propertyName = e.propertyName;
+        if (!(propertyName == '-webkit-transform' ||
+              propertyName == 'opacity')) {
+          return;
+        }
+
+        lastAnimatingTile.removeEventListener('webkitTransitionEnd',
+            onPositioningTransitionEnd);
+
+        // When there's an extra data, it means the tile is a real one (not a
+        // filler), and therefore it needs to be removed from the tile list.
+        if (extraTileData)
+          this.removeTile(extraTile);
+
+        this.finalizeRepositioningAnimation_(tileBeingRestored,
+            repositioningStartIndex, repositioningEndIndex, false);
+
+        this.addTileAt(tileBeingRestored, index);
+
+      }.bind(this);
+
+      // Listens to the animation end.
+      var lastAnimatingTile = tileBeingRestored;
+      lastAnimatingTile.addEventListener('webkitTransitionEnd',
+          onPositioningTransitionEnd);
+    },
+
+    // animation helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Moves a tile to a new position.
+     * @param {Tile} tile A tile.
+     * @param {number} left Left coordinate.
+     * @param {number} top Top coordinate.
      * @private
      */
-    repositionTiles_: function(ignoreNode) {
-      for (var i = 0; i < this.tileElements_.length; i++) {
-        if (!ignoreNode || ignoreNode !== this.tileElements_[i])
-          this.positionTile_(i);
-      }
+    moveTileTo_: function(tile, left, top) {
+      tile.style.left = left + 'px';
+      tile.style.top = top + 'px';
     },
 
     /**
-     * Updates the visual indicator for the drop location for the active drag.
-     * @param {Event} e A MouseEvent for the drag.
+     * Resets a tile's position.
+     * @param {Tile} tile A tile.
      * @private
      */
-    updateDropIndicator_: function(newDragIndex) {
-      var oldDragIndex = this.currentDropIndex_;
-      if (newDragIndex == oldDragIndex)
+    resetTilePosition_: function(tile) {
+      tile.style.left = '';
+      tile.style.top = '';
+    },
+
+    /**
+     * Initializes the repositioning animation.
+     * @param {number} startIndex Index of the first tile to be repositioned.
+     * @param {number} endIndex Index of the last tile to be repositioned.
+     * @param {boolean} isRemoving Whether the tile is being removed.
+     * @private
+     */
+    initializeRepositioningAnimation_: function(startIndex, endIndex,
+        isRemoving) {
+      // Move tiles from relative to absolute position.
+      var tiles = this.tiles_;
+      var tileGridContent = this.tileGridContent_;
+      for (var i = startIndex; i < endIndex; i++) {
+        var tile = tiles[i];
+        var position = this.getTilePosition_(i);
+        this.moveTileTo_(tile, position.left, position.top);
+        tile.style.zIndex = endIndex - i;
+        tileGridContent.appendChild(tile);
+      }
+
+      tileGridContent.classList.add('animate-tile-repositioning');
+
+      if (!isRemoving)
+        tileGridContent.classList.add('undo-removal');
+    },
+
+    /**
+     * Executes the repositioning animation.
+     * @param {Tile} targetTile The tile that is being removed/restored.
+     * @param {Tile} extraTile The extra tile that is going to appear/disappear.
+     * @param {number} startIndex Index of the first tile to be repositioned.
+     * @param {number} endIndex Index of the last tile to be repositioned.
+     * @param {boolean} isRemoving Whether the tile is being removed.
+     * @private
+     */
+    executeRepositioningAnimation_: function(targetTile, extraTile, startIndex,
+        endIndex, isRemoving) {
+      targetTile.classList.add('target-tile');
+
+      // Alternate the visualization of the target and extra tiles.
+      fadeTile(targetTile, !isRemoving);
+      if (extraTile)
+        fadeTile(extraTile, isRemoving);
+
+      // Move tiles to the new position.
+      var tiles = this.tiles_;
+      var positionDiff = isRemoving ? -1 : 1;
+      for (var i = startIndex; i < endIndex; i++) {
+        var position = this.getTilePosition_(i + positionDiff);
+        this.moveTileTo_(tiles[i], position.left, position.top);
+      }
+    },
+
+    /**
+     * Finalizes the repositioning animation.
+     * @param {Tile} targetTile The tile that is being removed/restored.
+     * @param {number} startIndex Index of the first tile to be repositioned.
+     * @param {number} endIndex Index of the last tile to be repositioned.
+     * @param {boolean} isRemoving Whether the tile is being removed.
+     * @private
+     */
+    finalizeRepositioningAnimation_: function(targetTile, startIndex, endIndex,
+        isRemoving) {
+      // Remove temporary class names.
+      var tileGridContent = this.tileGridContent_;
+      tileGridContent.classList.remove('animate-tile-repositioning');
+      tileGridContent.classList.remove('undo-removal');
+      targetTile.classList.remove('target-tile');
+
+      // Move tiles back to relative position.
+      var tiles = this.tiles_;
+      var tileCells = this.querySelectorAll('.tile-cell');
+      var positionDiff = isRemoving ? -1 : 1;
+      for (var i = startIndex; i < endIndex; i++) {
+        var tile = tiles[i];
+        this.resetTilePosition_(tile);
+        tile.style.zIndex = '';
+        var tileCell = tileCells[i + positionDiff];
+        if (tileCell)
+          tileCell.assign(tile);
+      }
+    },
+
+    /**
+     * Animates the display of columns.
+     * @param {number} col The column number.
+     * @param {boolean} show Whether or not to show the row.
+     */
+    showTileCols_: function(col, show) {
+      var prop = show ? 'remove' : 'add';
+      var max = 10;  // TODO(pedrosimonetti): Add const?
+      var tileGridContent = this.tileGridContent_;
+      for (var i = col; i < max; i++) {
+        tileGridContent.classList[prop]('hide-col-' + i);
+      }
+    },
+
+    // event handlers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handles the scroll event.
+     * @protected
+     */
+    onScroll: function() {
+      // If the TilePage is scrollable, then the opacity of shadow top and
+      // bottom must adjusted, indicating when there's an overflow content.
+      if (this.config.scrollable) {
+        var content = this.content_;
+        var topGap = Math.min(MAX_SCROLL_SHADOW_GAP, content.scrollTop);
+        var bottomGap = Math.min(MAX_SCROLL_SHADOW_GAP, content.scrollHeight -
+            content.scrollTop - content.clientHeight);
+
+        this.shadowTop_.style.opacity = topGap / MAX_SCROLL_SHADOW_GAP;
+        this.shadowBottom_.style.opacity = bottomGap / MAX_SCROLL_SHADOW_GAP;
+      }
+    },
+
+    /**
+     * Handles the end of the horizontal tile grid transition.
+     * @param {Event} e The tile grid webkitTransitionEnd event.
+     */
+    onTileGridTransitionEnd_: function(e) {
+      if (!this.selected)
         return;
 
-      var repositionStart = Math.min(newDragIndex, oldDragIndex);
-      var repositionEnd = Math.max(newDragIndex, oldDragIndex);
+      // We should remove the classes that control transitions when the
+      // transition ends so when the text is resized (Ctrl + '+'), no other
+      // transition should happen except those defined in the specification.
+      // For example, the tile has a transition for its 'width' property which
+      // is used when the tile is being hidden. But when you resize the text,
+      // and therefore the tile changes its 'width', this change should not be
+      // animated.
 
-      for (var i = repositionStart; i <= repositionEnd; i++) {
-        if (i == this.dragItemIndex_)
-          continue;
-        else if (i > this.dragItemIndex_)
-          var adjustment = i <= newDragIndex ? -1 : 0;
-        else
-          var adjustment = i >= newDragIndex ? 1 : 0;
+      // When the tile grid width transition ends, we need to remove the class
+      // 'animate-grid-width' which handles the tile grid width transition, and
+      // individual tile transitions. TODO(pedrosimonetti): Investigate if we
+      // can improve the performance here by using a more efficient selector.
+      var tileGrid = this.tileGrid_;
+      if (e.target == tileGrid &&
+          tileGrid.classList.contains('animate-grid-width')) {
+        tileGrid.classList.remove('animate-grid-width');
 
-        this.positionTile_(i, adjustment);
+        if (this.onTileGridTransitionEndHandler_)
+          this.onTileGridTransitionEndHandler_();
       }
-      this.currentDropIndex_ = newDragIndex;
-    },
-
-    /**
-     * Checks if a page can accept a drag with the given data.
-     * @param {Event} e The drag event if the drag object. Implementations will
-     *     likely want to check |e.dataTransfer|.
-     * @return {boolean} True if this page can handle the drag.
-     */
-    shouldAcceptDrag: function(e) {
-      return false;
-    },
-
-    /**
-     * Called to accept a drag drop. Will not be called for in-page drops.
-     * @param {Object} dataTransfer The data transfer object that holds the drop
-     *     data. This should only be used if currentlyDraggingTile is null.
-     * @param {number} index The tile index at which the drop occurred.
-     */
-    addDragData: function(dataTransfer, index) {
-      assert(false);
-    },
-
-    /**
-     * Called when a tile has been moved (via dragging). Override this to make
-     * backend updates.
-     * @param {Node} draggedTile The tile that was dropped.
-     * @param {number} prevIndex The previous index of the tile.
-     */
-    tileMoved: function(draggedTile, prevIndex) {
-    },
-
-    /**
-     * Sets the drop effect on |dataTransfer| to the desired value (e.g.
-     * 'copy').
-     * @param {Object} dataTransfer The drag event dataTransfer object.
-     */
-    setDropEffect: function(dataTransfer) {
-      assert(false);
     },
   };
 
+  /**
+   * Creates a new tile given a particular data. If there's no data, then
+   * a tile filler will be created.
+   * @param {TilePage} tilePage A TilePage.
+   * @param {Object=} opt_data The data that will be used to create the tile.
+   * @return {Tile} The new tile.
+   */
+  function createTile(tilePage, opt_data) {
+    var tile;
+    if (opt_data) {
+      // If there's data, the new tile will be a real one (not a filler).
+      tile = new tilePage.TileClass(opt_data);
+    } else {
+      // Otherwise, it will be a fake filler tile.
+      tile = cr.doc.createElement('span');
+      tile.className = 'tile';
+    }
+    return tile;
+  }
+
+  /**
+   * Fades a tile.
+   * @param {Tile} tile A Tile.
+   * @param {boolean} isFadeIn Whether to fade-in the tile. If |isFadeIn| is
+   * false, then the tile is going to fade-out.
+   */
+  function fadeTile(tile, isFadeIn) {
+    var className = 'animate-hide-tile';
+    tile.classList.add(className);
+    if (isFadeIn) {
+      // Forces a reflow to ensure that the fade-out animation will work.
+      tile.scrollTop;
+      tile.classList.remove(className);
+    }
+  }
+
   return {
-    getCurrentlyDraggingTile: getCurrentlyDraggingTile,
-    setCurrentDropEffect: setCurrentDropEffect,
+    Tile: Tile,
     TilePage: TilePage,
   };
 });

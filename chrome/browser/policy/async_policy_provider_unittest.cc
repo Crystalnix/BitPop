@@ -103,10 +103,11 @@ void AsyncPolicyProviderTest::SetUp() {
 
   provider_.reset(
       new AsyncPolicyProvider(scoped_ptr<AsyncPolicyLoader>(loader_)));
+  provider_->Init();
   // Verify that the initial load is done synchronously:
   EXPECT_TRUE(provider_->policies().Equals(initial_bundle_));
 
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(loader_);
 
   EXPECT_CALL(*loader_, LastModificationTime())
@@ -114,8 +115,11 @@ void AsyncPolicyProviderTest::SetUp() {
 }
 
 void AsyncPolicyProviderTest::TearDown() {
-  provider_.reset();
-  loop_.RunAllPending();
+  if (provider_) {
+    provider_->Shutdown();
+    provider_.reset();
+  }
+  loop_.RunUntilIdle();
 }
 
 TEST_F(AsyncPolicyProviderTest, RefreshPolicies) {
@@ -124,13 +128,13 @@ TEST_F(AsyncPolicyProviderTest, RefreshPolicies) {
   EXPECT_CALL(*loader_, MockLoad()).WillOnce(Return(&refreshed_bundle));
 
   MockConfigurationPolicyObserver observer;
-  ConfigurationPolicyObserverRegistrar registrar;
-  registrar.Init(provider_.get(), &observer);
+  provider_->AddObserver(&observer);
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   // The refreshed policies are now provided.
   EXPECT_TRUE(provider_->policies().Equals(refreshed_bundle));
+  provider_->RemoveObserver(&observer);
 }
 
 TEST_F(AsyncPolicyProviderTest, RefreshPoliciesTwice) {
@@ -139,8 +143,7 @@ TEST_F(AsyncPolicyProviderTest, RefreshPoliciesTwice) {
   EXPECT_CALL(*loader_, MockLoad()).WillRepeatedly(Return(&refreshed_bundle));
 
   MockConfigurationPolicyObserver observer;
-  ConfigurationPolicyObserverRegistrar registrar;
-  registrar.Init(provider_.get(), &observer);
+  provider_->AddObserver(&observer);
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(0);
   provider_->RefreshPolicies();
   // Doesn't refresh before going through the FILE thread.
@@ -152,10 +155,11 @@ TEST_F(AsyncPolicyProviderTest, RefreshPoliciesTwice) {
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   // The refreshed policies are now provided.
   EXPECT_TRUE(provider_->policies().Equals(refreshed_bundle));
   Mock::VerifyAndClearExpectations(&observer);
+  provider_->RemoveObserver(&observer);
 }
 
 TEST_F(AsyncPolicyProviderTest, RefreshPoliciesDuringReload) {
@@ -173,8 +177,7 @@ TEST_F(AsyncPolicyProviderTest, RefreshPoliciesDuringReload) {
                                    .WillOnce(Return(&refreshed_bundle));
 
   MockConfigurationPolicyObserver observer;
-  ConfigurationPolicyObserverRegistrar registrar;
-  registrar.Init(provider_.get(), &observer);
+  provider_->AddObserver(&observer);
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(0);
 
   // A Reload is triggered before RefreshPolicies, and it shouldn't trigger
@@ -188,19 +191,19 @@ TEST_F(AsyncPolicyProviderTest, RefreshPoliciesDuringReload) {
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   // The refreshed policies are now provided, and the |reloaded_bundle| was
   // dropped.
   EXPECT_TRUE(provider_->policies().Equals(refreshed_bundle));
   Mock::VerifyAndClearExpectations(&observer);
+  provider_->RemoveObserver(&observer);
 }
 
 TEST_F(AsyncPolicyProviderTest, Shutdown) {
   EXPECT_CALL(*loader_, MockLoad()).WillRepeatedly(Return(&initial_bundle_));
 
   MockConfigurationPolicyObserver observer;
-  ConfigurationPolicyObserverRegistrar registrar;
-  registrar.Init(provider_.get(), &observer);
+  provider_->AddObserver(&observer);
 
   // Though there is a pending Reload, the provider and the loader can be
   // deleted at any time.
@@ -209,10 +212,12 @@ TEST_F(AsyncPolicyProviderTest, Shutdown) {
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(0);
-  EXPECT_CALL(observer, OnProviderGoingAway(provider_.get()));
-  provider_.reset();
-  loop_.RunAllPending();
+  provider_->Shutdown();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
+
+  provider_->RemoveObserver(&observer);
+  provider_.reset();
 }
 
 }  // namespace policy

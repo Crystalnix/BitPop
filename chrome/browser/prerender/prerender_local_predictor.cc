@@ -4,11 +4,15 @@
 
 #include "chrome/browser/prerender/prerender_local_predictor.h"
 
-#include <algorithm>
 #include <ctype.h>
+
+#include <algorithm>
 #include <map>
 #include <set>
+#include <string>
+#include <utility>
 
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/timer.h"
 #include "chrome/browser/prerender/prerender_histograms.h"
@@ -19,6 +23,9 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/page_transition_types.h"
+#include "crypto/secure_hash.h"
+#include "grit/browser_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 
 using content::BrowserThread;
 using content::PageTransition;
@@ -27,6 +34,8 @@ using history::URLID;
 namespace prerender {
 
 namespace {
+
+static const size_t kURLHashSize = 5;
 
 // Task to lookup the URL for a given URLID.
 class GetURLForURLIDTask : public HistoryDBTask {
@@ -132,12 +141,41 @@ base::Time GetCurrentTime() {
 bool StrCaseStr(std::string haystack, std::string needle) {
   std::transform(haystack.begin(), haystack.end(), haystack.begin(), ::tolower);
   std::transform(needle.begin(), needle.end(), needle.begin(), ::tolower);
-  return (haystack.find(needle)!=std::string::npos);
+  return haystack.find(needle) != std::string::npos;
+}
+
+bool IsExtendedRootURL(const GURL& url) {
+  const std::string& path = url.path();
+  return path == "/index.html" || path == "/home.html" ||
+      path == "/main.html" ||
+      path == "/index.htm" || path == "/home.htm" || path == "/main.htm" ||
+      path == "/index.php" || path == "/home.php" || path == "/main.php" ||
+      path == "/index.asp" || path == "/home.asp" || path == "/main.asp" ||
+      path == "/index.py" || path == "/home.py" || path == "/main.py" ||
+      path == "/index.pl" || path == "/home.pl" || path == "/main.pl";
 }
 
 bool IsRootPageURL(const GURL& url) {
-  return (url.path() == "/" || url.path() == "") && (!url.has_query()) &&
-    (!url.has_ref());
+  return (url.path() == "/" || url.path() == "" || IsExtendedRootURL(url)) &&
+      (!url.has_query()) && (!url.has_ref());
+}
+
+int64 URLHashToInt64(const unsigned char* data) {
+  COMPILE_ASSERT(kURLHashSize < sizeof(int64), url_hash_must_fit_in_int64);
+  int64 value = 0;
+  memcpy(&value, data, kURLHashSize);
+  return value;
+}
+
+int64 GetInt64URLHashForURL(const GURL& url) {
+  COMPILE_ASSERT(kURLHashSize < sizeof(int64), url_hash_must_fit_in_int64);
+  scoped_ptr<crypto::SecureHash> hash(
+      crypto::SecureHash::Create(crypto::SecureHash::SHA256));
+  int64 hash_value = 0;
+  const char* url_string = url.spec().c_str();
+  hash->Update(url_string, strlen(url_string));
+  hash->Finish(&hash_value, kURLHashSize);
+  return hash_value;
 }
 
 }  // namespace
@@ -170,7 +208,8 @@ struct PrerenderLocalPredictor::PrerenderData {
 
 PrerenderLocalPredictor::PrerenderLocalPredictor(
     PrerenderManager* prerender_manager)
-    : prerender_manager_(prerender_manager) {
+    : prerender_manager_(prerender_manager),
+      is_visit_database_observer_(false) {
   RecordEvent(EVENT_CONSTRUCTED);
   if (MessageLoop::current()) {
     timer_.Start(FROM_HERE,
@@ -179,11 +218,47 @@ PrerenderLocalPredictor::PrerenderLocalPredictor(
                  &PrerenderLocalPredictor::Init);
     RecordEvent(EVENT_INIT_SCHEDULED);
   }
+
+  static const size_t kChecksumHashSize = 32;
+  base::RefCountedStaticMemory* url_whitelist_data =
+      ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
+          IDR_PRERENDER_URL_WHITELIST);
+  size_t size = url_whitelist_data->size();
+  const unsigned char* front = url_whitelist_data->front();
+  if (size < kChecksumHashSize ||
+      (size - kChecksumHashSize) % kURLHashSize != 0) {
+    RecordEvent(EVENT_URL_WHITELIST_ERROR);
+    return;
+  }
+  scoped_ptr<crypto::SecureHash> hash(
+      crypto::SecureHash::Create(crypto::SecureHash::SHA256));
+  hash->Update(front + kChecksumHashSize, size - kChecksumHashSize);
+  char hash_value[kChecksumHashSize];
+  hash->Finish(hash_value, kChecksumHashSize);
+  if (memcmp(hash_value, front, kChecksumHashSize)) {
+    RecordEvent(EVENT_URL_WHITELIST_ERROR);
+    return;
+  }
+  for (const unsigned char* p = front + kChecksumHashSize;
+       p < front + size;
+       p += kURLHashSize) {
+    url_whitelist_.insert(URLHashToInt64(p));
+  }
+  RecordEvent(EVENT_URL_WHITELIST_OK);
 }
 
 PrerenderLocalPredictor::~PrerenderLocalPredictor() {
-  if (observing_history_service_.get())
-    observing_history_service_->RemoveVisitDatabaseObserver(this);
+  Shutdown();
+}
+
+void PrerenderLocalPredictor::Shutdown() {
+  timer_.Stop();
+  if (is_visit_database_observer_) {
+    HistoryService* history = GetHistoryIfExists();
+    CHECK(history);
+    history->RemoveVisitDatabaseObserver(this);
+    is_visit_database_observer_ = false;
+  }
 }
 
 void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
@@ -200,9 +275,12 @@ void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
   if (current_prerender_.get() &&
       current_prerender_->url_id == info.url_id &&
       IsPrerenderStillValid(current_prerender_.get())) {
-    prerender_manager_->histograms()->RecordLocalPredictorTimeUntilUsed(
+    UMA_HISTOGRAM_CUSTOM_TIMES(
+        "Prerender.LocalPredictorTimeUntilUsed",
         GetCurrentTime() - current_prerender_->actual_start_time,
-        base::TimeDelta::FromMilliseconds(kMaxLocalPredictionTimeMs));
+        base::TimeDelta::FromMilliseconds(10),
+        base::TimeDelta::FromMilliseconds(kMaxLocalPredictionTimeMs),
+        50);
     last_swapped_in_prerender_.reset(current_prerender_.release());
     RecordEvent(EVENT_ADD_VISIT_PRERENDER_IDENTIFIED);
   }
@@ -310,8 +388,17 @@ void PrerenderLocalPredictor::OnLookupURL(history::URLID url_id,
     }
   }
 
+  if (url_whitelist_.count(GetInt64URLHashForURL(url)) > 0) {
+    RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_ON_WHITELIST);
+    if (IsRootPageURL(url))
+      RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_ON_WHITELIST_ROOT_PAGE);
+  }
   if (IsRootPageURL(url))
     RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_ROOT_PAGE);
+  if (IsExtendedRootURL(url))
+    RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_EXTENDED_ROOT_PAGE);
+  if (IsRootPageURL(url) && url.SchemeIs("http"))
+    RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_ROOT_PAGE_HTTP);
   if (url.SchemeIs("http"))
     RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_IS_HTTP);
   if (url.has_query())
@@ -345,15 +432,16 @@ void PrerenderLocalPredictor::Init() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   RecordEvent(EVENT_INIT_STARTED);
   HistoryService* history = GetHistoryIfExists();
-  if (!history) {
+  if (history) {
+    CHECK(!is_visit_database_observer_);
+    history->ScheduleDBTask(
+        new GetVisitHistoryTask(this, kMaxVisitHistory),
+        &history_db_consumer_);
+    history->AddVisitDatabaseObserver(this);
+    is_visit_database_observer_ = true;
+  } else {
     RecordEvent(EVENT_INIT_FAILED_NO_HISTORY);
-    return;
   }
-  history->ScheduleDBTask(
-      new GetVisitHistoryTask(this, kMaxVisitHistory),
-      &history_db_consumer_);
-  observing_history_service_ = history;
-  observing_history_service_->AddVisitDatabaseObserver(this);
 }
 
 void PrerenderLocalPredictor::OnPLTEventForURL(const GURL& url,
@@ -370,17 +458,23 @@ void PrerenderLocalPredictor::OnPLTEventForURL(const GURL& url,
   if (!prerender.get())
     return;
   if (IsPrerenderStillValid(prerender.get())) {
+    UMA_HISTOGRAM_CUSTOM_TIMES("Prerender.SimulatedLocalBrowsingBaselinePLT",
+                               page_load_time,
+                               base::TimeDelta::FromMilliseconds(10),
+                               base::TimeDelta::FromSeconds(60),
+                               100);
+
     base::TimeDelta prerender_age = GetCurrentTime() - prerender->start_time;
-    prerender_manager_->histograms()->RecordSimulatedLocalBrowsingBaselinePLT(
-        page_load_time, url);
     if (prerender_age > page_load_time) {
       base::TimeDelta new_plt;
       if (prerender_age <  2 * page_load_time)
         new_plt = 2 * page_load_time - prerender_age;
-      prerender_manager_->histograms()->RecordSimulatedLocalBrowsingPLT(
-          new_plt, url);
+      UMA_HISTOGRAM_CUSTOM_TIMES("Prerender.SimulatedLocalBrowsingPLT",
+                                 new_plt,
+                                 base::TimeDelta::FromMilliseconds(10),
+                                 base::TimeDelta::FromSeconds(60),
+                                 100);
     }
-
   }
 }
 
@@ -392,9 +486,11 @@ bool PrerenderLocalPredictor::IsPrerenderStillValid(
           > GetCurrentTime());
 }
 
-void PrerenderLocalPredictor::RecordEvent(PrerenderLocalPredictor::Event event)
-    const {
-  prerender_manager_->histograms()->RecordLocalPredictorEvent(event);
+void PrerenderLocalPredictor::RecordEvent(
+    PrerenderLocalPredictor::Event event) const {
+  UMA_HISTOGRAM_ENUMERATION(
+      base::FieldTrial::MakeName("Prerender.LocalPredictorEvent", "Prerender"),
+      event, PrerenderLocalPredictor::EVENT_MAX_VALUE);
 }
 
 bool PrerenderLocalPredictor::DoesPrerenderMatchPLTRecord(

@@ -22,26 +22,29 @@
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/gaia/mock_url_fetcher_factory.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/dbus/mock_dbus_thread_manager.h"
 #include "chromeos/dbus/mock_session_manager_client.h"
+#include "google_apis/gaia/mock_url_fetcher_factory.h"
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace chromeos {
-
+using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::AnyOf;
 using ::testing::Invoke;
 using ::testing::InvokeWithoutArgs;
 using ::testing::Return;
 using ::testing::ReturnNull;
+using ::testing::Sequence;
 using ::testing::WithArg;
-using ::testing::_;
+
+namespace chromeos {
+
+namespace {
 
 const char kUsername[] = "test_user@gmail.com";
 const char kNewUsername[] = "test_new_user@gmail.com";
@@ -61,7 +64,9 @@ class MockLoginDisplay : public LoginDisplay {
   MOCK_METHOD1(SetUIEnabled, void(bool));
   MOCK_METHOD1(SelectPod, void(int));
   MOCK_METHOD3(ShowError, void(int, int, HelpAppLauncher::HelpTopic));
+  MOCK_METHOD1(ShowErrorScreen, void(LoginDisplay::SigninError));
   MOCK_METHOD1(ShowGaiaPasswordChanged, void(const std::string&));
+  MOCK_METHOD1(ShowPasswordChangedDialog, void(bool));
   MOCK_METHOD1(OnBeforeUserRemoved, void(const std::string&));
   MOCK_METHOD1(OnUserRemoved, void(const std::string&));
 
@@ -77,6 +82,7 @@ class MockLoginDisplayHost : public LoginDisplayHost {
   MOCK_METHOD1(CreateLoginDisplay, LoginDisplay*(LoginDisplay::Delegate*));
   MOCK_CONST_METHOD0(GetNativeWindow, gfx::NativeWindow(void));
   MOCK_CONST_METHOD0(GetWidget, views::Widget*(void));
+  MOCK_METHOD0(BeforeSessionStart, void(void));
   MOCK_METHOD0(OnSessionStart, void(void));
   MOCK_METHOD0(OnCompleteLogin, void(void));
   MOCK_METHOD0(OpenProxySettings, void(void));
@@ -94,6 +100,18 @@ class MockLoginDisplayHost : public LoginDisplayHost {
   DISALLOW_COPY_AND_ASSIGN(MockLoginDisplayHost);
 };
 
+scoped_refptr<Authenticator> CreateAuthenticator(
+    LoginStatusConsumer* consumer) {
+  return new MockAuthenticator(consumer, kUsername, kPassword);
+}
+
+scoped_refptr<Authenticator> CreateAuthenticatorNewUser(
+    LoginStatusConsumer* consumer) {
+  return new MockAuthenticator(consumer, kNewUsername, kPassword);
+}
+
+}  // namespace
+
 class ExistingUserControllerTest : public CrosInProcessBrowserTest {
  protected:
   ExistingUserControllerTest()
@@ -110,6 +128,8 @@ class ExistingUserControllerTest : public CrosInProcessBrowserTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     MockDBusThreadManager* mock_dbus_thread_manager =
         new MockDBusThreadManager;
+    EXPECT_CALL(*mock_dbus_thread_manager, GetSystemBus())
+        .WillRepeatedly(Return(reinterpret_cast<dbus::Bus*>(NULL)));
     DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
     CrosInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
     cros_mock_->InitStatusAreaMocks();
@@ -118,6 +138,9 @@ class ExistingUserControllerTest : public CrosInProcessBrowserTest {
     mock_network_library_ = cros_mock_->mock_network_library();
     EXPECT_CALL(*mock_network_library_, AddUserActionObserver(_))
         .Times(AnyNumber());
+    EXPECT_CALL(*mock_network_library_, LoadOncNetworks(_, _, _, _))
+        .WillRepeatedly(Return(true));
+
     MockSessionManagerClient* mock_session_manager_client =
         mock_dbus_thread_manager->mock_session_manager_client();
     EXPECT_CALL(*mock_session_manager_client, EmitLoginPromptReady())
@@ -220,36 +243,14 @@ class ExistingUserControllerTest : public CrosInProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(ExistingUserControllerTest);
 };
 
-scoped_refptr<Authenticator> CreateAuthenticator(
-    LoginStatusConsumer* consumer) {
-  return new MockAuthenticator(consumer, kUsername, kPassword);
-}
-
-scoped_refptr<Authenticator> CreateAuthenticatorNewUser(
-    LoginStatusConsumer* consumer) {
-  return new MockAuthenticator(consumer, kNewUsername, kPassword);
-}
-
-// These tests are failing under ASan, but not natively.
-// See http://crbug.com/126224
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_ExistingUserLogin DISABLED_ExistingUserLogin
-#define MAYBE_AutoEnrollAfterSignIn DISABLED_AutoEnrollAfterSignIn
-#define MAYBE_NewUserDontAutoEnrollAfterSignIn \
-    DISABLED_NewUserDontAutoEnrollAfterSignIn
-#else
-#define MAYBE_ExistingUserLogin ExistingUserLogin
-#define MAYBE_AutoEnrollAfterSignIn AutoEnrollAfterSignIn
-#define MAYBE_NewUserDontAutoEnrollAfterSignIn NewUserDontAutoEnrollAfterSignIn
-#endif  // defined(ADDRESS_SANITIZER)
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, MAYBE_ExistingUserLogin) {
+IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, ExistingUserLogin) {
   EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
       .Times(1);
   EXPECT_CALL(*mock_login_utils_, CreateAuthenticator(_))
       .Times(1)
       .WillOnce(WithArg<0>(Invoke(CreateAuthenticator)));
   EXPECT_CALL(*mock_login_utils_,
-              PrepareProfile(kUsername, _, kPassword, false, _, _, _))
+              PrepareProfile(kUsername, _, kPassword, _, _, _))
       .Times(1)
       .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                   &base::Callback<void(void)>::Run));
@@ -258,6 +259,8 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, MAYBE_ExistingUserLogin) {
                               mock_login_display_host_.get()))
       .Times(1);
   EXPECT_CALL(*mock_login_display_, OnLoginSuccess(kUsername))
+      .Times(1);
+  EXPECT_CALL(*mock_login_display_, SetUIEnabled(true))
       .Times(1);
   EXPECT_CALL(*mock_login_display_, OnFadeOut())
       .Times(1);
@@ -271,8 +274,7 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, MAYBE_ExistingUserLogin) {
   content::RunAllPendingInMessageLoop();
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
-                       MAYBE_AutoEnrollAfterSignIn) {
+IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, AutoEnrollAfterSignIn) {
   EXPECT_CALL(*mock_login_display_host_,
               StartWizard(WizardController::kEnterpriseEnrollmentScreenName, _))
       .Times(1);
@@ -283,13 +285,17 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
   EXPECT_CALL(*mock_user_manager_.user_manager(), IsCurrentUserNew())
       .Times(AnyNumber())
       .WillRepeatedly(Return(false));
+  // The UI should not be disabled if the enrollment screen is shown after
+  // the user signs in.
+  EXPECT_CALL(*mock_login_display_, SetUIEnabled(_))
+      .Times(0);
   existing_user_controller()->DoAutoEnrollment();
   existing_user_controller()->CompleteLogin(kUsername, kPassword);
   content::RunAllPendingInMessageLoop();
 }
 
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
-                       MAYBE_NewUserDontAutoEnrollAfterSignIn) {
+                       NewUserDontAutoEnrollAfterSignIn) {
   EXPECT_CALL(*mock_login_display_host_,
               StartWizard(WizardController::kEnterpriseEnrollmentScreenName, _))
       .Times(0);
@@ -304,7 +310,7 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
       .Times(1)
       .WillOnce(WithArg<0>(Invoke(CreateAuthenticatorNewUser)));
   EXPECT_CALL(*mock_login_utils_,
-              PrepareProfile(kNewUsername, _, kPassword, false, _, _, _))
+              PrepareProfile(kNewUsername, _, kPassword, _, _, _))
       .Times(1)
       .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                   &base::Callback<void(void)>::Run));
@@ -317,6 +323,17 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
   EXPECT_CALL(*mock_user_manager_.user_manager(), IsCurrentUserNew())
       .Times(AnyNumber())
       .WillRepeatedly(Return(true));
+
+  // The order of these expected calls matters: the UI if first disabled
+  // during the login sequence, and is enabled again after login completion.
+  Sequence uiEnabledSequence;
+  EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
+      .Times(1)
+      .InSequence(uiEnabledSequence);
+  EXPECT_CALL(*mock_login_display_, SetUIEnabled(true))
+      .Times(1)
+      .InSequence(uiEnabledSequence);
+
   existing_user_controller()->CompleteLogin(kNewUsername, kPassword);
   content::RunAllPendingInMessageLoop();
 }

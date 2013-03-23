@@ -7,8 +7,11 @@
 #include "base/logging.h"
 #include "base/string_piece.h"
 #include "ui/gfx/image/image.h"
-#include "webkit/glue/webkit_glue.h"
+#include "webkit/user_agent/user_agent.h"
+
+#if !defined(OS_IOS)
 #include "webkit/plugins/ppapi/host_globals.h"
+#endif
 
 namespace content {
 
@@ -35,7 +38,11 @@ const std::string& GetUserAgent(const GURL& url) {
 }
 
 webkit::ppapi::HostGlobals* GetHostGlobals() {
+#if defined(OS_IOS)
+  return NULL;
+#else
   return webkit::ppapi::HostGlobals::Get();
+#endif
 }
 
 ContentClient::ContentClient()
@@ -51,6 +58,10 @@ bool ContentClient::HasWebUIScheme(const GURL& url) const {
 
 bool ContentClient::CanHandleWhileSwappedOut(const IPC::Message& message) {
   return false;
+}
+
+std::string ContentClient::GetProduct() const {
+  return std::string();
 }
 
 std::string ContentClient::GetUserAgent() const {
@@ -72,14 +83,7 @@ gfx::Image& ContentClient::GetNativeImageNamed(int resource_id) const {
   return kEmptyImage;
 }
 
-#if defined(OS_WIN)
-bool ContentClient::SandboxPlugin(CommandLine* command_line,
-                                  sandbox::TargetPolicy* policy) {
-  return false;
-}
-#endif
-
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
 bool ContentClient::GetSandboxProfileForSandboxType(
     int sandbox_type,
     int* sandbox_profile_resource_id) const {

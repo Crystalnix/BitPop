@@ -15,6 +15,8 @@
 #include "ipc/ipc_sender.h"
 #include "media/video/video_decode_accelerator.h"
 
+namespace content {
+
 class GpuVideoDecodeAccelerator
     : public IPC::Listener,
       public IPC::Sender,
@@ -59,7 +61,7 @@ class GpuVideoDecodeAccelerator
 
  private:
   // Handlers for IPC messages.
-  void OnDecode(base::SharedMemoryHandle handle, int32 id, int32 size);
+  void OnDecode(base::SharedMemoryHandle handle, int32 id, uint32 size);
   void OnAssignPictureBuffers(
       const std::vector<int32>& buffer_ids,
       const std::vector<uint32>& texture_ids,
@@ -91,7 +93,12 @@ class GpuVideoDecodeAccelerator
   // Returns false if failed.
   base::Callback<bool(void)> make_context_current_;
 
+  // The texture target as requested by ProvidePictureBuffers().
+  uint32 texture_target_;
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(GpuVideoDecodeAccelerator);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_GPU_VIDEO_DECODE_ACCELERATOR_H_

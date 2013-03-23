@@ -159,6 +159,24 @@ class VaapiH264Decoder::DecodeSurface {
     return available_;
   }
 
+  bool used() {
+    return used_;
+  }
+
+  void set_used(bool used) {
+    DCHECK(!available_);
+    used_ = used;
+  }
+
+  bool at_client() {
+    return at_client_;
+  }
+
+  void set_at_client(bool at_client) {
+    DCHECK(!available_);
+    at_client_ = at_client;
+  }
+
   int32 input_id() {
     return input_id_;
   }
@@ -192,8 +210,14 @@ class VaapiH264Decoder::DecodeSurface {
   int width_;
   int height_;
 
-  // Available for decoding (data no longer used for reference or output).
+  // Available for decoding (data no longer used for reference or displaying).
+  // TODO(posciak): this is almost surely not needed anymore. Rethink and
+  // remove if possible.
   bool available_;
+  // Used for decoding.
+  bool used_;
+  // Whether the surface has been sent to client for display.
+  bool at_client_;
 
   // PicOrderCount
   int poc_;
@@ -224,6 +248,8 @@ VaapiH264Decoder::DecodeSurface::DecodeSurface(
       width_(width),
       height_(height),
       available_(false),
+      used_(false),
+      at_client_(false),
       poc_(0),
       x_pixmap_(0),
       glx_pixmap_(0) {
@@ -274,35 +300,41 @@ VaapiH264Decoder::DecodeSurface::~DecodeSurface() {
 
   if (x_pixmap_)
     XFreePixmap(x_display_, x_pixmap_);
+  XSync(x_display_, False);  // Needed to work around buggy vdpau-driver.
 }
 
 void VaapiH264Decoder::DecodeSurface::Acquire(int32 input_id, int poc) {
   DCHECK_EQ(available_, true);
   available_ = false;
+  at_client_ = false;
+  used_ = true;
   input_id_ = input_id;
   poc_ = poc;
 }
 
 void VaapiH264Decoder::DecodeSurface::Release() {
+  DCHECK_EQ(available_, false);
   available_ = true;
+  used_ = false;
+  at_client_ = false;
 }
 
 bool VaapiH264Decoder::DecodeSurface::Sync() {
   if (!make_context_current_.Run())
     return false;
 
+  // Wait for the data to be put into the buffer so it'd ready for output.
+  VAStatus va_res = VAAPI_SyncSurface(va_display_, va_surface_id_);
+  VA_SUCCESS_OR_RETURN(va_res, "Failed syncing decoded picture", false);
+
   // Put the decoded data into XPixmap bound to the texture.
-  VAStatus va_res = VAAPI_PutSurface(va_display_,
-                                     va_surface_id_, x_pixmap_,
-                                     0, 0, width_, height_,
-                                     0, 0, width_, height_,
-                                     NULL, 0, 0);
+  va_res = VAAPI_PutSurface(va_display_,
+                            va_surface_id_, x_pixmap_,
+                            0, 0, width_, height_,
+                            0, 0, width_, height_,
+                            NULL, 0, 0);
   VA_SUCCESS_OR_RETURN(va_res, "Failed putting decoded picture to texture",
                        false);
-
-  // Wait for the data to be put into the buffer so it'd ready for output.
-  va_res = VAAPI_SyncSurface(va_display_, va_surface_id_);
-  VA_SUCCESS_OR_RETURN(va_res, "Failed syncing decoded picture", false);
 
   return true;
 }
@@ -324,6 +356,7 @@ VaapiH264Decoder::VaapiH264Decoder() {
   state_ = kUninitialized;
   num_available_decode_surfaces_ = 0;
   va_context_created_ = false;
+  last_output_poc_ = 0;
 }
 
 VaapiH264Decoder::~VaapiH264Decoder() {
@@ -364,16 +397,13 @@ void VaapiH264Decoder::Reset() {
     // Must be incremented before UnassignSurfaceFromPoC as this call
     // invalidates |it|.
     ++it;
-    DecodeSurface *dec_surface = UnassignSurfaceFromPoC(poc);
-    if (dec_surface) {
-      dec_surface->Release();
-      ++num_available_decode_surfaces_;
-    }
+    UnassignSurfaceFromPoC(poc);
   }
   DCHECK(poc_to_decode_surfaces_.empty());
 
   dpb_.Clear();
   parser_.Reset();
+  last_output_poc_ = 0;
 
   // Still initialized and ready to decode, unless called from constructor,
   // which will change it back.
@@ -462,10 +492,12 @@ bool VaapiH264Decoder::Initialize(
     Display* x_display,
     GLXContext glx_context,
     const base::Callback<bool(void)>& make_context_current,
-    const OutputPicCB& output_pic_cb) {
+    const OutputPicCB& output_pic_cb,
+    const SubmitDecodeCB& submit_decode_cb) {
   DCHECK_EQ(state_, kUninitialized);
 
   output_pic_cb_ = output_pic_cb;
+  submit_decode_cb_ = submit_decode_cb;
 
   x_display_ = x_display;
   make_context_current_ = make_context_current;
@@ -518,12 +550,22 @@ bool VaapiH264Decoder::Initialize(
 
 void VaapiH264Decoder::ReusePictureBuffer(int32 picture_buffer_id) {
   DecodeSurfaces::iterator it = decode_surfaces_.find(picture_buffer_id);
-  if (it == decode_surfaces_.end() || it->second->available()) {
-    DVLOG(1) << "Asked to reuse an invalid/already available surface";
+  if (it == decode_surfaces_.end()) {
+    DVLOG(1) << "Asked to reuse an invalid surface "
+             << picture_buffer_id;
     return;
   }
-  it->second->Release();
-  ++num_available_decode_surfaces_;
+  if (it->second->available()) {
+    DVLOG(1) << "Asked to reuse an already available surface "
+             << picture_buffer_id;
+    return;
+  }
+
+  it->second->set_at_client(false);
+  if (!it->second->used()) {
+    it->second->Release();
+    ++num_available_decode_surfaces_;
+  }
 }
 
 bool VaapiH264Decoder::AssignPictureBuffer(int32 picture_buffer_id,
@@ -714,19 +756,23 @@ bool VaapiH264Decoder::AssignSurfaceToPoC(int poc) {
 
 // Can only be called when all surfaces are already bound
 // to textures (cannot be run at the same time as AssignPictureBuffer).
-VaapiH264Decoder::DecodeSurface* VaapiH264Decoder::UnassignSurfaceFromPoC(
-    int poc) {
+void VaapiH264Decoder::UnassignSurfaceFromPoC(int poc) {
   DecodeSurface* dec_surface;
   POCToDecodeSurfaces::iterator it = poc_to_decode_surfaces_.find(poc);
   if (it == poc_to_decode_surfaces_.end()) {
-    DVLOG(1) << "Asked to unassign an unassigned POC";
-    return NULL;
+    DVLOG(1) << "Asked to unassign an unassigned POC " << poc;
+    return;
   }
   dec_surface = it->second;
   DVLOG(4) << "POC " << poc << " no longer using surface "
            << dec_surface->va_surface_id();
   poc_to_decode_surfaces_.erase(it);
-  return dec_surface;
+
+  dec_surface->set_used(false);
+  if (!dec_surface->at_client()) {
+    dec_surface->Release();
+    ++num_available_decode_surfaces_;
+  }
 }
 
 // Fill a VAPictureParameterBufferH264 to be later sent to the HW decoder.
@@ -953,10 +999,10 @@ bool VaapiH264Decoder::SendVASliceParam(H264SliceHeader* slice_hdr) {
 
   int i;
   H264Picture::PtrVector::iterator it;
-  for (it = ref_pic_list0_.begin(), i = 0; it != ref_pic_list0_.end();
+  for (it = ref_pic_list0_.begin(), i = 0; it != ref_pic_list0_.end() && *it;
        ++it, ++i)
     FillVAPicture(&slice_param.RefPicList0[i], *it);
-  for (it = ref_pic_list1_.begin(), i = 0; it != ref_pic_list1_.end();
+  for (it = ref_pic_list1_.begin(), i = 0; it != ref_pic_list1_.end() && *it;
        ++it, ++i)
     FillVAPicture(&slice_param.RefPicList1[i], *it);
 
@@ -1002,6 +1048,38 @@ bool VaapiH264Decoder::QueueSlice(H264SliceHeader* slice_hdr) {
   return true;
 }
 
+bool VaapiH264Decoder::DecodePicture() {
+  DCHECK(!frame_ready_at_hw_);
+  DCHECK(curr_pic_.get());
+
+  // Find the surface associated with the picture to be decoded.
+  DecodeSurface* dec_surface =
+      poc_to_decode_surfaces_[curr_pic_->pic_order_cnt];
+  DVLOG(4) << "Decoding POC " << curr_pic_->pic_order_cnt
+           << " into surface " << dec_surface->va_surface_id();
+
+  DVLOG(4) << "Pending VA bufs to commit: " << pending_va_bufs_.size();
+  DVLOG(4) << "Pending slice bufs to commit: " << pending_slice_bufs_.size();
+
+  DCHECK(pending_slice_bufs_.size());
+  scoped_ptr<std::queue<VABufferID> > va_bufs(new std::queue<VABufferID>());
+  std::swap(*va_bufs, pending_va_bufs_);
+  scoped_ptr<std::queue<VABufferID> > slice_bufs(new std::queue<VABufferID>());
+  std::swap(*slice_bufs, pending_slice_bufs_);
+
+  // Fire up a parallel job on the GPU on the ChildThread to decode and put
+  // the decoded/converted/scaled picture into the pixmap.
+  // Callee will take care of freeing the buffer queues.
+  submit_decode_cb_.Run(
+      dec_surface->picture_buffer_id(), va_bufs.Pass(), slice_bufs.Pass());
+
+  // Used to notify clients that we had sufficient data to start decoding
+  // a new frame.
+  frame_ready_at_hw_ = true;
+
+  return true;
+}
+
 void VaapiH264Decoder::DestroyBuffers(size_t num_va_buffers,
                                       const VABufferID* va_buffers) {
   for (size_t i = 0; i < num_va_buffers; ++i) {
@@ -1012,36 +1090,32 @@ void VaapiH264Decoder::DestroyBuffers(size_t num_va_buffers,
 
 // TODO(posciak) start using vaMapBuffer instead of vaCreateBuffer wherever
 // possible.
-
-bool VaapiH264Decoder::DecodePicture() {
-  DCHECK(!frame_ready_at_hw_);
-  DCHECK(curr_pic_.get());
+bool VaapiH264Decoder::SubmitDecode(
+    int32 picture_buffer_id,
+    scoped_ptr<std::queue<VABufferID> > va_bufs,
+    scoped_ptr<std::queue<VABufferID> > slice_bufs) {
 
   static const size_t kMaxVABuffers = 32;
-  DCHECK_LE(pending_va_bufs_.size(), kMaxVABuffers);
-  DCHECK_LE(pending_slice_bufs_.size(), kMaxVABuffers);
+  DCHECK_LE(va_bufs->size(), kMaxVABuffers);
+  DCHECK_LE(slice_bufs->size(), kMaxVABuffers);
 
-  DVLOG(4) << "Pending VA bufs to commit: " << pending_va_bufs_.size();
-  DVLOG(4) << "Pending slice bufs to commit: " << pending_slice_bufs_.size();
-
-  // Find the surface associated with the picture to be decoded.
-  DCHECK(pending_slice_bufs_.size());
-  DecodeSurface* dec_surface =
-      poc_to_decode_surfaces_[curr_pic_->pic_order_cnt];
-  DVLOG(4) << "Decoding POC " << curr_pic_->pic_order_cnt
-           << " into surface " << dec_surface->va_surface_id();
+  DecodeSurfaces::iterator it = decode_surfaces_.find(picture_buffer_id);
+  if (it == decode_surfaces_.end()) {
+    DVLOG(1) << "Asked to put an invalid buffer";
+    return false;
+  }
 
   // Get ready to decode into surface.
   VAStatus va_res = VAAPI_BeginPicture(va_display_, va_context_id_,
-                                       dec_surface->va_surface_id());
+                                       it->second->va_surface_id());
   VA_SUCCESS_OR_RETURN(va_res, "vaBeginPicture failed", false);
 
   // Put buffer IDs for pending parameter buffers into va_buffers[].
   VABufferID va_buffers[kMaxVABuffers];
-  size_t num_va_buffers = pending_va_bufs_.size();
+  size_t num_va_buffers = va_bufs->size();
   for (size_t i = 0; i < num_va_buffers && i < kMaxVABuffers; ++i) {
-    va_buffers[i] = pending_va_bufs_.front();
-    pending_va_bufs_.pop();
+    va_buffers[i] = va_bufs->front();
+    va_bufs->pop();
   }
   base::Closure va_buffers_callback =
       base::Bind(&VaapiH264Decoder::DestroyBuffers, base::Unretained(this),
@@ -1057,10 +1131,10 @@ bool VaapiH264Decoder::DecodePicture() {
 
   // Put buffer IDs for pending slice data buffers into slice_buffers[].
   VABufferID slice_buffers[kMaxVABuffers];
-  size_t num_slice_buffers = pending_slice_bufs_.size();
+  size_t num_slice_buffers = slice_bufs->size();
   for (size_t i = 0; i < num_slice_buffers && i < kMaxVABuffers; ++i) {
-    slice_buffers[i] = pending_slice_bufs_.front();
-    pending_slice_bufs_.pop();
+    slice_buffers[i] = slice_bufs->front();
+    slice_bufs->pop();
   }
   base::Closure va_slices_callback =
       base::Bind(&VaapiH264Decoder::DestroyBuffers, base::Unretained(this),
@@ -1079,10 +1153,10 @@ bool VaapiH264Decoder::DecodePicture() {
   va_res = VAAPI_EndPicture(va_display_, va_context_id_);
   VA_SUCCESS_OR_RETURN(va_res, "vaEndPicture failed", false);
 
-  // Used to notify clients that we had sufficient data to start decoding
-  // a new frame.
-  frame_ready_at_hw_ = true;
-  return true;
+  DVLOG(3) << "Will output from VASurface " << it->second->va_surface_id()
+           << " to texture id " << it->second->texture_id();
+
+  return it->second->Sync();
 }
 
 
@@ -1506,7 +1580,7 @@ bool VaapiH264Decoder::ModifyReferencePicList(H264SliceHeader *slice_hdr,
   int pic_num_lx_no_wrap;
   int pic_num_lx;
   bool done = false;
-  H264Picture *pic ;
+  H264Picture* pic;
   for (int i = 0; i < H264SliceHeader::kRefListModSize && !done; ++i) {
     switch (list_mod->modification_of_pic_nums_idc) {
       case 0:
@@ -1562,7 +1636,8 @@ bool VaapiH264Decoder::ModifyReferencePicList(H264SliceHeader *slice_hdr,
                   H264SliceHeader::kRefListModSize);
         pic = dpb_.GetLongRefPicByLongTermPicNum(list_mod->long_term_pic_num);
         if (!pic) {
-          DVLOG(1) << "Malformed stream, no pic num " << pic_num_lx;
+          DVLOG(1) << "Malformed stream, no pic num "
+                   << list_mod->long_term_pic_num;
           return false;
         }
         ShiftRightAndInsert(ref_pic_listx, ref_idx_lx,
@@ -1601,36 +1676,24 @@ bool VaapiH264Decoder::ModifyReferencePicList(H264SliceHeader *slice_hdr,
   return true;
 }
 
-bool VaapiH264Decoder::PutPicToTexture(int32 picture_buffer_id) {
-  DecodeSurfaces::iterator it = decode_surfaces_.find(picture_buffer_id);
-  if (it == decode_surfaces_.end()) {
-    DVLOG(1) << "Asked to put an invalid buffer";
-    return false;
-  }
-
-  DVLOG(3) << "Will output from VASurface " << it->second->va_surface_id()
-           << " to texture id " << it->second->texture_id();
-
-  return it->second->Sync();
-}
-
 bool VaapiH264Decoder::OutputPic(H264Picture* pic) {
-  // No longer need to keep POC->surface mapping, since for decoder this POC
-  // is finished with. When the client returns this surface via
-  // ReusePictureBuffer(), it will be marked back as available for use.
   DCHECK(!pic->outputted);
   pic->outputted = true;
-  DecodeSurface* dec_surface = UnassignSurfaceFromPoC(pic->pic_order_cnt);
-  if (!dec_surface)
+  POCToDecodeSurfaces::iterator iter = poc_to_decode_surfaces_.find(
+      pic->pic_order_cnt);
+  if (iter == poc_to_decode_surfaces_.end())
     return false;
+  DecodeSurface* dec_surface = iter->second;
 
-  // Notify the client that a picture can be output. The decoded picture may
-  // not be synced with texture contents yet at this point. The client has
-  // to use PutPicToTexture() to ensure that.
-  DVLOG(4) << "Posting output task for input_id: " << dec_surface->input_id()
+  dec_surface->set_at_client(true);
+  last_output_poc_ = pic->pic_order_cnt;
+  // Notify the client that a picture can be output.
+  DVLOG(4) << "Posting output task for POC: " << pic->pic_order_cnt
+           << " input_id: " << dec_surface->input_id()
            << "output_id: " << dec_surface->picture_buffer_id();
   output_pic_cb_.Run(dec_surface->input_id(),
                      dec_surface->picture_buffer_id());
+
   return true;
 }
 
@@ -1650,8 +1713,13 @@ bool VaapiH264Decoder::Flush() {
     }
   }
 
-  // And clear DPB contents.
+  // And clear DPB contents, marking the pictures as unused first.
+  // The surfaces will be released after they have been displayed and returned.
+  for (H264DPB::Pictures::iterator it = dpb_.begin(); it != dpb_.end(); ++it) {
+    UnassignSurfaceFromPoC((*it)->pic_order_cnt);
+  }
   dpb_.Clear();
+  last_output_poc_ = 0;
 
   return true;
 }
@@ -1668,6 +1736,7 @@ bool VaapiH264Decoder::StartNewFrame(H264SliceHeader* slice_hdr) {
         return false;
     }
     dpb_.Clear();
+    last_output_poc_ = 0;
   }
 
   // curr_pic_ should have either been added to DPB or discarded when finishing
@@ -1897,7 +1966,12 @@ bool VaapiH264Decoder::FinishPicture() {
   prev_has_memmgmnt5_ = curr_pic_->mem_mgmt_5;
   prev_frame_num_offset_ = curr_pic_->frame_num_offset;
 
-  // Remove unused (for reference or later output) pictures from DPB.
+  // Remove unused (for reference or later output) pictures from DPB, marking
+  // them as such.
+  for (H264DPB::Pictures::iterator it = dpb_.begin(); it != dpb_.end(); ++it) {
+    if ((*it)->outputted && !(*it)->ref)
+      UnassignSurfaceFromPoC((*it)->pic_order_cnt);
+  }
   dpb_.RemoveUnused();
 
   DVLOG(4) << "Finishing picture, DPB entries: " << dpb_.size()
@@ -1911,57 +1985,52 @@ bool VaapiH264Decoder::FinishPicture() {
   // without having to store it for future reference.
   scoped_ptr<H264Picture> pic(curr_pic_.release());
 
-  if (dpb_.IsFull()) {
-    // DPB is full, we have to make space for the new picture.
-    // Get all pictures that haven't been outputted yet.
-    H264Picture::PtrVector not_outputted;
-    dpb_.GetNotOutputtedPicsAppending(not_outputted);
-    std::sort(not_outputted.begin(), not_outputted.end(), POCAscCompare());
-    H264Picture::PtrVector::iterator output_candidate = not_outputted.begin();
+  // Get all pictures that haven't been outputted yet.
+  H264Picture::PtrVector not_outputted;
+  // TODO(posciak): pass as pointer, not reference (violates coding style).
+  dpb_.GetNotOutputtedPicsAppending(not_outputted);
+  // Include the one we've just decoded.
+  not_outputted.push_back(pic.get());
+  // Sort in output order.
+  std::sort(not_outputted.begin(), not_outputted.end(), POCAscCompare());
 
-    // Keep outputting pictures until we can either output the picture being
-    // finished and discard it (if it is not a reference picture), or until
-    // we can discard an older picture that was just waiting for output and
-    // is not a reference picture, thus making space for the current one.
-    while (dpb_.IsFull()) {
-      // Maybe outputted enough to output current picture.
-      if (!pic->ref && (output_candidate == not_outputted.end() ||
-          pic->pic_order_cnt < (*output_candidate)->pic_order_cnt)) {
-        // pic is not a reference picture and no preceding pictures are
-        // waiting for output in DPB, so it can be outputted and discarded
-        // without storing in DPB.
-        if (!OutputPic(pic.get()))
-          return false;
+  // Try to output as many pictures as we can. A picture can be output
+  // if its POC is next after the previously outputted one (which means
+  // last_output_poc_ + 2, because POCs are incremented by 2 to accommodate
+  // fields when decoding interleaved streams). POC can also be equal to
+  // last outputted picture's POC when it wraps around back to 0.
+  // If the outputted picture is not a reference picture, it doesn't have
+  // to remain in the DPB and can be removed.
+  H264Picture::PtrVector::iterator output_candidate = not_outputted.begin();
+  for (; output_candidate != not_outputted.end() &&
+      (*output_candidate)->pic_order_cnt <= last_output_poc_ + 2;
+      ++output_candidate) {
+    DCHECK_GE((*output_candidate)->pic_order_cnt, last_output_poc_);
+    if (!OutputPic(*output_candidate))
+      return false;
 
-        // Managed to output current picture, return without adding to DPB.
-        // This will release current picture (stored in pic).
-        return true;
-      }
-
-      // Couldn't output current picture, so try to output the lowest PoC
-      // from DPB.
-      if (output_candidate != not_outputted.end()) {
-        if (!OutputPic(*output_candidate))
-          return false;
-
-        // If outputted picture wasn't a reference picture, it can be removed.
-        if (!(*output_candidate)->ref)
-          dpb_.RemoveByPOC((*output_candidate)->pic_order_cnt);
-      } else {
-        // Couldn't output current pic and couldn't do anything
-        // with existing pictures in DPB, so we can't make space.
-        // This should not happen.
-        DVLOG(1) << "Could not free up space in DPB!";
-        return false;
-      }
-
-      ++output_candidate;
+    if (!(*output_candidate)->ref) {
+      // Current picture hasn't been inserted into DPB yet, so don't remove it
+      // if we managed to output it immediately.
+      if (*output_candidate != pic.get())
+        dpb_.RemoveByPOC((*output_candidate)->pic_order_cnt);
+      // Mark as unused.
+      UnassignSurfaceFromPoC((*output_candidate)->pic_order_cnt);
     }
   }
 
-  // Store current picture for later output and/or reference (ownership now
-  // with the DPB).
-  dpb_.StorePic(pic.release());
+  // If we haven't managed to output the picture that we just decoded, or if
+  // it's a reference picture, we have to store it in DPB.
+  if (!pic->outputted || pic->ref) {
+    if (dpb_.IsFull()) {
+      // If we haven't managed to output anything to free up space in DPB
+      // to store this picture, it's an error in the stream.
+      DVLOG(1) << "Could not free up space in DPB!";
+      return false;
+    }
+
+    dpb_.StorePic(pic.release());
+  }
 
   return true;
 }
@@ -2072,6 +2141,11 @@ VaapiH264Decoder::DecResult VaapiH264Decoder::DecodeInitial(int32 input_id) {
   curr_input_id_ = input_id;
 
   while (1) {
+    if (state_ == kAfterReset && num_available_decode_surfaces_ == 0) {
+      DVLOG(4) << "No output surfaces available";
+      return kNoOutputAvailable;
+    }
+
     // Get next NALU looking for SPS or IDR if after reset.
     res = parser_.AdvanceToNextNALU(&nalu);
     if (res == H264Parser::kEOStream) {
@@ -2158,7 +2232,7 @@ VaapiH264Decoder::DecResult VaapiH264Decoder::DecodeOneFrame(int32 input_id) {
   // Note: this may drop some already decoded frames if there are errors
   // further in the stream, but we are OK with that.
   while (1) {
-    if (num_available_decode_surfaces_ < 1) {
+    if (num_available_decode_surfaces_ == 0) {
       DVLOG(4) << "No output surfaces available";
       return kNoOutputAvailable;
     }

@@ -15,6 +15,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
+#include "chrome/browser/extensions/extension_warning_set.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/auth.h"
 #include "net/http/http_request_headers.h"
@@ -68,6 +69,18 @@ struct ResponseCookie {
   DISALLOW_COPY_AND_ASSIGN(ResponseCookie);
 };
 
+// Data container for FilterResponseCookies as defined in the declarative
+// WebRequest API definition.
+struct FilterResponseCookie : ResponseCookie {
+  FilterResponseCookie();
+  ~FilterResponseCookie();
+  scoped_ptr<int> age_lower_bound;
+  scoped_ptr<int> age_upper_bound;
+  scoped_ptr<bool> session_cookie;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FilterResponseCookie);
+};
+
 enum CookieModificationType {
   ADD,
   EDIT,
@@ -91,7 +104,7 @@ struct ResponseCookieModification {
   ~ResponseCookieModification();
   CookieModificationType type;
   // Used for EDIT and REMOVE.
-  scoped_ptr<ResponseCookie> filter;
+  scoped_ptr<FilterResponseCookie> filter;
   // Used for ADD and EDIT.
   scoped_ptr<ResponseCookie> modification;
  private:
@@ -184,7 +197,7 @@ EventResponseDelta* CalculateOnHeadersReceivedDelta(
     const std::string& extension_id,
     const base::Time& extension_install_time,
     bool cancel,
-    net::HttpResponseHeaders* old_response_headers,
+    const net::HttpResponseHeaders* old_response_headers,
     ResponseHeaders* new_response_headers);
 // Destructively moves the auth credentials from |auth_credentials| to the
 // returned EventResponseDelta.
@@ -211,7 +224,7 @@ void MergeCancelOfResponses(
 void MergeOnBeforeRequestResponses(
     const EventResponseDeltas& deltas,
     GURL* new_url,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Modifies the "Cookie" header in |request_headers| according to
 // |deltas.request_cookie_modifications|. Conflicts are currently ignored
@@ -219,14 +232,14 @@ void MergeOnBeforeRequestResponses(
 void MergeCookiesInOnBeforeSendHeadersResponses(
     const EventResponseDeltas& deltas,
     net::HttpRequestHeaders* request_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Modifies the headers in |request_headers| according to |deltas|. Conflicts
 // are tried to be resolved.
 void MergeOnBeforeSendHeadersResponses(
     const EventResponseDeltas& deltas,
     net::HttpRequestHeaders* request_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Modifies the "Set-Cookie" headers in |override_response_headers| according to
 // |deltas.response_cookie_modifications|. If |override_response_headers| is
@@ -236,7 +249,7 @@ void MergeCookiesInOnHeadersReceivedResponses(
     const EventResponseDeltas& deltas,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Stores a copy of |original_response_header| into |override_response_headers|
 // that is modified according to |deltas|. If |deltas| does not instruct to
@@ -245,7 +258,7 @@ void MergeOnHeadersReceivedResponses(
     const EventResponseDeltas& deltas,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Merge the responses of blocked onAuthRequired handlers. The first
 // registered listener that supplies authentication credentials in a response,
@@ -256,7 +269,7 @@ void MergeOnHeadersReceivedResponses(
 bool MergeOnAuthRequiredResponses(
     const EventResponseDeltas& deltas,
     net::AuthCredentials* auth_credentials,
-    std::set<std::string>* conflicting_extensions,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 
 // Returns whether |type| is a ResourceType that is handled by the web request
@@ -273,11 +286,8 @@ const char* ResourceTypeToString(ResourceType::Type type);
 bool ParseResourceType(const std::string& type_str,
                        ResourceType::Type* type);
 
-// Returns whether |extension| may access |url| based on host permissions.
-// In addition to that access is granted to about: URLs and extension URLs
-// that are in the scope of |extension|.
-bool CanExtensionAccessURL(const extensions::Extension* extension,
-                           const GURL& url);
+// Triggers clearing each renderer's in-memory cache the next time it navigates.
+void ClearCacheOnNavigation();
 
 }  // namespace extension_web_request_api_helpers
 

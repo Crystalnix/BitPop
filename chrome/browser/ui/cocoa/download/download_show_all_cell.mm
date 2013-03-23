@@ -6,7 +6,6 @@
 
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/download/background_theme.h"
-#import "chrome/browser/ui/cocoa/image_utils.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "grit/theme_resources.h"
 
@@ -103,7 +102,7 @@ const CGFloat kOuterStrokeWidth = 1;
   NSRect drawFrame = NSInsetRect(cellFrame, 1.5, 1.5);
   NSRect innerFrame = NSInsetRect(cellFrame, 2, 2);
 
-  const float radius = 5;
+  const float radius = 3;
   NSWindow* window = [controlView window];
   BOOL active = [window isKeyWindow] || [window isMainWindow];
 
@@ -114,6 +113,9 @@ const CGFloat kOuterStrokeWidth = 1;
   // the superclass into drawing what we want.
   ui::ThemeProvider* themeProvider =
       [[[self controlView] window] themeProvider];
+  if (!themeProvider)
+    return;
+
   bool isDefaultTheme =
       !themeProvider->HasCustomImage(IDR_THEME_BUTTON_BACKGROUND);
 
@@ -162,7 +164,8 @@ const CGFloat kOuterStrokeWidth = 1;
                   fromRect:NSZeroRect
                  operation:NSCompositeSourceOver
                   fraction:[self isEnabled] ? 1.0 : 0.5
-              neverFlipped:YES];
+            respectFlipped:YES
+                     hints:nil];
 }
 
 - (NSRect)imageRectForBounds:(NSRect)cellFrame {

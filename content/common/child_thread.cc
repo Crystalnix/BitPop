@@ -14,11 +14,11 @@
 #include "content/common/child_histogram_message_filter.h"
 #include "content/common/child_process.h"
 #include "content/common/child_process_messages.h"
-#include "content/common/child_trace_message_filter.h"
 #include "content/common/fileapi/file_system_dispatcher.h"
 #include "content/common/quota_dispatcher.h"
 #include "content/common/resource_dispatcher.h"
 #include "content/common/socket_stream_dispatcher.h"
+#include "content/components/tracing/child_trace_message_filter.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
@@ -30,9 +30,9 @@
 #include "content/common/handle_enumerator_win.h"
 #endif
 
-using content::ResourceDispatcher;
 using tracked_objects::ThreadData;
 
+namespace content {
 namespace {
 
 // How long to wait for a connection to the browser process before giving up.
@@ -111,11 +111,12 @@ void ChildThread::Init() {
 
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
-  histogram_message_filter_ = new content::ChildHistogramMessageFilter();
+  histogram_message_filter_ = new ChildHistogramMessageFilter();
 
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
-  channel_->AddFilter(new ChildTraceMessageFilter());
+  channel_->AddFilter(new ChildTraceMessageFilter(
+      ChildProcess::current()->io_message_loop_proxy()));
 
 #if defined(OS_POSIX)
   // Check that --process-type is specified so we don't do this in unit tests
@@ -306,8 +307,8 @@ void ChildThread::OnGetChildProfilerData(int sequence_number) {
 
 void ChildThread::OnDumpHandles() {
 #if defined(OS_WIN)
-  scoped_refptr<content::HandleEnumerator> handle_enum(
-      new content::HandleEnumerator(
+  scoped_refptr<HandleEnumerator> handle_enum(
+      new HandleEnumerator(
           CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kAuditAllHandles)));
   handle_enum->EnumerateHandles();
@@ -356,3 +357,5 @@ void ChildThread::EnsureConnected() {
   LOG(INFO) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
 }
+
+}  // namespace content

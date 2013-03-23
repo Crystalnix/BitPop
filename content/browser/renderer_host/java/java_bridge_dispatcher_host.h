@@ -5,18 +5,20 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_JAVA_JAVA_BRIDGE_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_RENDERER_HOST_JAVA_JAVA_BRIDGE_DISPATCHER_HOST_H_
 
+#include <vector>
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
+#include "content/common/npobject_stub.h"
 #include "content/public/browser/render_view_host_observer.h"
 
-class NPChannelBase;
 class RouteIDGenerator;
 struct NPObject;
-struct NPVariant_Param;
 
 namespace content {
+class NPChannelBase;
 class RenderViewHost;
-}
+struct NPVariant_Param;
 
 // This class handles injecting Java objects into a single RenderView. The Java
 // object itself lives in the browser process on a background thread, while a
@@ -24,10 +26,10 @@ class RenderViewHost;
 // for each RenderViewHost.
 class JavaBridgeDispatcherHost
     : public base::RefCountedThreadSafe<JavaBridgeDispatcherHost>,
-      public content::RenderViewHostObserver {
+      public RenderViewHostObserver {
  public:
   // We hold a weak pointer to the RenderViewhost. It must outlive this object.
-  JavaBridgeDispatcherHost(content::RenderViewHost* render_view_host);
+  JavaBridgeDispatcherHost(RenderViewHost* render_view_host);
 
   // Injects |object| into the main frame of the corresponding RenderView. A
   // proxy object is created in the renderer and when the main frame's window
@@ -45,7 +47,7 @@ class JavaBridgeDispatcherHost
   // The IPC macros require this to be public.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual void RenderViewHostDestroyed(
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      RenderViewHost* render_view_host) OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<JavaBridgeDispatcherHost>;
@@ -63,8 +65,11 @@ class JavaBridgeDispatcherHost
 
   scoped_refptr<NPChannelBase> channel_;
   bool is_renderer_initialized_;
+  std::vector<base::WeakPtr<NPObjectStub> > stubs_;
 
   DISALLOW_COPY_AND_ASSIGN(JavaBridgeDispatcherHost);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_JAVA_JAVA_BRIDGE_DISPATCHER_HOST_H_

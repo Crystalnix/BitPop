@@ -1,12 +1,10 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 /* This file defines styles for form controls. The order of rule blocks is
  * important as there are some rules with equal specificity that rely on order
- * as a tiebreaker. These are marked with OVERRIDE.
- */
+ * as a tiebreaker. These are marked with OVERRIDE. */
 
 /* Default state **************************************************************/
 
@@ -35,10 +33,6 @@ input[type='radio'] {
 select {
   min-height: 2em;
   min-width: 4em;
-<if expr="pp_ifdef('chromeos')">
-  /* Without this rule, chromeos button text is too high on the button. */
-  padding-top: 3px;
-</if>
 <if expr="is_win">
   /* The following platform-specific rule is necessary to get adjacent
    * buttons, text inputs, and so forth to align on their borders while also
@@ -107,10 +101,6 @@ textarea {
   /* For better alignment between adjacent buttons and inputs. */
   padding-bottom: 4px;
 </if>
-<if expr="pp_ifdef('chromeos')">
-  /* For better alignment between adjacent buttons and inputs. */
-  padding-bottom: 2px;
-</if>
 }
 
 input[type='search'] {
@@ -118,6 +108,12 @@ input[type='search'] {
   /* NOTE: Keep a relatively high min-width for this so we don't obscure the end
    * of the default text in relatively spacious languages (i.e. German). */
   min-width: 160px;
+}
+
+/* Remove when https://bugs.webkit.org/show_bug.cgi?id=51499 is fixed.
+ * TODO(dbeam): are there more types that would benefit from this? */
+input[type='search']::-webkit-textfield-decoration-container {
+  direction: inherit;
 }
 
 /* Checked ********************************************************************/
@@ -291,14 +287,11 @@ input:disabled:-webkit-any([type='password'],
  *   </div>
  */
 
-.checkbox,
-.radio {
-  margin: 0.65em 0;
-}
-
 :-webkit-any(.checkbox, .radio) label {
   /* Don't expand horizontally: <http://crbug.com/112091>. */
   display: -webkit-inline-box;
+  padding-bottom: 7px;
+  padding-top: 7px;
 }
 
 :-webkit-any(.checkbox, .radio) label input ~ span {

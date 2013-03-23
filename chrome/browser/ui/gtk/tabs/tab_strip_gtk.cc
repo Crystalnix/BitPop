@@ -29,7 +29,6 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/tabs/dragged_tab_controller_gtk.h"
 #include "chrome/browser/ui/gtk/tabs/tab_strip_menu_controller.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -858,10 +857,10 @@ void TabStripGtk::UpdateLoadingAnimations() {
       --index;
     } else {
       TabRendererGtk::AnimationState state;
-      TabContents* contents = model_->GetTabContentsAt(index);
-      if (!contents || !contents->web_contents()->IsLoading()) {
+      content::WebContents* web_contents = model_->GetWebContentsAt(index);
+      if (!web_contents|| !web_contents->IsLoading()) {
         state = TabGtk::ANIMATION_NONE;
-      } else if (contents->web_contents()->IsWaitingForResponse()) {
+      } else if (web_contents->IsWaitingForResponse()) {
         state = TabGtk::ANIMATION_WAITING;
       } else {
         state = TabGtk::ANIMATION_LOADING;
@@ -974,7 +973,7 @@ GtkWidget* TabStripGtk::GetWidgetForViewID(ViewID view_id) {
 ////////////////////////////////////////////////////////////////////////////////
 // TabStripGtk, TabStripModelObserver implementation:
 
-void TabStripGtk::TabInsertedAt(TabContents* contents,
+void TabStripGtk::TabInsertedAt(WebContents* contents,
                                 int index,
                                 bool foreground) {
   TRACE_EVENT0("ui::gtk", "TabStripGtk::TabInsertedAt");
@@ -991,8 +990,7 @@ void TabStripGtk::TabInsertedAt(TabContents* contents,
   // has the Tab already constructed and we can just insert it into our list
   // again.
   if (IsDragSessionActive()) {
-    tab = drag_controller_->GetDraggedTabForContents(
-        contents->web_contents());
+    tab = drag_controller_->GetDraggedTabForContents(contents);
     if (tab) {
       // If the Tab was detached, it would have been animated closed but not
       // removed, so we need to reset this property.
@@ -1016,7 +1014,7 @@ void TabStripGtk::TabInsertedAt(TabContents* contents,
   if (!contains_tab) {
     TabData d = { tab, gfx::Rect() };
     tab_data_.insert(tab_data_.begin() + index, d);
-    tab->UpdateData(contents->web_contents(), model_->IsAppTab(index), false);
+    tab->UpdateData(contents, model_->IsAppTab(index), false);
   }
   tab->set_mini(model_->IsMiniTab(index));
   tab->set_app(model_->IsAppTab(index));
@@ -1039,17 +1037,17 @@ void TabStripGtk::TabInsertedAt(TabContents* contents,
   ReStack();
 }
 
-void TabStripGtk::TabDetachedAt(TabContents* contents, int index) {
+void TabStripGtk::TabDetachedAt(WebContents* contents, int index) {
   GenerateIdealBounds();
-  StartRemoveTabAnimation(index, contents->web_contents());
+  StartRemoveTabAnimation(index, contents);
   // Have to do this _after_ calling StartRemoveTabAnimation, so that any
   // previous remove is completed fully and index is valid in sync with the
   // model index.
   GetTabAt(index)->set_closing(true);
 }
 
-void TabStripGtk::ActiveTabChanged(TabContents* old_contents,
-                                   TabContents* new_contents,
+void TabStripGtk::ActiveTabChanged(WebContents* old_contents,
+                                   WebContents* new_contents,
                                    int index,
                                    bool user_gesture) {
   TRACE_EVENT0("ui::gtk", "TabStripGtk::ActiveTabChanged");
@@ -1103,7 +1101,7 @@ void TabStripGtk::TabSelectionChanged(TabStripModel* tab_strip_model,
   }
 }
 
-void TabStripGtk::TabMoved(TabContents* contents,
+void TabStripGtk::TabMoved(WebContents* contents,
                            int from_index,
                            int to_index) {
   gfx::Rect start_bounds = GetIdealBounds(from_index);
@@ -1118,7 +1116,8 @@ void TabStripGtk::TabMoved(TabContents* contents,
   ReStack();
 }
 
-void TabStripGtk::TabChangedAt(TabContents* contents, int index,
+void TabStripGtk::TabChangedAt(WebContents* contents,
+                               int index,
                                TabChangeType change_type) {
   // Index is in terms of the model. Need to make sure we adjust that index in
   // case we have an animation going.
@@ -1129,20 +1128,20 @@ void TabStripGtk::TabChangedAt(TabContents* contents, int index,
     // We'll receive another notification of the change asynchronously.
     return;
   }
-  tab->UpdateData(contents->web_contents(),
+  tab->UpdateData(contents,
                   model_->IsAppTab(index),
                   change_type == LOADING_ONLY);
   tab->UpdateFromModel();
 }
 
 void TabStripGtk::TabReplacedAt(TabStripModel* tab_strip_model,
-                                TabContents* old_contents,
-                                TabContents* new_contents,
+                                WebContents* old_contents,
+                                WebContents* new_contents,
                                 int index) {
   TabChangedAt(new_contents, index, ALL);
 }
 
-void TabStripGtk::TabMiniStateChanged(TabContents* contents, int index) {
+void TabStripGtk::TabMiniStateChanged(WebContents* contents, int index) {
   // Don't do anything if we've already picked up the change from TabMoved.
   if (GetTabAt(index)->mini() == model_->IsMiniTab(index))
     return;
@@ -1158,8 +1157,7 @@ void TabStripGtk::TabMiniStateChanged(TabContents* contents, int index) {
   }
 }
 
-void TabStripGtk::TabBlockedStateChanged(TabContents* contents,
-                                         int index) {
+void TabStripGtk::TabBlockedStateChanged(WebContents* contents, int index) {
   GetTabAt(index)->SetBlocked(model_->IsTabBlocked(index));
 }
 
@@ -1229,7 +1227,7 @@ void TabStripGtk::CloseTab(TabGtk* tab) {
     // the mouse is outside of the tabstrip.  We unhook once the resize layout
     // animation is started.
     AddMessageLoopObserver();
-    model_->CloseTabContentsAt(tab_index,
+    model_->CloseWebContentsAt(tab_index,
                                TabStripModel::CLOSE_USER_GESTURE |
                                TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
   }
@@ -1797,7 +1795,7 @@ bool TabStripGtk::CompleteDrop(const guchar* data, bool is_plain_text) {
     params.disposition = NEW_FOREGROUND_TAB;
   } else {
     params.disposition = CURRENT_TAB;
-    params.source_contents = model_->GetTabContentsAt(drop_index);
+    params.source_contents = model_->GetWebContentsAt(drop_index);
   }
 
   chrome::Navigate(&params);
@@ -2080,7 +2078,7 @@ gboolean TabStripGtk::OnExpose(GtkWidget* widget, GdkEventExpose* event) {
     TabGtk* tab = GetTabAt(i);
     // We must ask the _Tab's_ model, not ourselves, because in some situations
     // the model will be different to this object, e.g. when a Tab is being
-    // removed after its TabContents has been destroyed.
+    // removed after its WebContents has been destroyed.
     if (!tab->IsActive()) {
       gtk_container_propagate_expose(GTK_CONTAINER(tabstrip_.get()),
                                      tab->widget(), event);
@@ -2189,7 +2187,7 @@ void TabStripGtk::OnNewTabClicked(GtkWidget* widget) {
       content::RecordAction(UserMetricsAction("NewTab_Button"));
       UMA_HISTOGRAM_ENUMERATION("Tab.NewTab", TabStripModel::NEW_TAB_BUTTON,
                                 TabStripModel::NEW_TAB_ENUM_COUNT);
-      model_->delegate()->AddBlankTab(true);
+      model_->delegate()->AddBlankTabAt(-1, true);
       break;
     case 2: {
       // On middle-click, try to parse the PRIMARY selection as a URL and load
@@ -2269,8 +2267,9 @@ CustomDrawButton* TabStripGtk::MakeNewTabButton() {
 void TabStripGtk::SetNewTabButtonBackground() {
   SkColor color = theme_service_->GetColor(
       ThemeService::COLOR_BUTTON_BACKGROUND);
-  SkBitmap* background = theme_service_->GetBitmapNamed(
-      IDR_THEME_WINDOW_CONTROL_BACKGROUND);
-  SkBitmap* mask = theme_service_->GetBitmapNamed(IDR_NEWTAB_BUTTON_MASK);
+  SkBitmap background = theme_service_->GetImageNamed(
+      IDR_THEME_WINDOW_CONTROL_BACKGROUND).AsBitmap();
+  SkBitmap mask = theme_service_->GetImageNamed(
+      IDR_NEWTAB_BUTTON_MASK).AsBitmap();
   newtab_button_->SetBackground(color, background, mask);
 }

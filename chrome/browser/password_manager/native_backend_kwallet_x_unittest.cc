@@ -29,7 +29,7 @@ using content::BrowserThread;
 using testing::_;
 using testing::Invoke;
 using testing::Return;
-using webkit::forms::PasswordForm;
+using content::PasswordForm;
 
 namespace {
 
@@ -199,7 +199,7 @@ class NativeBackendKWalletTest : public NativeBackendKWalletTestBase {
     event.Wait();
     // Some of the tests may post messages to the UI thread, but we don't need
     // to run those until after the DB thread is finished. So run it here.
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
   static void ThreadDone(base::WaitableEvent* event) {
     event->Signal();

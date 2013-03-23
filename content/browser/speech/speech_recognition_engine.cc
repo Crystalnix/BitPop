@@ -10,10 +10,12 @@ const int kDefaultConfigBitsPerSample = 16;
 const uint32 kDefaultMaxHypotheses = 1;
 }  // namespace
 
-namespace speech {
+namespace content {
 
 SpeechRecognitionEngine::Config::Config()
     : filter_profanities(false),
+      continuous(true),
+      interim_results(true),
       max_hypotheses(kDefaultMaxHypotheses),
       audio_sample_rate(kDefaultConfigSampleRate),
       audio_num_bits_per_sample(kDefaultConfigBitsPerSample) {
@@ -22,4 +24,4 @@ SpeechRecognitionEngine::Config::Config()
 SpeechRecognitionEngine::Config::~Config() {
 }
 
-}  // namespace speech
+}  // namespace content

@@ -11,6 +11,7 @@
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
 #include "chrome/browser/chromeos/login/user_image.h"
+#include "chrome/browser/chromeos/login/user_image_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -26,10 +27,6 @@ namespace chromeos {
 
 namespace {
 
-// The resolution of the picture we want to get from the camera.
-const int kFrameWidth = 480;
-const int kFrameHeight = 480;
-
 // Time histogram suffix for profile image download.
 const char kProfileDownloadReason[] = "OOBE";
 
@@ -38,15 +35,8 @@ const char kProfileDownloadReason[] = "OOBE";
 UserImageScreen::UserImageScreen(ScreenObserver* screen_observer,
                                  UserImageScreenActor* actor)
     : WizardScreen(screen_observer),
-      camera_controller_(this),
       actor_(actor) {
   actor_->SetDelegate(this);
-  camera_controller_.set_frame_width(kFrameWidth);
-  camera_controller_.set_frame_height(kFrameHeight);
-  registrar_.Add(
-      this,
-      chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED,
-      content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED,
       content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,
@@ -68,17 +58,17 @@ void UserImageScreen::Show() {
     return;
 
   actor_->Show();
-  actor_->SelectImage(UserManager::Get()->GetLoggedInUser().image_index());
+  actor_->SelectImage(UserManager::Get()->GetLoggedInUser()->image_index());
 
   // Start fetching the profile image.
-  UserManager::Get()->DownloadProfileImage(kProfileDownloadReason);
+  UserManager::Get()->GetUserImageManager()->
+      DownloadProfileImage(kProfileDownloadReason);
 
   accessibility::MaybeSpeak(
       l10n_util::GetStringUTF8(IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT));
 }
 
 void UserImageScreen::Hide() {
-  camera_controller_.Stop();
   if (actor_)
     actor_->Hide();
 }
@@ -87,39 +77,11 @@ std::string UserImageScreen::GetName() const {
   return WizardController::kUserImageScreenName;
 }
 
-void UserImageScreen::OnCaptureSuccess() {
-  if (!actor_)
-    return;
-
-  SkBitmap frame;
-  camera_controller_.GetFrame(&frame);
-  if (!frame.isNull())
-    actor_->UpdateVideoFrame(frame);
-}
-
-void UserImageScreen::OnCaptureFailure() {
-  if (actor_)
-    actor_->ShowCameraError();
-}
-
-void UserImageScreen::StartCamera() {
-  if (!actor_)
-    return;
-
-  actor_->ShowCameraInitializing();
-  camera_controller_.Start();
-}
-
-void UserImageScreen::StopCamera() {
-  camera_controller_.Stop();
-}
-
 void UserImageScreen::OnPhotoTaken(const gfx::ImageSkia& image) {
   UserManager* user_manager = UserManager::Get();
-  // TODO(ivankr): once old camera UI is gone, there's raw data in image
-  // decoder, pass UserImage and user it instead.
-  user_manager->SaveUserImage(user_manager->GetLoggedInUser().email(),
-                              UserImage::CreateAndEncode(image));
+  user_manager->GetUserImageManager()->SaveUserImage(
+      user_manager->GetLoggedInUser()->email(),
+      UserImage::CreateAndEncode(image));
 
   get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 
@@ -130,8 +92,8 @@ void UserImageScreen::OnPhotoTaken(const gfx::ImageSkia& image) {
 
 void UserImageScreen::OnProfileImageSelected() {
   UserManager* user_manager = UserManager::Get();
-  user_manager->SaveUserImageFromProfileImage(
-      user_manager->GetLoggedInUser().email());
+  user_manager->GetUserImageManager()->SaveUserImageFromProfileImage(
+      user_manager->GetLoggedInUser()->email());
 
   get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 
@@ -142,8 +104,8 @@ void UserImageScreen::OnProfileImageSelected() {
 
 void UserImageScreen::OnDefaultImageSelected(int index) {
   UserManager* user_manager = UserManager::Get();
-  user_manager->SaveUserDefaultImageIndex(
-      user_manager->GetLoggedInUser().email(), index);
+  user_manager->GetUserImageManager()->SaveUserDefaultImageIndex(
+      user_manager->GetLoggedInUser()->email(), index);
 
   get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 
@@ -161,14 +123,6 @@ void UserImageScreen::Observe(int type,
                               const content::NotificationSource& source,
                               const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED: {
-      bool is_screen_locked = *content::Details<bool>(details).ptr();
-      if (is_screen_locked)
-        StopCamera();
-      else if (actor_ && actor_->IsCapturing())
-        StartCamera();
-      break;
-    }
     case chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED: {
       // We've got a new profile image.
       if (actor_) {

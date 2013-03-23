@@ -13,13 +13,16 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/api/web_navigation/frame_navigation_state.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 #include "googleurl/src/gurl.h"
 
 struct RetargetingDetails;
@@ -27,13 +30,14 @@ struct RetargetingDetails;
 namespace extensions {
 
 // Tab contents observer that forwards navigation events to the event router.
-class WebNavigationTabObserver : public content::NotificationObserver,
-                                 public content::WebContentsObserver {
+class WebNavigationTabObserver
+    : public content::NotificationObserver,
+      public content::WebContentsObserver,
+      public content::WebContentsUserData<WebNavigationTabObserver> {
  public:
-  explicit WebNavigationTabObserver(content::WebContents* web_contents);
   virtual ~WebNavigationTabObserver();
 
-  // Returns the object for the given |tab_contents|.
+  // Returns the object for the given |web_contents|.
   static WebNavigationTabObserver* Get(content::WebContents* web_contents);
 
   const FrameNavigationState& frame_navigation_state() const {
@@ -53,6 +57,7 @@ class WebNavigationTabObserver : public content::NotificationObserver,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_num,
+      int64 parent_frame_num,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
@@ -94,6 +99,9 @@ class WebNavigationTabObserver : public content::NotificationObserver,
   virtual void WebContentsDestroyed(content::WebContents* tab) OVERRIDE;
 
  private:
+  explicit WebNavigationTabObserver(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<WebNavigationTabObserver>;
+
   // True if the transition and target url correspond to a reference fragment
   // navigation.
   bool IsReferenceFragmentNavigation(FrameNavigationState::FrameID frame_id,
@@ -132,10 +140,6 @@ class WebNavigationEventRouter : public TabStripModelObserver,
   explicit WebNavigationEventRouter(Profile* profile);
   virtual ~WebNavigationEventRouter();
 
-  // Invoked by the extensions service once the extension system is fully set
-  // up and can start dispatching events to extensions.
-  void Init();
-
  private:
   // Used to cache the information about newly created WebContents objects.
   struct PendingWebContents{
@@ -156,8 +160,8 @@ class WebNavigationEventRouter : public TabStripModelObserver,
 
   // TabStripModelObserver implementation.
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
 
   // chrome::BrowserListObserver implementation.
@@ -207,6 +211,26 @@ class GetAllFramesFunction : public SyncExtensionFunction {
   virtual ~GetAllFramesFunction() {}
   virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("webNavigation.getAllFrames")
+};
+
+class WebNavigationAPI : public ProfileKeyedService,
+                   public extensions::EventRouter::Observer {
+ public:
+  explicit WebNavigationAPI(Profile* profile);
+  virtual ~WebNavigationAPI();
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
+      OVERRIDE;
+
+ private:
+  Profile* profile_;
+
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<WebNavigationEventRouter> web_navigation_event_router_;
 };
 
 }  // namespace extensions

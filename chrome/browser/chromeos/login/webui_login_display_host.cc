@@ -4,7 +4,8 @@
 
 #include "chrome/browser/chromeos/login/webui_login_display_host.h"
 
-#include "ash/desktop_background/desktop_background_controller.h"
+#include "ash/ash_switches.h"
+#include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_animations.h"
@@ -81,11 +82,18 @@ WebUILoginDisplayHost::WebUILoginDisplayHost(const gfx::Rect& background_bounds)
       (is_registered || !disable_oobe_animation) &&
       (!is_registered || !disable_boot_animation);
 
+  // For slower hardware we have boot animation disabled so
+  // we'll be initializing WebUI hidden, waiting for user pods to load and then
+  // show WebUI at once.
   waiting_for_user_pods_ =
       new_oobe_ui && !zero_delay_enabled && !waiting_for_wallpaper_load_;
 
   initialize_webui_hidden_ = kHiddenWebUIInitializationDefault &&
       (waiting_for_user_pods_ || waiting_for_wallpaper_load_);
+
+  is_boot_animation2_enabled_ = waiting_for_wallpaper_load_ &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          ash::switches::kAshDisableBootAnimation2);
 
   // Prevents white flashing on OOBE (http://crbug.com/131569).
   aura::Env::GetInstance()->set_render_white_bg(false);
@@ -105,12 +113,18 @@ WebUILoginDisplayHost::WebUILoginDisplayHost(const gfx::Rect& background_bounds)
   if (!WizardController::IsOobeCompleted())
     initialize_webui_hidden_ = false;
 
+  // There is no wallpaper for KioskMode, don't initialize the webui hidden.
+  if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
+    initialize_webui_hidden_ = false;
+
   if (waiting_for_wallpaper_load_) {
     registrar_.Add(this, chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
                    content::NotificationService::AllSources());
   }
 
-  if (waiting_for_user_pods_ && initialize_webui_hidden_) {
+  // In boot-animation2 we want to show login WebUI as soon as possible.
+  if ((waiting_for_user_pods_ || is_boot_animation2_enabled_)
+      && initialize_webui_hidden_) {
     registrar_.Add(this, chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
                    content::NotificationService::AllSources());
   }
@@ -202,7 +216,7 @@ void WebUILoginDisplayHost::StartSignInScreen() {
 
   BaseLoginDisplayHost::StartSignInScreen();
   CHECK(webui_login_display_);
-  GetOobeUI()->ShowSigninScreen(webui_login_display_);
+  GetOobeUI()->ShowSigninScreen(webui_login_display_, webui_login_display_);
   if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
     SetStatusAreaVisible(false);
 }
@@ -225,7 +239,6 @@ void WebUILoginDisplayHost::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  BaseLoginDisplayHost::Observe(type, source, details);
   if (chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED == type) {
     LOG(INFO) << "Login WebUI >> wp animation done";
     is_wallpaper_loaded_ = true;
@@ -249,12 +262,16 @@ void WebUILoginDisplayHost::Observe(
     if (waiting_for_user_pods_ && initialize_webui_hidden_) {
       waiting_for_user_pods_ = false;
       ShowWebUI();
+    } else if (waiting_for_wallpaper_load_ && initialize_webui_hidden_) {
+      // Reduce time till login UI is shown - show it as soon as possible.
+      waiting_for_wallpaper_load_ = false;
+      ShowWebUI();
     }
     registrar_.Remove(this,
                       chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
                       content::NotificationService::AllSources());
   } else {
-    NOTREACHED();
+    BaseLoginDisplayHost::Observe(type, source, details);
   }
 }
 
@@ -277,12 +294,12 @@ void WebUILoginDisplayHost::LoadURL(const GURL& url) {
 
     login_view_->Init(login_window_);
 
-    ash::SetWindowVisibilityAnimationDuration(
+    views::corewm::SetWindowVisibilityAnimationDuration(
         login_window_->GetNativeView(),
         base::TimeDelta::FromMilliseconds(kLoginFadeoutTransitionDurationMs));
-    ash::SetWindowVisibilityAnimationTransition(
+    views::corewm::SetWindowVisibilityAnimationTransition(
         login_window_->GetNativeView(),
-        ash::ANIMATE_HIDE);
+        views::corewm::ANIMATE_HIDE);
 
     login_window_->SetContentsView(login_view_);
     login_view_->UpdateWindowType();

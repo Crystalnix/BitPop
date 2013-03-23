@@ -4,8 +4,6 @@
 
 #include "chrome/browser/chromeos/cros/network_library.h"
 
-#include <dbus/dbus-glib.h>
-
 #include "base/i18n/icu_encoding_detection.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/i18n/time_formatting.h"
@@ -185,6 +183,8 @@ NetworkDevice::NetworkDevice(const std::string& device_path)
       sim_lock_state_(SIM_UNKNOWN),
       sim_retries_left_(kDefaultSimUnlockRetriesCount),
       sim_pin_required_(SIM_PIN_REQUIRE_UNKNOWN),
+      sim_present_(false),
+      powered_(false),
       prl_version_(0),
       data_roaming_allowed_(false),
       support_network_scan_(false),
@@ -228,7 +228,8 @@ Network::Network(const std::string& service_path,
       notify_failure_(false),
       profile_type_(PROFILE_NONE),
       service_path_(service_path),
-      type_(type) {
+      type_(type),
+      is_behind_portal_for_testing_(false) {
 }
 
 Network::~Network() {
@@ -237,6 +238,8 @@ Network::~Network() {
      delete props->second;
   }
 }
+
+Network::ProxyOncConfig::ProxyOncConfig() : type(PROXY_ONC_DIRECT) {}
 
 void Network::SetNetworkParser(NetworkParser* parser) {
   network_parser_.reset(parser);
@@ -286,7 +289,7 @@ void Network::SetState(ConnectionState new_state) {
   if (new_state == state_)
     return;
   if (state_ == STATE_CONNECT_REQUESTED && new_state == STATE_IDLE) {
-    // CONNECT_REQUESTED is set internally. Shill/flimflam do not update the
+    // CONNECT_REQUESTED is set internally. Shill does not update the
     // state immediately, so ignore any Idle state updates sent while a
     // connection attempt is in progress.
     VLOG(2) << "Ignoring idle state change after connection request.";
@@ -295,14 +298,14 @@ void Network::SetState(ConnectionState new_state) {
   ConnectionState old_state = state_;
   VLOG(2) << "Entering new state: " << ConnectionStateString(new_state);
   state_ = new_state;
-  if (!IsConnectingState(new_state))
-    set_connection_started(false);
   if (new_state == STATE_FAILURE) {
-    VLOG(2) << "Detected Failure state.";
-    if (old_state != STATE_UNKNOWN && old_state != STATE_IDLE) {
+    VLOG(1) << service_path() << ": Detected Failure state.";
+    if (old_state != STATE_UNKNOWN && old_state != STATE_IDLE &&
+        (type() != TYPE_CELLULAR || connection_started())) {
       // New failure, the user needs to be notified.
       // Transition STATE_IDLE -> STATE_FAILURE sometimes happens on resume
       // but is not an actual failure as network device is not ready yet.
+      // For Cellular we only show failure notifications if user initiated.
       notify_failure_ = true;
       // Normally error_ should be set, but if it is not we need to set it to
       // something here so that the retry logic will be triggered.
@@ -311,14 +314,22 @@ void Network::SetState(ConnectionState new_state) {
         error_ = ERROR_UNKNOWN;
       }
     }
+  } else if (new_state == STATE_IDLE && IsConnectingState(old_state)
+             && connection_started()) {
+    // If we requested a connect and never went through a connected state,
+    // treat it as a failure.
+    VLOG(1) << service_path() << ": Inferring Failure state.";
+    notify_failure_ = true;
+    error_ = ERROR_UNKNOWN;
   } else if (new_state != STATE_UNKNOWN) {
     notify_failure_ = false;
     // State changed, so refresh IP address.
-    // Note: blocking DBus call. TODO(stevenjb): refactor this.
     InitIPAddress();
   }
   VLOG(1) << name() << ".State [" << service_path() << "]: " << GetStateString()
           << " (was: " << ConnectionStateString(old_state) << ")";
+  if (!IsConnectingState(new_state) && new_state != STATE_UNKNOWN)
+    set_connection_started(false);
 }
 
 void Network::SetError(ConnectionError error) {
@@ -352,12 +363,11 @@ bool Network::RequiresUserProfile() const {
 void Network::CopyCredentialsFromRemembered(Network* remembered) {
 }
 
-void Network::SetValueProperty(const char* prop, Value* value) {
+void Network::SetValueProperty(const char* prop, const base::Value& value) {
   DCHECK(prop);
-  DCHECK(value);
   if (!EnsureCrosLoaded())
     return;
-  CrosSetNetworkServiceProperty(service_path_, prop, *value);
+  CrosSetNetworkServiceProperty(service_path_, prop, value);
 }
 
 void Network::ClearProperty(const char* prop) {
@@ -371,8 +381,7 @@ void Network::SetStringProperty(
     const char* prop, const std::string& str, std::string* dest) {
   if (dest)
     *dest = str;
-  scoped_ptr<Value> value(Value::CreateStringValue(str));
-  SetValueProperty(prop, value.get());
+  SetValueProperty(prop, base::StringValue(str));
 }
 
 void Network::SetOrClearStringProperty(const char* prop,
@@ -390,15 +399,13 @@ void Network::SetOrClearStringProperty(const char* prop,
 void Network::SetBooleanProperty(const char* prop, bool b, bool* dest) {
   if (dest)
     *dest = b;
-  scoped_ptr<Value> value(Value::CreateBooleanValue(b));
-  SetValueProperty(prop, value.get());
+  SetValueProperty(prop, base::FundamentalValue(b));
 }
 
 void Network::SetIntegerProperty(const char* prop, int i, int* dest) {
   if (dest)
     *dest = i;
-  scoped_ptr<Value> value(Value::CreateIntegerValue(i));
-  SetValueProperty(prop, value.get());
+  SetValueProperty(prop, base::FundamentalValue(i));
 }
 
 void Network::SetPreferred(bool preferred) {
@@ -505,17 +512,28 @@ void Network::InitIPAddress() {
   ip_address_.clear();
   if (!EnsureCrosLoaded())
     return;
-  // If connected, get ip config.
+  // If connected, get IPConfig.
   if (connected() && !device_path_.empty()) {
-    NetworkIPConfigVector ipconfigs;
-    if (CrosListIPConfigs(device_path_, &ipconfigs, NULL, NULL)) {
-      for (size_t i = 0; i < ipconfigs.size(); ++i) {
-        const NetworkIPConfig& ipconfig = ipconfigs[i];
-        if (ipconfig.address.size() > 0) {
-          ip_address_ = ipconfig.address;
-          break;
-        }
-      }
+    CrosListIPConfigs(device_path_,
+                      base::Bind(&Network::InitIPAddressCallback,
+                                 service_path_));
+  }
+}
+
+// static
+void Network::InitIPAddressCallback(
+    const std::string& service_path,
+    const NetworkIPConfigVector& ip_configs,
+    const std::string& hardware_address) {
+  Network* network =
+      CrosLibrary::Get()->GetNetworkLibrary()->FindNetworkByPath(service_path);
+  if (!network)
+    return;
+  for (size_t i = 0; i < ip_configs.size(); ++i) {
+    const NetworkIPConfig& ipconfig = ip_configs[i];
+    if (ipconfig.address.size() > 0) {
+      network->ip_address_ = ipconfig.address;
+      break;
     }
   }
 }
@@ -610,7 +628,7 @@ bool VirtualNetwork::NeedMoreInfoToConnect() const {
       if (client_cert_id_.empty())
         return true;
       // For now we always need additional info for OpenVPN.
-      // TODO(stevenjb): Check connectable() once flimflam sets that state
+      // TODO(stevenjb): Check connectable() once shill sets that state
       // properly, or define another mechanism to determine when additional
       // credentials are required.
       return true;
@@ -710,6 +728,11 @@ void VirtualNetwork::SetOpenVPNCredentials(
   SetStringProperty(flimflam::kOpenVPNOTPProperty, otp, NULL);
 }
 
+void VirtualNetwork::SetServerHostname(const std::string& server_hostname) {
+  SetStringProperty(flimflam::kProviderHostProperty,
+                    server_hostname, &server_hostname_);
+}
+
 void VirtualNetwork::SetCertificateSlotAndPin(
     const std::string& slot, const std::string& pin) {
   if (provider_type() == PROVIDER_TYPE_OPEN_VPN) {
@@ -727,7 +750,12 @@ void VirtualNetwork::MatchCertificatePattern(bool allow_enroll,
                                              const base::Closure& connect) {
   DCHECK(client_cert_type() == CLIENT_CERT_TYPE_PATTERN);
   DCHECK(!client_cert_pattern().Empty());
-  if (client_cert_pattern().Empty()) {
+
+  // We skip certificate patterns for device policy ONC so that an unmanaged
+  // user can't get to the place where a cert is presented for them
+  // involuntarily.
+  if (client_cert_pattern().Empty() ||
+      ui_data().onc_source() == onc::ONC_SOURCE_DEVICE_POLICY) {
     connect.Run();
     return;
   }
@@ -754,8 +782,8 @@ void VirtualNetwork::MatchCertificatePattern(bool allow_enroll,
                      false,
                      connect);
 
-     enrollment_delegate()->Enroll(client_cert_pattern().enrollment_uri_list(),
-                                   wrapped_connect);
+      enrollment_delegate()->Enroll(client_cert_pattern().enrollment_uri_list(),
+                                    wrapped_connect);
       // Enrollment delegate will take care of running the closure at the
       // appropriate time, if the user doesn't cancel.
       return;
@@ -818,11 +846,11 @@ void CellularApn::Set(const DictionaryValue& dict) {
 
 CellularNetwork::CellularNetwork(const std::string& service_path)
     : WirelessNetwork(service_path, TYPE_CELLULAR),
+      activate_over_non_cellular_network_(false),
       activation_state_(ACTIVATION_STATE_UNKNOWN),
       network_technology_(NETWORK_TECHNOLOGY_UNKNOWN),
       roaming_state_(ROAMING_STATE_UNKNOWN),
-      using_post_(false),
-      data_left_(DATA_UNKNOWN) {
+      using_post_(false) {
 }
 
 CellularNetwork::~CellularNetwork() {
@@ -833,18 +861,11 @@ bool CellularNetwork::StartActivation() {
     return false;
   if (!CrosActivateCellularModem(service_path(), ""))
     return false;
-  // Don't wait for flimflam to tell us that we are really activating since
+  // Don't wait for shill to tell us that we are really activating since
   // other notifications in the message loop might cause us to think that
   // the process hasn't started yet.
   activation_state_ = ACTIVATION_STATE_ACTIVATING;
   return true;
-}
-
-void CellularNetwork::RefreshDataPlansIfNeeded() const {
-  if (!EnsureCrosLoaded())
-    return;
-  if (connected() && activated())
-    CrosRequestCellularDataPlanUpdate(service_path());
 }
 
 void CellularNetwork::SetApn(const CellularApn& apn) {
@@ -856,25 +877,19 @@ void CellularNetwork::SetApn(const CellularApn& apn) {
     value.SetString(flimflam::kApnNetworkIdProperty, apn.network_id);
     value.SetString(flimflam::kApnUsernameProperty, apn.username);
     value.SetString(flimflam::kApnPasswordProperty, apn.password);
-    SetValueProperty(flimflam::kCellularApnProperty, &value);
+    SetValueProperty(flimflam::kCellularApnProperty, value);
   } else {
     ClearProperty(flimflam::kCellularApnProperty);
   }
 }
 
 bool CellularNetwork::SupportsActivation() const {
-  return SupportsDataPlan();
+  return !usage_url().empty() || !payment_url().empty();
 }
 
 bool CellularNetwork::NeedsActivation() const {
   return (activation_state() != ACTIVATION_STATE_ACTIVATED &&
-          activation_state() != ACTIVATION_STATE_UNKNOWN) ||
-          needs_new_plan();
-}
-
-bool CellularNetwork::SupportsDataPlan() const {
-  // TODO(nkostylev): Are there cases when only one of this is defined?
-  return !usage_url().empty() || !payment_url().empty();
+          activation_state() != ACTIVATION_STATE_UNKNOWN);
 }
 
 GURL CellularNetwork::GetAccountInfoUrl() const {
@@ -998,7 +1013,7 @@ WifiNetwork::~WifiNetwork() {}
 
 void WifiNetwork::CalculateUniqueId() {
   ConnectionSecurity encryption = encryption_;
-  // Flimflam treats wpa and rsn as psk internally, so convert those types
+  // Shill treats wpa and rsn as psk internally, so convert those types
   // to psk for unique naming.
   if (encryption == SECURITY_WPA || encryption == SECURITY_RSN)
     encryption = SECURITY_PSK;
@@ -1045,22 +1060,22 @@ const std::string& WifiNetwork::GetPassphrase() const {
 }
 
 void WifiNetwork::SetPassphrase(const std::string& passphrase) {
-  // Set the user_passphrase_ only; passphrase_ stores the flimflam value.
+  // Set the user_passphrase_ only; passphrase_ stores the shill value.
   // If the user sets an empty passphrase, restore it to the passphrase
-  // remembered by flimflam.
+  // remembered by shill.
   if (!passphrase.empty()) {
     user_passphrase_ = passphrase;
     passphrase_ = passphrase;
   } else {
     user_passphrase_ = passphrase_;
   }
-  // Send the change to flimflam. If the format is valid, it will propagate to
+  // Send the change to shill. If the format is valid, it will propagate to
   // passphrase_ with a service update.
   SetOrClearStringProperty(flimflam::kPassphraseProperty, passphrase, NULL);
 }
 
-// See src/third_party/flimflam/doc/service-api.txt for properties that
-// flimflam will forget when SaveCredentials is false.
+// See src/third_party/shill/doc/service-api.txt for properties that
+// shill will forget when SaveCredentials is false.
 void WifiNetwork::EraseCredentials() {
   WipeString(&passphrase_);
   WipeString(&user_passphrase_);
@@ -1148,7 +1163,7 @@ void WifiNetwork::SetEAPClientCertPkcs11Id(const std::string& pkcs11_id) {
   VLOG(1) << "SetEAPClientCertPkcs11Id " << pkcs11_id;
   SetOrClearStringProperty(
       flimflam::kEapCertIdProperty, pkcs11_id, &eap_client_cert_pkcs11_id_);
-  // flimflam requires both CertID and KeyID for TLS connections, despite
+  // shill requires both CertID and KeyID for TLS connections, despite
   // the fact that by convention they are the same ID.
   SetOrClearStringProperty(flimflam::kEapKeyIdProperty, pkcs11_id, NULL);
 }
@@ -1212,9 +1227,11 @@ std::string WifiNetwork::GetEncryptionString() const {
 }
 
 bool WifiNetwork::IsPassphraseRequired() const {
-  // TODO(stevenjb): Remove error_ tests when fixed in flimflam
-  // (http://crosbug.com/10135).
-  if (error() == ERROR_BAD_PASSPHRASE || error() == ERROR_BAD_WEPKEY)
+  if (encryption_ == SECURITY_NONE)
+    return false;
+  // A connection failure might be due to a bad passphrase.
+  if (error() == ERROR_BAD_PASSPHRASE || error() == ERROR_BAD_WEPKEY ||
+      error() == ERROR_UNKNOWN)
     return true;
   // For 802.1x networks, configuration is required if connectable is false
   // unless we're using a certificate pattern.
@@ -1293,8 +1310,7 @@ void WifiNetwork::MatchCertificatePattern(bool allow_enroll,
 
 WimaxNetwork::WimaxNetwork(const std::string& service_path)
     : WirelessNetwork(service_path, TYPE_WIMAX),
-      passphrase_required_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_pointer_factory_(this)) {
+      passphrase_required_(false) {
 }
 
 WimaxNetwork::~WimaxNetwork() {
@@ -1318,6 +1334,20 @@ void WimaxNetwork::SetEAPIdentity(const std::string& identity) {
 void WimaxNetwork::CalculateUniqueId() {
   set_unique_id(name() + "|" + eap_identity());
 }
+
+NetworkLibrary::EAPConfigData::EAPConfigData()
+    : method(EAP_METHOD_UNKNOWN),
+      auth(EAP_PHASE_2_AUTH_AUTO),
+      use_system_cas(true) {
+}
+
+NetworkLibrary::EAPConfigData::~EAPConfigData() {}
+
+NetworkLibrary::VPNConfigData::VPNConfigData()
+    : save_credentials(false) {
+}
+
+NetworkLibrary::VPNConfigData::~VPNConfigData() {}
 
 // static
 NetworkLibrary* NetworkLibrary::GetImpl(bool stub) {

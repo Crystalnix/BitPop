@@ -5,11 +5,16 @@
 #ifndef CONTENT_RENDERER_JAVA_JAVA_BRIDGE_DISPATCHER_H_
 #define CONTENT_RENDERER_JAVA_JAVA_BRIDGE_DISPATCHER_H_
 
-#include "content/public/common/webkit_param_traits.h"
+#include <map>
+
+#include "base/memory/ref_counted.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "ipc/ipc_channel_handle.h"
+#include "third_party/npapi/bindings/npruntime.h"
 
+namespace content {
 class JavaBridgeChannel;
+struct NPVariant_Param;
 
 // This class handles injecting Java objects into the main frame of a
 // RenderView. The 'add' and 'remove' messages received from the browser
@@ -17,9 +22,9 @@ class JavaBridgeChannel;
 // bound to the window object of the main frame when that window object is next
 // cleared. These objects remain bound until the window object is cleared
 // again.
-class JavaBridgeDispatcher : public content::RenderViewObserver {
+class JavaBridgeDispatcher : public RenderViewObserver {
  public:
-  JavaBridgeDispatcher(content::RenderView* render_view);
+  JavaBridgeDispatcher(RenderView* render_view);
   virtual ~JavaBridgeDispatcher();
 
  private:
@@ -32,7 +37,7 @@ class JavaBridgeDispatcher : public content::RenderViewObserver {
                         const NPVariant_Param& variant_param);
   void OnRemoveNamedObject(const string16& name);
 
-  void EnsureChannelIsSetUp();
+  bool EnsureChannelIsSetUp();
 
   // Objects that will be bound to the window when the window object is next
   // cleared. We hold a ref to these.
@@ -40,5 +45,7 @@ class JavaBridgeDispatcher : public content::RenderViewObserver {
   ObjectMap objects_;
   scoped_refptr<JavaBridgeChannel> channel_;
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_JAVA_JAVA_BRIDGE_DISPATCHER_H_

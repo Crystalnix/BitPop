@@ -15,6 +15,7 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_table.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -97,7 +98,7 @@ class AutocompleteActionPredictor
   // prerenders (if any).
   void StartPrerendering(
       const GURL& url,
-      content::SessionStorageNamespace* session_storage_namespace,
+      const content::SessionStorageNamespaceMap& session_storage_namespace_map,
       const gfx::Size& size);
 
   // Return true if the suggestion type warrants a TCP/IP preconnection.
@@ -149,6 +150,11 @@ class AutocompleteActionPredictor
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // The first step in initializing the predictor is accessing the database and
+  // building the local cache. This should be delayed until after critical DB
+  // and IO processes have completed.
+  void CreateLocalCachesFromDatabase();
 
   // Removes all rows from the database and caches.
   void DeleteAllRows();

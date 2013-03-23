@@ -16,6 +16,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "base/process_util.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/tracking_synchronizer_observer.h"
@@ -47,6 +48,7 @@ class RenderProcessHost;
 
 namespace extensions {
 class ExtensionDownloader;
+class ManifestFetchData;
 }
 
 namespace net {
@@ -74,28 +76,46 @@ class MetricsService
   MetricsService();
   virtual ~MetricsService();
 
-  // Start/stop the metrics recording and uploading machine.  These should be
-  // used on startup and when the user clicks the checkbox in the prefs.
-  // StartRecordingOnly starts the metrics recording but not reporting, for use
-  // in tests only.
+  // Starts the metrics system, turning on recording and uploading of metrics.
+  // Should be called when starting up with metrics enabled, or when metrics
+  // are turned on.
   void Start();
-  void StartRecordingOnly();
+
+  // Starts the metrics system in a special test-only mode. Metrics won't ever
+  // be uploaded or persisted in this mode, but metrics will be recorded in
+  // memory.
+  void StartRecordingForTests();
+
+  // Shuts down the metrics system. Should be called at shutdown, or if metrics
+  // are turned off.
   void Stop();
+
+  // Enable/disable transmission of accumulated logs and crash reports (dumps).
+  // Calling Start() automatically enables reporting, but sending is
+  // asyncronous so this can be called immediately after Start() to prevent
+  // any uploading.
+  void EnableReporting();
+  void DisableReporting();
 
   // Returns the client ID for this client, or the empty string if metrics
   // recording is not currently running.
   std::string GetClientId();
 
-  // Returns the preferred entropy source used to seed persistent activities
-  // based on whether or not metrics reporting will permitted on this client.
+  // Returns the preferred entropy provider used to seed persistent activities
+  // based on whether or not metrics reporting will be permitted on this client.
   // The caller must determine if metrics reporting will be enabled for this
-  // client and pass that state in as |reporting_will_be_enabled|. If
-  // |reporting_will_be_enabled| is true, this method returns the client ID
-  // concatenated with the low entropy source. Otherwise, this method just
-  // returns the low entropy source. Note that this reporting state can not be
-  // checked by reporting_active() because this method may need to be called
-  // before the MetricsService needs to be started.
-  std::string GetEntropySource(bool reporting_will_be_enabled);
+  // client and pass that state in as |reporting_will_be_enabled|.
+  //
+  // If |reporting_will_be_enabled| is true, this method returns an entropy
+  // provider that has a high source of entropy, partially based on the client
+  // ID. Otherwise, an entropy provider that is based on a low entropy source
+  // is returned.
+  //
+  // Note that this reporting state can not be checked by reporting_active()
+  // because this method may need to be called before the MetricsService needs
+  // to be started.
+  scoped_ptr<const base::FieldTrial::EntropyProvider> CreateEntropyProvider(
+      bool reporting_will_be_enabled);
 
   // Force the client ID to be generated. This is useful in case it's needed
   // before recording.
@@ -124,7 +144,7 @@ class MetricsService
   // that session end was successful.
   void RecordCompletedSessionEnd();
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   // Called when the application is going into background mode.
   void OnAppEnterBackground();
 
@@ -242,13 +262,11 @@ class MetricsService
   // initial results towards showing crashes :-(.
   static void DiscardOldStabilityStats(PrefService* local_state);
 
-  // Sets and gets whether metrics recording is active.
-  // SetRecording(false) also forces a persistent save of logging state (if
+  // Turns recording on or off.
+  // DisableRecording() also forces a persistent save of logging state (if
   // anything has been recorded, or transmitted).
-  void SetRecording(bool enabled);
-
-  // Enable/disable transmission of accumulated logs and crash reports (dumps).
-  void SetReporting(bool enabled);
+  void EnableRecording();
+  void DisableRecording();
 
   // If in_idle is true, sets idle_since_last_transmission to true.
   // If in_idle is false and idle_since_last_transmission_ is true, sets
@@ -271,13 +289,11 @@ class MetricsService
   // make a change, call ScheduleNextStateSave() instead.
   void SaveLocalState();
 
-  // Called to start recording user experience metrics.
-  // Constructs a new, empty current_log_.
-  void StartRecording();
+  // Opens a new log for recording user experience metrics.
+  void OpenNewLog();
 
-  // Called to stop recording user experience metrics.
-  // Adds any last information to current_log_ and then stages it for upload.
-  void StopRecording();
+  // Closes out the current log after adding any last information.
+  void CloseCurrentLog();
 
   // Pushes the text of the current and staged logs into persistent storage.
   // Called when Chrome shuts down.
@@ -322,10 +338,9 @@ class MetricsService
   // code other than 200.
   void LogBadResponseCode(int response_code, bool is_xml);
 
-  // Records a window-related notification.
-  void LogWindowChange(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details);
+  // Records a window-related notification. |window_or_tab| is either a pointer
+  // to a WebContents (for a tab) or a Browser (for a window).
+  void LogWindowOrTabChange(int type, uintptr_t window_or_tab);
 
   // Reads, increments and then sets the specified integer preference.
   void IncrementPrefValue(const char* path);
@@ -401,6 +416,10 @@ class MetricsService
   bool recording_active_;
   bool reporting_active_;
 
+  // Indicate whether test mode is enabled, where the initial log should never
+  // be cut, and logs are neither persisted nor uploaded.
+  bool test_mode_active_;
+
   // The progession of states made by the browser are recorded in the following
   // state.
   State state_;
@@ -447,9 +466,9 @@ class MetricsService
   // A number that identifies the how many times the app has been launched.
   int session_id_;
 
-  // Maps NavigationControllers (corresponding to tabs) or Browser
-  // (corresponding to Windows) to a unique integer that we will use to identify
-  // it. |next_window_id_| is used to track which IDs we have used so far.
+  // Maps WebContentses (corresponding to tabs) or Browsers (corresponding to
+  // Windows) to a unique integer that we will use to identify them.
+  // |next_window_id_| is used to track which IDs we have used so far.
   typedef std::map<uintptr_t, int> WindowMap;
   WindowMap window_map_;
   int next_window_id_;
@@ -506,6 +525,7 @@ class MetricsServiceHelper {
  private:
   friend bool prerender::IsOmniboxEnabled(Profile* profile);
   friend class extensions::ExtensionDownloader;
+  friend class extensions::ManifestFetchData;
 
   // Returns true if prefs::kMetricsReportingEnabled is set.
   static bool IsMetricsReportingEnabled();

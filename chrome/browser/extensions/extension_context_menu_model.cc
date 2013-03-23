@@ -5,17 +5,18 @@
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/chrome_pages.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -42,7 +43,7 @@ ExtensionContextMenuModel::ExtensionContextMenuModel(
 
   if (profile_->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode) &&
       delegate_) {
-    AddSeparator();
+    AddSeparator(ui::NORMAL_SEPARATOR);
     AddItemWithStringId(INSPECT_POPUP, IDS_EXTENSION_ACTION_INSPECT_POPUP);
   }
 }
@@ -74,13 +75,14 @@ bool ExtensionContextMenuModel::IsCommandIdEnabled(int command_id) const {
     // homepage, we just disable this menu item.
     return extension->GetHomepageURL().is_valid();
   } else if (command_id == INSPECT_POPUP) {
-    TabContents* tab_contents = chrome::GetActiveTabContents(browser_);
-    if (!tab_contents)
+    WebContents* web_contents = chrome::GetActiveWebContents(browser_);
+    if (!web_contents)
       return false;
 
-    return extension_action_->HasPopup(SessionID::IdForTab(tab_contents));
-  } else if (command_id == DISABLE || command_id == UNINSTALL) {
-    // Some extension types can not be disabled or uninstalled.
+    return extension_action_ &&
+        extension_action_->HasPopup(SessionID::IdForTab(web_contents));
+  } else if (command_id == UNINSTALL) {
+    // Some extension types can not be uninstalled.
     return extensions::ExtensionSystem::Get(
         profile_)->management_policy()->UserMayModifySettings(extension, NULL);
   }
@@ -107,19 +109,14 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id) {
     }
     case CONFIGURE:
       DCHECK(!extension->options_url().is_empty());
-      profile_->GetExtensionProcessManager()->OpenOptionsPage(extension,
-                                                              browser_);
+      extensions::ExtensionSystem::Get(profile_)->process_manager()->
+          OpenOptionsPage(extension, browser_);
       break;
     case HIDE: {
-      ExtensionService* extension_service = profile_->GetExtensionService();
+      ExtensionService* extension_service =
+          extensions::ExtensionSystem::Get(profile_)->extension_service();
       extension_service->extension_prefs()->
           SetBrowserActionVisibility(extension, false);
-      break;
-    }
-    case DISABLE: {
-      ExtensionService* extension_service = profile_->GetExtensionService();
-      extension_service->DisableExtension(extension_id_,
-                                          Extension::DISABLE_USER_ACTION);
       break;
     }
     case UNINSTALL: {
@@ -144,10 +141,10 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id) {
 }
 
 void ExtensionContextMenuModel::ExtensionUninstallAccepted() {
-  if (GetExtension())
-    profile_->GetExtensionService()->UninstallExtension(extension_id_, false,
-                                                        NULL);
-
+  if (GetExtension()) {
+    extensions::ExtensionSystem::Get(profile_)->extension_service()->
+        UninstallExtension(extension_id_, false, NULL);
+  }
   Release();
 }
 
@@ -160,22 +157,29 @@ ExtensionContextMenuModel::~ExtensionContextMenuModel() {}
 void ExtensionContextMenuModel::InitMenu(const Extension* extension) {
   DCHECK(extension);
 
-  extension_action_ = extension->browser_action();
+  extensions::ExtensionActionManager* extension_action_manager =
+      extensions::ExtensionActionManager::Get(profile_);
+  extension_action_ = extension_action_manager->GetBrowserAction(*extension);
   if (!extension_action_)
-    extension_action_ = extension->page_action();
+    extension_action_ = extension_action_manager->GetPageAction(*extension);
+  DCHECK(extension_action_);
 
-  AddItem(NAME, UTF8ToUTF16(extension->name()));
-  AddSeparator();
+  std::string extension_name = extension->name();
+  // Ampersands need to be escaped to avoid being treated like
+  // mnemonics in the menu.
+  ReplaceChars(extension_name, "&", "&&", &extension_name);
+  AddItem(NAME, UTF8ToUTF16(extension_name));
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS_MENU_ITEM);
-  AddItemWithStringId(DISABLE, IDS_EXTENSIONS_DISABLE);
   AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
-  if (extension->browser_action())
+  if (extension_action_manager->GetBrowserAction(*extension))
     AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
-  AddSeparator();
+  AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(MANAGE, IDS_MANAGE_EXTENSIONS);
 }
 
 const Extension* ExtensionContextMenuModel::GetExtension() const {
-  ExtensionService* extension_service = profile_->GetExtensionService();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   return extension_service->GetExtensionById(extension_id_, false);
 }

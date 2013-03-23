@@ -6,8 +6,10 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/common/url_constants.h"
 #include "grit/locale_settings.h"
 #include "grit/ui_resources.h"
@@ -43,31 +45,54 @@ void FaviconSource::StartDataRequest(const std::string& path,
                                      bool is_incognito,
                                      int request_id) {
   FaviconService* favicon_service =
-      profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
+      FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
   if (!favicon_service || path.empty()) {
-    SendDefaultResponse(request_id);
+    SendDefaultResponse(IconRequest(request_id, 16, ui::SCALE_FACTOR_100P));
     return;
   }
 
-  FaviconService::Handle handle;
-  if (path.size() > 8 && path.substr(0, 8) == "iconurl/") {
-    // TODO : Change GetFavicon to support combination of IconType.
-    handle = favicon_service->GetFavicon(
-        GURL(path.substr(8)),
+  int size_in_dip = gfx::kFaviconSize;
+  ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_100P;
+
+  if (path.size() > 8 &&
+      (path.substr(0, 8) == "iconurl/" || path.substr(0, 8) == "iconurl@")) {
+    size_t prefix_length = 8;
+    // Optional scale factor appended to iconurl, which may be @1x or @2x.
+    if (path.at(7) == '@') {
+        size_t slash = path.find("/");
+        std::string scale_str = path.substr(8, slash - 8);
+        web_ui_util::ParseScaleFactor(scale_str, &scale_factor);
+        prefix_length = slash + 1;
+    }
+    // TODO(michaelbai): Change GetRawFavicon to support combination of
+    // IconType.
+    favicon_service->GetRawFavicon(
+        GURL(path.substr(prefix_length)),
         history::FAVICON,
-        &cancelable_consumer_,
+        size_in_dip,
+        scale_factor,
         base::Bind(&FaviconSource::OnFaviconDataAvailable,
-                   base::Unretained(this)));
+                   base::Unretained(this),
+                   IconRequest(request_id, size_in_dip, scale_factor)),
+        &cancelable_task_tracker_);
   } else {
     GURL url;
-
     if (path.size() > 5 && path.substr(0, 5) == "size/") {
       size_t slash = path.find("/", 5);
+      size_t scale_delimiter = path.find("@", 5);
       std::string size = path.substr(5, slash - 5);
-      int pixel_size = atoi(size.c_str());
-      CHECK(pixel_size == 32 || pixel_size == 16) <<
-          "only 32x32 and 16x16 icons are supported";
-      request_size_map_[request_id] = pixel_size;
+      size_in_dip = atoi(size.c_str());
+      if (size_in_dip != 64 && size_in_dip != 32 && size_in_dip != 16) {
+        // Only 64x64, 32x32 and 16x16 icons are supported.
+        size_in_dip = 16;
+      }
+      // Optional scale factor.
+      if (scale_delimiter != std::string::npos && scale_delimiter < slash) {
+        DCHECK(size_in_dip == 16);
+        std::string scale_str = path.substr(scale_delimiter + 1,
+                                            slash - scale_delimiter - 1);
+        web_ui_util::ParseScaleFactor(scale_str, &scale_factor);
+      }
       url = GURL(path.substr(slash + 1));
     } else {
       // URL requests prefixed with "origin/" are converted to a form with an
@@ -86,34 +111,29 @@ void FaviconSource::StartDataRequest(const std::string& path,
       } else {
         url = GURL(path);
       }
-
-      request_size_map_[request_id] = 16;
     }
 
     // Intercept requests for prepopulated pages.
     for (size_t i = 0; i < arraysize(history::kPrepopulatedPages); i++) {
       if (url.spec() ==
           l10n_util::GetStringUTF8(history::kPrepopulatedPages[i].url_id)) {
-        request_size_map_.erase(request_id);
         SendResponse(request_id,
-            ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
+            ResourceBundle::GetSharedInstance().LoadDataResourceBytesForScale(
                 history::kPrepopulatedPages[i].favicon_id,
-                ui::SCALE_FACTOR_100P));
+                scale_factor));
         return;
       }
     }
 
-    // TODO(estade): fetch the requested size.
-    handle = favicon_service->GetFaviconForURL(
-        url,
-        icon_types_,
-        &cancelable_consumer_,
+    favicon_service->GetRawFaviconForURL(
+        FaviconService::FaviconForURLParams(
+            profile_, url, icon_types_, size_in_dip),
+        scale_factor,
         base::Bind(&FaviconSource::OnFaviconDataAvailable,
-                   base::Unretained(this)));
+                   base::Unretained(this),
+                   IconRequest(request_id, size_in_dip, scale_factor)),
+        &cancelable_task_tracker_);
   }
-
-  // Attach the ChromeURLDataManager request ID to the history request.
-  cancelable_consumer_.SetClientData(favicon_service, handle, request_id);
 }
 
 std::string FaviconSource::GetMimeType(const std::string&) const {
@@ -129,39 +149,41 @@ bool FaviconSource::ShouldReplaceExistingSource() const {
 }
 
 void FaviconSource::OnFaviconDataAvailable(
-    FaviconService::Handle request_handle,
-    history::FaviconData favicon) {
-  FaviconService* favicon_service =
-      profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
-  int request_id = cancelable_consumer_.GetClientData(favicon_service,
-                                                      request_handle);
-
-  if (favicon.is_valid()) {
+    const IconRequest& request,
+    const history::FaviconBitmapResult& bitmap_result) {
+  if (bitmap_result.is_valid()) {
     // Forward the data along to the networking system.
-    SendResponse(request_id, favicon.image_data);
+    SendResponse(request.request_id, bitmap_result.bitmap_data);
   } else {
-    SendDefaultResponse(request_id);
+    SendDefaultResponse(request);
   }
 }
 
-void FaviconSource::SendDefaultResponse(int request_id) {
-  base::RefCountedMemory* bytes = NULL;
-  if (request_size_map_[request_id] == 32) {
-    if (!default_favicon_large_.get()) {
-      default_favicon_large_ =
-          ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
-              IDR_DEFAULT_LARGE_FAVICON, ui::SCALE_FACTOR_100P);
-    }
-    bytes = default_favicon_large_;
-  } else {
-    if (!default_favicon_.get()) {
-      default_favicon_ =
-          ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
-              IDR_DEFAULT_FAVICON, ui::SCALE_FACTOR_100P);
-    }
-    bytes = default_favicon_;
+void FaviconSource::SendDefaultResponse(const IconRequest& icon_request) {
+  int favicon_index;
+  int resource_id;
+  switch (icon_request.size_in_dip) {
+    case 64:
+      favicon_index = SIZE_64;
+      resource_id = IDR_DEFAULT_FAVICON_64;
+      break;
+    case 32:
+      favicon_index = SIZE_32;
+      resource_id = IDR_DEFAULT_FAVICON_32;
+      break;
+    default:
+      favicon_index = SIZE_16;
+      resource_id = IDR_DEFAULT_FAVICON;
+      break;
   }
-  request_size_map_.erase(request_id);
+  base::RefCountedMemory* default_favicon = default_favicons_[favicon_index];
 
-  SendResponse(request_id, bytes);
+  if (!default_favicon) {
+    ui::ScaleFactor scale_factor = icon_request.scale_factor;
+    default_favicon = ResourceBundle::GetSharedInstance()
+        .LoadDataResourceBytesForScale(resource_id, scale_factor);
+    default_favicons_[favicon_index] = default_favicon;
+  }
+
+  SendResponse(icon_request.request_id, default_favicon);
 }

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/frame/browser_frame_aura.h"
 
+#include "base/command_line.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/system_menu_model_delegate.h"
@@ -22,6 +23,11 @@
 
 #if defined(USE_ASH)
 #include "ash/wm/property_util.h"
+#include "ash/wm/window_util.h"
+#endif
+
+#if !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/views/frame/desktop_browser_frame_aura.h"
 #endif
 
 using aura::Window;
@@ -42,10 +48,26 @@ class BrowserFrameAura::WindowPropertyWatcher : public aura::WindowObserver {
     if (key != aura::client::kShowStateKey)
       return;
 
-    // Allow the frame to be replaced when maximizing an app.
+    ui::WindowShowState old_state = static_cast<ui::WindowShowState>(old);
+    ui::WindowShowState new_state =
+        window->GetProperty(aura::client::kShowStateKey);
+
+    // Allow the frame to be replaced when entering or exiting the maximized
+    // state.
     if (browser_frame_->non_client_view() &&
-        browser_frame_aura_->browser_view()->browser()->is_app())
-      browser_frame_->non_client_view()->UpdateFrame();
+        browser_frame_aura_->browser_view()->browser()->is_app() &&
+        (old_state == ui::SHOW_STATE_MAXIMIZED ||
+         new_state == ui::SHOW_STATE_MAXIMIZED)) {
+      // Defer frame layout when replacing the frame. Layout will occur when the
+      // window's bounds are updated. The window maximize/restore animations
+      // clone the window's layers and rely on the subsequent layout to set
+      // the layer sizes.
+      // If the window is minimized, the frame view needs to be updated via
+      // an OnBoundsChanged event so that the frame will change its size
+      // properly.
+      browser_frame_->non_client_view()->UpdateFrame(
+          old_state == ui::SHOW_STATE_MINIMIZED);
+    }
   }
 
   virtual void OnWindowBoundsChanged(aura::Window* window,
@@ -80,19 +102,19 @@ BrowserFrameAura::BrowserFrameAura(BrowserFrame* browser_frame,
   GetNativeWindow()->SetName("BrowserFrameAura");
   GetNativeWindow()->AddObserver(window_property_watcher_.get());
 #if defined(USE_ASH)
-  if (browser_view->browser()->type() != Browser::TYPE_POPUP) {
+  // Tabbed browsers and apps (some apps are TYPE_POPUP) get their own
+  // workspace.
+  if (browser_view->browser()->type() != Browser::TYPE_POPUP ||
+      browser_view->browser()->is_app()) {
     ash::SetPersistsAcrossAllWorkspaces(
         GetNativeWindow(),
         ash::WINDOW_PERSISTS_ACROSS_ALL_WORKSPACES_VALUE_NO);
   }
-  // HACK: Don't animate app windows. They delete and rebuild their frame on
-  // maximize, which breaks the layer animations. We probably shouldn't rebuild
-  // the frame view on this transition.
-  // TODO(jamescook): Fix app window animation.  http://crbug.com/131293
-  if (browser_view->browser()->is_app()) {
-    Window* window = GetNativeWindow();
-    window->SetProperty(aura::client::kAnimationsDisabledKey, true);
-  }
+  // Turn on auto window management if we don't need an explicit bounds.
+  // This way the requested bounds are honored.
+  if (!browser_view->browser()->bounds_overridden() &&
+      !browser_view->browser()->is_session_restore())
+    SetWindowAutoManaged();
 #endif
 }
 
@@ -115,14 +137,14 @@ void BrowserFrameAura::ShowContextMenuForView(views::View* source,
     ui::SimpleMenuModel model(&menu_delegate);
     model.AddItemWithStringId(IDC_RESTORE_TAB, IDS_RESTORE_TAB);
     model.AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
-    model.AddSeparator();
+    model.AddSeparator(ui::NORMAL_SEPARATOR);
     model.AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
     views::MenuModelAdapter menu_adapter(&model);
     menu_runner_.reset(new views::MenuRunner(menu_adapter.CreateMenu()));
 
     if (menu_runner_->RunMenuAt(source->GetWidget(), NULL,
           gfx::Rect(p, gfx::Size(0,0)), views::MenuItemView::TOPLEFT,
-          views::MenuRunner::HAS_MNEMONICS) ==
+          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
         views::MenuRunner::MENU_DELETED)
       return;
   }
@@ -136,6 +158,22 @@ void BrowserFrameAura::OnWindowDestroying() {
   // observer here.
   GetNativeWindow()->RemoveObserver(window_property_watcher_.get());
   views::NativeWidgetAura::OnWindowDestroying();
+}
+
+void BrowserFrameAura::OnWindowTargetVisibilityChanged(bool visible) {
+  // On Aura when the BrowserView is shown it tries to restore focus, but can
+  // be blocked when this parent BrowserFrameAura isn't visible. Therefore we
+  // RestoreFocus() when we become visible, which results in the web contents
+  // being asked to focus, which places focus either in the web contents or in
+  // the location bar as appropriate.
+  if (visible) {
+    // Once the window has been shown we know the requested bounds
+    // (if provided) have been honored and we can switch on window management.
+    SetWindowAutoManaged();
+
+    browser_view_->RestoreFocus();
+  }
+  views::NativeWidgetAura::OnWindowTargetVisibilityChanged(visible);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -179,6 +217,11 @@ const gfx::Font& BrowserFrame::GetTitleFont() {
 NativeBrowserFrame* NativeBrowserFrame::CreateNativeBrowserFrame(
     BrowserFrame* browser_frame,
     BrowserView* browser_view) {
+#if !defined(OS_CHROMEOS)
+  if (chrome::GetHostDesktopTypeForBrowser(browser_view->browser()) ==
+      chrome::HOST_DESKTOP_TYPE_NATIVE)
+    return new DesktopBrowserFrameAura(browser_frame, browser_view);
+#endif
   return new BrowserFrameAura(browser_frame, browser_view);
 }
 
@@ -186,4 +229,12 @@ NativeBrowserFrame* NativeBrowserFrame::CreateNativeBrowserFrame(
 // BrowserFrameAura, private:
 
 BrowserFrameAura::~BrowserFrameAura() {
+}
+
+void BrowserFrameAura::SetWindowAutoManaged() {
+#if defined(USE_ASH)
+  if (browser_view_->browser()->type() != Browser::TYPE_POPUP ||
+      browser_view_->browser()->is_app())
+    ash::wm::SetWindowPositionManaged(GetNativeWindow(), true);
+#endif
 }

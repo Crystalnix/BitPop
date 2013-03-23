@@ -56,7 +56,8 @@ class FirstLastNameField : public NameField {
 
 }  // namespace
 
-FormField* NameField::Parse(AutofillScanner* scanner) {
+FormField* NameField::Parse(AutofillScanner* scanner,
+                            bool parse_new_field_types) {
   if (scanner->IsEnd())
     return NULL;
 
@@ -106,7 +107,7 @@ FirstLastNameField* FirstLastNameField::ParseSpecificName(
   scoped_ptr<FirstLastNameField> v(new FirstLastNameField);
   scanner->SaveCursor();
 
-  const AutofillField* next;
+  const AutofillField* next = NULL;
   if (ParseField(scanner,
                  UTF8ToUTF16(autofill::kNameSpecificRe), &v->first_name_) &&
       ParseEmptyLabel(scanner, &next)) {

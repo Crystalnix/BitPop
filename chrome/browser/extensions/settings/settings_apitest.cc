@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -13,7 +12,6 @@
 #include "chrome/browser/extensions/settings/settings_sync_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/value_builder.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "sync/api/sync_change.h"
@@ -88,8 +86,6 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableManagedStorage);
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
     EXPECT_CALL(policy_provider_, IsInitializationComplete())
@@ -129,7 +125,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
   }
 
   void InitSync(syncer::SyncChangeProcessor* sync_processor) {
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     InitSyncWithSyncableService(
         sync_processor,
         browser()->profile()->GetExtensionService()->settings_frontend()->
@@ -137,7 +133,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
   }
 
   void SendChanges(const syncer::SyncChangeList& change_list) {
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     SendChangesToSyncableService(
         change_list,
         browser()->profile()->GetExtensionService()->settings_frontend()->
@@ -207,7 +203,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
         scoped_ptr<syncer::SyncChangeProcessor>(
             new SyncChangeProcessorDelegate(sync_processor)),
         scoped_ptr<syncer::SyncErrorFactory>(
-            new syncer::SyncErrorFactoryMock())).IsSet());
+            new syncer::SyncErrorFactoryMock())).error().IsSet());
   }
 
   void SendChangesToSyncableService(
@@ -426,6 +422,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, IsStorageEnabled) {
 }
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
+
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorage) {
   // Set policies for the test extension.
   scoped_ptr<base::DictionaryValue> policy = extensions::DictionaryBuilder()
@@ -450,8 +447,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorage) {
   ASSERT_TRUE(RunExtensionTest("settings/managed_storage")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorageEvents) {
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, PRE_ManagedStorageEvents) {
   ResultCatcher catcher;
+
+  // This test starts without any test extensions installed.
+  EXPECT_FALSE(GetSingleLoadedExtension());
+  message_.clear();
 
   // Set policies for the test extension.
   scoped_ptr<base::DictionaryValue> policy = extensions::DictionaryBuilder()
@@ -478,6 +479,28 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorageEvents) {
   SetPolicies(*policy);
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
+
+// TODO(joaodasilva): This test times out on Vista. http://crbug.com/166261
+#if !defined(OS_WIN)
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorageEvents) {
+  // This test runs after PRE_ManagedStorageEvents without having deleted the
+  // profile, so the extension is still around. While the browser restarted the
+  // policy went back to the empty default, and so the extension should receive
+  // the corresponding change events.
+
+  ResultCatcher catcher;
+
+  // Verify that the test extension is still installed.
+  const Extension* extension = GetSingleLoadedExtension();
+  ASSERT_TRUE(extension);
+  EXPECT_EQ(kManagedStorageExtensionId, extension->id());
+
+  // Running the test again skips the onInstalled callback, and just triggers
+  // the onChanged notification.
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+#endif  // !defined(OS_WIN)
+
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorageDisabled) {

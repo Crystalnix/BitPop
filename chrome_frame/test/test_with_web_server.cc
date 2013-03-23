@@ -6,6 +6,7 @@
 
 #include "base/base_paths.h"
 #include "base/file_version_info.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
 #include "base/test/test_timeouts.h"
@@ -75,9 +76,10 @@ FilePath ChromeFrameTestWithWebServer::test_file_path_;
 FilePath ChromeFrameTestWithWebServer::results_dir_;
 FilePath ChromeFrameTestWithWebServer::CFInstall_path_;
 FilePath ChromeFrameTestWithWebServer::CFInstance_path_;
-ScopedTempDir ChromeFrameTestWithWebServer::temp_dir_;
+base::ScopedTempDir ChromeFrameTestWithWebServer::temp_dir_;
 FilePath ChromeFrameTestWithWebServer::chrome_user_data_dir_;
 chrome_frame_test::TimedMsgLoop* ChromeFrameTestWithWebServer::loop_;
+std::string ChromeFrameTestWithWebServer::local_address_;
 testing::StrictMock<MockWebServerListener>*
     ChromeFrameTestWithWebServer::listener_mock_;
 testing::StrictMock<MockWebServer>* ChromeFrameTestWithWebServer::server_mock_;
@@ -115,9 +117,10 @@ void ChromeFrameTestWithWebServer::SetUpTestCase() {
 
   loop_ = new chrome_frame_test::TimedMsgLoop();
   loop_->set_snapshot_on_timeout(true);
+  local_address_ = chrome_frame_test::GetLocalIPv4Address();
   listener_mock_ = new testing::StrictMock<MockWebServerListener>();
   server_mock_ = new testing::StrictMock<MockWebServer>(
-      1337, ASCIIToWide(chrome_frame_test::GetLocalIPv4Address()),
+      1337, ASCIIToWide(local_address_),
       chrome_frame_test::GetTestDataFolder());
   server_mock_->set_listener(listener_mock_);
 }
@@ -128,6 +131,7 @@ void ChromeFrameTestWithWebServer::TearDownTestCase() {
   server_mock_ = NULL;
   delete listener_mock_;
   listener_mock_ = NULL;
+  local_address_.clear();
   delete loop_;
   loop_ = NULL;
   file_util::Delete(CFInstall_path_, false);
@@ -156,7 +160,7 @@ void ChromeFrameTestWithWebServer::SetUp() {
 
 void ChromeFrameTestWithWebServer::TearDown() {
   CloseBrowser();
-  loop().RunAllPending();
+  loop().RunUntilIdle();
   testing::Mock::VerifyAndClear(listener_mock_);
   testing::Mock::VerifyAndClear(server_mock_);
 }
@@ -238,6 +242,12 @@ const wchar_t kPostedResultSubstring[] = L"/writefile/";
 
 void ChromeFrameTestWithWebServer::SimpleBrowserTestExpectedResult(
     BrowserKind browser, const wchar_t* page, const char* result) {
+  if (browser == IE && chrome_frame_test::GetInstalledIEVersion() >= IE_9) {
+    LOG(INFO) << "Temporarily disabling IE9 web server tests. "
+                 "See http://crbug.com/143699";
+    return;
+  }
+
   int tries = 0;
   ExpectAndHandlePostedResult();
   // Retry tests that timeout once; see http://crbug.com/96449.
@@ -438,7 +448,8 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabIE_MIMEFilterBasic) {
   SimpleBrowserTest(IE, kMIMEFilterBasicPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_Resize) {
+// Times out: http://crbug.com/163728
+TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeIE_Resize) {
   SimpleBrowserTest(IE, L"chrome_frame_resize.html");
 }
 
@@ -452,7 +463,8 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_NavigateURLAbsolute) {
 const wchar_t kNavigateURLRelativePage[] =
     L"navigateurl_relative_host.html";
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_NavigateURLRelative) {
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_NavigateURLRelative) {
   SimpleBrowserTest(IE, kNavigateURLRelativePage);
 }
 
@@ -464,7 +476,9 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_ObjectFocus) {
 
 const wchar_t kiframeBasicPage[] = L"iframe_basic_host.html";
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_iframeBasic) {
+
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_iframeBasic) {
   SimpleBrowserTest(IE, kiframeBasicPage);
 }
 
@@ -500,7 +514,8 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceFallback) {
 
 const wchar_t kCFINoSrcPage[] = L"CFInstance_no_src_host.html";
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceNoSrc) {
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_CFInstanceNoSrc) {
   SimpleBrowserTest(IE, kCFINoSrcPage);
 }
 
@@ -604,8 +619,8 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabIE_CFInstallDismiss) {
 }
 
 const wchar_t kInitializeHiddenPage[] = L"initialize_hidden.html";
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_InitializeHidden) {
+// Times out: http://crbug.com/163728
+TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeIE_InitializeHidden) {
   SimpleBrowserTest(IE, kInitializeHiddenPage);
 }
 
@@ -631,7 +646,8 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_CFHttpHeaderFrameSet) {
 
 const wchar_t kVersionPage[] = L"version.html";
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_Version) {
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_Version) {
   VersionTest(IE, kVersionPage);
 }
 
@@ -648,12 +664,14 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_PrivilegedApis) {
 }
 
 const wchar_t kMetaTagPage[] = L"meta_tag.html";
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_MetaTag) {
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_FullTabModeIE_MetaTag) {
   SimpleBrowserTest(IE, kMetaTagPage);
 }
 
+// Times out: http://crbug.com/163728
 const wchar_t kCFProtocolPage[] = L"cf_protocol.html";
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_CFProtocol) {
+TEST_F(ChromeFrameTestWithWebServer, DISABLED_FullTabModeIE_CFProtocol) {
   // Temporarily enable  gcf: protocol for this test.
   SetConfigBool(kAllowUnsafeURLs, true);
   SimpleBrowserTest(IE, kCFProtocolPage);
@@ -677,8 +695,9 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_ReferrerTest) {
   SimpleBrowserTest(IE, kReferrerMainTest);
 }
 
+// Times out: http://crbug.com/163728
 const wchar_t kSubFrameTestPage[] = L"full_tab_sub_frame_main.html";
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_SubFrame) {
+TEST_F(ChromeFrameTestWithWebServer, DISABLED_FullTabModeIE_SubFrame) {
   SimpleBrowserTest(IE, kSubFrameTestPage);
 }
 
@@ -690,7 +709,8 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_SubIFrame) {
 const wchar_t kXMLHttpRequestTestUrl[] =
     L"xmlhttprequest_test.html";
 
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_XHRTest) {
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_FullTabModeIE_XHRTest) {
   SimpleBrowserTest(IE, kXMLHttpRequestTestUrl);
 }
 
@@ -750,7 +770,8 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_AnchorUrlNavigateTest) {
 
 // Test whether POST-ing a form from an mshtml page to a CF page will cause
 // the request to get reissued.  It should not.
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestPostReissue) {
+// https://code.google.com/p/chromium/issues/detail?id=143699
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_FullTabModeIE_TestPostReissue) {
   // The order of pages in this array is assumed to be mshtml, cf, script.
   const wchar_t* kPages[] = {
     L"full_tab_post_mshtml.html",
@@ -758,7 +779,7 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestPostReissue) {
     L"chrome_frame_tester_helpers.js",
   };
 
-  SimpleWebServerTest server(46664);
+  SimpleWebServerTest server(local_address_, 46664);
   server.PopulateStaticFileListT<test_server::FileResponse>(kPages,
       arraysize(kPages), GetCFTestFilePath());
 
@@ -781,7 +802,8 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestPostReissue) {
 
 // Test whether following a link from an mshtml page to a CF page will cause
 // multiple network requests.  It should not.
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestMultipleGet) {
+// Flaky, crbug.com/160497.
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_FullTabModeIE_TestMultipleGet) {
   // The order of pages in this array is assumed to be mshtml, cf, script.
   const wchar_t* kPages[] = {
     L"full_tab_get_mshtml.html",
@@ -789,7 +811,7 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestMultipleGet) {
     L"chrome_frame_tester_helpers.js",
   };
 
-  SimpleWebServerTest server(46664);
+  SimpleWebServerTest server(local_address_, 46664);
 
   server.PopulateStaticFileListT<test_server::FileResponse>(kPages,
       arraysize(kPages), GetCFTestFilePath());
@@ -901,13 +923,13 @@ class UaTemplateFileResponse : public test_server::FileResponse {
 //
 // This test currently fails because GCF does not add the chromeframe header
 // to requests that mshtml initiates via IInternetSession::CreateBinding.
-TEST_F(ChromeFrameTestWithWebServer, FAILS_FullTabModeIE_RefreshMshtmlTest) {
+TEST_F(ChromeFrameTestWithWebServer, DISABLED_FullTabModeIE_RefreshMshtmlTest) {
   const wchar_t* kPages[] = {
     L"mshtml_refresh_test.html",
     L"mshtml_refresh_test_popup.html",
   };
 
-  SimpleWebServerTest server(46664);
+  SimpleWebServerTest server(local_address_, 46664);
   server.PopulateStaticFileListT<UaTemplateFileResponse>(kPages,
       arraysize(kPages), GetCFTestFilePath());
 
@@ -1047,7 +1069,7 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestDownloadFromForm) {
       .Times(testing::AtMost(1))
       .WillOnce(QUIT_LOOP(loop()));
 
-  SimpleWebServerTest server(46664);
+  SimpleWebServerTest server(local_address_, 46664);
   CustomResponse* response = new CustomResponse("/form.html");
   server.web_server()->AddResponse(response);
 

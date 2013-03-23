@@ -7,11 +7,12 @@
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/event_utils.h"
-#include "ui/base/accelerators/accelerator_cocoa.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/base/accelerators/platform_accelerator_cocoa.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/image/image_skia_util_mac.h"
+#include "ui/base/text/text_elider.h"
+#include "ui/gfx/image/image.h"
 
 @interface MenuController (Private)
 - (void)addSeparatorToMenu:(NSMenu*)menu
@@ -22,6 +23,14 @@
 
 @synthesize model = model_;
 @synthesize useWithPopUpButtonCell = useWithPopUpButtonCell_;
+
++ (string16)elideMenuTitle:(const string16&)title
+                   toWidth:(int)width {
+  NSFont* nsfont = [NSFont menuBarFontOfSize:0];  // 0 means "default"
+  gfx::Font font(base::SysNSStringToUTF8([nsfont fontName]),
+                 static_cast<int>([nsfont pointSize]));
+  return ui::ElideText(title, font, width, ui::ELIDE_AT_END);
+}
 
 - (id)init {
   self = [super init];
@@ -83,6 +92,11 @@
   return menu;
 }
 
+- (int)maxWidthForMenuModel:(ui::MenuModel*)model
+                 modelIndex:(int)modelIndex {
+  return -1;
+}
+
 // Adds a separator item at the given index. As the separator doesn't need
 // anything from the model, this method doesn't need the model index as the
 // other method below does.
@@ -98,21 +112,21 @@
               atIndex:(NSInteger)index
             fromModel:(ui::MenuModel*)model
            modelIndex:(int)modelIndex {
-  NSString* label =
-      l10n_util::FixUpWindowsStyleLabel(model->GetLabelAt(modelIndex));
+  string16 label16 = model->GetLabelAt(modelIndex);
+  int maxWidth = [self maxWidthForMenuModel:model modelIndex:modelIndex];
+  if (maxWidth != -1)
+    label16 = [MenuController elideMenuTitle:label16 toWidth:maxWidth];
+
+  NSString* label = l10n_util::FixUpWindowsStyleLabel(label16);
   scoped_nsobject<NSMenuItem> item(
       [[NSMenuItem alloc] initWithTitle:label
                                  action:@selector(itemSelected:)
                           keyEquivalent:@""]);
 
   // If the menu item has an icon, set it.
-  gfx::ImageSkia skiaIcon;
-  if (model->GetIconAt(modelIndex, &skiaIcon) && !skiaIcon.isNull()) {
-    NSImage* icon = gfx::NSImageFromImageSkia(skiaIcon);
-    if (icon) {
-      [item setImage:icon];
-    }
-  }
+  gfx::Image icon;
+  if (model->GetIconAt(modelIndex, &icon) && !icon.IsEmpty())
+    [item setImage:icon.ToNSImage()];
 
   ui::MenuModel::ItemType type = model->GetTypeAt(modelIndex);
   if (type == ui::MenuModel::TYPE_SUBMENU) {
@@ -133,10 +147,16 @@
     [item setTarget:self];
     NSValue* modelObject = [NSValue valueWithPointer:model];
     [item setRepresentedObject:modelObject];  // Retains |modelObject|.
-    ui::AcceleratorCocoa accelerator;
+    ui::Accelerator accelerator;
     if (model->GetAcceleratorAt(modelIndex, &accelerator)) {
-      [item setKeyEquivalent:accelerator.characters()];
-      [item setKeyEquivalentModifierMask:accelerator.modifiers()];
+      const ui::PlatformAcceleratorCocoa* platformAccelerator =
+          static_cast<const ui::PlatformAcceleratorCocoa*>(
+              accelerator.platform_accelerator());
+      if (platformAccelerator) {
+        [item setKeyEquivalent:platformAccelerator->characters()];
+        [item setKeyEquivalentModifierMask:
+            platformAccelerator->modifier_mask()];
+      }
     }
   }
   [menu insertItem:item atIndex:index];
@@ -165,11 +185,10 @@
       NSString* label =
           l10n_util::FixUpWindowsStyleLabel(model->GetLabelAt(modelIndex));
       [(id)item setTitle:label];
-      gfx::ImageSkia skiaIcon;
-      NSImage* icon = nil;
-      if (model->GetIconAt(modelIndex, &skiaIcon) && !skiaIcon.isNull())
-        icon = gfx::NSImageFromImageSkia(skiaIcon);
-      [(id)item setImage:icon];
+
+      gfx::Image icon;
+      model->GetIconAt(modelIndex, &icon);
+      [(id)item setImage:icon.IsEmpty() ? nil : icon.ToNSImage()];
     }
     return model->IsEnabledAt(modelIndex);
   }

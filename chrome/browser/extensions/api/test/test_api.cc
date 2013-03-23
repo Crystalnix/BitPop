@@ -80,7 +80,7 @@ bool TestResetQuotaFunction::RunImpl() {
   ExtensionService* service = profile()->GetExtensionService();
   ExtensionsQuotaService* quota = service->quota_service();
   quota->Purge();
-  quota->violators_.clear();
+  quota->violation_errors_.clear();
   return true;
 }
 
@@ -90,7 +90,8 @@ TestCreateIncognitoTabFunction::
 bool TestCreateIncognitoTabFunction::RunImpl() {
   std::string url;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url));
-  chrome::OpenURLOffTheRecord(profile(), GURL(url));
+  chrome::OpenURLOffTheRecord(profile(), GURL(url),
+                              chrome::HOST_DESKTOP_TYPE_NATIVE);
   return true;
 }
 

@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/string16.h"
+#include "base/synchronization/lock.h"
 #include "build/build_config.h"
 
 // Windows HiRes timers drain the battery faster so we need to know the battery
@@ -58,33 +59,19 @@ class BASE_EXPORT SystemMonitor {
     DEVTYPE_UNKNOWN,  // Other devices.
   };
 
-  // Type of location data to identify a currently attached media device.
-  enum MediaDeviceType {
-    TYPE_PATH,  // FilePath::StringType, e.g. a mount point.
-    TYPE_MTP,   // (W)string to locate a MTP device, e.g. its usb bus/port.
-  };
+  struct BASE_EXPORT RemovableStorageInfo {
+    RemovableStorageInfo();
+    RemovableStorageInfo(const std::string& id,
+                         const string16& device_name,
+                         const FilePath::StringType& device_location);
 
-  struct MediaDeviceInfo {
-    MediaDeviceInfo(const std::string& id,
-                    const string16& device_name,
-                    MediaDeviceType device_type,
-                    const FilePath::StringType& device_location)
-        : unique_id(id),
-          name(device_name),
-          type(device_type),
-          location(device_location) {
-    }
+    // Unique device id - persists between device attachments.
+    std::string device_id;
 
-    // Unique media device id - persists between device attachments.
-    std::string unique_id;
-
-    // Human readable media device name.
+    // Human readable removable storage device name.
     string16 name;
 
-    // Media device type.
-    MediaDeviceType type;
-
-    // Current attached media device location.
+    // Current attached removable storage device location.
     FilePath::StringType location;
   };
 
@@ -108,8 +95,8 @@ class BASE_EXPORT SystemMonitor {
 #endif  // OS_IOS
 #endif  // OS_MACOSX
 
-  // Returns information for attached media devices.
-  std::vector<MediaDeviceInfo> GetAttachedMediaDevices() const;
+  // Returns information for attached removable storage.
+  std::vector<RemovableStorageInfo> GetAttachedRemovableStorage() const;
 
   //
   // Power-related APIs
@@ -149,14 +136,13 @@ class BASE_EXPORT SystemMonitor {
     // This is only implemented on Windows currently.
     virtual void OnDevicesChanged(DeviceType device_type) {}
 
-    // When a media device is attached or detached, one of these two events
-    // is triggered.
-    virtual void OnMediaDeviceAttached(const std::string& id,
-                                       const string16& name,
-                                       MediaDeviceType type,
-                                       const FilePath::StringType& location) {}
-
-    virtual void OnMediaDeviceDetached(const std::string& id) {}
+    // When a removable storage device is attached or detached, one of these
+    // two events is triggered.
+    virtual void OnRemovableStorageAttached(
+        const std::string& id,
+        const string16& name,
+        const FilePath::StringType& location) {}
+    virtual void OnRemovableStorageDetached(const std::string& id) {}
 
    protected:
     virtual ~DevicesChangedObserver() {}
@@ -174,6 +160,10 @@ class BASE_EXPORT SystemMonitor {
   void RemovePowerObserver(PowerObserver* obs);
   void RemoveDevicesChangedObserver(DevicesChangedObserver* obs);
 
+  // The ProcessFoo() style methods are a broken pattern and should not
+  // be copied. Any significant addition to this class is blocked on
+  // refactoring to improve the state of affairs. See http://crbug.com/149059
+
 #if defined(OS_WIN)
   // Windows-specific handling of a WM_POWERBROADCAST message.
   // Embedders of this API should hook their top-level window
@@ -186,15 +176,14 @@ class BASE_EXPORT SystemMonitor {
 
   // Cross-platform handling of a device change event.
   void ProcessDevicesChanged(DeviceType device_type);
-  void ProcessMediaDeviceAttached(const std::string& id,
-                                  const string16& name,
-                                  MediaDeviceType type,
-                                  const FilePath::StringType& location);
-  void ProcessMediaDeviceDetached(const std::string& id);
+  void ProcessRemovableStorageAttached(const std::string& id,
+                                       const string16& name,
+                                       const FilePath::StringType& location);
+  void ProcessRemovableStorageDetached(const std::string& id);
 
  private:
   // Mapping of unique device id to device info tuple.
-  typedef std::map<std::string, MediaDeviceInfo> MediaDeviceMap;
+  typedef std::map<std::string, RemovableStorageInfo> RemovableStorageMap;
 
 #if defined(OS_MACOSX)
   void PlatformInit();
@@ -212,11 +201,10 @@ class BASE_EXPORT SystemMonitor {
 
   // Functions to trigger notifications.
   void NotifyDevicesChanged(DeviceType device_type);
-  void NotifyMediaDeviceAttached(const std::string& id,
-                                 const string16& name,
-                                 MediaDeviceType type,
-                                 const FilePath::StringType& data);
-  void NotifyMediaDeviceDetached(const std::string& id);
+  void NotifyRemovableStorageAttached(const std::string& id,
+                                      const string16& name,
+                                      const FilePath::StringType& location);
+  void NotifyRemovableStorageDetached(const std::string& id);
   void NotifyPowerStateChange();
   void NotifySuspend();
   void NotifyResume();
@@ -236,8 +224,10 @@ class BASE_EXPORT SystemMonitor {
   std::vector<id> notification_observers_;
 #endif
 
-  // Map of all the attached media devices.
-  MediaDeviceMap media_device_map_;
+  // For manipulating removable_storage_map_ structure.
+  mutable base::Lock removable_storage_lock_;
+  // Map of all the attached removable storage devices.
+  RemovableStorageMap removable_storage_map_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemMonitor);
 };

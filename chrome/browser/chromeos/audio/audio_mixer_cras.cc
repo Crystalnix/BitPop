@@ -14,7 +14,6 @@
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "chrome/browser/speech/extension_api/tts_extension_api_chromeos.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -36,6 +35,9 @@ AudioMixerCras::AudioMixerCras()
       client_connected_(false),
       volume_percent_(kDefaultVolumePercent),
       is_muted_(false),
+      is_mute_locked_(false),
+      is_capture_muted_(false),
+      is_capture_mute_locked_(false),
       apply_is_pending_(true) {
 }
 
@@ -85,13 +87,55 @@ bool AudioMixerCras::IsMuted() {
   return is_muted_;
 }
 
-void AudioMixerCras::SetMuted(bool muted) {
+void AudioMixerCras::SetMuted(bool mute) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::AutoLock lock(lock_);
-  is_muted_ = muted;
-  if (client_connected_ && !apply_is_pending_)
-    thread_->message_loop()->PostTask(FROM_HERE,
-        base::Bind(&AudioMixerCras::ApplyState, base::Unretained(this)));
+  if (is_mute_locked_) {
+    NOTREACHED() << "Mute has been locked!";
+    return;
+  }
+  is_muted_ = mute;
+  ApplyStateIfNeeded();
+}
+
+bool AudioMixerCras::IsMuteLocked() {
+  base::AutoLock lock(lock_);
+  return is_mute_locked_;
+}
+
+void AudioMixerCras::SetMuteLocked(bool locked) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::AutoLock lock(lock_);
+  is_mute_locked_ = locked;
+  ApplyStateIfNeeded();
+}
+
+bool AudioMixerCras::IsCaptureMuted() {
+  base::AutoLock lock(lock_);
+  return is_capture_muted_;
+}
+
+void AudioMixerCras::SetCaptureMuted(bool mute) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::AutoLock lock(lock_);
+  if (is_capture_mute_locked_) {
+    NOTREACHED() << "Capture mute has been locked!";
+    return;
+  }
+  is_capture_muted_ = mute;
+  ApplyStateIfNeeded();
+}
+
+bool AudioMixerCras::IsCaptureMuteLocked() {
+  base::AutoLock lock(lock_);
+  return is_capture_mute_locked_;
+}
+
+void AudioMixerCras::SetCaptureMuteLocked(bool locked) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::AutoLock lock(lock_);
+  is_capture_mute_locked_ = locked;
+  ApplyStateIfNeeded();
 }
 
 void AudioMixerCras::Connect() {
@@ -111,12 +155,6 @@ void AudioMixerCras::Connect() {
   }
   client_connected_ = true;
 
-  // The speech synthesis service shouldn't be initialized until after
-  // we get to this point, so we call this function to tell it that it's
-  // safe to do TTS now.  NotificationService would be cleaner,
-  // but it's not available at this point.
-  EnableChromeOsTts();
-
   ApplyState();
 }
 
@@ -126,10 +164,16 @@ void AudioMixerCras::ApplyState() {
     return;
 
   bool should_mute = false;
+  bool should_lock_mute = false;
+  bool should_mute_capture = false;
+  bool should_lock_capture_mute = false;
   size_t new_volume = 0;
   {
     base::AutoLock lock(lock_);
     should_mute = is_muted_;
+    should_lock_mute = is_mute_locked_;
+    should_mute_capture = is_capture_muted_;
+    should_lock_capture_mute = is_capture_mute_locked_;
     new_volume = floor(volume_percent_ + 0.5);
     apply_is_pending_ = false;
   }
@@ -141,6 +185,18 @@ void AudioMixerCras::ApplyState() {
   } else {
     cras_client_set_system_volume(client_, new_volume);
     cras_client_set_system_mute(client_, should_mute);
+  }
+  cras_client_set_system_mute_locked(client_, should_lock_mute);
+  cras_client_set_system_capture_mute(client_, should_mute_capture);
+  cras_client_set_system_capture_mute_locked(client_, should_lock_capture_mute);
+}
+
+void AudioMixerCras::ApplyStateIfNeeded() {
+  lock_.AssertAcquired();
+  if (client_connected_ && !apply_is_pending_) {
+    thread_->message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&AudioMixerCras::ApplyState, base::Unretained(this)));
   }
 }
 

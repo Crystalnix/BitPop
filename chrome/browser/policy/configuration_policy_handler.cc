@@ -9,16 +9,17 @@
 #include "base/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/prefs/pref_value_map.h"
 #include "base/stl_util.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "chrome/browser/download/download_util.h"
+#include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/policy_path_parser.h"
-#include "chrome/browser/prefs/pref_value_map.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -28,6 +29,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
+#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "policy/policy_constants.h"
 
@@ -87,6 +89,9 @@ const DefaultSearchSimplePolicyHandlerEntry kDefaultSearchPolicyMap[] = {
   { key::kDefaultSearchProviderEncodings,
     prefs::kDefaultSearchProviderEncodings,
     Value::TYPE_LIST },
+  { key::kDefaultSearchProviderAlternateURLs,
+    prefs::kDefaultSearchProviderAlternateURLs,
+    Value::TYPE_LIST },
 };
 
 // List of entries determining which proxy policies can be specified, depending
@@ -118,7 +123,7 @@ std::string ValueTypeToString(Value::Type type) {
     "dictionary",
     "list"
   };
-  DCHECK(static_cast<size_t>(type) < arraysize(strings));
+  CHECK(static_cast<size_t>(type) < arraysize(strings));
   return std::string(strings[type]);
 }
 
@@ -204,6 +209,81 @@ bool TypeCheckingPolicyHandler::CheckAndGetValue(const PolicyMap& policies,
   return true;
 }
 
+// StringToIntEnumListPolicyHandler implementation -----------------------------
+
+StringToIntEnumListPolicyHandler::StringToIntEnumListPolicyHandler(
+    const char* policy_name,
+    const char* pref_path,
+    const MappingEntry* mapping_begin,
+    const MappingEntry* mapping_end)
+    : TypeCheckingPolicyHandler(policy_name, base::Value::TYPE_LIST),
+      pref_path_(pref_path),
+      mapping_begin_(mapping_begin),
+      mapping_end_(mapping_end) {}
+
+bool StringToIntEnumListPolicyHandler::CheckPolicySettings(
+    const PolicyMap& policies,
+    PolicyErrorMap* errors) {
+  const base::Value* value;
+  return CheckAndGetValue(policies, errors, &value) &&
+      Convert(value, NULL, errors);
+}
+
+void StringToIntEnumListPolicyHandler::ApplyPolicySettings(
+    const PolicyMap& policies,
+    PrefValueMap* prefs) {
+  const base::Value* value = policies.GetValue(policy_name());
+  scoped_ptr<base::ListValue> list(new base::ListValue());
+  if (value && Convert(value, list.get(), NULL))
+    prefs->SetValue(pref_path_, list.release());
+}
+
+bool StringToIntEnumListPolicyHandler::Convert(const base::Value* input,
+                                               base::ListValue* output,
+                                               PolicyErrorMap* errors) {
+  if (!input)
+    return true;
+
+  const base::ListValue* list_value = NULL;
+  if (!input->GetAsList(&list_value)) {
+    NOTREACHED();
+    return false;
+  }
+
+  for (base::ListValue::const_iterator entry(list_value->begin());
+       entry != list_value->end(); ++entry) {
+    std::string entry_value;
+    if (!(*entry)->GetAsString(&entry_value)) {
+      if (errors) {
+        errors->AddError(policy_name(),
+                         entry - list_value->begin(),
+                         IDS_POLICY_TYPE_ERROR,
+                         ValueTypeToString(base::Value::TYPE_STRING));
+      }
+      continue;
+    }
+    bool found = false;
+    for (const MappingEntry* mapping_entry(mapping_begin_);
+         mapping_entry != mapping_end_; ++mapping_entry) {
+      if (mapping_entry->enum_value == entry_value) {
+        found = true;
+        if (output)
+          output->AppendInteger(mapping_entry->int_value);
+        break;
+      }
+    }
+    if (!found) {
+      if (errors) {
+        errors->AddError(policy_name(),
+                         entry - list_value->begin(),
+                         IDS_POLICY_OUT_OF_RANGE_ERROR);
+      }
+    }
+  }
+
+  return true;
+}
+
 // ExtensionListPolicyHandler implementation -----------------------------------
 
 ExtensionListPolicyHandler::ExtensionListPolicyHandler(const char* policy_name,
@@ -224,9 +304,10 @@ bool ExtensionListPolicyHandler::CheckPolicySettings(
 void ExtensionListPolicyHandler::ApplyPolicySettings(
     const PolicyMap& policies,
     PrefValueMap* prefs) {
-  const Value* value = policies.GetValue(policy_name());
-  if (value)
-    prefs->SetValue(pref_path(), value->DeepCopy());
+  scoped_ptr<base::ListValue> list;
+  PolicyErrorMap errors;
+  if (CheckAndGetList(policies, &errors, &list) && list)
+    prefs->SetValue(pref_path(), list.release());
 }
 
 const char* ExtensionListPolicyHandler::pref_path() const {
@@ -236,9 +317,9 @@ const char* ExtensionListPolicyHandler::pref_path() const {
 bool ExtensionListPolicyHandler::CheckAndGetList(
     const PolicyMap& policies,
     PolicyErrorMap* errors,
-    const base::ListValue** extension_ids) {
+    scoped_ptr<base::ListValue>* extension_ids) {
   if (extension_ids)
-    *extension_ids = NULL;
+    extension_ids->reset();
 
   const base::Value* value = NULL;
   if (!CheckAndGetValue(policies, errors, &value))
@@ -253,7 +334,8 @@ bool ExtensionListPolicyHandler::CheckAndGetList(
     return false;
   }
 
-  // Check that the list contains valid extension ID strings only.
+  // Filter the list, rejecting any invalid extension IDs.
+  scoped_ptr<base::ListValue> filtered_list(new base::ListValue());
   for (base::ListValue::const_iterator entry(list_value->begin());
        entry != list_value->end(); ++entry) {
     std::string id;
@@ -262,19 +344,111 @@ bool ExtensionListPolicyHandler::CheckAndGetList(
                        entry - list_value->begin(),
                        IDS_POLICY_TYPE_ERROR,
                        ValueTypeToString(base::Value::TYPE_STRING));
-      return false;
+      continue;
     }
     if (!(allow_wildcards_ && id == "*") &&
         !extensions::Extension::IdIsValid(id)) {
       errors->AddError(policy_name(),
                        entry - list_value->begin(),
                        IDS_POLICY_VALUE_FORMAT_ERROR);
-      return false;
+      continue;
     }
+    filtered_list->Append(base::Value::CreateStringValue(id));
   }
 
   if (extension_ids)
-    *extension_ids = list_value;
+    *extension_ids = filtered_list.Pass();
+
+  return true;
+}
+
+// ExtensionInstallForcelistPolicyHandler implementation -----------------------
+
+ExtensionInstallForcelistPolicyHandler::
+    ExtensionInstallForcelistPolicyHandler()
+        : TypeCheckingPolicyHandler(key::kExtensionInstallForcelist,
+                                    base::Value::TYPE_LIST) {}
+
+ExtensionInstallForcelistPolicyHandler::
+    ~ExtensionInstallForcelistPolicyHandler() {}
+
+bool ExtensionInstallForcelistPolicyHandler::CheckPolicySettings(
+    const PolicyMap& policies,
+    PolicyErrorMap* errors) {
+  const base::Value* value;
+  return CheckAndGetValue(policies, errors, &value) &&
+      ParseList(value, NULL, errors);
+}
+
+void ExtensionInstallForcelistPolicyHandler::ApplyPolicySettings(
+    const PolicyMap& policies,
+    PrefValueMap* prefs) {
+  const base::Value* value = NULL;
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+  if (CheckAndGetValue(policies, NULL, &value) &&
+      value &&
+      ParseList(value, dict.get(), NULL)) {
+    prefs->SetValue(prefs::kExtensionInstallForceList, dict.release());
+  }
+}
+
+bool ExtensionInstallForcelistPolicyHandler::ParseList(
+    const base::Value* policy_value,
+    base::DictionaryValue* extension_dict,
+    PolicyErrorMap* errors) {
+  if (!policy_value)
+    return true;
+
+  const base::ListValue* policy_list_value = NULL;
+  if (!policy_value->GetAsList(&policy_list_value)) {
+    // This should have been caught in CheckPolicySettings.
+    NOTREACHED();
+    return false;
+  }
+
+  for (base::ListValue::const_iterator entry(policy_list_value->begin());
+       entry != policy_list_value->end(); ++entry) {
+    std::string entry_string;
+    if (!(*entry)->GetAsString(&entry_string)) {
+      if (errors) {
+        errors->AddError(policy_name(),
+                         entry - policy_list_value->begin(),
+                         IDS_POLICY_TYPE_ERROR,
+                         ValueTypeToString(base::Value::TYPE_STRING));
+      }
+      continue;
+    }
+
+    // Each string item of the list has the following form:
+    // <extension_id>;<update_url>
+    // Note: The update URL might also contain semicolons.
+    size_t pos = entry_string.find(';');
+    if (pos == std::string::npos) {
+      if (errors) {
+        errors->AddError(policy_name(),
+                         entry - policy_list_value->begin(),
+                         IDS_POLICY_VALUE_FORMAT_ERROR);
+      }
+      continue;
+    }
+
+    std::string extension_id = entry_string.substr(0, pos);
+    std::string update_url = entry_string.substr(pos+1);
+    if (!extensions::Extension::IdIsValid(extension_id) ||
+        !GURL(update_url).is_valid()) {
+      if (errors) {
+        errors->AddError(policy_name(),
+                         entry - policy_list_value->begin(),
+                         IDS_POLICY_VALUE_FORMAT_ERROR);
+      }
+      continue;
+    }
+
+    if (extension_dict) {
+      extensions::ExternalPolicyLoader::AddExtension(
+          extension_dict, extension_id, update_url);
+    }
+  }
 
   return true;
 }
@@ -649,6 +823,8 @@ void DefaultSearchPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
     prefs->SetString(prefs::kDefaultSearchProviderEncodings, std::string());
     prefs->SetString(prefs::kDefaultSearchProviderKeyword, std::string());
     prefs->SetString(prefs::kDefaultSearchProviderInstantURL, std::string());
+    prefs->SetValue(prefs::kDefaultSearchProviderAlternateURLs,
+                    new ListValue());
   } else {
     // The search URL is required.  The other entries are optional.  Just make
     // sure that they are all specified via policy, so that the regular prefs
@@ -665,6 +841,7 @@ void DefaultSearchPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
       EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderEncodings);
       EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderKeyword);
       EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderInstantURL);
+      EnsureListPrefExists(prefs, prefs::kDefaultSearchProviderAlternateURLs);
 
       // For the name and keyword, default to the host if not specified.  If
       // there is no host (file: URLs?  Not sure), use "_" to guarantee that the
@@ -749,6 +926,15 @@ void DefaultSearchPolicyHandler::EnsureStringPrefExists(
   std::string value;
   if (!prefs->GetString(path, &value))
     prefs->SetString(path, value);
+}
+
+void DefaultSearchPolicyHandler::EnsureListPrefExists(
+    PrefValueMap* prefs,
+    const std::string& path) {
+  base::Value* value;
+  base::ListValue* list_value;
+  if (!prefs->GetValue(path, &value) || !value->GetAsList(&list_value))
+    prefs->SetValue(path, new ListValue());
 }
 
 

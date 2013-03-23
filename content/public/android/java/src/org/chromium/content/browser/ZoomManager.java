@@ -109,6 +109,13 @@ class ZoomManager {
         }
     }
 
+    void dismissZoomPicker() {
+        ZoomButtonsController zoomControls = getZoomControls();
+        if (zoomControls != null && zoomControls.isVisible()) {
+            zoomControls.setVisible(false);
+        }
+    }
+
     boolean isMultiTouchZoomSupported() {
         return !mMultiTouchListener.getPermanentlyIgnoreDetectorEvents();
     }
@@ -138,7 +145,10 @@ class ZoomManager {
         // TODO: Need to deal with multi-touch transition
         mMultiTouchListener.setTemporarilyIgnoreDetectorEvents(false);
         try {
-            return mMultiTouchDetector.onTouchEvent(event);
+            boolean inGesture = isScaleGestureDetectionInProgress();
+            boolean retVal = mMultiTouchDetector.onTouchEvent(event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP && !inGesture) return false;
+            return retVal;
         } catch (Exception e) {
             Log.e(TAG, "ScaleGestureDetector got into a bad state!", e);
             assert(false);

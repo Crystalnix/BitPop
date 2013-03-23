@@ -13,12 +13,12 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/spdy/spdy_header_block.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_netlog_params.h"
 #include "webkit/glue/resource_loader_bridge.h"
 
-using content::BrowserThread;
-
+namespace content {
 const size_t kMaxNumEntries = 1000;
 
 DevToolsNetLogObserver* DevToolsNetLogObserver::instance_ = NULL;
@@ -120,6 +120,26 @@ void DevToolsNetLogObserver::OnAddURLRequestEntry(
         info->request_headers.push_back(std::make_pair(it.name(), it.value()));
       }
       info->request_headers_text = request_line + request_headers.ToString();
+      break;
+    }
+    case net::NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS: {
+      scoped_ptr<Value> event_params(entry.ParametersToValue());
+      net::SpdyHeaderBlock request_headers;
+
+      if (!net::SpdyHeaderBlockFromNetLogParam(event_params.get(),
+                                               &request_headers)) {
+        NOTREACHED();
+      }
+
+      // We need to clear headers in case the same url_request is reused for
+      // several http requests (e.g. see http://crbug.com/80157).
+      info->request_headers.clear();
+
+      for (net::SpdyHeaderBlock::const_iterator it = request_headers.begin();
+           it != request_headers.end(); ++it) {
+        info->request_headers.push_back(std::make_pair(it->first, it->second));
+      }
+      info->request_headers_text = "";
       break;
     }
     case net::NetLog::TYPE_HTTP_TRANSACTION_READ_RESPONSE_HEADERS: {
@@ -243,7 +263,7 @@ void DevToolsNetLogObserver::OnAddSocketEntry(
 
 void DevToolsNetLogObserver::Attach() {
   DCHECK(!instance_);
-  net::NetLog* net_log = content::GetContentClient()->browser()->GetNetLog();
+  net::NetLog* net_log = GetContentClient()->browser()->GetNetLog();
   if (net_log) {
     instance_ = new DevToolsNetLogObserver();
     net_log->AddThreadSafeObserver(instance_, net::NetLog::LOG_ALL_BUT_BYTES);
@@ -271,7 +291,7 @@ DevToolsNetLogObserver* DevToolsNetLogObserver::GetInstance() {
 // static
 void DevToolsNetLogObserver::PopulateResponseInfo(
     net::URLRequest* request,
-    content::ResourceResponse* response) {
+    ResourceResponse* response) {
   if (!(request->load_flags() & net::LOAD_REPORT_RAW_HEADERS))
     return;
 
@@ -305,3 +325,5 @@ int DevToolsNetLogObserver::GetAndResetEncodedDataLength(
   it->second = 0;
   return encoded_data_length;
 }
+
+}  // namespace content

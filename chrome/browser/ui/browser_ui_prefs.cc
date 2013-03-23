@@ -10,22 +10,6 @@
 
 namespace chrome {
 
-void SetNewHomePagePrefs(PrefService* prefs) {
-  const PrefService::Preference* home_page_pref =
-      prefs->FindPreference(prefs::kHomePage);
-  if (home_page_pref &&
-      !home_page_pref->IsManaged() &&
-      !prefs->HasPrefPath(prefs::kHomePage)) {
-    prefs->SetString(prefs::kHomePage, std::string());
-  }
-  const PrefService::Preference* home_page_is_new_tab_page_pref =
-      prefs->FindPreference(prefs::kHomePageIsNewTabPage);
-  if (home_page_is_new_tab_page_pref &&
-      !home_page_is_new_tab_page_pref->IsManaged() &&
-      !prefs->HasPrefPath(prefs::kHomePageIsNewTabPage))
-    prefs->SetBoolean(prefs::kHomePageIsNewTabPage, false);
-}
-
 void RegisterBrowserPrefs(PrefService* prefs) {
   prefs->RegisterIntegerPref(prefs::kOptionsWindowLastTabIndex, 0);
   prefs->RegisterBooleanPref(prefs::kAllowFileSelectionDialogs, true);
@@ -41,6 +25,9 @@ void RegisterBrowserUserPrefs(PrefService* prefs) {
                              PrefService::SYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kShowHomeButton,
                              false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kExtensionsSideloadWipeoutBubbleShown,
+                             0,
                              PrefService::SYNCABLE_PREF);
 #if defined(OS_MACOSX)
   // This really belongs in platform code, but there's no good place to
@@ -141,9 +128,15 @@ void RegisterBrowserUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kImportSavedPasswords,
                              true,
                              PrefService::UNSYNCABLE_PREF);
-  // The map of timestamps of the last used file browser handlers.
-  prefs->RegisterDictionaryPref(prefs::kLastUsedFileBrowserHandlers,
-                                PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableDoNotTrack,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+
+  // Dictionaries to keep track of default tasks in the file browser.
+  prefs->RegisterDictionaryPref(prefs::kDefaultTasksByMimeType,
+                                PrefService::SYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kDefaultTasksBySuffix,
+                                PrefService::SYNCABLE_PREF);
 
   // We need to register the type of these preferences in order to query
   // them even though they're only typically controlled via policy.

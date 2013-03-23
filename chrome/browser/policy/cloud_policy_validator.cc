@@ -7,13 +7,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/message_loop.h"
+#include "base/stl_util.h"
 #include "chrome/browser/policy/cloud_policy_constants.h"
 #include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/policy/proto/cloud_policy.pb.h"
 #include "chrome/browser/policy/proto/device_management_backend.pb.h"
-#include "chrome/common/net/gaia/gaia_auth_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/signature_verifier.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 
 namespace em = enterprise_management;
 
@@ -35,13 +36,17 @@ const uint8 kSignatureAlgorithm[] = {
 CloudPolicyValidatorBase::~CloudPolicyValidatorBase() {}
 
 void CloudPolicyValidatorBase::ValidateTimestamp(base::Time not_before,
-                                                 base::Time now) {
+                                                 base::Time now,
+                                                 bool allow_missing_timestamp) {
   // Timestamp should be from the past. We allow for a 1-minute grace interval
   // to cover clock drift.
   validation_flags_ |= VALIDATE_TIMESTAMP;
-  timestamp_not_before_ = not_before;
+  timestamp_not_before_ =
+      (not_before - base::Time::UnixEpoch()).InMilliseconds();
   timestamp_not_after_ =
-      now + base::TimeDelta::FromSeconds(kTimestampGraceIntervalSeconds);
+      ((now + base::TimeDelta::FromSeconds(kTimestampGraceIntervalSeconds)) -
+          base::Time::UnixEpoch()).InMillisecondsRoundedUp();
+  allow_missing_timestamp_ = allow_missing_timestamp;
 }
 
 void CloudPolicyValidatorBase::ValidateUsername(
@@ -71,9 +76,12 @@ void CloudPolicyValidatorBase::ValidatePayload() {
   validation_flags_ |= VALIDATE_PAYLOAD;
 }
 
-void CloudPolicyValidatorBase::ValidateSignature(const std::string& key) {
+void CloudPolicyValidatorBase::ValidateSignature(const std::vector<uint8>& key,
+                                                 bool allow_key_rotation) {
   validation_flags_ |= VALIDATE_SIGNATURE;
-  key_ = key;
+  key_ = std::string(reinterpret_cast<const char*>(vector_as_array(&key)),
+                     key.size());
+  allow_key_rotation_ = allow_key_rotation;
 }
 
 void CloudPolicyValidatorBase::ValidateInitialKey() {
@@ -81,7 +89,8 @@ void CloudPolicyValidatorBase::ValidateInitialKey() {
 }
 
 void CloudPolicyValidatorBase::ValidateAgainstCurrentPolicy(
-    const em::PolicyData* policy_data) {
+    const em::PolicyData* policy_data,
+    bool allow_missing_timestamp) {
   base::Time last_policy_timestamp;
   std::string expected_dm_token;
   if (policy_data) {
@@ -90,47 +99,50 @@ void CloudPolicyValidatorBase::ValidateAgainstCurrentPolicy(
         base::TimeDelta::FromMilliseconds(policy_data->timestamp());
     expected_dm_token = policy_data->request_token();
   }
-  ValidateTimestamp(last_policy_timestamp, base::Time::NowFromSystemTime());
+  ValidateTimestamp(last_policy_timestamp, base::Time::NowFromSystemTime(),
+                    allow_missing_timestamp);
   if (!expected_dm_token.empty())
     ValidateDMToken(expected_dm_token);
 }
 
-void CloudPolicyValidatorBase::StartValidation() {
-  content::BrowserThread::PostTask(
-      content::BrowserThread::FILE, FROM_HERE,
-      base::Bind(&CloudPolicyValidatorBase::PerformValidation,
-                 base::Passed(scoped_ptr<CloudPolicyValidatorBase>(this)),
-                 MessageLoop::current()->message_loop_proxy()));
-}
-
 CloudPolicyValidatorBase::CloudPolicyValidatorBase(
     scoped_ptr<em::PolicyFetchResponse> policy_response,
-    google::protobuf::MessageLite* payload,
-    const base::Closure& completion_callback)
+    google::protobuf::MessageLite* payload)
     : status_(VALIDATION_OK),
       policy_(policy_response.Pass()),
       payload_(payload),
-      completion_callback_(completion_callback),
-      validation_flags_(0) {}
+      validation_flags_(0),
+      timestamp_not_before_(0),
+      timestamp_not_after_(0),
+      allow_missing_timestamp_(false),
+      allow_key_rotation_(false) {}
 
 // static
 void CloudPolicyValidatorBase::PerformValidation(
     scoped_ptr<CloudPolicyValidatorBase> self,
-    scoped_refptr<base::MessageLoopProxy> message_loop) {
-  self->policy_data_.reset(new em::PolicyData());
-  self->RunChecks();
+    scoped_refptr<base::MessageLoopProxy> message_loop,
+    const base::Closure& completion_callback) {
+  // Run the validation activities on this thread.
+  self->RunValidation();
 
   // Report completion on |message_loop|.
   message_loop->PostTask(
       FROM_HERE,
       base::Bind(&CloudPolicyValidatorBase::ReportCompletion,
-                 base::Passed(&self)));
+                 base::Passed(&self),
+                 completion_callback));
 }
 
 // static
 void CloudPolicyValidatorBase::ReportCompletion(
-    scoped_ptr<CloudPolicyValidatorBase> self) {
-  self->completion_callback_.Run();
+    scoped_ptr<CloudPolicyValidatorBase> self,
+    const base::Closure& completion_callback) {
+  completion_callback.Run();
+}
+
+void CloudPolicyValidatorBase::RunValidation() {
+  policy_data_.reset(new em::PolicyData());
+  RunChecks();
 }
 
 void CloudPolicyValidatorBase::RunChecks() {
@@ -178,9 +190,9 @@ void CloudPolicyValidatorBase::RunChecks() {
 }
 
 CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckSignature() {
-  std::string signature_key(key_);
-  if (policy_->has_new_public_key()) {
-    signature_key = policy_->new_public_key();
+  const std::string* signature_key = &key_;
+  if (policy_->has_new_public_key() && allow_key_rotation_) {
+    signature_key = &policy_->new_public_key();
     if (!policy_->has_new_public_key_signature() ||
         !VerifySignature(policy_->new_public_key(), key_,
                          policy_->new_public_key_signature())) {
@@ -190,7 +202,7 @@ CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckSignature() {
   }
 
   if (!policy_->has_policy_data_signature() ||
-      !VerifySignature(policy_->policy_data(), signature_key,
+      !VerifySignature(policy_->policy_data(), *signature_key,
                        policy_->policy_data_signature())) {
     LOG(ERROR) << "Policy signature validation failed";
     return VALIDATION_BAD_SIGNATURE;
@@ -222,19 +234,21 @@ CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckPolicyType() {
 }
 
 CloudPolicyValidatorBase::Status CloudPolicyValidatorBase::CheckTimestamp() {
-  base::Time policy_time =
-      base::Time::UnixEpoch() +
-      base::TimeDelta::FromMilliseconds(policy_data_->timestamp());
   if (!policy_data_->has_timestamp()) {
-    LOG(ERROR) << "Policy timestamp missing";
-    return VALIDATION_BAD_TIMESTAMP;
+    if (allow_missing_timestamp_) {
+      return VALIDATION_OK;
+    } else {
+      LOG(ERROR) << "Policy timestamp missing";
+      return VALIDATION_BAD_TIMESTAMP;
+    }
   }
-  if (policy_time < timestamp_not_before_) {
+
+  if (policy_data_->timestamp() < timestamp_not_before_) {
     LOG(ERROR) << "Policy too old: " << policy_data_->timestamp();
     return VALIDATION_BAD_TIMESTAMP;
   }
-  if (policy_time > timestamp_not_after_) {
-    LOG(ERROR) << "Policy in the future: " << policy_data_->timestamp();
+  if (policy_data_->timestamp() > timestamp_not_after_) {
+    LOG(ERROR) << "Policy from the future: " << policy_data_->timestamp();
     return VALIDATION_BAD_TIMESTAMP;
   }
 
@@ -322,26 +336,31 @@ CloudPolicyValidator<PayloadProto>::~CloudPolicyValidator() {}
 
 template<typename PayloadProto>
 CloudPolicyValidator<PayloadProto>* CloudPolicyValidator<PayloadProto>::Create(
-    scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response,
-    const CompletionCallback& completion_callback) {
+    scoped_ptr<em::PolicyFetchResponse> policy_response) {
   return new CloudPolicyValidator(
       policy_response.Pass(),
-      scoped_ptr<PayloadProto>(new PayloadProto()),
-      completion_callback);
+      scoped_ptr<PayloadProto>(new PayloadProto()));
 }
 
 template<typename PayloadProto>
 CloudPolicyValidator<PayloadProto>::CloudPolicyValidator(
-    scoped_ptr<enterprise_management::PolicyFetchResponse> policy_response,
-    scoped_ptr<PayloadProto> payload,
-    const CompletionCallback& completion_callback)
-    : CloudPolicyValidatorBase(policy_response.Pass(), payload.get(),
-                               base::Bind(completion_callback, this)),
+    scoped_ptr<em::PolicyFetchResponse> policy_response,
+    scoped_ptr<PayloadProto> payload)
+    : CloudPolicyValidatorBase(policy_response.Pass(), payload.get()),
       payload_(payload.Pass()) {}
 
-template class CloudPolicyValidator<
-    enterprise_management::ChromeDeviceSettingsProto>;
-template class CloudPolicyValidator<
-    enterprise_management::CloudPolicySettings>;
+template<typename PayloadProto>
+void CloudPolicyValidator<PayloadProto>::StartValidation(
+    const CompletionCallback& completion_callback) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::FILE, FROM_HERE,
+      base::Bind(&CloudPolicyValidatorBase::PerformValidation,
+                 base::Passed(scoped_ptr<CloudPolicyValidatorBase>(this)),
+                 MessageLoop::current()->message_loop_proxy(),
+                 base::Bind(completion_callback, this)));
+}
+
+template class CloudPolicyValidator<em::ChromeDeviceSettingsProto>;
+template class CloudPolicyValidator<em::CloudPolicySettings>;
 
 }  // namespace policy

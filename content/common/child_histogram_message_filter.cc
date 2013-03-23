@@ -43,15 +43,15 @@ bool ChildHistogramMessageFilter::OnMessageReceived(
 
 void ChildHistogramMessageFilter::SendHistograms(int sequence_number) {
   ChildProcess::current()->io_message_loop_proxy()->PostTask(
-      FROM_HERE, base::Bind(&ChildHistogramMessageFilter::UploadAllHistrograms,
+      FROM_HERE, base::Bind(&ChildHistogramMessageFilter::UploadAllHistograms,
                             this, sequence_number));
 }
 
 void ChildHistogramMessageFilter::OnGetChildHistogramData(int sequence_number) {
-  UploadAllHistrograms(sequence_number);
+  UploadAllHistograms(sequence_number);
 }
 
-void ChildHistogramMessageFilter::UploadAllHistrograms(int sequence_number) {
+void ChildHistogramMessageFilter::UploadAllHistograms(int sequence_number) {
   DCHECK_EQ(0u, pickled_histograms_.size());
 
   base::StatisticsRecorder::CollectHistogramStats("ChildProcess");
@@ -71,27 +71,28 @@ void ChildHistogramMessageFilter::UploadAllHistrograms(int sequence_number) {
 
 void ChildHistogramMessageFilter::RecordDelta(
     const base::Histogram& histogram,
-    const base::Histogram::SampleSet& snapshot) {
+    const base::HistogramSamples& snapshot) {
   DCHECK_NE(0, snapshot.TotalCount());
-  DCHECK_EQ(histogram.bucket_count(), snapshot.size());
-
   std::string histogram_info =
       base::Histogram::SerializeHistogramInfo(histogram, snapshot);
 
   pickled_histograms_.push_back(histogram_info);
 }
 
-void ChildHistogramMessageFilter::InconsistencyDetected(int problem) {
+void ChildHistogramMessageFilter::InconsistencyDetected(
+    base::Histogram::Inconsistencies problem) {
   UMA_HISTOGRAM_ENUMERATION("Histogram.InconsistenciesChildProcess",
                             problem, base::Histogram::NEVER_EXCEEDED_VALUE);
 }
 
-void ChildHistogramMessageFilter::UniqueInconsistencyDetected(int problem) {
+void ChildHistogramMessageFilter::UniqueInconsistencyDetected(
+    base::Histogram::Inconsistencies problem) {
   UMA_HISTOGRAM_ENUMERATION("Histogram.InconsistenciesChildProcessUnique",
                             problem, base::Histogram::NEVER_EXCEEDED_VALUE);
 }
 
-void ChildHistogramMessageFilter::SnapshotProblemResolved(int amount) {
+void ChildHistogramMessageFilter::InconsistencyDetectedInLoggedCount(
+    int amount) {
   UMA_HISTOGRAM_COUNTS("Histogram.InconsistentSnapshotChildProcess",
                        std::abs(amount));
 }

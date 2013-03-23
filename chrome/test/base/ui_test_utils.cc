@@ -8,13 +8,12 @@
 #include <windows.h>
 #endif
 
-#include <vector>
-
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
+#include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -23,14 +22,16 @@
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/history/history.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
-#include "chrome/browser/tab_contents/thumbnail_generator.h"
+#include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -41,11 +42,14 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_action.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/bookmark_load_observer.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -60,15 +64,15 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/download_test_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "net/test/python_utils.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/size.h"
+#include "ui/snapshot/snapshot.h"
 #include "ui/ui_controls/ui_controls.h"
 
 #if defined(USE_AURA)
@@ -76,6 +80,7 @@
 #include "ui/aura/root_window.h"
 #endif
 
+using content::BrowserThread;
 using content::DomOperationNotificationDetails;
 using content::NativeWebKeyboardEvent;
 using content::NavigationController;
@@ -92,21 +97,21 @@ namespace {
 
 class FindInPageNotificationObserver : public content::NotificationObserver {
  public:
-  explicit FindInPageNotificationObserver(TabContents* parent_tab)
-      : parent_tab_(parent_tab),
-        active_match_ordinal_(-1),
+  explicit FindInPageNotificationObserver(WebContents* parent_tab)
+      : active_match_ordinal_(-1),
         number_of_matches_(0) {
-    current_find_request_id_ =
-        parent_tab->find_tab_helper()->current_find_request_id();
+    FindTabHelper* find_tab_helper =
+        FindTabHelper::FromWebContents(parent_tab);
+    current_find_request_id_ = find_tab_helper->current_find_request_id();
     registrar_.Add(this, chrome::NOTIFICATION_FIND_RESULT_AVAILABLE,
-                   content::Source<WebContents>(parent_tab_->web_contents()));
+                   content::Source<WebContents>(parent_tab));
     message_loop_runner_ = new content::MessageLoopRunner;
     message_loop_runner_->Run();
   }
 
   int active_match_ordinal() const { return active_match_ordinal_; }
-
   int number_of_matches() const { return number_of_matches_; }
+  gfx::Rect selection_rect() const { return selection_rect_; }
 
   virtual void Observe(int type, const content::NotificationSource& source,
                        const content::NotificationDetails& details) {
@@ -115,8 +120,10 @@ class FindInPageNotificationObserver : public content::NotificationObserver {
       if (find_details->request_id() == current_find_request_id_) {
         // We get multiple responses and one of those will contain the ordinal.
         // This message comes to us before the final update is sent.
-        if (find_details->active_match_ordinal() > -1)
+        if (find_details->active_match_ordinal() > -1) {
           active_match_ordinal_ = find_details->active_match_ordinal();
+          selection_rect_ = find_details->selection_rect();
+        }
         if (find_details->final_update()) {
           number_of_matches_ = find_details->number_of_matches();
           message_loop_runner_->Quit();
@@ -131,11 +138,11 @@ class FindInPageNotificationObserver : public content::NotificationObserver {
 
  private:
   content::NotificationRegistrar registrar_;
-  TabContents* parent_tab_;
   // We will at some point (before final update) be notified of the ordinal and
   // we need to preserve it so we can send it later.
   int active_match_ordinal_;
   int number_of_matches_;
+  gfx::Rect selection_rect_;
   // The id of the current find request, obtained from WebContents. Allows us
   // to monitor when the search completes.
   int current_find_request_id_;
@@ -143,6 +150,31 @@ class FindInPageNotificationObserver : public content::NotificationObserver {
 
   DISALLOW_COPY_AND_ASSIGN(FindInPageNotificationObserver);
 };
+
+const char kSnapshotBaseName[] = "ChromiumSnapshot";
+const char kSnapshotExtension[] = ".png";
+
+FilePath GetSnapshotFileName(const FilePath& snapshot_directory) {
+  base::Time::Exploded the_time;
+
+  base::Time::Now().LocalExplode(&the_time);
+  std::string filename(StringPrintf("%s%04d%02d%02d%02d%02d%02d%s",
+      kSnapshotBaseName, the_time.year, the_time.month, the_time.day_of_month,
+      the_time.hour, the_time.minute, the_time.second, kSnapshotExtension));
+
+  FilePath snapshot_file = snapshot_directory.AppendASCII(filename);
+  if (file_util::PathExists(snapshot_file)) {
+    int index = 0;
+    std::string suffix;
+    FilePath trial_file;
+    do {
+      suffix = StringPrintf(" (%d)", ++index);
+      trial_file = snapshot_file.InsertBeforeExtensionASCII(suffix);
+    } while (file_util::PathExists(trial_file));
+    snapshot_file = trial_file;
+  }
+  return snapshot_file;
+}
 
 }  // namespace
 
@@ -187,9 +219,11 @@ Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
 }
 
 Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url) {
-  chrome::OpenURLOffTheRecord(profile, url);
+  chrome::OpenURLOffTheRecord(profile, url, chrome::HOST_DESKTOP_TYPE_NATIVE);
   Browser* browser = browser::FindTabbedBrowser(
-      profile->GetOffTheRecordProfile(), false);
+      profile->GetOffTheRecordProfile(),
+      false,
+      chrome::HOST_DESKTOP_TYPE_NATIVE);
   WaitForNavigations(&chrome::GetActiveWebContents(browser)->GetController(),
                      1);
   return browser;
@@ -259,7 +293,8 @@ static void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
     EXPECT_TRUE(web_contents != NULL)
         << " Unable to wait for navigation to \"" << url.spec()
         << "\" because the new tab is not available yet";
-    return;
+    if (!web_contents)
+      return;
   } else if ((disposition == CURRENT_TAB) ||
       (disposition == NEW_FOREGROUND_TAB) ||
       (disposition == SINGLETON_TAB)) {
@@ -315,6 +350,48 @@ GURL GetTestUrl(const FilePath& dir, const FilePath& file) {
   return net::FilePathToFileURL(GetTestFilePath(dir, file));
 }
 
+bool GetRelativeBuildDirectory(FilePath* build_dir) {
+  // This function is used to find the build directory so TestServer can serve
+  // built files (nexes, etc).  TestServer expects a path relative to the source
+  // root.
+  FilePath exe_dir = CommandLine::ForCurrentProcess()->GetProgram().DirName();
+  FilePath src_dir;
+  if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_dir))
+    return false;
+
+  // We must first generate absolute paths to SRC and EXE and from there
+  // generate a relative path.
+  if (!exe_dir.IsAbsolute())
+    file_util::AbsolutePath(&exe_dir);
+  if (!src_dir.IsAbsolute())
+    file_util::AbsolutePath(&src_dir);
+  if (!exe_dir.IsAbsolute())
+    return false;
+  if (!src_dir.IsAbsolute())
+    return false;
+
+  size_t match, exe_size, src_size;
+  std::vector<FilePath::StringType> src_parts, exe_parts;
+
+  // Determine point at which src and exe diverge.
+  exe_dir.GetComponents(&exe_parts);
+  src_dir.GetComponents(&src_parts);
+  exe_size = exe_parts.size();
+  src_size = src_parts.size();
+  for (match = 0; match < exe_size && match < src_size; ++match) {
+    if (exe_parts[match] != src_parts[match])
+      break;
+  }
+
+  // Create a relative path.
+  *build_dir = FilePath();
+  for (size_t tmp_itr = match; tmp_itr < src_size; ++tmp_itr)
+    *build_dir = build_dir->Append(FILE_PATH_LITERAL(".."));
+  for (; match < exe_size; ++match)
+    *build_dir = build_dir->Append(exe_parts[match]);
+  return true;
+}
+
 AppModalDialog* WaitForAppModalDialog() {
   content::WindowedNotificationObserver observer(
       chrome::NOTIFICATION_APP_MODAL_DIALOG_SHOWN,
@@ -323,20 +400,17 @@ AppModalDialog* WaitForAppModalDialog() {
   return content::Source<AppModalDialog>(observer.source()).ptr();
 }
 
-int FindInPage(TabContents* tab_contents, const string16& search_string,
-               bool forward, bool match_case, int* ordinal) {
-  tab_contents->
-      find_tab_helper()->StartFinding(search_string, forward, match_case);
-  FindInPageNotificationObserver observer(tab_contents);
+int FindInPage(WebContents* tab, const string16& search_string,
+               bool forward, bool match_case, int* ordinal,
+               gfx::Rect* selection_rect) {
+  FindTabHelper* find_tab_helper = FindTabHelper::FromWebContents(tab);
+  find_tab_helper->StartFinding(search_string, forward, match_case);
+  FindInPageNotificationObserver observer(tab);
   if (ordinal)
     *ordinal = observer.active_match_ordinal();
+  if (selection_rect)
+    *selection_rect = observer.selection_rect();
   return observer.number_of_matches();
-}
-
-void CloseAllInfoBars(TabContents* tab) {
-  InfoBarTabHelper* infobar_helper = tab->infobar_tab_helper();
-  while (infobar_helper->infobar_count() > 0)
-    infobar_helper->RemoveInfoBar(infobar_helper->GetInfoBarDelegateAt(0));
 }
 
 void RegisterAndWait(content::NotificationObserver* observer,
@@ -374,21 +448,35 @@ void WaitForHistoryToLoad(HistoryService* history_service) {
     history_loaded_observer.Wait();
 }
 
-bool GetNativeWindow(const Browser* browser, gfx::NativeWindow* native_window) {
-  BrowserWindow* window = browser->window();
-  if (!window)
-    return false;
+void DownloadURL(Browser* browser, const GURL& download_url) {
+  base::ScopedTempDir downloads_directory;
+  ASSERT_TRUE(downloads_directory.CreateUniqueTempDir());
+  browser->profile()->GetPrefs()->SetFilePath(
+      prefs::kDownloadDefaultDirectory, downloads_directory.path());
 
-  *native_window = window->GetNativeWindow();
-  return *native_window;
+  content::DownloadManager* download_manager =
+      content::BrowserContext::GetDownloadManager(browser->profile());
+  scoped_ptr<content::DownloadTestObserver> observer(
+      new content::DownloadTestObserverTerminal(
+          download_manager, 1,
+          content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_ACCEPT));
+
+  ui_test_utils::NavigateToURL(browser, download_url);
+  observer->WaitForFinished();
 }
 
-bool BringBrowserWindowToFront(const Browser* browser) {
-  gfx::NativeWindow window = NULL;
-  if (!GetNativeWindow(browser, &window))
-    return false;
-
-  return ui_test_utils::ShowAndFocusNativeWindow(window);
+void SendToOmniboxAndSubmit(LocationBar* location_bar,
+                            const std::string& input) {
+  OmniboxView* omnibox = location_bar->GetLocationEntry();
+  omnibox->model()->OnSetFocus(false);
+  omnibox->SetUserText(ASCIIToUTF16(input));
+  location_bar->AcceptInput();
+  while (!omnibox->model()->autocomplete_controller()->done()) {
+    content::WindowedNotificationObserver observer(
+        chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,
+        content::NotificationService::AllSources());
+    observer.Wait();
+  }
 }
 
 Browser* GetBrowserNotInSet(std::set<Browser*> excluded_browsers) {
@@ -400,77 +488,6 @@ Browser* GetBrowserNotInSet(std::set<Browser*> excluded_browsers) {
   }
 
   return NULL;
-}
-
-bool SendKeyPressSync(const Browser* browser,
-                      ui::KeyboardCode key,
-                      bool control,
-                      bool shift,
-                      bool alt,
-                      bool command) {
-  gfx::NativeWindow window = NULL;
-  if (!GetNativeWindow(browser, &window))
-    return false;
-  scoped_refptr<content::MessageLoopRunner> runner =
-      new content::MessageLoopRunner;
-  bool result;
-  result = ui_controls::SendKeyPressNotifyWhenDone(
-      window, key, control, shift, alt, command, runner->QuitClosure());
-#if defined(OS_WIN)
-  if (!result && BringBrowserWindowToFront(browser)) {
-    result = ui_controls::SendKeyPressNotifyWhenDone(
-        window, key, control, shift, alt, command, runner->QuitClosure());
-  }
-#endif
-  if (!result) {
-    LOG(ERROR) << "ui_controls::SendKeyPressNotifyWhenDone failed";
-    return false;
-  }
-
-  // Run the message loop. It'll stop running when either the key was received
-  // or the test timed out (in which case testing::Test::HasFatalFailure should
-  // be set).
-  runner->Run();
-  return !testing::Test::HasFatalFailure();
-}
-
-bool SendKeyPressAndWait(const Browser* browser,
-                         ui::KeyboardCode key,
-                         bool control,
-                         bool shift,
-                         bool alt,
-                         bool command,
-                         int type,
-                         const content::NotificationSource& source) {
-  content::WindowedNotificationObserver observer(type, source);
-
-  if (!SendKeyPressSync(browser, key, control, shift, alt, command))
-    return false;
-
-  observer.Wait();
-  return !testing::Test::HasFatalFailure();
-}
-
-bool SendMouseMoveSync(const gfx::Point& location) {
-  scoped_refptr<content::MessageLoopRunner> runner =
-      new content::MessageLoopRunner;
-  if (!ui_controls::SendMouseMoveNotifyWhenDone(
-          location.x(), location.y(), runner->QuitClosure())) {
-    return false;
-  }
-  runner->Run();
-  return !testing::Test::HasFatalFailure();
-}
-
-bool SendMouseEventsSync(ui_controls::MouseButton type, int state) {
-  scoped_refptr<content::MessageLoopRunner> runner =
-      new content::MessageLoopRunner;
-  if (!ui_controls::SendMouseEventsNotifyWhenDone(
-          type, state, runner->QuitClosure())) {
-    return false;
-  }
-  runner->Run();
-  return !testing::Test::HasFatalFailure();
 }
 
 WindowedTabAddedNotificationObserver::WindowedTabAddedNotificationObserver(
@@ -524,44 +541,6 @@ Browser* BrowserAddedObserver::WaitForSingleNewBrowser() {
   return GetBrowserNotInSet(original_browsers_);
 }
 
-DOMMessageQueue::DOMMessageQueue() : waiting_for_message_(false) {
-  registrar_.Add(this, content::NOTIFICATION_DOM_OPERATION_RESPONSE,
-                 content::NotificationService::AllSources());
-}
-
-DOMMessageQueue::~DOMMessageQueue() {}
-
-void DOMMessageQueue::Observe(int type,
-                              const content::NotificationSource& source,
-                              const content::NotificationDetails& details) {
-  content::Details<DomOperationNotificationDetails> dom_op_details(details);
-  content::Source<RenderViewHost> sender(source);
-  message_queue_.push(dom_op_details->json);
-  if (waiting_for_message_) {
-    waiting_for_message_ = false;
-    message_loop_runner_->Quit();
-  }
-}
-
-void DOMMessageQueue::ClearQueue() {
-  message_queue_ = std::queue<std::string>();
-}
-
-bool DOMMessageQueue::WaitForMessage(std::string* message) {
-  if (message_queue_.empty()) {
-    waiting_for_message_ = true;
-    // This will be quit when a new message comes in.
-    message_loop_runner_ = new content::MessageLoopRunner;
-    message_loop_runner_->Run();
-  }
-  // The queue should not be empty, unless we were quit because of a timeout.
-  if (message_queue_.empty())
-    return false;
-  if (message)
-    *message = message_queue_.front();
-  return true;
-}
-
 // Coordinates taking snapshots of a |RenderWidget|.
 class SnapshotTaker {
  public:
@@ -572,10 +551,8 @@ class SnapshotTaker {
                                 const gfx::Size& desired_size,
                                 SkBitmap* bitmap) WARN_UNUSED_RESULT {
     bitmap_ = bitmap;
-    ThumbnailGenerator* generator = g_browser_process->GetThumbnailGenerator();
-    generator->MonitorRenderer(rwh, true);
     snapshot_taken_ = false;
-    generator->AskForSnapshot(
+    g_browser_process->GetRenderWidgetSnapshotTaker()->AskForSnapshot(
         rwh,
         base::Bind(&SnapshotTaker::OnSnapshotTaken, base::Unretained(this)),
         page_size,
@@ -611,7 +588,7 @@ class SnapshotTaker {
   }
 
  private:
-  // Called when the ThumbnailGenerator has taken the snapshot.
+  // Called when the RenderWidgetSnapshotTaker has taken the snapshot.
   void OnSnapshotTaken(const SkBitmap& bitmap) {
     *bitmap_ = bitmap;
     snapshot_taken_ = true;
@@ -641,6 +618,46 @@ bool TakeEntirePageSnapshot(RenderViewHost* rvh, SkBitmap* bitmap) {
   return taker.TakeEntirePageSnapshot(rvh, bitmap);
 }
 
+#if defined(OS_WIN)
+
+bool SaveScreenSnapshotToDirectory(const FilePath& directory,
+                                   FilePath* screenshot_path) {
+  bool succeeded = false;
+  FilePath out_path(GetSnapshotFileName(directory));
+
+  MONITORINFO monitor_info = {};
+  monitor_info.cbSize = sizeof(monitor_info);
+  HMONITOR main_monitor = MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY);
+  if (GetMonitorInfo(main_monitor, &monitor_info)) {
+    RECT& rect = monitor_info.rcMonitor;
+
+    std::vector<unsigned char> png_data;
+    gfx::Rect bounds(
+        gfx::Size(rect.right - rect.left, rect.bottom - rect.top));
+    if (ui::GrabWindowSnapshot(NULL, &png_data, bounds) &&
+        png_data.size() <= INT_MAX) {
+      int bytes = static_cast<int>(png_data.size());
+      int written = file_util::WriteFile(
+          out_path, reinterpret_cast<char*>(&png_data[0]), bytes);
+      succeeded = (written == bytes);
+    }
+  }
+
+  if (succeeded && screenshot_path != NULL)
+    *screenshot_path = out_path;
+
+  return succeeded;
+}
+
+bool SaveScreenSnapshotToDesktop(FilePath* screenshot_path) {
+  FilePath desktop;
+
+  return PathService::Get(base::DIR_USER_DESKTOP, &desktop) &&
+      SaveScreenSnapshotToDirectory(desktop, screenshot_path);
+}
+
+#endif  // defined(OS_WIN)
+
 void OverrideGeolocation(double latitude, double longitude) {
   content::Geoposition position;
   position.latitude = latitude;
@@ -666,4 +683,31 @@ void ClickTask(ui_controls::MouseButton button,
 }
 
 }  // namespace internal
+
+HistoryEnumerator::HistoryEnumerator(Profile* profile) {
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+      new content::MessageLoopRunner;
+
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      profile, Profile::EXPLICIT_ACCESS);
+  hs->QueryHistory(
+      string16(),
+      history::QueryOptions(),
+      &consumer_,
+      base::Bind(&HistoryEnumerator::HistoryQueryComplete,
+                 base::Unretained(this), message_loop_runner->QuitClosure()));
+  message_loop_runner->Run();
+}
+
+HistoryEnumerator::~HistoryEnumerator() {}
+
+void HistoryEnumerator::HistoryQueryComplete(
+    const base::Closure& quit_task,
+    HistoryService::Handle request_handle,
+    history::QueryResults* results) {
+  for (size_t i = 0; i < results->size(); ++i)
+    urls_.push_back((*results)[i].url());
+  quit_task.Run();
+}
+
 }  // namespace ui_test_utils

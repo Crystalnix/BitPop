@@ -30,22 +30,19 @@ using WebKit::WebBindings;
 // existing behavior. These areas are marked LIVECONNECT_COMPLIANCE. We may
 // revisit this decision in the future.
 
+namespace content {
 namespace {
 
 const char kJavaLangClass[] = "java/lang/Class";
 const char kJavaLangObject[] = "java/lang/Object";
 const char kJavaLangReflectMethod[] = "java/lang/reflect/Method";
 const char kGetClass[] = "getClass";
-const char kGetDeclaredMethods[] = "getDeclaredMethods";
 const char kGetMethods[] = "getMethods";
-const char kGetModifiers[] = "getModifiers";
-const char kReturningInteger[] = "()I";
+const char kIsAnnotationPresent[] = "isAnnotationPresent";
 const char kReturningJavaLangClass[] = "()Ljava/lang/Class;";
 const char kReturningJavaLangReflectMethodArray[] =
     "()[Ljava/lang/reflect/Method;";
-
-// This constant represents the value at java.lang.reflect.Modifier.PUBLIC.
-const int kJavaPublicModifier = 1;
+const char kTakesJavaLangClassReturningBoolean[] = "(Ljava/lang/Class;)Z";
 
 // Our special NPObject type.  We extend an NPObject with a pointer to a
 // JavaBoundObject.  We also add static methods for each of the NPObject
@@ -128,7 +125,7 @@ bool JavaNPObject::GetProperty(NPObject* np_object,
 // return value is simply converted to the corresponding NPAPI type.
 bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
                    jvalue* parameters, NPVariant* result,
-                   bool allow_inherited_methods) {
+                   base::android::JavaRef<jclass>& safe_annotation_clazz) {
   JNIEnv* env = AttachCurrentThread();
   switch (return_type.type) {
     case JavaType::TypeBoolean:
@@ -191,6 +188,8 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
       // Take a copy and pass ownership to the variant. We must allocate using
       // NPN_MemAlloc, to match NPN_ReleaseVariant, which uses NPN_MemFree.
       size_t length = str.length();
+      // TODO(thakis): This causes linker errors in a components build. Figure
+      // out what to do.
       char* buffer = static_cast<char*>(NPN_MemAlloc(length));
       str.copy(buffer, length, 0);
       STRINGN_TO_NPVARIANT(buffer, length, *result);
@@ -210,7 +209,7 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
         break;
       }
       OBJECT_TO_NPVARIANT(JavaBoundObject::Create(scoped_java_object,
-                                                  allow_inherited_methods),
+                                                  safe_annotation_clazz),
                           *result);
       break;
     }
@@ -726,9 +725,9 @@ jvalue CoerceJavaScriptValueToJavaValue(const NPVariant& variant,
 
 }  // namespace
 
-
-NPObject* JavaBoundObject::Create(const JavaRef<jobject>& object,
-                                  bool allow_inherited_methods) {
+NPObject* JavaBoundObject::Create(
+    const JavaRef<jobject>& object,
+    base::android::JavaRef<jclass>& safe_annotation_clazz) {
   // The first argument (a plugin's instance handle) is passed through to the
   // allocate function directly, and we don't use it, so it's ok to be 0.
   // The object is created with a ref count of one.
@@ -736,15 +735,16 @@ NPObject* JavaBoundObject::Create(const JavaRef<jobject>& object,
       &JavaNPObject::kNPClass));
   // The NPObject takes ownership of the JavaBoundObject.
   reinterpret_cast<JavaNPObject*>(np_object)->bound_object =
-      new JavaBoundObject(object, allow_inherited_methods);
+      new JavaBoundObject(object, safe_annotation_clazz);
   return np_object;
 }
 
-JavaBoundObject::JavaBoundObject(const JavaRef<jobject>& object,
-                                 bool allow_inherited_methods)
+JavaBoundObject::JavaBoundObject(
+    const JavaRef<jobject>& object,
+    base::android::JavaRef<jclass>& safe_annotation_clazz)
     : java_object_(object),
       are_methods_set_up_(false),
-      allow_inherited_methods_(allow_inherited_methods) {
+      safe_annotation_clazz_(safe_annotation_clazz) {
   // We don't do anything with our Java object when first created. We do it all
   // lazily when a method is first invoked.
 }
@@ -798,7 +798,7 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
   // Call
   bool ok = CallJNIMethod(java_object_.obj(), method->return_type(),
                           method->id(), &parameters[0], result,
-                          allow_inherited_methods_);
+                          safe_annotation_clazz_);
 
   // Now that we're done with the jvalue, release any local references created
   // by CoerceJavaScriptValueToJavaValue().
@@ -823,39 +823,38 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
           kGetClass,
           kReturningJavaLangClass))));
 
-  const char* get_method = allow_inherited_methods_ ?
-      kGetMethods : kGetDeclaredMethods;
-
   ScopedJavaLocalRef<jobjectArray> methods(env, static_cast<jobjectArray>(
       env->CallObjectMethod(clazz.obj(), GetMethodIDFromClassName(
           env,
           kJavaLangClass,
-          get_method,
+          kGetMethods,
           kReturningJavaLangReflectMethodArray))));
 
   size_t num_methods = env->GetArrayLength(methods.obj());
-  if (num_methods <= 0)
-    return;
+  // Java objects always have public methods.
+  DCHECK(num_methods);
 
   for (size_t i = 0; i < num_methods; ++i) {
     ScopedJavaLocalRef<jobject> java_method(
         env,
         env->GetObjectArrayElement(methods.obj(), i));
 
-    bool is_method_allowed = true;
-    if (!allow_inherited_methods_) {
-      jint modifiers = env->CallIntMethod(java_method.obj(),
-                                          GetMethodIDFromClassName(
-                                              env,
-                                              kJavaLangReflectMethod,
-                                              kGetModifiers,
-                                              kReturningInteger));
-      is_method_allowed &= (modifiers & kJavaPublicModifier);
+    if (!safe_annotation_clazz_.is_null()) {
+      jboolean safe = env->CallBooleanMethod(java_method.obj(),
+          GetMethodIDFromClassName(
+              env,
+              kJavaLangReflectMethod,
+              kIsAnnotationPresent,
+              kTakesJavaLangClassReturningBoolean),
+          safe_annotation_clazz_.obj());
+
+      if (!safe)
+        continue;
     }
 
-    if (is_method_allowed) {
-      JavaMethod* method = new JavaMethod(java_method);
-      methods_.insert(std::make_pair(method->name(), method));
-    }
+    JavaMethod* method = new JavaMethod(java_method);
+    methods_.insert(std::make_pair(method->name(), method));
   }
 }
+
+}  // namespace content

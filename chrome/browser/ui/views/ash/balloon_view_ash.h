@@ -5,7 +5,13 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_ASH_BALLOON_VIEW_ASH_H_
 #define CHROME_BROWSER_UI_VIEWS_ASH_BALLOON_VIEW_ASH_H_
 
+#include <vector>
+
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/notifications/balloon.h"
+
+class GURL;
+class SkBitmap;
 
 // On Ash, a "BalloonView" is just a wrapper for ash notification entries.
 class BalloonViewAsh : public BalloonView {
@@ -22,16 +28,25 @@ class BalloonViewAsh : public BalloonView {
   virtual BalloonHost* GetHost() const OVERRIDE;
 
  private:
-  class IconFetcher;
-
+  // Favicon download callback.
+  void DidDownloadFavicon(
+      int id,
+      const GURL& image_url,
+      bool errored,
+      int requested_size,
+      const std::vector<SkBitmap>& bitmaps);
   void FetchIcon(const Notification& notification);
   std::string GetExtensionId(Balloon* balloon);
 
   BalloonCollection* collection_;
   Balloon* balloon_;
-  scoped_ptr<IconFetcher> icon_fetcher_;
-  // Track the current notification id so that it can be updated properly.
+
+  // Track the current notification id and download id so that it can be updated
+  // properly.
+  int current_download_id_;
   std::string current_notification_id_;
+  std::string cached_notification_id_;
+  base::WeakPtrFactory<BalloonViewAsh> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BalloonViewAsh);
 };

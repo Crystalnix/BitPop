@@ -50,12 +50,22 @@ bool ParsePortNumber(
 
 }  // namespace
 
+P2PPortAllocator::Config::Config()
+    : stun_server_port(0),
+      relay_server_port(0),
+      legacy_relay(true),
+      disable_tcp_transport(false) {
+}
+
+P2PPortAllocator::Config::~Config() {
+}
+
 P2PPortAllocator::P2PPortAllocator(
     WebKit::WebFrame* web_frame,
     P2PSocketDispatcher* socket_dispatcher,
     talk_base::NetworkManager* network_manager,
     talk_base::PacketSocketFactory* socket_factory,
-    const webkit_glue::P2PTransport::Config& config)
+    const Config& config)
     : cricket::BasicPortAllocator(network_manager, socket_factory),
       web_frame_(web_frame),
       socket_dispatcher_(socket_dispatcher),
@@ -125,27 +135,23 @@ void P2PPortAllocatorSession::didFail(WebKit::WebURLLoader* loader,
   LOG(ERROR) << "Relay session request failed.";
 
   // Retry the request.
-  AllocateRelaySession();
+  AllocateLegacyRelaySession();
 }
 
 void P2PPortAllocatorSession::GetPortConfigurations() {
-  // Add an empty configuration synchronously, so a local connection
-  // can be started immediately.
-  ConfigReady(new cricket::PortConfiguration(talk_base::SocketAddress()));
-
-  if (stun_server_address_.IsNil()) {
+  if (!allocator_->config_.stun_server.empty() &&
+      stun_server_address_.IsNil()) {
     ResolveStunServerAddress();
   } else {
     AddConfig();
   }
 
-  AllocateRelaySession();
+  if (allocator_->config_.legacy_relay) {
+    AllocateLegacyRelaySession();
+  }
 }
 
 void P2PPortAllocatorSession::ResolveStunServerAddress() {
-  if (allocator_->config_.stun_server.empty())
-    return;
-
   if (stun_address_request_)
     return;
 
@@ -161,6 +167,8 @@ void P2PPortAllocatorSession::OnStunServerAddress(
   if (address.empty()) {
     LOG(ERROR) << "Failed to resolve STUN server address "
                << allocator_->config_.stun_server;
+    // Allocating local ports on stun failure.
+    AddConfig();
     return;
   }
 
@@ -173,14 +181,9 @@ void P2PPortAllocatorSession::OnStunServerAddress(
   AddConfig();
 }
 
-void P2PPortAllocatorSession::AllocateRelaySession() {
+void P2PPortAllocatorSession::AllocateLegacyRelaySession() {
   if (allocator_->config_.relay_server.empty())
     return;
-
-  if (!allocator_->config_.legacy_relay) {
-    NOTIMPLEMENTED() << " TURN support is not implemented yet.";
-    return;
-  }
 
   if (relay_session_attempts_ > kRelaySessionRetries)
     return;
@@ -280,24 +283,50 @@ void P2PPortAllocatorSession::ParseRelayResponse() {
 
 void P2PPortAllocatorSession::AddConfig() {
   cricket::PortConfiguration* config =
-      new cricket::PortConfiguration(stun_server_address_);
+      new cricket::PortConfiguration(stun_server_address_, "", "");
 
-  if (relay_ip_.ip() != 0) {
-    cricket::PortConfiguration::PortList ports;
-    if (relay_udp_port_ > 0) {
-      talk_base::SocketAddress address(relay_ip_.ip(), relay_udp_port_);
-      ports.push_back(cricket::ProtocolAddress(address, cricket::PROTO_UDP));
+  if (allocator_->config_.legacy_relay) {
+    // Passing empty credentials for legacy google relay.
+    cricket::RelayServerConfig gturn_config(cricket::RELAY_GTURN);
+    if (relay_ip_.ip() != 0) {
+      if (relay_udp_port_ > 0) {
+        talk_base::SocketAddress address(relay_ip_.ip(), relay_udp_port_);
+        gturn_config.ports.push_back(cricket::ProtocolAddress(
+            address, cricket::PROTO_UDP));
+      }
+      if (relay_tcp_port_ > 0 && !allocator_->config_.disable_tcp_transport) {
+        talk_base::SocketAddress address(relay_ip_.ip(), relay_tcp_port_);
+        gturn_config.ports.push_back(cricket::ProtocolAddress(
+            address, cricket::PROTO_TCP));
+      }
+      if (relay_ssltcp_port_ > 0 &&
+          !allocator_->config_.disable_tcp_transport) {
+        talk_base::SocketAddress address(relay_ip_.ip(), relay_ssltcp_port_);
+        gturn_config.ports.push_back(cricket::ProtocolAddress(
+            address, cricket::PROTO_SSLTCP));
+      }
+      if (!gturn_config.ports.empty()) {
+        config->AddRelay(gturn_config);
+      }
     }
-    if (relay_tcp_port_ > 0 && !allocator_->config_.disable_tcp_transport) {
-      talk_base::SocketAddress address(relay_ip_.ip(), relay_tcp_port_);
-      ports.push_back(cricket::ProtocolAddress(address, cricket::PROTO_TCP));
+  } else {
+    if (!(allocator_->config_.relay_username.empty() ||
+          allocator_->config_.relay_server.empty())) {
+      // Adding TURN related information to config.
+      // As per TURN RFC, same turn server should be used for stun as well.
+      // Configuration should have same address for both stun and turn.
+      DCHECK_EQ(allocator_->config_.stun_server,
+                allocator_->config_.relay_server);
+      cricket::RelayServerConfig turn_config(cricket::RELAY_TURN);
+      cricket::RelayCredentials credentials(
+          allocator_->config_.relay_username,
+          allocator_->config_.relay_password);
+      turn_config.credentials = credentials;
+      // Using the stun resolved address if available for TURN.
+      turn_config.ports.push_back(cricket::ProtocolAddress(
+          stun_server_address_, cricket::PROTO_UDP));
+      config->AddRelay(turn_config);
     }
-    if (relay_ssltcp_port_ > 0 && !allocator_->config_.disable_tcp_transport) {
-      talk_base::SocketAddress address(relay_ip_.ip(), relay_ssltcp_port_);
-      ports.push_back(cricket::ProtocolAddress(address, cricket::PROTO_SSLTCP));
-    }
-    if (!ports.empty())
-      config->AddRelay(ports, 0.0f);
   }
   ConfigReady(config);
 }

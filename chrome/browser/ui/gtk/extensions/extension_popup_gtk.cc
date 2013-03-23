@@ -16,6 +16,7 @@
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -63,11 +64,11 @@ ExtensionPopupGtk::ExtensionPopupGtk(Browser* browser,
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
                  content::Source<Profile>(host->profile()));
 
-  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
+  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
                  content::Source<Profile>(host->profile()));
 
   if (!being_inspected_) {
-    registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING,
+    registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
                    content::Source<Profile>(host->profile()));
   }
 }
@@ -79,7 +80,7 @@ ExtensionPopupGtk::~ExtensionPopupGtk() {
 void ExtensionPopupGtk::Show(const GURL& url, Browser* browser,
     GtkWidget* anchor, ShowAction show_action) {
   ExtensionProcessManager* manager =
-      browser->profile()->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(browser->profile())->process_manager();
   DCHECK(manager);
   if (!manager)
     return;
@@ -101,7 +102,7 @@ void ExtensionPopupGtk::Observe(int type,
       if (content::Details<extensions::ExtensionHost>(host_.get()) == details)
         DestroyPopup();
       break;
-    case content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING:
+    case content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED:
       // Make sure it's the devtools window that is inspecting our popup.
       if (content::Details<RenderViewHost>(host_->render_view_host()) !=
           details)
@@ -113,7 +114,7 @@ void ExtensionPopupGtk::Observe(int type,
 
       being_inspected_ = true;
       break;
-    case content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING:
+    case content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED:
       // Make sure it's the devtools window that is inspecting our popup.
       if (content::Details<RenderViewHost>(host_->render_view_host()) !=
           details)
@@ -175,6 +176,12 @@ void ExtensionPopupGtk::ShowPopup() {
     current_extension_popup_->DestroyPopup();
   current_extension_popup_ = this;
 
+  GtkWidget* border_box = gtk_alignment_new(0, 0, 1.0, 1.0);
+  // This border is necessary so the bubble's corners do not get cut off by the
+  // render view.
+  gtk_container_set_border_width(GTK_CONTAINER(border_box), 2);
+  gtk_container_add(GTK_CONTAINER(border_box), host_->view()->native_view());
+
   // We'll be in the upper-right corner of the window for LTR languages, so we
   // want to put the arrow at the upper-right corner of the bubble to match the
   // page and app menus.
@@ -184,7 +191,7 @@ void ExtensionPopupGtk::ShowPopup() {
       BubbleGtk::ARROW_LOCATION_TOP_LEFT;
   bubble_ = BubbleGtk::Show(anchor_,
                             NULL,
-                            host_->view()->native_view(),
+                            border_box,
                             arrow_location,
                             being_inspected_ ? 0 :
                                 BubbleGtk::POPUP_WINDOW | BubbleGtk::GRAB_INPUT,

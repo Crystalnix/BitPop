@@ -14,6 +14,13 @@ TabRestoreService* TabRestoreServiceFactory::GetForProfile(Profile* profile) {
 }
 
 // static
+TabRestoreService* TabRestoreServiceFactory::GetForProfileIfExisting(
+    Profile* profile) {
+  return static_cast<TabRestoreService*>(
+      GetInstance()->GetServiceForProfile(profile, false));
+}
+
+// static
 void TabRestoreServiceFactory::ResetForProfile(Profile* profile) {
   TabRestoreServiceFactory* factory = GetInstance();
   factory->ProfileShutdown(profile);
@@ -32,13 +39,6 @@ TabRestoreServiceFactory::TabRestoreServiceFactory()
 TabRestoreServiceFactory::~TabRestoreServiceFactory() {
 }
 
-ProfileKeyedService* TabRestoreServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  TabRestoreService* service = NULL;
-  service = new TabRestoreService(profile);
-  return service;
-}
-
-bool TabRestoreServiceFactory::ServiceIsNULLWhileTesting() {
+bool TabRestoreServiceFactory::ServiceIsNULLWhileTesting() const {
   return true;
 }

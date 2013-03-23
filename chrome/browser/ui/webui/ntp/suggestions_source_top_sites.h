@@ -8,7 +8,7 @@
 #include <deque>
 
 #include "base/basictypes.h"
-#include "chrome/browser/cancelable_request.h"
+#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_source.h"
@@ -36,7 +36,7 @@ class SuggestionsSourceTopSites : public SuggestionsSource {
   virtual void FetchItems(Profile* profile) OVERRIDE;
   virtual void SetCombiner(SuggestionsCombiner* combiner) OVERRIDE;
 
-  void OnSuggestionsURLsAvailable(
+  void OnSuggestionsUrlsAvailable(
       CancelableRequestProvider::Handle handle,
       const history::FilteredURLList& data);
 

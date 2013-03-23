@@ -9,11 +9,11 @@
 
 #import "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#import "chrome/browser/ui/cocoa/gradient_button_cell.h"
+#import "chrome/browser/ui/cocoa/image_button_cell.h"
 
 class Browser;
 class ExtensionAction;
-class ExtensionImageTrackerBridge;
+class ExtensionActionIconFactoryBridge;
 
 namespace extensions {
 class Extension;
@@ -28,7 +28,7 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
  @private
   // Bridge to proxy Chrome notifications to the Obj-C class as well as load the
   // extension's icon.
-  scoped_ptr<ExtensionImageTrackerBridge> imageLoadingBridge_;
+  scoped_ptr<ExtensionActionIconFactoryBridge> iconFactoryBridge_;
 
   // Used to move the button and query whether a button is currently animating.
   scoped_nsobject<NSViewAnimation> moveAnimation_;
@@ -69,7 +69,7 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
 
 @end
 
-@interface BrowserActionCell : GradientButtonCell {
+@interface BrowserActionCell : ImageButtonCell {
  @private
   // The current tab ID used when drawing the cell.
   int tabId_;

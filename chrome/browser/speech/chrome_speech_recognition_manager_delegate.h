@@ -15,6 +15,7 @@
 class SpeechRecognitionTrayIconController;
 
 namespace speech {
+
 // This is Chrome's implementation of the SpeechRecognitionManagerDelegate
 // interface.
 class ChromeSpeechRecognitionManagerDelegate
@@ -39,8 +40,8 @@ class ChromeSpeechRecognitionManagerDelegate
   virtual void OnSoundEnd(int session_id) OVERRIDE;
   virtual void OnAudioEnd(int session_id) OVERRIDE;
   virtual void OnRecognitionEnd(int session_id) OVERRIDE;
-  virtual void OnRecognitionResult(
-      int session_id, const content::SpeechRecognitionResult& result) OVERRIDE;
+  virtual void OnRecognitionResults(
+      int session_id, const content::SpeechRecognitionResults& result) OVERRIDE;
   virtual void OnRecognitionError(
       int session_id, const content::SpeechRecognitionError& error) OVERRIDE;
   virtual void OnAudioLevelsChange(int session_id, float volume,
@@ -51,7 +52,7 @@ class ChromeSpeechRecognitionManagerDelegate
                                         std::string* hardware_info) OVERRIDE;
   virtual void CheckRecognitionIsAllowed(
       int session_id,
-      base::Callback<void(int session_id, bool is_allowed)> callback) OVERRIDE;
+      base::Callback<void(bool ask_user, bool is_allowed)> callback) OVERRIDE;
   virtual content::SpeechRecognitionEventListener* GetEventListener() OVERRIDE;
 
  private:
@@ -70,10 +71,10 @@ class ChromeSpeechRecognitionManagerDelegate
   // Checks for VIEW_TYPE_TAB_CONTENTS host in the UI thread and notifies back
   // the result in the IO thread through |callback|.
   static void CheckRenderViewType(
-      int session_id,
-      base::Callback<void(int session_id, bool is_allowed)> callback,
+      base::Callback<void(bool ask_user, bool is_allowed)> callback,
       int render_process_id,
-      int render_view_id);
+      int render_view_id,
+      bool js_api);
 
   // Starts a new recognition session, using the config of the last one
   // (which is copied into |last_session_config_|). Used for "try again".

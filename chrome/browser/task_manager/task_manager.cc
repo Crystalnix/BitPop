@@ -10,6 +10,7 @@
 #include "base/i18n/rtl.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
 #include "base/threading/thread.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager_resource_providers.h"
@@ -31,6 +33,8 @@
 #include "chrome/common/view_type.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
@@ -83,7 +87,8 @@ string16 FormatStatsSize(const WebKit::WebCache::ResourceTypeStat& stat) {
 ////////////////////////////////////////////////////////////////////////////////
 
 TaskManagerModel::TaskManagerModel(TaskManager* task_manager)
-    : update_requests_(0),
+    : pending_video_memory_usage_stats_update_(false),
+      update_requests_(0),
       listen_requests_(0),
       update_state_(IDLE),
       goat_salt_(base::RandUint64()),
@@ -98,6 +103,8 @@ TaskManagerModel::TaskManagerModel(TaskManager* task_manager)
       new TaskManagerChildProcessResourceProvider(task_manager));
   AddResourceProvider(
       new TaskManagerExtensionProcessResourceProvider(task_manager));
+  AddResourceProvider(
+      new TaskManagerGuestResourceProvider(task_manager));
 
 #if defined(ENABLE_NOTIFICATIONS)
   TaskManager::ResourceProvider* provider =
@@ -253,6 +260,25 @@ string16 TaskManagerModel::GetResourceWebCoreCSSCacheSize(
   const WebKit::WebCache::ResourceTypeStats stats(
       resources_[index]->GetWebCoreCacheStats());
   return FormatStatsSize(stats.cssStyleSheets);
+}
+
+string16 TaskManagerModel::GetResourceVideoMemory(int index) const {
+  CHECK_LT(index, ResourceCount());
+
+  bool result;
+  size_t video_memory;
+  bool has_duplicates;
+  result = GetVideoMemory(index, &video_memory, &has_duplicates);
+
+  if (!result || !video_memory) {
+    return ASCIIToUTF16("N/A");
+  } else if (has_duplicates) {
+    return ASCIIToUTF16("(") +
+           GetMemCellText(video_memory) +
+           ASCIIToUTF16(")");
+  } else {
+    return GetMemCellText(video_memory);
+  }
 }
 
 string16 TaskManagerModel::GetResourceFPS(
@@ -448,6 +474,13 @@ int TaskManagerModel::CompareValues(int row1, int row2, int col_id) const {
   } else if (col_id == IDS_TASK_MANAGER_FPS_COLUMN) {
     return ValueCompare<float>(resources_[row1]->GetFPS(),
                                resources_[row2]->GetFPS());
+  } else if (col_id == IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN) {
+    size_t value1;
+    size_t value2;
+    bool has_duplicates;
+    if (!GetVideoMemory(row1, &value1, &has_duplicates)) value1 = 0;
+    if (!GetVideoMemory(row2, &value2, &has_duplicates)) value2 = 0;
+    return ValueCompare<size_t>(value1, value2);
   } else if (col_id == IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN) {
     return ValueCompare<int>(GetGoatsTeleported(row1),
                              GetGoatsTeleported(row2));
@@ -564,6 +597,22 @@ bool TaskManagerModel::GetWebCoreCacheStats(
     return false;
 
   *result = resources_[index]->GetWebCoreCacheStats();
+  return true;
+}
+
+bool TaskManagerModel::GetVideoMemory(
+    int index, size_t* video_memory, bool* has_duplicates) const {
+  TaskManager::Resource* resource = resources_[index];
+  base::ProcessId pid = base::GetProcId(resource->GetProcess());
+  content::GPUVideoMemoryUsageStats::ProcessMap::const_iterator i =
+      video_memory_usage_stats_.process_map.find(pid);
+  if (i == video_memory_usage_stats_.process_map.end()) {
+    *video_memory = 0;
+    *has_duplicates = false;
+    return false;
+  }
+  *video_memory = (*i).second.video_memory;
+  *has_duplicates = (*i).second.has_duplicates;
   return true;
 }
 
@@ -833,18 +882,10 @@ void TaskManagerModel::Clear() {
     resources_.clear();
 
     // Clear the groups.
-    for (GroupMap::iterator iter = group_map_.begin();
-         iter != group_map_.end(); ++iter) {
-      delete iter->second;
-    }
-    group_map_.clear();
+    STLDeleteValues(&group_map_);
 
     // Clear the process related info.
-    for (MetricsMap::iterator iter = metrics_map_.begin();
-         iter != metrics_map_.end(); ++iter) {
-      delete iter->second;
-    }
-    metrics_map_.clear();
+    STLDeleteValues(&metrics_map_);
     cpu_usage_map_.clear();
 
     // Clear the network maps.
@@ -885,6 +926,13 @@ void TaskManagerModel::NotifyFPS(base::ProcessId renderer_id,
   }
 }
 
+void TaskManagerModel::NotifyVideoMemoryUsageStats(
+    const content::GPUVideoMemoryUsageStats& video_memory_usage_stats) {
+  DCHECK(pending_video_memory_usage_stats_update_);
+  video_memory_usage_stats_ = video_memory_usage_stats;
+  pending_video_memory_usage_stats_update_ = false;
+}
+
 void TaskManagerModel::NotifyV8HeapStats(base::ProcessId renderer_id,
                                          size_t v8_memory_allocated,
                                          size_t v8_memory_used) {
@@ -894,6 +942,50 @@ void TaskManagerModel::NotifyV8HeapStats(base::ProcessId renderer_id,
       (*it)->NotifyV8HeapStats(v8_memory_allocated, v8_memory_used);
     }
   }
+}
+
+class TaskManagerModelGpuDataManagerObserver
+    : public content::GpuDataManagerObserver {
+ public:
+  TaskManagerModelGpuDataManagerObserver() {
+    content::GpuDataManager::GetInstance()->AddObserver(this);
+  }
+
+  virtual ~TaskManagerModelGpuDataManagerObserver() {
+    content::GpuDataManager::GetInstance()->RemoveObserver(this);
+  }
+
+  static void NotifyVideoMemoryUsageStats(
+      content::GPUVideoMemoryUsageStats video_memory_usage_stats) {
+    TaskManager::GetInstance()->model()->NotifyVideoMemoryUsageStats(
+        video_memory_usage_stats);
+  }
+
+  virtual void OnGpuInfoUpdate() OVERRIDE {}
+
+  virtual void OnVideoMemoryUsageStatsUpdate(
+      const content::GPUVideoMemoryUsageStats& video_memory_usage_stats)
+          OVERRIDE {
+    if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+      NotifyVideoMemoryUsageStats(video_memory_usage_stats);
+    } else {
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE, base::Bind(
+              &TaskManagerModelGpuDataManagerObserver::
+                  NotifyVideoMemoryUsageStats,
+              video_memory_usage_stats));
+    }
+  }
+};
+
+void TaskManagerModel::RefreshVideoMemoryUsageStats() {
+  if (pending_video_memory_usage_stats_update_) return;
+  if (!video_memory_usage_stats_observer_.get()) {
+    video_memory_usage_stats_observer_.reset(
+        new TaskManagerModelGpuDataManagerObserver());
+  }
+  pending_video_memory_usage_stats_update_ = true;
+  content::GpuDataManager::GetInstance()->RequestVideoMemoryUsageStatsUpdate();
 }
 
 void TaskManagerModel::Refresh() {
@@ -927,6 +1019,9 @@ void TaskManagerModel::Refresh() {
 
   // Clear the memory values so they can be querried lazily.
   memory_usage_map_.clear();
+
+  // Send a request to refresh GPU memory consumption values
+  RefreshVideoMemoryUsageStats();
 
   // Compute the new network usage values.
   displayed_network_usage_map_.clear();
@@ -980,11 +1075,6 @@ void TaskManagerModel::BytesRead(BytesReadParam param) {
     return;
   }
 
-  if (param.byte_count == 0) {
-    // Nothing to do if no bytes were actually read.
-    return;
-  }
-
   // TODO(jcampan): this should be improved once we have a better way of
   // linking a network notification back to the object that initiated it.
   TaskManager::Resource* resource = NULL;
@@ -1022,9 +1112,32 @@ void TaskManagerModel::BytesRead(BytesReadParam param) {
     current_byte_count_map_[resource] = iter_res->second + param.byte_count;
 }
 
+void TaskManagerModel::MultipleBytesRead(
+    const std::vector<BytesReadParam>* params) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  for (std::vector<BytesReadParam>::const_iterator it = params->begin();
+       it != params->end(); ++it) {
+    BytesRead(*it);
+  }
+}
+
+void TaskManagerModel::NotifyMultipleBytesRead() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(!bytes_read_buffer_.empty());
+
+  std::vector<BytesReadParam>* bytes_read_buffer =
+      new std::vector<BytesReadParam>;
+  bytes_read_buffer_.swap(*bytes_read_buffer);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&TaskManagerModel::MultipleBytesRead, this,
+                 base::Owned(bytes_read_buffer)));
+}
 
 void TaskManagerModel::NotifyBytesRead(const net::URLRequest& request,
                                        int byte_count) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
   // Only net::URLRequestJob instances created by the ResourceDispatcherHost
   // have an associated ResourceRequestInfo.
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(&request);
@@ -1043,12 +1156,16 @@ void TaskManagerModel::NotifyBytesRead(const net::URLRequest& request,
   if (info)
     origin_pid = info->GetOriginPID();
 
-  // This happens in the IO thread, post it to the UI thread.
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&TaskManagerModel::BytesRead, this,
-                 BytesReadParam(origin_pid, render_process_host_child_id,
-                                routing_id, byte_count)));
+  if (bytes_read_buffer_.empty()) {
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&TaskManagerModel::NotifyMultipleBytesRead, this),
+        base::TimeDelta::FromSeconds(1));
+  }
+
+  bytes_read_buffer_.push_back(
+      BytesReadParam(origin_pid, render_process_host_child_id,
+                     routing_id, byte_count));
 }
 
 bool TaskManagerModel::GetProcessMetricsForRow(
@@ -1067,6 +1184,41 @@ bool TaskManagerModel::GetProcessMetricsForRow(
 ////////////////////////////////////////////////////////////////////////////////
 // TaskManager class
 ////////////////////////////////////////////////////////////////////////////////
+
+int TaskManager::Resource::GetRoutingID() const { return 0; }
+
+bool TaskManager::Resource::ReportsCacheStats() const { return false; }
+
+WebKit::WebCache::ResourceTypeStats
+TaskManager::Resource::GetWebCoreCacheStats() const {
+  return WebKit::WebCache::ResourceTypeStats();
+}
+
+bool TaskManager::Resource::ReportsFPS() const { return false; }
+
+float TaskManager::Resource::GetFPS() const { return 0.0f; }
+
+bool TaskManager::Resource::ReportsSqliteMemoryUsed() const { return false; }
+
+size_t TaskManager::Resource::SqliteMemoryUsedBytes() const { return 0; }
+
+const extensions::Extension* TaskManager::Resource::GetExtension() const {
+  return NULL;
+}
+
+bool TaskManager::Resource::ReportsV8MemoryStats() const { return false; }
+
+size_t TaskManager::Resource::GetV8MemoryAllocated() const { return 0; }
+
+size_t TaskManager::Resource::GetV8MemoryUsed() const { return 0; }
+
+bool TaskManager::Resource::CanInspect() const { return false; }
+
+content::WebContents* TaskManager::Resource::GetWebContents() const {
+  return NULL;
+}
+
+bool TaskManager::Resource::IsBackground() const { return false; }
 
 // static
 void TaskManager::RegisterPrefs(PrefService* prefs) {
@@ -1127,10 +1279,11 @@ TaskManager* TaskManager::GetInstance() {
 }
 
 void TaskManager::OpenAboutMemory() {
-  Browser* browser = browser::FindOrCreateTabbedBrowser(
+  // TODO(robertshield): FTB - Merge MAD's TaskManager change.
+  Browser* browser = browser::FindOrCreateTabbedBrowserDeprecated(
       ProfileManager::GetDefaultProfileOrOffTheRecord());
- chrome::NavigateParams params(browser, GURL(chrome::kChromeUIMemoryURL),
-                               content::PAGE_TRANSITION_LINK);
+  chrome::NavigateParams params(browser, GURL(chrome::kChromeUIMemoryURL),
+                                content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
 }
@@ -1153,7 +1306,8 @@ namespace {
 // Counts the number of extension background pages associated with this profile.
 int CountExtensionBackgroundPagesForProfile(Profile* profile) {
   int count = 0;
-  ExtensionProcessManager* manager = profile->GetExtensionProcessManager();
+  ExtensionProcessManager* manager =
+      extensions::ExtensionSystem::Get(profile)->process_manager();
   if (!manager)
     return count;
 

@@ -224,7 +224,7 @@ class DownloadsTest(pyauto.PyUITest):
     self._ClearLocalDownloadState(downloaded_pkg)
     self.DownloadAndWaitForStart(file_url)
     self._DeleteAfterShutdown(downloaded_pkg)
-    self.WaitForAllDownloadsToComplete(timeout=self.large_test_timeout_ms());
+    self.WaitForAllDownloadsToComplete(timeout=10 * 60 * 1000);
     # Verify that the file was correctly downloaded
     self.assertTrue(os.path.exists(downloaded_pkg),
                     'Downloaded file %s missing.' % downloaded_pkg)
@@ -332,6 +332,8 @@ class DownloadsTest(pyauto.PyUITest):
     # It might take a while for the download to kick in, hold on until then.
     self.assertTrue(self.WaitUntil(
         lambda: len(self.GetDownloadsInfo().Downloads()) == num_downloads + 1))
+    # Wait for Download Shelf to appear to reduce flakiness.
+    self.assertTrue(self.WaitUntil(self.IsDownloadShelfVisible))
 
   def testPauseAndResume(self):
     """Verify that pause and resume work while downloading a file.
@@ -369,7 +371,7 @@ class DownloadsTest(pyauto.PyUITest):
     resume_dict = self.PerformActionOnDownload(self._GetDownloadId(),
                                                'toggle_pause')
     self.assertFalse(resume_dict['is_paused'])
-    self.WaitForAllDownloadsToComplete(timeout=self.large_test_timeout_ms());
+    self.WaitForAllDownloadsToComplete(timeout=10 * 60 * 1000);
 
     # Verify that the file was correctly downloaded after pause and resume.
     self.assertTrue(os.path.exists(downloaded_pkg),

@@ -11,6 +11,7 @@
 #include "ash/event_rewriter_delegate.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/hash_tables.h"
 #include "ui/aura/root_window_observer.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
@@ -51,7 +52,7 @@ class EventRewriter : public ash::EventRewriterDelegate,
   DeviceType DeviceAddedForTesting(int device_id,
                                    const std::string& device_name);
   // Calls Rewrite.
-  void RewriteForTesting(aura::KeyEvent* event);
+  void RewriteForTesting(ui::KeyEvent* event);
 
   const std::map<int, DeviceType>& device_id_to_type_for_testing() const {
     return device_id_to_type_;
@@ -74,9 +75,9 @@ class EventRewriter : public ash::EventRewriterDelegate,
  private:
   // ash::EventRewriterDelegate overrides:
   virtual ash::EventRewriterDelegate::Action RewriteOrFilterKeyEvent(
-      aura::KeyEvent* event) OVERRIDE;
+      ui::KeyEvent* event) OVERRIDE;
   virtual ash::EventRewriterDelegate::Action RewriteOrFilterLocatedEvent(
-      aura::LocatedEvent* event) OVERRIDE;
+      ui::LocatedEvent* event) OVERRIDE;
 
   // aura::RootWindowObserver overrides:
   virtual void OnKeyboardMappingChanged(const aura::RootWindow* root) OVERRIDE;
@@ -88,22 +89,72 @@ class EventRewriter : public ash::EventRewriterDelegate,
   virtual void DeviceRemoved(int device_id) OVERRIDE;
   virtual void DeviceKeyPressedOrReleased(int device_id) OVERRIDE;
 
+  // We don't want to include Xlib.h here since it has polluting macros, so
+  // define these locally.
+  typedef unsigned long KeySym;
+  typedef unsigned char KeyCode;
+
   // Updates |*_xkeycode_| in response to a keyboard map change.
   void RefreshKeycodes();
   // Converts an X key symbol like XK_Control_L to a key code.
-  unsigned char NativeKeySymToNativeKeycode(unsigned long keysym);
+  unsigned char NativeKeySymToNativeKeycode(KeySym keysym);
+
+  struct KeyboardRemapping {
+    KeySym input_keysym;
+    unsigned int input_mods;
+    unsigned int input_native_mods;
+    KeySym output_keysym;
+    ui::KeyboardCode output_keycode;
+    unsigned int output_mods;
+    unsigned int output_native_mods;
+  };
+
+  // Given a set of KeyboardRemapping structs, it finds a matching struct
+  // if possible, and updates the remapped event values. Returns true if a
+  // remapping was found and remapped values were updated.
+  bool RewriteWithKeyboardRemappingsByKeySym(
+      const KeyboardRemapping* remappings,
+      size_t num_remappings,
+      KeySym keysym,
+      unsigned int native_mods,
+      unsigned int mods,
+      KeySym* remapped_native_keysym,
+      unsigned int* remapped_native_mods,
+      ui::KeyboardCode* remapped_keycode,
+      unsigned int* remapped_mods);
+
+  // Given a set of KeyboardRemapping structs, it finds a matching struct
+  // if possible, and updates the remapped event values. This function converts
+  // the KeySym in the KeyboardRemapping struct into the KeyCode before matching
+  // to allow any KeyCode on the same physical key as the given KeySym to match.
+  // Returns true if a remapping was found and remapped values were updated.
+  bool RewriteWithKeyboardRemappingsByKeyCode(
+      const KeyboardRemapping* remappings,
+      size_t num_remappings,
+      KeyCode keycode,
+      unsigned int native_mods,
+      unsigned int mods,
+      KeySym* remapped_native_keysym,
+      unsigned int* remapped_native_mods,
+      ui::KeyboardCode* remapped_keycode,
+      unsigned int* remapped_mods);
 #endif
 
   // Rewrites the |event| by applying all RewriteXXX functions as needed.
-  void Rewrite(aura::KeyEvent* event);
+  void Rewrite(ui::KeyEvent* event);
 
   // Rewrites a modifier key press/release following the current user
   // preferences.
-  bool RewriteModifiers(aura::KeyEvent* event);
+  bool RewriteModifiers(ui::KeyEvent* event);
+
+  // Rewrites Fn key press/release to Control. In some cases, Fn key is not
+  // intercepted by the EC, but generates a key event like "XK_F15 + Mod3Mask"
+  // as shown in crosbug.com/p/14339.
+  bool RewriteFnKey(ui::KeyEvent* event);
 
   // Rewrites a NumPad key press/release without Num Lock to a corresponding key
   // press/release with the lock.  Returns true when |event| is rewritten.
-  bool RewriteNumPadKeys(aura::KeyEvent* event);
+  bool RewriteNumPadKeys(ui::KeyEvent* event);
 
   // Rewrites Backspace and Arrow keys following the Chrome OS keyboard spec.
   //  * Alt+Backspace -> Delete
@@ -111,13 +162,26 @@ class EventRewriter : public ash::EventRewriterDelegate,
   //  * Alt+Down -> Next (aka PageDown)
   //  * Ctrl+Alt+Up -> Home
   //  * Ctrl+Alt+Down -> End
-  bool RewriteBackspaceAndArrowKeys(aura::KeyEvent* event);
+  // When the Search key acts as a function key, it instead maps:
+  //  * Search+Backspace -> Delete
+  //  * Search+Up -> Prior (aka PageUp)
+  //  * Search+Down -> Next (aka PageDown)
+  //  * Search+Left -> Home
+  //  * Search+Right -> End
+  //  * Search+. -> Insert
+  // Returns true when the |event| is rewritten.
+  bool RewriteExtendedKeys(ui::KeyEvent* event);
+
+  // When the Search key acts as a function key, it remaps Search+1
+  // through Search+= to F1 through F12. Returns true when the |event| is
+  // rewritten.
+  bool RewriteFunctionKeys(ui::KeyEvent* event);
 
   // Rewrites the located |event|.
-  void RewriteLocatedEvent(aura::LocatedEvent* event);
+  void RewriteLocatedEvent(ui::LocatedEvent* event);
 
   // Overwrites |event| with the keycodes and flags.
-  void OverwriteEvent(aura::KeyEvent* event,
+  void OverwriteEvent(ui::KeyEvent* event,
                       unsigned int new_native_keycode,
                       unsigned int new_native_state,
                       ui::KeyboardCode new_keycode,
@@ -141,32 +205,8 @@ class EventRewriter : public ash::EventRewriterDelegate,
   int last_device_id_;
 
 #if defined(OS_CHROMEOS)
-  // X keycodes corresponding to various keysyms.
-  unsigned int control_l_xkeycode_;
-  unsigned int control_r_xkeycode_;
-  unsigned int alt_l_xkeycode_;
-  unsigned int alt_r_xkeycode_;
-  unsigned int meta_l_xkeycode_;
-  unsigned int meta_r_xkeycode_;
-  unsigned int windows_l_xkeycode_;
-  unsigned int caps_lock_xkeycode_;
-  unsigned int void_symbol_xkeycode_;
-  unsigned int delete_xkeycode_;
-  unsigned int home_xkeycode_;
-  unsigned int end_xkeycode_;
-  unsigned int prior_xkeycode_;
-  unsigned int next_xkeycode_;
-  unsigned int kp_0_xkeycode_;
-  unsigned int kp_1_xkeycode_;
-  unsigned int kp_2_xkeycode_;
-  unsigned int kp_3_xkeycode_;
-  unsigned int kp_4_xkeycode_;
-  unsigned int kp_5_xkeycode_;
-  unsigned int kp_6_xkeycode_;
-  unsigned int kp_7_xkeycode_;
-  unsigned int kp_8_xkeycode_;
-  unsigned int kp_9_xkeycode_;
-  unsigned int kp_decimal_xkeycode_;
+  // A mapping from X11 KeySym keys to KeyCode values.
+  base::hash_map<unsigned long, unsigned long> keysym_to_keycode_map_;
 
   chromeos::input_method::XKeyboard* xkeyboard_;  // for testing.
 #endif

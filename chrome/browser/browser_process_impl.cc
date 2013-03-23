@@ -15,6 +15,7 @@
 #include "base/debug/alias.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/prefs/json_pref_store.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -26,23 +27,26 @@
 #include "chrome/browser/component_updater/component_updater_configurator.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/debugger/remote_debugging_server.h"
+#include "chrome/browser/defaults.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_status_updater.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_tab_id_map.h"
 #include "chrome/browser/first_run/upgrade_util.h"
+#include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/icon_manager.h"
 #include "chrome/browser/intranet_redirect_detector.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/media_gallery/media_file_system_registry.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/metrics/thread_watcher.h"
-#include "chrome/browser/metrics/variations_service.h"
+#include "chrome/browser/metrics/variations/variations_service.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/crl_set_fetcher.h"
 #include "chrome/browser/net/sdch_dictionary_fetcher.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -55,7 +59,8 @@
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/status_icons/status_tray.h"
-#include "chrome/browser/tab_contents/thumbnail_generator.h"
+#include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
+#include "chrome/browser/ui/bookmarks/bookmark_prompt_controller.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
@@ -64,7 +69,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "chrome/common/json_pref_store.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/switch_utils.h"
 #include "chrome/common/url_constants.h"
@@ -76,17 +80,23 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/common/pepper_plugin_info.h"
+#include "extensions/common/constants.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if !defined(ENABLE_CONFIGURATION_POLICY)
+#if defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/browser_policy_connector.h"
+#else
 #include "chrome/browser/policy/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(OS_WIN)
+#include "base/win/windows_version.h"
 #include "ui/views/focus/view_storage.h"
+#if defined(USE_AURA)
+#include "chrome/browser/metro_viewer/metro_viewer_process_host_win.h"
+#endif
 #elif defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_main_mac.h"
 #endif
@@ -96,8 +106,12 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/oom_priority_manager.h"
+#include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #endif  // defined(OS_CHROMEOS)
+
+#if defined(ENABLE_PLUGIN_INSTALLATION)
+#include "chrome/browser/web_resource/plugins_resource_service.h"
+#endif
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
 // How often to check if the persistent instance of Chrome needs to restart
@@ -125,7 +139,9 @@ using content::ChildProcessSecurityPolicy;
 using content::PluginService;
 using content::ResourceDispatcherHost;
 
-BrowserProcessImpl::BrowserProcessImpl(const CommandLine& command_line)
+BrowserProcessImpl::BrowserProcessImpl(
+    base::SequencedTaskRunner* local_state_task_runner,
+    const CommandLine& command_line)
     : created_metrics_service_(false),
       created_watchdog_thread_(false),
       created_browser_policy_connector_(false),
@@ -138,10 +154,10 @@ BrowserProcessImpl::BrowserProcessImpl(const CommandLine& command_line)
       did_start_(false),
       checked_for_new_frames_(false),
       using_new_frames_(false),
-      thumbnail_generator_(new ThumbnailGenerator),
-      download_status_updater_(new DownloadStatusUpdater) {
+      render_widget_snapshot_taker_(new RenderWidgetSnapshotTaker),
+      download_status_updater_(new DownloadStatusUpdater),
+      local_state_task_runner_(local_state_task_runner) {
   g_browser_process = this;
-  clipboard_.reset(new ui::Clipboard);
 
 #if defined(ENABLE_PRINTING)
   // Must be created after the NotificationService.
@@ -151,7 +167,7 @@ BrowserProcessImpl::BrowserProcessImpl(const CommandLine& command_line)
   net_log_.reset(new ChromeNetLog);
 
   ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
-      chrome::kExtensionScheme);
+      extensions::kExtensionScheme);
   ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
       chrome::kExtensionResourceScheme);
 
@@ -194,7 +210,7 @@ void BrowserProcessImpl::StartTearDown() {
   metrics_service_.reset();
   variations_service_.reset();
   intranet_redirect_detector_.reset();
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
   if (safe_browsing_service_.get()) {
     safe_browsing_service()->ShutDown();
   }
@@ -208,14 +224,19 @@ void BrowserProcessImpl::StartTearDown() {
   // Need to clear profiles (download managers) before the io_thread_.
   profile_manager_.reset();
 
+#if !defined(OS_ANDROID)
   // Debugger must be cleaned up before IO thread and NotificationService.
   remote_debugging_server_.reset();
+#endif
 
   ExtensionTabIdMap::GetInstance()->Shutdown();
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
   // The policy providers managed by |browser_policy_connector_| need to shut
   // down while the IO and FILE threads are still alive.
-  browser_policy_connector_.reset();
+  if (browser_policy_connector_)
+    browser_policy_connector_->Shutdown();
+#endif
 
   // Stop the watchdog thread before stopping other threads.
   watchdog_thread_.reset();
@@ -305,7 +326,7 @@ void BrowserProcessImpl::EndSession() {
   ProfileManager* pm = profile_manager();
   std::vector<Profile*> profiles(pm->GetLoadedProfiles());
   for (size_t i = 0; i < profiles.size(); ++i)
-    profiles[i]->MarkAsCleanShutdown();
+    profiles[i]->SetExitType(Profile::EXIT_SESSION_ENDED);
 
   // Tell the metrics service it was cleanly shutdown.
   MetricsService* metrics = g_browser_process->metrics_service();
@@ -385,11 +406,6 @@ PrefService* BrowserProcessImpl::local_state() {
   return local_state_.get();
 }
 
-ui::Clipboard* BrowserProcessImpl::clipboard() {
-  DCHECK(CalledOnValidThread());
-  return clipboard_.get();
-}
-
 net::URLRequestContextGetter* BrowserProcessImpl::system_request_context() {
   DCHECK(CalledOnValidThread());
   return io_thread()->system_url_request_context_getter();
@@ -397,8 +413,10 @@ net::URLRequestContextGetter* BrowserProcessImpl::system_request_context() {
 
 chrome_variations::VariationsService* BrowserProcessImpl::variations_service() {
   DCHECK(CalledOnValidThread());
+#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_ANDROID)
   if (!variations_service_.get())
     variations_service_.reset(new chrome_variations::VariationsService());
+#endif
   return variations_service_.get();
 }
 
@@ -425,29 +443,28 @@ NotificationUIManager* BrowserProcessImpl::notification_ui_manager() {
 
 policy::BrowserPolicyConnector* BrowserProcessImpl::browser_policy_connector() {
   DCHECK(CalledOnValidThread());
-  if (!created_browser_policy_connector_) {
-    DCHECK(browser_policy_connector_.get() == NULL);
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  if (!created_browser_policy_connector_) {
+    // Init() should not reenter this function. If it does this will DCHECK.
+    DCHECK(!browser_policy_connector_);
     browser_policy_connector_.reset(new policy::BrowserPolicyConnector());
     browser_policy_connector_->Init();
-#endif
-    // Init() should not reenter this function. Updating
-    // |created_browser_policy_connector_| here makes reentering hit the DCHECK.
     created_browser_policy_connector_ = true;
   }
   return browser_policy_connector_.get();
+#else
+  return NULL;
+#endif
 }
 
 policy::PolicyService* BrowserProcessImpl::policy_service() {
-  if (!policy_service_.get()) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
-    policy_service_.reset(
-        browser_policy_connector()->CreatePolicyService(NULL));
+  return browser_policy_connector()->GetPolicyService();
 #else
+  if (!policy_service_.get())
     policy_service_.reset(new policy::PolicyServiceStub());
-#endif
-  }
   return policy_service_.get();
+#endif
 }
 
 IconManager* BrowserProcessImpl::icon_manager() {
@@ -457,8 +474,15 @@ IconManager* BrowserProcessImpl::icon_manager() {
   return icon_manager_.get();
 }
 
-ThumbnailGenerator* BrowserProcessImpl::GetThumbnailGenerator() {
-  return thumbnail_generator_.get();
+GLStringManager* BrowserProcessImpl::gl_string_manager() {
+  DCHECK(CalledOnValidThread());
+  if (!gl_string_manager_.get())
+    gl_string_manager_.reset(new GLStringManager());
+  return gl_string_manager_.get();
+}
+
+RenderWidgetSnapshotTaker* BrowserProcessImpl::GetRenderWidgetSnapshotTaker() {
+  return render_widget_snapshot_taker_.get();
 }
 
 AutomationProviderList* BrowserProcessImpl::GetAutomationProviderList() {
@@ -472,14 +496,20 @@ AutomationProviderList* BrowserProcessImpl::GetAutomationProviderList() {
 #endif
 }
 
-void BrowserProcessImpl::InitDevToolsHttpProtocolHandler(
+void BrowserProcessImpl::CreateDevToolsHttpProtocolHandler(
     Profile* profile,
     const std::string& ip,
     int port,
     const std::string& frontend_url) {
   DCHECK(CalledOnValidThread());
-  remote_debugging_server_.reset(
-      new RemoteDebuggingServer(profile, ip, port, frontend_url));
+#if !defined(OS_ANDROID)
+  // StartupBrowserCreator::LaunchBrowser can be run multiple times when browser
+  // is started with several profiles or existing browser process is reused.
+  if (!remote_debugging_server_.get()) {
+    remote_debugging_server_.reset(
+        new RemoteDebuggingServer(profile, ip, port, frontend_url));
+  }
+#endif
 }
 
 bool BrowserProcessImpl::IsShuttingDown() {
@@ -545,6 +575,27 @@ DownloadStatusUpdater* BrowserProcessImpl::download_status_updater() {
   return download_status_updater_.get();
 }
 
+BookmarkPromptController* BrowserProcessImpl::bookmark_prompt_controller() {
+#if defined(OS_ANDROID)
+  return NULL;
+#else
+  return bookmark_prompt_controller_.get();
+#endif
+}
+
+chrome::MediaFileSystemRegistry*
+BrowserProcessImpl::media_file_system_registry() {
+  if (!media_file_system_registry_)
+    media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
+  return media_file_system_registry_.get();
+}
+
+#if !defined(OS_WIN)
+void BrowserProcessImpl::PlatformSpecificCommandLineProcessing(
+    const CommandLine& command_line) {
+}
+#endif
+
 DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {
   DCHECK(CalledOnValidThread());
   if (!download_request_limiter_)
@@ -554,9 +605,14 @@ DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {
 
 BackgroundModeManager* BrowserProcessImpl::background_mode_manager() {
   DCHECK(CalledOnValidThread());
+#if defined(ENABLE_BACKGROUND)
   if (!background_mode_manager_.get())
     CreateBackgroundModeManager();
   return background_mode_manager_.get();
+#else
+  NOTIMPLEMENTED();
+  return NULL;
+#endif
 }
 
 StatusTray* BrowserProcessImpl::status_tray() {
@@ -580,30 +636,6 @@ safe_browsing::ClientSideDetectionService*
   if (safe_browsing_service())
     return safe_browsing_service()->safe_browsing_detection_service();
   return NULL;
-}
-
-bool BrowserProcessImpl::plugin_finder_disabled() const {
-  if (plugin_finder_disabled_pref_.get())
-    return plugin_finder_disabled_pref_->GetValue();
-  else
-    return false;
-}
-
-void BrowserProcessImpl::Observe(int type,
-                                 const content::NotificationSource& source,
-                                 const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_PREF_CHANGED) {
-    std::string* pref = content::Details<std::string>(details).ptr();
-    if (*pref == prefs::kDefaultBrowserSettingEnabled) {
-      ApplyDefaultBrowserPolicy();
-    } else if (*pref == prefs::kDisabledSchemes) {
-      ApplyDisabledSchemesPolicy();
-    } else if (*pref == prefs::kAllowCrossOriginAuthPrompt) {
-      ApplyAllowCrossOriginAuthPromptPolicy();
-    }
-  } else {
-    NOTREACHED();
-  }
 }
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
@@ -662,7 +694,10 @@ void BrowserProcessImpl::ResourceDispatcherHostCreated() {
   ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
 
-  pref_change_registrar_.Add(prefs::kAllowCrossOriginAuthPrompt, this);
+  pref_change_registrar_.Add(
+      prefs::kAllowCrossOriginAuthPrompt,
+      base::Bind(&BrowserProcessImpl::ApplyAllowCrossOriginAuthPromptPolicy,
+                 base::Unretained(this)));
   ApplyAllowCrossOriginAuthPromptPolicy();
 }
 
@@ -697,10 +732,10 @@ void BrowserProcessImpl::CreateLocalState() {
   created_local_state_ = true;
 
   FilePath local_state_path;
-  PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path);
+  CHECK(PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path));
   local_state_.reset(
-      PrefService::CreatePrefService(local_state_path, policy_service(), NULL,
-                                     false));
+      PrefService::CreatePrefService(local_state_path, local_state_task_runner_,
+                                     policy_service(), NULL, false));
 
   // Initialize the prefs of the local state.
   chrome::RegisterLocalState(local_state_.get());
@@ -710,18 +745,13 @@ void BrowserProcessImpl::CreateLocalState() {
   // Initialize the notification for the default browser setting policy.
   local_state_->RegisterBooleanPref(prefs::kDefaultBrowserSettingEnabled,
                                     false);
-  pref_change_registrar_.Add(prefs::kDefaultBrowserSettingEnabled, this);
+  pref_change_registrar_.Add(
+      prefs::kDefaultBrowserSettingEnabled,
+      base::Bind(&BrowserProcessImpl::ApplyDefaultBrowserPolicy,
+                 base::Unretained(this)));
 
-  // Initialize the preference for the plugin finder policy.
-  // This preference is only needed on the IO thread so make it available there.
-  local_state_->RegisterBooleanPref(prefs::kDisablePluginFinder, false);
-  plugin_finder_disabled_pref_.reset(new BooleanPrefMember);
-  plugin_finder_disabled_pref_->Init(prefs::kDisablePluginFinder,
-                                   local_state_.get(), NULL);
-  plugin_finder_disabled_pref_->MoveToThread(BrowserThread::IO);
-
-  // Another policy that needs to be defined before the net subsystem is
-  // initialized is MaxConnectionsPerProxy so we do it here.
+  // This policy needs to be defined before the net subsystem is initialized,
+  // so we do it here.
   local_state_->RegisterIntegerPref(prefs::kMaxConnectionsPerProxy,
                                     net::kDefaultMaxSocketsPerProxyServer);
   int max_per_proxy = local_state_->GetInteger(prefs::kMaxConnectionsPerProxy);
@@ -734,15 +764,23 @@ void BrowserProcessImpl::CreateLocalState() {
   // This is observed by ChildProcessSecurityPolicy, which lives in content/
   // though, so it can't register itself.
   local_state_->RegisterListPref(prefs::kDisabledSchemes);
-  pref_change_registrar_.Add(prefs::kDisabledSchemes, this);
+  pref_change_registrar_.Add(
+      prefs::kDisabledSchemes,
+      base::Bind(&BrowserProcessImpl::ApplyDisabledSchemesPolicy,
+                 base::Unretained(this)));
   ApplyDisabledSchemesPolicy();
 
   local_state_->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
+
+#if defined(OS_WIN)
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    local_state_->RegisterBooleanPref(prefs::kRestartSwitchMode, false);
+#endif
 }
 
 void BrowserProcessImpl::PreCreateThreads() {
-  io_thread_.reset(new IOThread(
-      local_state(), net_log_.get(), extension_event_router_forwarder_.get()));
+  io_thread_.reset(new IOThread(local_state(), policy_service(), net_log_.get(),
+                                extension_event_router_forwarder_.get()));
 }
 
 void BrowserProcessImpl::PreMainMessageLoopRun() {
@@ -780,6 +818,22 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 
   if (local_state_->IsManagedPreference(prefs::kDefaultBrowserSettingEnabled))
     ApplyDefaultBrowserPolicy();
+
+  // Triggers initialization of the singleton instance on UI thread.
+  PluginFinder::GetInstance()->Init();
+
+#if defined(ENABLE_PLUGIN_INSTALLATION)
+  if (!plugins_resource_service_) {
+    plugins_resource_service_ = new PluginsResourceService(local_state());
+    plugins_resource_service_->StartAfterDelay();
+  }
+#endif
+
+#if !defined(OS_ANDROID)
+  if (browser_defaults::bookmarks_enabled &&
+      BookmarkPromptController::IsEnabled())
+    bookmark_prompt_controller_.reset(new BookmarkPromptController());
+#endif
 }
 
 void BrowserProcessImpl::CreateIconManager() {
@@ -838,7 +892,7 @@ void BrowserProcessImpl::CreateSafeBrowsingService() {
   // Set this flag to true so that we don't retry indefinitely to
   // create the service class if there was an error.
   created_safe_browsing_service_ = true;
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
   safe_browsing_service_ = SafeBrowsingService::CreateSafeBrowsingService();
   safe_browsing_service_->Initialize();
 #endif

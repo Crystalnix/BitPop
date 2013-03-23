@@ -21,6 +21,10 @@ class AuraTestHelper;
 }
 }
 
+namespace ui {
+class ScopedOleInitializer;
+}
+
 namespace content {
 
 class BrowserContext;
@@ -40,11 +44,6 @@ class RenderViewHostTester {
   // RenderViewHost testing was enabled; use a
   // RenderViewHostTestEnabler instance (see below) to do this.
   static RenderViewHostTester* For(RenderViewHost* host);
-
-  // This removes the need to expose
-  // RenderViewHostImpl::set_send_accessibility_updated_notifications()
-  // outside of content.
-  static void EnableAccessibilityUpdatedNotifications(RenderViewHost* host);
 
   // If the given WebContentsImpl has a pending RVH, returns it, otherwise NULL.
   static RenderViewHost* GetPendingForController(
@@ -70,9 +69,7 @@ class RenderViewHostTester {
   // Gives tests access to RenderViewHostImpl::CreateRenderView.
   virtual bool CreateRenderView(const string16& frame_name,
                                 int opener_route_id,
-                                int32 max_page_id,
-                                const std::string& embedder_channel_name,
-                                int embedder_container_id) = 0;
+                                int32 max_page_id) = 0;
 
   // Calls OnMsgNavigate on the RenderViewHost with the given information,
   // setting the rest of the parameters in the message to the "typical" values.
@@ -126,7 +123,7 @@ class RenderViewHostTestHarness : public testing::Test {
   virtual ~RenderViewHostTestHarness();
 
   NavigationController& controller();
-  virtual WebContents* web_contents();
+  WebContents* web_contents();
   RenderViewHost* rvh();
   RenderViewHost* pending_rvh();
   RenderViewHost* active_rvh();
@@ -138,7 +135,7 @@ class RenderViewHostTestHarness : public testing::Test {
 
   // Sets the current WebContents for tests that want to alter it. Takes
   // ownership of the WebContents passed.
-  virtual void SetContents(WebContents* contents);
+  void SetContents(WebContents* contents);
 
   // Creates a new test-enabled WebContents. Ownership passes to the
   // caller.
@@ -176,6 +173,9 @@ class RenderViewHostTestHarness : public testing::Test {
   // web_contents() and SetContents() are virtual and may be
   // overridden by subclasses.
   scoped_ptr<WebContents> contents_;
+#if defined(OS_WIN)
+  scoped_ptr<ui::ScopedOleInitializer> ole_initializer_;
+#endif
 #if defined(USE_AURA)
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
 #endif
