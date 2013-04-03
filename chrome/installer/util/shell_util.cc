@@ -239,7 +239,7 @@ class RegistryEntry {
 
       // <root hkey>\Software\Classes\<app_id>\.exe\shell @=open
       entries->push_back(new RegistryEntry(model_id_shell,
-                                           ShellUtil::kRegVerbOpen));
+                                          ShellUtil::kRegVerbOpen));
 
       // Each of Chrome's shortcuts has an appid; which, as of Windows 8, is
       // registered to handle some verbs. This registration has the side-effect
@@ -445,9 +445,9 @@ class RegistryEntry {
   // are needed to make Chromium the default handler for a protocol on XP.
   static void GetXPStyleUserProtocolEntries(
       const string16& protocol,
-      const string16& chrome_icon,
-      const string16& chrome_open,
-      ScopedVector<RegistryEntry>* entries) {
+                                     const string16& chrome_icon,
+                                     const string16& chrome_open,
+                                     ScopedVector<RegistryEntry>* entries) {
     // Protocols associations.
     string16 url_key(ShellUtil::kRegClasses);
     url_key.push_back(FilePath::kSeparators[0]);
@@ -501,7 +501,7 @@ class RegistryEntry {
         ShellUtil::FormatIconLocation(chrome_exe, dist->GetIconIndex());
     for (int i = 0; ShellUtil::kBrowserProtocolAssociations[i] != NULL; i++) {
       GetXPStyleUserProtocolEntries(ShellUtil::kBrowserProtocolAssociations[i],
-                                    chrome_icon, chrome_open, entries);
+                             chrome_icon, chrome_open, entries);
     }
 
     // start->Internet shortcut.
@@ -864,8 +864,8 @@ HKEY DetermineRegistrationRoot(bool is_per_user) {
 // not be required on Vista+ but since some applications still read
 // Software\Classes\http key directly, we have to do this on Vista+ as well.
 bool RegisterChromeAsDefaultXPStyle(BrowserDistribution* dist,
-                                    int shell_change,
-                                    const string16& chrome_exe) {
+                                  int shell_change,
+                                  const string16& chrome_exe) {
   bool ret = true;
   ScopedVector<RegistryEntry> entries;
   RegistryEntry::GetXPStyleDefaultBrowserUserEntries(
@@ -1175,14 +1175,7 @@ const wchar_t* ShellUtil::kAppPathsRegistryPathName = L"Path";
 const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromeHTML";
 const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"Chrome HTML Document";
 #else
-// This used to be "ChromiumHTML", but was forced to become "ChromiumHTM"
-// because of http://crbug.com/153349 as with the '.' and 26 characters suffix
-// added on user-level installs, the generated progid for Chromium was 39
-// characters long which, according to MSDN (
-// http://msdn.microsoft.com/library/aa911706.aspx), is the maximum length
-// for a progid. It was however determined through experimentation that the 39
-// character limit mentioned on MSDN includes the NULL character...
-const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromiumHTM";
+const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromiumHTML";
 const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"Chromium HTML Document";
 #endif
 
@@ -1238,19 +1231,19 @@ bool ShellUtil::GetShortcutPath(ShellUtil::ShortcutLocation location,
       break;
     default:
       NOTREACHED();
-      return false;
+    return false;
   }
 
   if (!PathService::Get(dir_key, path) || path->empty()) {
     NOTREACHED() << dir_key;
     return false;
-  }
+      }
 
   if (add_folder_for_dist)
     *path = path->Append(dist->GetAppShortCutName());
 
   return true;
-}
+    }
 
 bool ShellUtil::CreateOrUpdateShortcut(
     ShellUtil::ShortcutLocation location,
@@ -1269,7 +1262,7 @@ bool ShellUtil::CreateOrUpdateShortcut(
       system_shortcut_path.empty()) {
     NOTREACHED();
     return false;
-  }
+    }
 
   string16 shortcut_name(ExtractShortcutNameFromProperties(dist, properties));
   system_shortcut_path = system_shortcut_path.Append(shortcut_name);
@@ -1286,9 +1279,9 @@ bool ShellUtil::CreateOrUpdateShortcut(
     // not to create a user-level shortcut in that case.
     if (!GetShortcutPath(location, dist, CURRENT_USER, &user_shortcut_path) ||
         user_shortcut_path.empty()) {
-      NOTREACHED();
+    NOTREACHED();
       return false;
-    }
+  }
     user_shortcut_path = user_shortcut_path.Append(shortcut_name);
     chosen_path = &user_shortcut_path;
   } else {
@@ -1298,7 +1291,7 @@ bool ShellUtil::CreateOrUpdateShortcut(
     // existing system-level shortcut however.
     chosen_path = &system_shortcut_path;
     should_install_shortcut = false;
-  }
+}
 
   if (chosen_path == NULL || chosen_path->empty()) {
     NOTREACHED();
@@ -1588,12 +1581,12 @@ bool ShellUtil::ShowMakeChromeDefaultSystemUI(BrowserDistribution* dist,
   bool succeeded = true;
   bool is_default = (GetChromeDefaultState() == IS_DEFAULT);
   if (!is_default) {
-    // On Windows 8, you can't set yourself as the default handler
-    // programatically. In other words IApplicationAssociationRegistration
-    // has been rendered useless. What you can do is to launch
-    // "Set Program Associations" section of the "Default Programs"
-    // control panel, which is a mess, or pop the concise "How you want to open
-    // webpages?" dialog.  We choose the latter.
+  // On Windows 8, you can't set yourself as the default handler
+  // programatically. In other words IApplicationAssociationRegistration
+  // has been rendered useless. What you can do is to launch
+  // "Set Program Associations" section of the "Default Programs"
+  // control panel, which is a mess, or pop the concise "How you want to open
+  // webpages?" dialog.  We choose the latter.
     succeeded = LaunchSelectDefaultProtocolHandlerDialog(L"http");
     is_default = (succeeded && GetChromeDefaultState() == IS_DEFAULT);
   }
@@ -1645,7 +1638,7 @@ bool ShellUtil::MakeChromeDefaultProtocolClient(BrowserDistribution* dist,
     ret = false;
 
   return ret;
-}
+  }
 
 bool ShellUtil::ShowMakeChromeDefaultProtocolClientSystemUI(
     BrowserDistribution* dist,
@@ -1717,37 +1710,37 @@ bool ShellUtil::RegisterChromeBrowser(BrowserDistribution* dist,
   } else if (elevate_if_not_admin &&
              base::win::GetVersion() >= base::win::VERSION_VISTA &&
              ElevateAndRegisterChrome(dist, chrome_exe, suffix, L"")) {
-    // If the user is not an admin and OS is between Vista and Windows 7
-    // inclusively, try to elevate and register. This is only intended for
-    // user-level installs as system-level installs should always be run with
-    // admin rights.
+  // If the user is not an admin and OS is between Vista and Windows 7
+  // inclusively, try to elevate and register. This is only intended for
+  // user-level installs as system-level installs should always be run with
+  // admin rights.
     result = true;
   } else {
-    // If we got to this point then all we can do is create ProgId and basic app
-    // registrations under HKCU.
-    ScopedVector<RegistryEntry> entries;
-    RegistryEntry::GetProgIdEntries(dist, chrome_exe, string16(), &entries);
+  // If we got to this point then all we can do is create ProgId and basic app
+  // registrations under HKCU.
+  ScopedVector<RegistryEntry> entries;
+  RegistryEntry::GetProgIdEntries(dist, chrome_exe, string16(), &entries);
     // Prefer to use |suffix|; unless Chrome's ProgIds are already registered
     // with no suffix (as per the old registration style): in which case some
     // other registry entries could refer to them and since we were not able to
     // set our HKLM entries above, we are better off not altering these here.
-    if (!AreEntriesRegistered(entries, RegistryEntry::LOOK_IN_HKCU)) {
-      if (!suffix.empty()) {
-        entries.clear();
-        RegistryEntry::GetProgIdEntries(dist, chrome_exe, suffix, &entries);
-        RegistryEntry::GetAppRegistrationEntries(chrome_exe, suffix, &entries);
-      }
-      result = AddRegistryEntries(HKEY_CURRENT_USER, entries);
-    } else {
-      // The ProgId is registered unsuffixed in HKCU, also register the app with
-      // Windows in HKCU (this was not done in the old registration style and
-      // thus needs to be done after the above check for the unsuffixed
-      // registration).
+  if (!AreEntriesRegistered(entries, RegistryEntry::LOOK_IN_HKCU)) {
+    if (!suffix.empty()) {
       entries.clear();
+      RegistryEntry::GetProgIdEntries(dist, chrome_exe, suffix, &entries);
+      RegistryEntry::GetAppRegistrationEntries(chrome_exe, suffix, &entries);
+    }
+      result = AddRegistryEntries(HKEY_CURRENT_USER, entries);
+  } else {
+    // The ProgId is registered unsuffixed in HKCU, also register the app with
+    // Windows in HKCU (this was not done in the old registration style and
+    // thus needs to be done after the above check for the unsuffixed
+    // registration).
+    entries.clear();
       RegistryEntry::GetAppRegistrationEntries(chrome_exe, string16(),
                                                &entries);
       result = AddRegistryEntries(HKEY_CURRENT_USER, entries);
-    }
+  }
   }
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
   return result;
@@ -1858,7 +1851,7 @@ void ShellUtil::RemoveTaskbarShortcuts(const string16& target_exe) {
       !file_util::PathExists(taskbar_pins_path)) {
     LOG(ERROR) << "Couldn't find path to taskbar pins.";
     return;
-  }
+}
 
   file_util::FileEnumerator shortcuts_enum(
       taskbar_pins_path, false,

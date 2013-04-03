@@ -28,6 +28,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #import "chrome/browser/ui/cocoa/content_settings/content_setting_bubble_cocoa.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
@@ -46,6 +47,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/web_intents_button_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/zoom_decoration.h"
 #import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
+#import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/intents/web_intent_picker_controller.h"
@@ -79,6 +81,25 @@ const static int kFirstRunBubbleYOffset = 1;
 
 }
 
+class MybubDummyDecoration : public LocationBarDecoration {
+public:
+  MybubDummyDecoration() : LocationBarDecoration(), desiredWidth_(0) {}
+
+  void SetDesiredWidth(CGFloat width) {
+    desiredWidth_ = width;
+  }
+
+  virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE {
+    return desiredWidth_;
+  }
+
+  void DrawInFrame(NSRect frame, NSView* control_view) {
+    // we do not want to draw anything here
+  }
+private:
+  CGFloat desiredWidth_;
+};
+
 // TODO(shess): This code is mostly copied from the gtk
 // implementation.  Make sure it's all appropriate and flesh it out.
 
@@ -104,6 +125,8 @@ LocationBarViewMac::LocationBarViewMac(
       zoom_decoration_(new ZoomDecoration(toolbar_model)),
       keyword_hint_decoration_(
           new KeywordHintDecoration(OmniboxViewMac::GetFieldFont())),
+      mybub_dummy_decoration_(
+          new MybubDummyDecoration()),
       web_intents_button_decoration_(
           new WebIntentsButtonDecoration(this, OmniboxViewMac::GetFieldFont())),
       profile_(profile),
@@ -308,6 +331,13 @@ void LocationBarViewMac::OnChanged() {
   location_icon_decoration_->SetImage(image);
   ev_bubble_decoration_->SetImage(image);
   Layout();
+
+  if (browser_->window()) {
+    BrowserWindowController* controller =
+        static_cast<BrowserWindowCocoa*>(browser_->window())->cocoa_controller();
+    if (controller && [controller toolbarController])
+      [[controller toolbarController] positionMybubSearch];
+  }
 }
 
 void LocationBarViewMac::OnSelectionBoundsChanged() {
@@ -695,6 +725,9 @@ void LocationBarViewMac::Layout() {
   for (size_t i = 0; i < page_action_decorations_.size(); ++i) {
     [cell addRightDecoration:page_action_decorations_[i]];
   }
+
+  [cell addRightDecoration:mybub_dummy_decoration_.get()];
+
   for (size_t i = 0; i < content_setting_decorations_.size(); ++i) {
     [cell addRightDecoration:content_setting_decorations_[i]];
   }
@@ -708,6 +741,7 @@ void LocationBarViewMac::Layout() {
   selected_keyword_decoration_->SetVisible(false);
   ev_bubble_decoration_->SetVisible(false);
   keyword_hint_decoration_->SetVisible(false);
+  mybub_dummy_decoration_->SetVisible(!omnibox_view_->model()->CurrentTextIsURL());
 
   // Get the keyword to use for keyword-search and hinting.
   const string16 keyword = omnibox_view_->model()->keyword();
@@ -783,4 +817,13 @@ void LocationBarViewMac::UpdatePlusDecorationVisibility() {
     // If the action box is enabled, hide it when input is in progress.
     plus_decoration_->SetVisible(!toolbar_model_->GetInputInProgress());
   }
+}
+
+void LocationBarViewMac::SetMybubDummyWidth(CGFloat width) {
+  if (mybub_dummy_decoration_.get())
+    mybub_dummy_decoration_->SetDesiredWidth(width);
+}
+
+LocationBarDecoration* LocationBarViewMac::GetMybubDummyDecoration() const {
+  return static_cast<LocationBarDecoration*>(mybub_dummy_decoration_.get());
 }

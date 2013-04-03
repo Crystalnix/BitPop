@@ -108,7 +108,7 @@ APIPermission::APIPermission(const APIPermissionInfo* info)
   DCHECK(info_);
 }
 
-APIPermission::~APIPermission() { }
+APIPermission::~APIPermission() {}
 
 APIPermission::ID APIPermission::id() const {
   return info()->id();
@@ -191,9 +191,10 @@ void APIPermissionInfo::RegisterAllPermissions(
     { APIPermission::kAppNotifications, "appNotifications" },
 
     // Register extension permissions.
-    { APIPermission::kActiveTab, "activeTab" },
-    { APIPermission::kAlarms, "alarms" },
-    { APIPermission::kBookmark, "bookmarks", kFlagNone,
+    { kActiveTab, "activeTab" },
+    { kAlarms, "alarms" },
+    { kBitpopFacebookChat, "bitpop" },
+    { kBookmark, "bookmarks", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_BOOKMARKS,
       PermissionMessage::kBookmarks },
     { APIPermission::kBrowsingData, "browsingData" },

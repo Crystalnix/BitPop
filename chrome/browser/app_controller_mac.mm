@@ -82,6 +82,8 @@ using content::BrowserThread;
 using content::DownloadManager;
 using content::UserMetricsAction;
 
+#import "SUUpdater.h"
+
 namespace {
 
 // Declare notification names from the 10.7 SDK.
@@ -543,6 +545,14 @@ void RecordLastRunAppBundlePath() {
 #endif
 }
 
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
+{
+  if (object == [NSUserDefaults standardUserDefaults] && [keyPath isEqualToString:@"SUAutomaticallyUpdate"]) {
+    PrefService* prefService = self.lastProfile->GetPrefs();
+    prefService->SetBoolean(prefs::kAutomaticUpdatesEnabled, [[change objectForKey:NSKeyValueChangeNewKey] boolValue]);
+  }
+}
+
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidFinishLaunching:(NSNotification*)notify {
@@ -587,6 +597,8 @@ void RecordLastRunAppBundlePath() {
   if (!parsed_command_line.HasSwitch(switches::kEnableExposeForTabs)) {
     [tabposeMenuItem_ setHidden:YES];
   }
+
+  [[NSUserDefaults standardUserDefaults] addObserver:self forKeyPath:@"SUAutomaticallyUpdate" options:NSKeyValueObservingOptionNew context:NULL];
 }
 
 // This is called after profiles have been loaded and preferences registered.

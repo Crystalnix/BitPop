@@ -33,14 +33,9 @@ const wchar_t kAppHostAppId[] = L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
 const wchar_t kBinariesAppGuid[] = L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}";
 
 // Copied from google_chrome_distribution.cc.
-const wchar_t kBrowserAppGuid[] = L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+const wchar_t kBrowserAppGuid[] = L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 
-// Copied from util_constants.cc.
-const wchar_t kChromeAppHostExe[] = L"app_host.exe";
-const char kChromeAppLauncher[] = "app-launcher";
-const wchar_t kChromeExe[] = L"chrome.exe";
-const wchar_t kUninstallArgumentsField[] = L"UninstallArguments";
-const wchar_t kUninstallStringField[] = L"UninstallString";
+const wchar_t kChromeExe[] = L"bitpop.exe";
 
 #ifndef OFFICIAL_BUILD
 FilePath GetDevelopmentExe(const wchar_t* exe_file) {
@@ -167,16 +162,16 @@ FilePath GetAnyAppHostPath() {
   if (app_host_path.empty()) {
     app_host_path = GetAppHostPathForInstallationLevel(
         SYSTEM_LEVEL_INSTALLATION);
-  }
+      }
   if (app_host_path.empty())
     app_host_path = GetAppHostPathForInstallationLevel(USER_LEVEL_INSTALLATION);
   return app_host_path;
-}
+    }
 
 bool IsAppHostPresent() {
   FilePath app_host_exe = GetAnyAppHostPath();
   return !app_host_exe.empty();
-}
+  }
 
 bool IsAppLauncherPresent() {
   return IsAppLauncherEnabledAtLevel(USER_LEVEL_INSTALLATION) ||

@@ -1,0 +1,141 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 203px;
+  height: 350px;
+  font-family: "lucida grande",tahoma,verdana,arial,sans-serif;
+  color: #333;
+  line-height: 1.28;
+  font-size: 11px;
+}
+p {
+  margin: 5px;
+}
+#head {
+  background-image: -webkit-gradient( linear, left bottom, left top, color-stop(0.1, #6D83B3), color-stop(0.54, #7798DB) );
+  /*border: 1px solid rgba(0, 39, 121, .76);
+  border-bottom: none;*/
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+  color: white;
+  font-weight: bold;
+  line-height: 18px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 7px 4px;
+  cursor: pointer;
+}
+#msgForm {
+  position: absolute;
+  bottom: 0;
+  left:0;
+  width: 193px;
+  margin: 0;
+  padding: 0;
+  min-height: 30px;
+}
+textarea#msg {
+  border: 1px solid #ccc;
+  width: 168px;
+  outline: none;
+  float: left;
+  clear: left;
+  resize: none;
+  font-size: 11px;
+  font-family: "lucida grande",tahoma,verdana,arial,sans-serif;
+  margin-bottom: 3px;
+}
+
+.clearfix::after {
+  clear: both;
+  content: ".";
+  display: block;
+  font-size: 0;
+  height: 0;
+  line-height: 0;
+  visibility: hidden;
+}
+/*
+#chat {
+  margin: 0;
+  padding: 0;
+  height: 282px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+*/
+.box, .box .antiscroll-inner {
+  width: 203px;
+  height: 287px;
+  margin: 0;
+  padding: 0;
+}
+
+#chat .error-message {
+  color: red;
+  font-size: 11px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+#chat .message-group, #chat .error-message {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #eee;
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  padding-top: 5px;
+}
+  #chat .message-group .profile-link {
+    float: left;
+  }
+    #chat .message-group .profile-link .profile-photo {
+      width: 32px;
+      height: 32px;
+      display: block;
+      border: 0;
+    }
+  #chat .message-group .messages {
+    margin-left: 40px;
+  }
+    #chat .message-group .messages .chat-message {
+      font-size: 11px;
+      word-wrap: break-word;
+      max-width: 193px;
+      margin-bottom: 3px;
+      white-space: pre-wrap;
+    }
+
+#chat .chat-timestamp {
+  text-align: center;
+  color: silver;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 0 0 4px;
+}
+
+#pastePageLink {
+  width: 16px;
+  height: 16px;
+  float: right;
+  clear:right;
+  background: url(../images/paste-uri-icon.png) left top no-repeat;
+  border: none;
+  cursor: pointer;
+}
+
+.composing-notification {
+  /*-webkit-box-shadow:  2px 2px 10px 0px rgba(0, 0, 0, 0.6);
+   */
+  -webkit-border-radius: 5px;
+  background-color: rgba(240, 240, 240, 1);
+  border: 1px solid #a8a8a8;
+  padding: 3px 5px;
+  font-size: 10px;
+  color: #666;
+  display: none;
+  margin: 3px;
+}

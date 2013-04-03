@@ -1,0 +1,40 @@
+{
+  "name": "Facebook Controller",
+  "version": "1.5.13",
+  "description": "Make calls to Facebook Graph API, FQL queries, XMPP chat service.",
+  "icons": {
+    "128": "icon128.png",
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png"
+  },
+  "background": {
+    "scripts": [
+      "js/jquery.min.js",
+      "js/strophe.min.js",
+      "js/strophe-facebook.js",
+      "js/facebook_controller.js",
+      "js/main.js"
+    ]
+  },
+  "permissions": [
+    "idle",
+    "tabs",
+    "bitpop",
+    "*.facebook.com/*",
+    "https://www.facebook.com/*",
+    "https://api.facebook.com/*",
+    "https://graph.facebook.com/*",
+    "https://sync.bitpop.com/*"
+  ],
+  "content_scripts": [ {
+    "js": [ "js/autosize.js" ],
+    "matches": [ "http://*.facebook.com/*state%3Dbitpop*", "https://facebook.com/*state%3Dbitpop*", "https://facebook.com/*state%3Dbitpop*", "https://*.facebook.com/*state%3Dbitpop*" ],
+    "run_at": "document_end"
+  } ],
+  "web_accessible_resources": [
+    "autosize.css"
+  ],
+  "update_url": "http://tools.bitpop.com/ext/updates.xml",
+  "manifest_version": 2
+}

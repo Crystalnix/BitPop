@@ -188,6 +188,9 @@ class FullscreenController : public content::NotificationObserver {
   // WindowFullscreenStateChanged do so.
   bool reentrant_window_state_change_call_check_;
 
+  bool chatbar_temporarily_hidden_;
+  bool friends_sidebar_temporarily_hidden_;
+
   DISALLOW_COPY_AND_ASSIGN(FullscreenController);
 };
 

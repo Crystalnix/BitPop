@@ -19,6 +19,14 @@
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/native_window_notification_source.h"
@@ -59,9 +67,13 @@
 #include "chrome/browser/ui/views/avatar_menu_bubble_view.h"
 #include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
+#include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
+#include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
 #include "chrome/browser/ui/views/frame/instant_preview_controller_views.h"
@@ -524,6 +536,7 @@ BrowserView::BrowserView(Browser* browser)
       contents_split_(NULL),
       devtools_dock_side_(DEVTOOLS_DOCK_SIDE_BOTTOM),
       devtools_window_(NULL),
+      fb_friend_list_sidebar_(NULL),
       initialized_(false),
       ignore_layout_(true),
 #if defined(OS_WIN) && !defined(USE_AURA)
@@ -536,6 +549,15 @@ BrowserView::BrowserView(Browser* browser)
       ALLOW_THIS_IN_INITIALIZER_LIST(color_change_listener_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(activate_modal_dialog_factory_(this)) {
   browser_->tab_strip_model()->AddObserver(this);
+
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN,
+                 content::Source<Profile>(browser_->profile()));
 }
 
 BrowserView::~BrowserView() {
@@ -569,6 +591,11 @@ BrowserView::~BrowserView() {
   // downloads can be destroyed along with |browser_| and the observer
   // notifications will call back into deleted objects).
   download_shelf_.reset();
+
+  // or else we will have two scoped_ptr destructors deleting our fb_chatbar_
+  fb_chatbar_.reset();
+  // ... and fb_friend_list_sidebar_
+  fb_friend_list_sidebar_.reset();
 
   // The TabStrip attaches a listener to the model. Make sure we shut down the
   // TabStrip first so that it can cleanly remove the listener.
@@ -733,7 +760,7 @@ bool BrowserView::IsPositionInWindowCaption(const gfx::Point& point) {
   if (window_switcher_button_) {
     gfx::Point window_switcher_point(point);
     views::View::ConvertPointToTarget(this, window_switcher_button_,
-                                      &window_switcher_point);
+                                    &window_switcher_point);
     if (window_switcher_button_->HitTestPoint(window_switcher_point))
       return false;
   }
@@ -1032,13 +1059,13 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
     // Hide the arrows on the Instant Extended NTP.
     if (!chrome::search::IsInstantExtendedAPIEnabled(browser()->profile()) ||
         !browser()->search_model()->mode().is_ntp()) {
-      const LocationIconView* location_icon_view =
-          toolbar_->location_bar()->location_icon_view();
-      // The +1 in the next line creates a 1-px gap between icon and arrow tip.
-      gfx::Point icon_bottom(0, location_icon_view->GetImageBounds().bottom() -
-          LocationBarView::kIconInternalPadding + 1);
+    const LocationIconView* location_icon_view =
+        toolbar_->location_bar()->location_icon_view();
+    // The +1 in the next line creates a 1-px gap between icon and arrow tip.
+    gfx::Point icon_bottom(0, location_icon_view->GetImageBounds().bottom() -
+        LocationBarView::kIconInternalPadding + 1);
       ConvertPointToTarget(location_icon_view, this, &icon_bottom);
-      gfx::Point infobar_top(0, infobar_container_->GetVerticalOverlap(NULL));
+    gfx::Point infobar_top(0, infobar_container_->GetVerticalOverlap(NULL));
       ConvertPointToTarget(infobar_container_, this, &infobar_top);
       top_arrow_height = infobar_top.y() - icon_bottom.y();
     }
@@ -1118,7 +1145,7 @@ void BrowserView::FocusBookmarksToolbar() {
   if (active_bookmark_bar_ && bookmark_bar_view_->visible()) {
     immersive_mode_controller_->MaybeStartReveal();
     bookmark_bar_view_->SetPaneFocus(bookmark_bar_view_.get());
-  }
+}
 }
 
 void BrowserView::FocusAppMenu() {
@@ -1376,7 +1403,7 @@ int BrowserView::GetExtraRenderViewHeight() const {
 
 void BrowserView::WebContentsFocused(WebContents* contents) {
   if (contents_container_->GetWebContents() == contents)
-    contents_container_->OnWebContentsFocused(contents);
+  contents_container_->OnWebContentsFocused(contents);
   else if (contents_->preview_web_contents() == contents)
     preview_controller_->preview()->OnWebContentsFocused(contents);
   else
@@ -1571,6 +1598,67 @@ views::View* BrowserView::GetTabContentsContainerView() const {
 
 ToolbarView* BrowserView::GetToolbarView() const {
   return toolbar_;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// BrowserView, NotificationObserver implementation:
+
+void BrowserView::Observe(int type,
+                          const content::NotificationSource& source,
+                          const content::NotificationDetails& details) {
+  switch (type) {
+    // TODO: remove code duplication (here and in cocoa/browser_window_cocoa.mm)
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
+      if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
+          content::Details<FacebookChatCreateInfo> chat_info(details);
+          FacebookChatManager *mgr = FacebookChatManagerServiceFactory::GetForProfile(browser_->profile());
+          if (mgr) {
+            // the next call returns the found element if jid's equal
+            FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+            if (IsActive())
+              newItem->set_needs_activation(true);
+            else
+              newItem->set_needs_activation(false);
+            GetChatbar()->AddChatItem(newItem);
+            //mgr->StartChat(newItem->jid());
+          }
+        }
+      }
+      break;
+
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+        if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
+          content::Details<ReceivedMessageInfo> msg_info(details);
+          FacebookChatManager *mgr =
+              FacebookChatManagerServiceFactory::GetForProfile(browser_->profile());
+          if (mgr) {
+            FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+            item->set_needs_activation(false);
+            GetChatbar()->AddChatItem(item);
+          }
+        }
+      }
+      break;
+
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT:
+      if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
+        GetChatbar()->RemoveAll();
+      }
+      if (toolbar_ && toolbar_->browser_actions()) {
+        toolbar_->browser_actions()->HideFacebookExtensions();
+      }
+      break;
+
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN:
+      if (toolbar_ && toolbar_->browser_actions() && !browser_->profile()->IsOffTheRecord()) {
+        toolbar_->browser_actions()->ShowFacebookExtensions();
+      }
+      break;
+
+    default:
+      NOTREACHED() << "Got a notification we didn't register for!";
+      break;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1892,6 +1980,10 @@ void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
 #endif
 
   if (active) {
+    FacebookBitpopNotification *notif = FacebookBitpopNotificationServiceFactory::GetForProfile(browser_->profile());
+    if (notif)
+      notif->ClearNotification();
+
     BrowserList::SetLastActive(browser_.get());
     browser_->OnWindowActivated();
   }
@@ -1919,6 +2011,9 @@ void BrowserView::OnWidgetMove() {
   // status_bubble_ may be NULL if this is invoked during construction.
   if (status_bubble_.get())
     status_bubble_->Reposition();
+
+  if (fb_chatbar_.get())
+    fb_chatbar_->Layout();
 
   chrome::HideBookmarkBubbleView();
 
@@ -2798,24 +2893,48 @@ bool BrowserView::DoCutCopyPasteForWebContents(
   return false;
 }
 
-void BrowserView::ActivateAppModalDialog() const {
-  // If another browser is app modal, flash and activate the modal browser.
-  AppModalDialog* active_dialog =
-      AppModalDialogQueue::GetInstance()->active_dialog();
-  if (!active_dialog)
+void BrowserView::SetFriendsSidebarVisible(bool visible) {
+  if (browser_ == NULL || browser_->profile()->IsOffTheRecord())
     return;
 
-  Browser* modal_browser =
-      chrome::FindBrowserWithWebContents(active_dialog->web_contents());
-  if (modal_browser && (browser_ != modal_browser)) {
-    modal_browser->window()->FlashFrame(true);
-    modal_browser->window()->Activate();
+  if (visible && !IsFriendsSidebarVisible()) {
+    if (!fb_friend_list_sidebar_.get())
+      fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
+    fb_friend_list_sidebar_->SetVisible(true);
   }
+  if (!visible && IsFriendsSidebarVisible())
+    fb_friend_list_sidebar_->SetVisible(false);
 
-  AppModalDialogQueue::GetInstance()->ActivateModalDialog();
+  contents_split_->InvalidateLayout();
+  Layout();
+
+  ToolbarSizeChanged(false);
 }
 
-void BrowserView::MaybeStackBookmarkBarAtTop() {
-  if (bookmark_bar_view_.get())
-    bookmark_bar_view_->MaybeStackAtTop();
+bool BrowserView::IsFriendsSidebarVisible() const {
+  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->visible();
+}
+
+void BrowserView::SetChatbarVisible(bool visible) {
+  if (browser_ == NULL)
+    return;
+
+  if (visible && IsChatbarVisible() != visible) {
+    (void) GetChatbar();
+  } else if (!visible && IsChatbarVisible() != visible)
+    fb_chatbar_->SetVisible(false);
+
+  ToolbarSizeChanged(false);
+}
+
+bool BrowserView::IsChatbarVisible() const {
+  return fb_chatbar_.get() && fb_chatbar_->visible();
+}
+
+FacebookChatbar* BrowserView::GetChatbar() {
+  if (!fb_chatbar_.get()) {
+    fb_chatbar_.reset(new ChatbarView(browser_.get(), this));
+  }
+
+  return fb_chatbar_.get();
 }

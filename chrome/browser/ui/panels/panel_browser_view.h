@@ -22,7 +22,7 @@ class TaskbarWindowThumbnailerWin;
 
 // A browser view that implements Panel specific behavior.
 class PanelBrowserView : public BrowserView,
-                         public content::NotificationObserver,
+                         //public content::NotificationObserver,
                          public NativePanel,
                          public ui::AnimationDelegate {
  public:
@@ -190,7 +190,7 @@ class PanelBrowserView : public BrowserView,
   // be restored properly when a drag ends.
   views::View* old_focused_view_;
 
-  content::NotificationRegistrar registrar_;
+  //content::NotificationRegistrar registrar_;
 
 #if defined(OS_WIN) && !defined(USE_ASH) && !defined(USE_AURA)
   // Used to provide custom taskbar thumbnail for Windows 7 and later.

@@ -717,8 +717,12 @@ class Browser : public TabStripModelObserver,
 
   // Command and state updating ///////////////////////////////////////////////
 
+
   // Handle changes to kDevTools preference.
   void OnDevToolsDisabledChanged();
+
+  // Handle changes to the kFacebookShowFriendsList pref
+  void OnFacebookShowSidebarChanged();
 
   // Set the preference that indicates that the home page has been changed.
   void MarkHomePageAsChanged();

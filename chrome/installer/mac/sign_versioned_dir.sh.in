@@ -41,30 +41,25 @@ versioned_dir="${app_path}/Contents/Versions/@VERSION@"
 # signed directly. See copy_framework_unversioned.sh.
 
 framework="${versioned_dir}/@MAC_PRODUCT_NAME@ Framework.framework"
+sparkle_framework="${framework}/Frameworks/Sparkle.framework/Sparkle"
 helper_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper.app"
 helper_eh_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper EH.app"
 helper_np_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper NP.app"
 
-requirement_suffix="\
-and certificate leaf = H\"85cee8254216185620ddc8851c7a9fc4dfe120ef\"\
-"
+codesign -v "${sparkle_framework}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${sparkle_framework}"
+codesign -v "${framework}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${framework}"
+codesign -v "${helper_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${helper_app}"
+codesign -v "${helper_eh_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${helper_eh_app}"
+codesign -v "${helper_np_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${helper_np_app}"
 
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" "${framework}" \
-    -r="designated => identifier \"com.google.Chrome.framework\" \
-${requirement_suffix}"
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" "${helper_app}" \
-    -r="designated => identifier \"com.google.Chrome.helper\" \
-${requirement_suffix}"
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
-    "${helper_eh_app}" \
-    -r="designated => identifier \"com.google.Chrome.helper.EH\" \
-${requirement_suffix}"
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
-    "${helper_np_app}" \
-    -r="designated => identifier \"com.google.Chrome.helper.NP\" \
-${requirement_suffix}"
 
 # Verify everything.
+codesign -v "${sparkle_framework}"
 codesign -v "${framework}"
 codesign -v "${helper_app}"
 codesign -v "${helper_eh_app}"

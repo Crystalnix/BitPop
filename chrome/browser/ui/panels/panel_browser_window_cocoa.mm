@@ -453,3 +453,14 @@ bool NativePanelTestingCocoa::IsButtonVisible(
   }
   return false;
 }
+/*
+bool PanelBrowserWindowCocoa::IsChatbarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+FacebookChatbar* PanelBrowserWindowCocoa::GetChatbar() {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+*/

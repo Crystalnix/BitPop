@@ -75,7 +75,7 @@ cr.define('options', function() {
           if (focusElement)
             focusElement.focus();
         }
-      }
+      };
 
       $('advanced-settings').addEventListener('webkitTransitionEnd',
           this.updateAdvancedSettingsExpander_.bind(this));
@@ -98,10 +98,12 @@ cr.define('options', function() {
       $('start-stop-sync').onclick = function(event) {
         if (self.syncSetupCompleted)
           SyncSetupOverlay.showStopSyncingUI();
+        /*
         else if (cr.isChromeOS)
           SyncSetupOverlay.showSetupUIWithoutLogin();
+        */
         else
-          SyncSetupOverlay.showSetupUI();
+          SyncSetupOverlay.openSigninPageFromStartSyncSettings();
       };
       $('customize-sync').onclick = function(event) {
         if (cr.isChromeOS)
@@ -469,6 +471,12 @@ cr.define('options', function() {
         $('backgroundModeCheckbox').onclick = function(event) {
           chrome.send('backgroundModeAction',
               [String($('backgroundModeCheckbox').checked)]);
+        };
+      }
+
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function(event) {
+          chrome.send('toggleAutomaticUpdates');
         };
       }
     },

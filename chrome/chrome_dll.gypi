@@ -60,7 +60,7 @@
                                  '$(OutDir)\\initial\\chrome.dll.pdb',
                                  '$(OutDir)\\chrome.dll.pdb'],
                       'msvs_cygwin_shell': 0,
-                    }
+                }
                   ]
                 }]
               ],
@@ -224,6 +224,14 @@
               ],
               'postbuilds': [
                 {
+                  'postbuild_name': 'Copy Sparkle.framework',
+                  'action': [
+                    '../build/mac/copy_framework_unversioned.sh',
+                    '${BUILT_PRODUCTS_DIR}/Sparkle.framework',
+                    '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks',
+                  ],
+                },
+                {
                   # This step causes an error to be raised if the .order file
                   # does not account for all global text symbols.  It
                   # validates the completeness of the .order file.
@@ -237,8 +245,8 @@
                     '${BUILT_PRODUCTS_DIR}/${EXECUTABLE_PATH}',
                   ],
                 },
-              ],
-              'conditions': [
+                  ],
+                  'conditions': [
                 ['mac_breakpad_compiled_in==1', {
                   'dependencies': [
                     '../breakpad/breakpad.gyp:breakpad',

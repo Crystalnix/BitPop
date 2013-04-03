@@ -171,10 +171,15 @@ void ExtensionContextMenuModel::InitMenu(const Extension* extension) {
   AddItem(NAME, UTF8ToUTF16(extension_name));
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS_MENU_ITEM);
-  AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
-  if (extension_action_manager->GetBrowserAction(*extension))
-    AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
-  AddSeparator(ui::NORMAL_SEPARATOR);
+  if (!(extension->id() == chrome::kFacebookChatExtensionId ||
+        extension->id() == chrome::kFacebookMessagesExtensionId ||
+        extension->id() == chrome::kFacebookNotificationsExtensionId)) {
+    AddItemWithStringId(DISABLE, IDS_EXTENSIONS_DISABLE);
+    AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
+    if (extension_action_manager->GetBrowserAction(*extension))
+      AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
+    AddSeparator(ui::NORMAL_SEPARATOR);
+  }
   AddItemWithStringId(MANAGE, IDS_MANAGE_EXTENSIONS);
 }
 

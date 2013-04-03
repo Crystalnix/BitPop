@@ -470,14 +470,18 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   int overlay_id = 0;
   // The new tab button field trial will get created in variations_service.cc
   // through the variations server.
+  /*
   if (base::FieldTrialList::FindFullName(kNewTabButtonFieldTrialName) ==
           kNewTabButtonFieldTrialPlusGroupName) {
-    overlay_id = state == views::CustomButton::STATE_PRESSED ?
+  */
+    overlay_id = state == views::CustomButton::BS_PUSHED ?
         IDR_NEWTAB_BUTTON_P_PLUS : IDR_NEWTAB_BUTTON_PLUS;
+  /*
   } else {
-    overlay_id = state == views::CustomButton::STATE_PRESSED ?
+    overlay_id = state == views::CustomButton::BS_PUSHED ?
         IDR_NEWTAB_BUTTON_P : IDR_NEWTAB_BUTTON;
   }
+  */
   gfx::ImageSkia* overlay = GetThemeProvider()->GetImageSkiaNamed(overlay_id);
 
   gfx::Canvas canvas(
@@ -790,8 +794,8 @@ void TabStrip::PrepareForCloseAt(int model_index, CloseTabSource source) {
   if (source == CLOSE_TAB_FROM_TOUCH) {
     StartResizeLayoutTabsFromTouchTimer();
   } else {
-    AddMessageLoopObserver();
-  }
+  AddMessageLoopObserver();
+}
 }
 
 void TabStrip::SetSelection(const TabStripSelectionModel& old_selection,
@@ -2005,7 +2009,7 @@ void TabStrip::UpdateLayoutTypeFromMouseEvent(views::View* source,
       last_mouse_move_time_ = base::TimeTicks();
       if ((event.flags() & ui::EF_FROM_TOUCH) == ui::EF_FROM_TOUCH) {
         SetLayoutType(TAB_STRIP_LAYOUT_STACKED, true);
-        controller_->LayoutTypeMaybeChanged();
+      controller_->LayoutTypeMaybeChanged();
       }
       break;
     }

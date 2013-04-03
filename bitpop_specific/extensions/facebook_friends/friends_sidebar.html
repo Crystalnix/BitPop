@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Facebook Chat Sidebar</title>
+  <link rel="stylesheet" href="css/sidebar.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="css/antiscroll.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="css/dd.css" type="text/css" media="screen" charset="utf-8">
+  <script type="text/javascript" src="js/jquery.min.js"></script>
+  <script type="text/javascript" src="js/jquery.dd.js"></script>
+  <script type="text/javascript" src="js/jquery-mousewheel.js"></script>
+  <script type="text/javascript" src="js/antiscroll.js"></script>
+  <script type="text/javascript" src="js/common.js"></script>
+  <script type="text/javascript" src="js/friends_sidebar.js"></script>
+  <script type="text/javascript" src="js/friends_sidebar_init.js"></script>
+</head>
+<body>
+  <div id="slide-wrap">
+    <div id="inner-wrap">
+      <div class="content-item" id="chat-content">
+        <p id="unavail" style="display:none"></p>
+
+        <div id="sidebar-head">
+          <div id="head-row1">
+            <div id="head-col1">
+              <img id="head-profile-img" src="http://graph.facebook.com/1/picture?type=square" alt="profile image" />
+            </div>
+            <div id="head-col2">
+              <div id="head-col2-row1" title="Set your Facebook status message by clicking this area.">
+                Set your status here.
+              </div>
+
+              <div id="head-col2-row2"><!-- chat status + logout -->
+                <div id="status-select">
+                  <select name="status-control" id="status-control">
+                    <option value="available" title="images/active.png">Available</option>
+                    <option value="unavailable" title="images/unavail.png">Offline</option>
+                  </select>
+                </div>
+                <p id="logout"><a href="#" tabIndex="-1">Logout</a></p>
+              </div><!-- #head-col2-row2 -->
+            </div><!-- #head-col2 -->
+          </div><!-- #head-row1 -->
+          <div id="head-row2">
+            <input id="search" type="search" placeholder="Search..." name="s" tabIndex="-1" incremental="incremental" />
+          </div>
+        </div>
+
+        <div class="box-wrap antiscroll-wrap">
+          <div class="box">
+            <div class="antiscroll-inner">
+              <div class="box-inner" id="scrollable-area">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="content-item" id="login-content">
+        <div id="login-centered">
+          <img src="images/facebook_login_bitpop.png" alt="Facebook chat login" />
+          <p class="promo">Chat with your friends<br />while surfing</p>
+          <button id="login-button" class="btn" tabIndex="-1">Login</button>
+          <p class="error" style="display:none">
+            The login data is already present. Check your internet connection. You will be connected
+            as soon as possible.
+          </p>
+          <p id="sync-para" hidden>
+            <label for="enable-sync"><input id="enable-sync" type="checkbox">
+              Synchronize browser data using your Facebook account
+            </label>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

@@ -9,6 +9,7 @@
 #include "base/message_loop.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -39,7 +40,9 @@ FullscreenController::FullscreenController(Browser* browser)
       toggled_into_fullscreen_(false),
       mouse_lock_tab_(NULL),
       mouse_lock_state_(MOUSELOCK_NOT_REQUESTED),
-      reentrant_window_state_change_call_check_(false) {
+      reentrant_window_state_change_call_check_(false),
+      chatbar_temporarily_hidden_(false),
+      friends_sidebar_temporarily_hidden_(false) {
   DCHECK(window_);
   DCHECK(profile_);
 }
@@ -112,6 +115,16 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* web_contents,
       // a fullscreen notification now because there is no window change.
       PostFullscreenChangeNotification(true);
     }
+
+    if (window_->IsFriendsSidebarVisible()) {
+        window_->SetFriendsSidebarVisible(false);
+        friends_sidebar_temporarily_hidden_ = true;
+    }
+
+    if (window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Hide();
+      chatbar_temporarily_hidden_ = true;
+    }
   } else {
     if (in_browser_or_tab_fullscreen_mode) {
       if (tab_caused_fullscreen_) {
@@ -132,6 +145,17 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* web_contents,
         // a fullscreen notification now because there is no window change.
         PostFullscreenChangeNotification(true);
       }
+    }
+
+    if (friends_sidebar_temporarily_hidden_ &&
+        !window_->IsFriendsSidebarVisible()) {
+      window_->SetFriendsSidebarVisible(true);
+      friends_sidebar_temporarily_hidden_ = false;
+    }
+
+    if (chatbar_temporarily_hidden_ && !window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Show();
+      chatbar_temporarily_hidden_ = false;
     }
   }
 }
@@ -236,7 +260,7 @@ void FullscreenController::RequestToLockMouse(WebContents* web_contents,
 void FullscreenController::OnTabDeactivated(WebContents* web_contents) {
   if (web_contents == fullscreened_tab_ || web_contents == mouse_lock_tab_)
     ExitTabFullscreenOrMouseLockIfNecessary();
-}
+  }
 
 void FullscreenController::OnTabClosing(WebContents* web_contents) {
   if (web_contents == fullscreened_tab_ || web_contents == mouse_lock_tab_) {
@@ -590,7 +614,7 @@ void FullscreenController::UpdateFullscreenExitBubbleContent() {
 }
 
 ContentSetting
-FullscreenController::GetFullscreenSetting(const GURL& url) const {
+    FullscreenController::GetFullscreenSetting(const GURL& url) const {
   if (url.SchemeIsFile())
     return CONTENT_SETTING_ALLOW;
 
@@ -599,7 +623,7 @@ FullscreenController::GetFullscreenSetting(const GURL& url) const {
 }
 
 ContentSetting
-FullscreenController::GetMouseLockSetting(const GURL& url) const {
+    FullscreenController::GetMouseLockSetting(const GURL& url) const {
   if (url.SchemeIsFile())
     return CONTENT_SETTING_ALLOW;
 

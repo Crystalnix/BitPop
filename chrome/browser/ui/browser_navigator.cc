@@ -125,7 +125,7 @@ Browser* GetBrowserForDisposition(chrome::NavigateParams* params) {
   switch (params->disposition) {
     case CURRENT_TAB:
       if (params->browser)
-        return params->browser;
+      return params->browser;
       // Find a compatible window and re-execute this command in it. Otherwise
       // re-run with NEW_WINDOW.
       return GetOrCreateBrowser(profile, params->host_desktop_type);
@@ -151,7 +151,7 @@ Browser* GetBrowserForDisposition(chrome::NavigateParams* params) {
         extensions::TabHelper* extensions_tab_helper =
             extensions::TabHelper::FromWebContents(params->source_contents);
         if (extensions_tab_helper && extensions_tab_helper->is_app()) {
-          app_name = web_app::GenerateApplicationNameFromExtensionId(
+        app_name = web_app::GenerateApplicationNameFromExtensionId(
               extensions_tab_helper->extension_app()->id());
         }
       }
@@ -344,7 +344,7 @@ NavigateParams::NavigateParams(Browser* a_browser,
           host_desktop_type = a_browser->host_desktop_type();
         else
           host_desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
-      }
+}
 
 NavigateParams::NavigateParams(Browser* a_browser,
                                WebContents* a_target_contents)
@@ -366,7 +366,7 @@ NavigateParams::NavigateParams(Browser* a_browser,
           host_desktop_type = a_browser->host_desktop_type();
         else
           host_desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
-      }
+}
 
 NavigateParams::NavigateParams(Profile* a_profile,
                                const GURL& a_url,
@@ -480,7 +480,7 @@ void Navigate(NavigateParams* params) {
 
     if (params->disposition != CURRENT_TAB) {
       WebContents::CreateParams create_params(
-          params->browser->profile(),
+              params->browser->profile(),
           tab_util::GetSiteInstanceForNewTab(params->browser->profile(), url));
       create_params.base_web_contents = params->source_contents;
 #if defined(USE_AURA)
@@ -548,8 +548,8 @@ void Navigate(NavigateParams* params) {
   if (params->source_contents == params->target_contents) {
     // The navigation occurred in the source tab.
     params->browser->UpdateUIForNavigationInTab(params->target_contents,
-                                                params->transition,
-                                                user_initiated);
+        params->transition,
+        user_initiated);
   } else if (singleton_index == -1) {
     // If some non-default value is set for the index, we should tell the
     // TabStripModel to respect it.
@@ -604,18 +604,9 @@ bool IsURLAllowedInIncognito(const GURL& url,
        url.host() == chrome::kChromeUIExtensionsHost ||
        url.host() == chrome::kChromeUIBookmarksHost ||
        url.host() == chrome::kChromeUISyncPromoHost ||
-       url.host() == chrome::kChromeUIUberHost)) {
-    return false;
-  }
-
-  GURL rewritten_url = url;
-  bool reverse_on_redirect = false;
-  content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
-      &rewritten_url, browser_context, &reverse_on_redirect);
-
-  // Some URLs are mapped to uber subpages. Do not allow them in incognito.
-  return !(rewritten_url.scheme() == chrome::kChromeUIScheme &&
-           rewritten_url.host() == chrome::kChromeUIUberHost);
+       url.host() == chrome::kChromeUIUberHost ||
+       url.host() == chrome::kChromeUIBitpopSettingsHost ||
+       url.host() == chrome::kChromeUIBitpopSettingsFrameHost));
 }
 
 }  // namespace chrome

@@ -1,0 +1,43 @@
+{
+  "name": "Facebook Friends Sidebar",
+  "version": "1.10.11",
+  "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
+  "background": {
+    "scripts": [
+      "js/autolink-min.js",
+      "js/common.js",
+      "js/background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "Facebook chat",
+    "default_icon": "images/facebook_icon.png"
+  },
+  "icons": {
+    "128": "images/icon128.png",
+    "16": "images/icon16.png",
+    "32": "images/icon32.png",
+    "48": "images/icon48.png"
+  },
+  "content_scripts": [ {
+    "css": [ "suppression/facebook_suppressor.css" ],
+    "js": [ "suppression/contentscript.js" ],
+    "matches": [ "http://*.facebook.com/*", "http://facebook.com/*", "https://facebook.com/*", "https://*.facebook.com/*" ],
+    "run_at": "document_end"
+  }, {
+    "matches": [ "http://docs.google.com/*", "https://docs.google.com/*" ],
+    "js": [ "suppression/google_drive.js" ],
+    "run_at": "document_end"
+  }],
+  "permissions": [
+    "tabs",
+    "bitpop",
+    "*.facebook.com/*",
+    "https://api.facebook.com/*",
+    "https://graph.facebook.com/*"
+  ],
+  "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
+  "update_url": "http://tools.bitpop.com/ext/updates.xml",
+  "manifest_version": 2
+}
+

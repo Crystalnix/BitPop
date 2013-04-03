@@ -412,3 +412,10 @@ v8.log
 /third_party/pywebsocket
 /third_party/widevine
 /win8
+/bitpop_specific/extensions/dropdown_most_visited.pem
+/bitpop_specific/extensions/facebook_controller.pem
+/bitpop_specific/extensions/facebook_friends.pem
+/bitpop_specific/extensions/facebook_messages.pem
+/bitpop_specific/extensions/facebook_notifications.pem
+/bitpop_specific/extensions/uncensor_domains.pem
+/bitpop_specific/extensions/uncensor_proxy.pem

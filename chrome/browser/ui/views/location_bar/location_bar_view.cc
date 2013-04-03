@@ -40,6 +40,7 @@
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
+#include "chrome/browser/ui/views/location_bar/mybub_search_view.h"
 #include "chrome/browser/ui/views/location_bar/open_pdf_in_reader_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
@@ -312,6 +313,15 @@ void LocationBarView::Init() {
                  chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
                  content::Source<Profile>(profile_));
 
+  Browser* browser = browser::FindBrowserWithProfile(profile_);
+  if (browser) {
+    mybub_search_view_ = new MybubSearchView(location_entry_.get(), browser);
+    AddChildView(mybub_search_view_);
+    mybub_search_view_->SetVisible(false);
+  }
+  else
+    mybub_search_view_ = NULL;
+
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
   Update(NULL);
@@ -540,7 +550,7 @@ void LocationBarView::ShowBookmarkPrompt() {
                                    profile_->GetPrefs());
   } else if (star_view_ && star_view_->visible()) {
     BookmarkPromptView::ShowPrompt(star_view_, profile_->GetPrefs());
-  }
+}
 }
 
 void LocationBarView::ZoomChangedForActiveTab(bool can_show_bubble) {
@@ -693,10 +703,13 @@ void LocationBarView::Layout() {
                     location_icon_width + kItemEditPadding);
   }
 
+  mybub_search_view_->SetVisible(!location_entry_->model()->CurrentTextIsURL());
+
   if (action_box_button_view_) {
     action_box_button_view_->SetVisible(true);
     entry_width -= action_box_button_view_->width() + GetItemPadding();
   }
+
   if (star_view_ && star_view_->visible())
     entry_width -= star_view_->GetPreferredSize().width() + GetItemPadding();
 
@@ -714,8 +727,11 @@ void LocationBarView::Layout() {
     if ((*i)->visible())
       entry_width -= ((*i)->GetPreferredSize().width() + GetItemPadding());
   }
-  if (zoom_view_->visible())
+  if (zoom_view_ && zoom_view_->visible())
     entry_width -= zoom_view_->GetPreferredSize().width() + GetItemPadding();
+  if (mybub_search_view_->visible())
+    entry_width -= mybub_search_view_->GetPreferredSize().width() + GetItemPadding();
+
   for (ContentSettingViews::const_iterator i(content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
     if ((*i)->visible())
@@ -808,7 +824,7 @@ void LocationBarView::Layout() {
     int icon_width = open_pdf_in_reader_view_->GetPreferredSize().width();
     offset -= icon_width;
     open_pdf_in_reader_view_->SetBounds(offset, location_y,
-                                        icon_width, location_height);
+                                      icon_width, location_height);
     offset -= GetItemPadding() -
         open_pdf_in_reader_view_->GetBuiltInHorizontalPadding();
   }
@@ -828,6 +844,14 @@ void LocationBarView::Layout() {
     int zoom_width = zoom_view_->GetPreferredSize().width();
     offset -= zoom_width;
     zoom_view_->SetBounds(offset, location_y, zoom_width, location_height);
+    offset -= GetItemPadding();
+  }
+
+  if (mybub_search_view_->visible()) {
+    int mybub_search_width = mybub_search_view_->GetPreferredSize().width();
+    int mybub_search_height = mybub_search_view_->GetPreferredSize().height();
+    offset -= mybub_search_width;
+    mybub_search_view_->SetPosition(gfx::Point(offset, location_y + (location_height - mybub_search_height) / 2));
     offset -= GetItemPadding();
   }
 
@@ -1398,9 +1422,9 @@ void LocationBarView::WriteDragDataForView(views::View* sender,
   gfx::ImageSkia favicon = favicon_tab_helper->GetFavicon().AsImageSkia();
   button_drag_utils::SetURLAndDragImage(web_contents->GetURL(),
                                         web_contents->GetTitle(),
-                                        favicon,
-                                        data,
-                                        sender->GetWidget());
+      favicon,
+      data,
+      sender->GetWidget());
 }
 
 int LocationBarView::GetDragOperationsForView(views::View* sender,

@@ -39,6 +39,7 @@ class GURL;
 class InstantController;
 class KeywordHintView;
 class LocationIconView;
+class MybubSearchView;
 class OpenPDFInReaderView;
 class PageActionWithBadgeView;
 class PageActionImageView;
@@ -494,6 +495,9 @@ class LocationBarView : public LocationBar,
 
   // The action box button (plus).
   ActionBoxButtonView* action_box_button_view_;
+
+  // mybub search
+  MybubSearchView* mybub_search_view_;
 
   // The mode that dictates how the bar shows.
   Mode mode_;

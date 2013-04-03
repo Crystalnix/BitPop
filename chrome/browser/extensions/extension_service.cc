@@ -77,6 +77,7 @@
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -122,6 +123,12 @@
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
+#endif
+
+using base::Time;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DevToolsAgentHost;
@@ -253,15 +260,15 @@ bool ExtensionService::OnExternalExtensionUpdateUrlFound(
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   CHECK(Extension::IdIsValid(id));
 
-  const Extension* extension = GetExtensionById(id, true);
-  if (extension) {
-    // Already installed. Skip this install if the current location has
-    // higher priority than |location|.
-    Extension::Location current = extension->location();
-    if (current == Extension::GetHigherPriorityLocation(current, location))
-      return false;
-    // Otherwise, overwrite the current installation.
-  }
+  //const Extension* extension = GetExtensionById(id, true);
+  // if (extension) {
+  //   // Already installed. Skip this install if the current location has
+  //   // higher priority than |location|.
+  //   Extension::Location current = extension->location();
+  //   if (current == Extension::GetHigherPriorityLocation(current, location))
+  //     return false;
+  //   // Otherwise, overwrite the current installation.
+  // }
 
   // Add |id| to the set of pending extensions.  If it can not be added,
   // then there is already a pending record from a higher-priority install
@@ -382,8 +389,11 @@ ExtensionService::ExtensionService(Profile* profile,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
+#if defined(OS_MACOSX)
+  registrar_.Add(this, content::NOTIFICATION_APP_ACTIVATED,
                  content::NotificationService::AllBrowserContextsAndSources());
+#endif
+
   pref_change_registrar_.Init(profile->GetPrefs());
   base::Closure callback =
       base::Bind(&ExtensionService::OnExtensionInstallPrefChanged,
@@ -1608,6 +1618,13 @@ bool ExtensionService::IsIncognitoEnabled(
     return false;
   // If this is an existing component extension we always allow it to
   // work in incognito mode.
+  const Extension* extension = GetInstalledExtension(extension_id);
+  if (extension && (
+      extension->id() == chrome::kFacebookChatExtensionId ||
+      extension->id() == chrome::kFacebookControllerExtensionId ||
+      extension->id() == chrome::kFacebookMessagesExtensionId ||
+      extension->id() == chrome::kFacebookNotificationsExtensionId))
+    return false;
   if (extension && extension->location() == Extension::COMPONENT)
     return true;
 
@@ -2798,7 +2815,14 @@ void ExtensionService::Observe(int type,
       }
       break;
     }
-
+#if defined(OS_MACOSX)
+    case content::NOTIFICATION_APP_ACTIVATED: {
+      FacebookBitpopNotification *notif = FacebookBitpopNotificationServiceFactory::GetForProfile(profile_);
+      if (notif)
+        notif->ClearNotification();
+      break;
+    }
+#endif
     default:
       NOTREACHED() << "Unexpected notification type.";
   }
