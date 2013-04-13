@@ -78,9 +78,9 @@ const CGFloat kCloseButtonTopYOffset = 7.0;
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  NSImage* defaultImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR);
-  NSImage* hoverImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_H);
-  NSImage* pressedImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_P);
+  NSImage* defaultImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR).ToNSImage();
+  NSImage* hoverImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_H).ToNSImage();
+  NSImage* pressedImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_P).ToNSImage();
 
   [(HoverImageButton*)hoverCloseButton_ setDefaultImage:defaultImage];
   [(HoverImageButton*)hoverCloseButton_ setHoverImage:hoverImage];
@@ -227,12 +227,6 @@ const CGFloat kCloseButtonTopYOffset = 7.0;
 - (void)setAnchor:(NSPoint)anchorPoint {
   anchor_ = [parentWindow_ convertBaseToScreen:anchorPoint];
   [self bubbleViewFrameChanged];
-}
-
-- (void)reparentWindowTo:(NSWindow*)window {
-  [parentWindow_ removeChildWindow:[self window]];
-  [window addChildWindow:[self window] ordered:NSWindowAbove];
-  parentWindow_ = window;
 }
 
 @end

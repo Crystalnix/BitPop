@@ -15749,6 +15749,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
           desc="Contents of the default combo entry for choosing the global setting for domain proxy redirection">
       Use Global setting
     </message>
+    <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED" desc="">
+      &lt;strong&gt;Encryption and passwords sync may be disabled, if you have not enabled it intentionally.&lt;/strong&gt; Go to <ph name="BEGIN_LINK">&lt;a href="#" id=&quot;login-status-advanced&quot;&gt;<ex>&lt;a href=&quot;#&quot; id=&quot;login-status-advanced&quot;&gt;</ex></ph><ph name="SYNC_CUSTOMIZE">$1<ex>Advanced...</ex></ph><ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to enable encryption and configure synced data.
+    </message>
     </messages>
 
     <structures fallback_to_english="true">

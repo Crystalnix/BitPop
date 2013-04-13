@@ -9,6 +9,9 @@
 
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_icon_factory.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -24,6 +27,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -32,7 +36,6 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/size.h"
-#include "grit/theme_resources.h"
 
 using extensions::Extension;
 
@@ -51,7 +54,8 @@ class ExtensionActionIconFactoryBridge
       public ExtensionActionIconFactory::Observer {
  public:
   ExtensionActionIconFactoryBridge(BrowserActionButton* owner,
-                              const Extension* extension)
+                              const Extension* extension,
+                              Profile* profile)
       : owner_(owner),
         browser_action_([[owner cell] extensionAction]),
         icon_factory_(extension, browser_action_, this) {
@@ -177,7 +181,9 @@ class ExtensionActionIconFactoryBridge
     tabId_ = tabId;
     extension_ = extension;
     iconFactoryBridge_.reset(
-        new ExtensionActionIconFactoryBridge(self, extension));
+        new ExtensionActionIconFactoryBridge(self,
+                                             extension,
+                                             browser->profile()));
 
     moveAnimation_.reset([[NSViewAnimation alloc] init]);
     [moveAnimation_ gtm_setDuration:kAnimationDuration

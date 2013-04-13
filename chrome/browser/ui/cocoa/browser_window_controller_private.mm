@@ -247,14 +247,9 @@ willPositionSheet:(NSWindow*)sheet
       [self layoutBottomBookmarkBarInContentFrame:
           NSMakeRect(minX, minY, width, maxY - minY)];
     } else {
-      CGFloat bookmarkBarWidth = width;
-      if (facebookSidebarController_.get()) {
-        bookmarkBarWidth -= [facebookSidebarController_ visible] ?
-            [facebookSidebarController_ maxWidth] : 0;
-      }
       maxY = [self layoutTopBookmarkBarAtMinX:minX
                                          maxY:maxY
-                                        width:bookmarBarWidth];
+                                        width:width];
     }
   }
 
@@ -642,10 +637,6 @@ willPositionSheet:(NSWindow*)sheet
   // Move the status bubble over, if we have one.
   if (statusBubble_)
     statusBubble_->SwitchParentWindow(destWindow);
-
-  if (facebookChatbarController_.get()) {
-    [facebookChatbarController_ switchParentWindow:destWindow];
-  }
 
   // Move the title over.
   [destWindow setTitle:[sourceWindow title]];

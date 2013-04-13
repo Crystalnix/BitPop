@@ -612,7 +612,6 @@ cr.define('options', function() {
       if (args && args.enterPassphraseBody != undefined)
         $('normal-body').innerHTML = args.enterPassphraseBody;
 
-      }
       if (args && args.fullEncryptionBody != undefined)
         $('full-encryption-body').innerHTML = args.fullEncryptionBody;
 
@@ -818,7 +817,7 @@ cr.define('options', function() {
       return true;
     },
 
-    sendCredentialsAndClose_: function() {
+    sendCredentialsAndClose_: function(result) {
       this.setThrobbersVisible_(true);
 
       $('sign-in').disabled = true;

@@ -616,7 +616,7 @@ base::RefCountedMemory* ChromeWebUIControllerFactory::GetFaviconResourceBytes(
     return options::OptionsUI::GetFaviconResourceBytes(scale_factor);
 
   if (page_url.host() == chrome::kChromeUIBitpopSettingsFrameHost)
-    return options2::BitpopOptionsUI::GetFaviconResourceBytes();
+    return options::BitpopOptionsUI::GetFaviconResourceBytes(scale_factor);
 
   // Android doesn't use the plugins pages.
   if (page_url.host() == chrome::kChromeUIPluginsHost)

@@ -28,7 +28,6 @@ class FacebookChatbarMac : public FacebookChatbar {
 
     virtual Browser *browser() const OVERRIDE;
 
-    void SwitchParentWindow(NSWindow *window);
   private:
     Browser *browser_;
 

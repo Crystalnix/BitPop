@@ -22,6 +22,8 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -604,6 +606,11 @@ void RecordLastRunAppBundlePath() {
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidBecomeActive:(NSNotification*)notify {
+  FacebookBitpopNotification *notif =
+      FacebookBitpopNotificationServiceFactory::GetForProfile(
+          [self lastProfile]);
+  if (notif)
+    notif->ClearNotification();
   content::PluginService::GetInstance()->AppActivated();
 }
 

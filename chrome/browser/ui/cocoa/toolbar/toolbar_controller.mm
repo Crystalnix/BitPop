@@ -851,8 +851,8 @@ class NotificationBridge
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
   // wikipedia button
-  NSImage* wikiDefault = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA);
-  NSImage* wikiHover = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_H);
+  NSImage* wikiDefault = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA).ToNSImage();
+  NSImage* wikiHover = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_H).ToNSImage();
   NSImageRep* wikiRep = [[wikiDefault representations] objectAtIndex:0];
   NSSize wikiSize = NSMakeSize([wikiRep pixelsWide], [wikiRep pixelsHigh]);
 
@@ -877,8 +877,8 @@ class NotificationBridge
   buttonXOrigin += wikiSize.width + kMybubButtonsSpacing;
 
   // youtube button
-  NSImage* ytDefault = rb.GetNativeImageNamed(IDR_MYBUB_YOUTUBE);
-  NSImage* ytHover = rb.GetNativeImageNamed(IDR_MYBUB_YOUTUBE_H);
+  NSImage* ytDefault = rb.GetNativeImageNamed(IDR_MYBUB_YOUTUBE).ToNSImage();
+  NSImage* ytHover = rb.GetNativeImageNamed(IDR_MYBUB_YOUTUBE_H).ToNSImage();
   NSImageRep* ytRep = [[ytDefault representations] objectAtIndex:0];
   NSSize ytSize = NSMakeSize([ytRep pixelsWide], [ytRep pixelsHigh]);
 
@@ -903,8 +903,8 @@ class NotificationBridge
   buttonXOrigin += ytSize.width + kMybubButtonsSpacing;
 
   // reviews button
-  NSImage* reviewsDefault = rb.GetNativeImageNamed(IDR_MYBUB_REVIEWS);
-  NSImage* reviewsHover = rb.GetNativeImageNamed(IDR_MYBUB_REVIEWS_H);
+  NSImage* reviewsDefault = rb.GetNativeImageNamed(IDR_MYBUB_REVIEWS).ToNSImage();
+  NSImage* reviewsHover = rb.GetNativeImageNamed(IDR_MYBUB_REVIEWS_H).ToNSImage();
   NSImageRep* reviewsRep = [[reviewsDefault representations] objectAtIndex:0];
   NSSize reviewsSize = NSMakeSize([reviewsRep pixelsWide], [reviewsRep pixelsHigh]);
 
@@ -929,8 +929,8 @@ class NotificationBridge
   buttonXOrigin += reviewsSize.width + kMybubButtonsSpacing;
 
   // news button
-  NSImage* newsDefault = rb.GetNativeImageNamed(IDR_MYBUB_NEWS);
-  NSImage* newsHover = rb.GetNativeImageNamed(IDR_MYBUB_NEWS_H);
+  NSImage* newsDefault = rb.GetNativeImageNamed(IDR_MYBUB_NEWS).ToNSImage();
+  NSImage* newsHover = rb.GetNativeImageNamed(IDR_MYBUB_NEWS_H).ToNSImage();
   NSImageRep* newsRep = [[newsDefault representations] objectAtIndex:0];
   NSSize newsSize = NSMakeSize([newsRep pixelsWide], [newsRep pixelsHigh]);
 

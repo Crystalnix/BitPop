@@ -67,7 +67,6 @@ class GURL;
 
 - (void)viewFrameDidChange:(NSNotification*)notification;
 
-- (void)switchParentWindow:(NSWindow*)window;
 - (void)layoutChildWindows;
 
 - (void)closeAllPopups;

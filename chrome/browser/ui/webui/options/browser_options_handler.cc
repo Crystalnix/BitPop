@@ -24,6 +24,7 @@
 #include "chrome/browser/custom_home_pages_table_model.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
@@ -343,6 +344,11 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "backgroundModeCheckbox", IDS_OPTIONS_BACKGROUND_ENABLE_BACKGROUND_MODE },
 #endif
 
+#if defined(OS_MACOSX)
+    { "checkForUpdateGroupName", IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME },
+    { "updatesAutoCheckDaily", IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL },
+#endif
+
     // Strings with product-name substitutions.
 #if !defined(OS_CHROMEOS)
     { "syncOverview", IDS_SYNC_OVERVIEW, IDS_PRODUCT_NAME },
@@ -553,6 +559,13 @@ void BrowserOptionsHandler::RegisterMessages() {
       "performFactoryResetRestart",
       base::Bind(&BrowserOptionsHandler::PerformFactoryResetRestart,
                  base::Unretained(this)));
+#endif
+#if defined(OS_MACOSX)
+  web_ui()->RegisterMessageCallback(
+      "toggleAutomaticUpdates",
+      base::Bind(&BrowserOptionsHandler::ToggleAutomaticUpdates,
+                 base::Unretained(this)));
+
 #endif
 }
 
@@ -1313,6 +1326,13 @@ void BrowserOptionsHandler::SetupAccessibilityFeatures() {
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.setVirtualKeyboardCheckboxState",
       virtual_keyboard_enabled);
+}
+#endif
+
+#if defined(OS_MACOSX)
+void BrowserOptionsHandler::ToggleAutomaticUpdates(const ListValue* args) {
+  PrefService* prefService = Profile::FromWebUI(web_ui())->GetPrefs();
+  platform_util::setUseAutomaticUpdates(prefService->GetBoolean(prefs::kAutomaticUpdatesEnabled));
 }
 #endif
 

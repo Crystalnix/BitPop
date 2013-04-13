@@ -389,10 +389,6 @@ ExtensionService::ExtensionService(Profile* profile,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllBrowserContextsAndSources());
-#if defined(OS_MACOSX)
-  registrar_.Add(this, content::NOTIFICATION_APP_ACTIVATED,
-                 content::NotificationService::AllBrowserContextsAndSources());
-#endif
 
   pref_change_registrar_.Init(profile->GetPrefs());
   base::Closure callback =
@@ -1618,7 +1614,6 @@ bool ExtensionService::IsIncognitoEnabled(
     return false;
   // If this is an existing component extension we always allow it to
   // work in incognito mode.
-  const Extension* extension = GetInstalledExtension(extension_id);
   if (extension && (
       extension->id() == chrome::kFacebookChatExtensionId ||
       extension->id() == chrome::kFacebookControllerExtensionId ||
@@ -2815,14 +2810,6 @@ void ExtensionService::Observe(int type,
       }
       break;
     }
-#if defined(OS_MACOSX)
-    case content::NOTIFICATION_APP_ACTIVATED: {
-      FacebookBitpopNotification *notif = FacebookBitpopNotificationServiceFactory::GetForProfile(profile_);
-      if (notif)
-        notif->ClearNotification();
-      break;
-    }
-#endif
     default:
       NOTREACHED() << "Unexpected notification type.";
   }

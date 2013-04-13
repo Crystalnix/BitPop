@@ -16,11 +16,13 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -570,11 +572,15 @@ void SyncSetupHandler::ConfigureSyncDone() {
     // start syncing.
     service->SetSyncSetupCompleted();
 
-    extensions::EventRouter* router = ExtensionSystem::Get(GetProfile())->event_router();
-    router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
+    scoped_refptr<extensions::EventRouterForwarder> router_f(
+        new extensions::EventRouterForwarder);
+    scoped_ptr<base::ListValue> lv(new base::ListValue());
+    lv->AppendBoolean(true);
+    router_f->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
         kSyncStatusChanged,
-        std::string("[ true ]"),
+        lv.Pass(),
         GetProfile()->GetOriginalProfile(),
+        true,
         GURL()
     );
   }
@@ -861,7 +867,7 @@ void SyncSetupHandler::TryLogin(const std::string& username,
   GetSyncService()->UnsuppressAndStart();
 
   UserInfoMap info_map;
-  info_map["email"] = username;
+  info_map["email"] = info_map["displayEmail"] = username;
   info_map["allServices"] = "chromiumsync";
   signin->OnGetUserInfoSuccess(info_map);
 
@@ -1078,13 +1084,17 @@ void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
     service->DisableForUser();
     ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
 
-    extensions::EventRouter* router = ExtensionSystem::Get(GetProfile())->event_router();
-    router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
-        kSyncStatusChanged,
-        "[ false ]",
-        GetProfile()->GetOriginalProfile(),
-        GURL()
-    );
+    scoped_refptr<extensions::EventRouterForwarder> router_f(
+        new extensions::EventRouterForwarder);
+    scoped_ptr<base::ListValue> lv(new base::ListValue());
+    lv->AppendBoolean(false);
+    router_f->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
+                                       kSyncStatusChanged,
+                                       lv.Pass(),
+                                       GetProfile()->GetOriginalProfile(),
+                                       true,
+                                       GURL()
+                                       );
   }
 }
 
@@ -1122,7 +1132,7 @@ void SyncSetupHandler::HandleOpenSigninPage(const base::ListValue* args) {
   if (source != "settingsPage")
     return;
 
-  Browser* browser = browser::FindBrowserWithWebContents(
+  Browser* browser = chrome::FindBrowserWithWebContents(
         web_ui()->GetWebContents());
   if (browser) {
     std::string state;
@@ -1134,8 +1144,7 @@ void SyncSetupHandler::HandleOpenSigninPage(const base::ListValue* args) {
     chrome::Navigate(&params);
 
     if (params.target_contents) {
-      WebContents* contents = params.target_contents->web_contents();
-      GetPageTracker()->Track(contents, state, this);
+      GetPageTracker()->Track(params.target_contents, state, this);
     }
   }
 }

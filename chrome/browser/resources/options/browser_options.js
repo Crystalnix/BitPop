@@ -82,10 +82,12 @@ cr.define('options', function() {
       $('start-stop-sync').onclick = function(event) {
         if (self.syncSetupCompleted)
           SyncSetupOverlay.showStopSyncingUI();
+        /*
         else if (cr.isChromeOS)
           SyncSetupOverlay.showSetupUIWithoutLogin();
+        */
         else
-          SyncSetupOverlay.showSetupUI();
+          SyncSetupOverlay.openSigninPageFromStartSyncSettings();
       };
       $('customize-sync').onclick = function(event) {
         if (cr.isChromeOS)
@@ -419,6 +421,12 @@ cr.define('options', function() {
       if (cr.isChromeOS) {
         $('factory-reset-restart').onclick = function(event) {
           OptionsPage.navigateToPage('factoryResetData');
+        };
+      }
+      
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function(event) {
+          chrome.send('toggleAutomaticUpdates');
         };
       }
     },

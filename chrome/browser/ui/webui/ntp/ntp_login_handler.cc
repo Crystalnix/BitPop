@@ -280,12 +280,9 @@ void NTPLoginHandler::GetLocalizedValues(Profile* profile,
   values->SetString("login_status_dismiss",
       hide_sync ? string16() :
       l10n_util::GetStringUTF16(IDS_SYNC_PROMO_NTP_BUBBLE_OK));
-  values->SetString("login_encryption_disabled_message_before_link",
+  values->SetString("login_encryption_disabled_message",
       hide_sync ? string16() :
-      l10n_util::GetStringUTF16(
-          IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED_BEFORE_LINK));
-  values->SetString("login_encryption_disabled_message_after_link",
-      hide_sync ? string16() :
-      l10n_util::GetStringUTF16(
-          IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED_AFTER_LINK));
+      l10n_util::GetStringFUTF16(
+          IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED,
+          l10n_util::GetStringUTF16(IDS_SYNC_SETUP_CONFIGURE_TITLE)));
 }

@@ -40,7 +40,6 @@
 
 - (void)parentControllerWillDie;
 
-- (void)reparentWindowTo:(NSWindow*)window;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_NOTIFICATION_CONTROLLER_H_

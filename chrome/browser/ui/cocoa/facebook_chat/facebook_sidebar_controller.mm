@@ -224,7 +224,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
       std::string(chrome::kFacebookChatExtensionId) +
       std::string("/friends_sidebar.html");
   ExtensionProcessManager* manager =
-      profile->GetExtensionProcessManager();
+      ExtensionSystem::Get(profile)->process_manager();
   extension_host_.reset(manager->CreateViewHost(GURL(url), browser_,
                                                 chrome::VIEW_TYPE_PANEL));
   if (extension_host_.get()) {

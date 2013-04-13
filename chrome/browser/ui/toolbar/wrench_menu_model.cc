@@ -595,18 +595,17 @@ void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
   AddItem(IDC_VIEW_INCOMPATIBILITIES, l10n_util::GetStringUTF16(
       IDS_VIEW_INCOMPATIBILITIES));
 
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 #if defined(OS_WIN)
   SetIcon(GetIndexOfCommandId(IDC_VIEW_INCOMPATIBILITIES),
           ui::ResourceBundle::GetSharedInstance().
               GetNativeImageNamed(IDR_CONFLICT_MENU));
 #endif
 
+  ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   if (!is_new_menu) {
     AddItemWithStringId(IDC_HELP_PAGE_VIA_MENU, IDS_HELP_PAGE);
 
     if (browser_defaults::kShowHelpMenuItemIcon) {
-      ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
       SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE_VIA_MENU),
               rb.GetNativeImageNamed(IDR_HELP_MENU));
     }
@@ -624,19 +623,18 @@ void WrenchMenuModel::Build(bool is_new_menu, bool supports_new_separators) {
 
   if (browser_defaults::kShowExitMenuItem) {
     AddSeparator(ui::NORMAL_SEPARATOR);
-      AddItemWithStringId(IDC_EXIT, IDS_EXIT);
-    }
+    AddItemWithStringId(IDC_EXIT, IDS_EXIT);
   }
 
   if (is_new_menu && supports_new_separators)
     AddSeparator(ui::SPACING_SEPARATOR);
 
   SetIcon(GetIndexOfCommandId(IDC_BOOKMARKS_MENU),
-          *rb.GetBitmapNamed(IDR_BOOKMARKS_FAVICON));
+          rb.GetNativeImageNamed(IDR_BOOKMARKS_FAVICON));
   SetIcon(GetIndexOfCommandId(IDC_SHOW_DOWNLOADS),
-          *rb.GetBitmapNamed(IDR_DOWNLOADS_FAVICON));
+          rb.GetNativeImageNamed(IDR_DOWNLOADS_FAVICON));
   SetIcon(GetIndexOfCommandId(IDC_OPTIONS),
-          *rb.GetBitmapNamed(IDR_SETTINGS_FAVICON));
+          rb.GetNativeImageNamed(IDR_SETTINGS_FAVICON));
 }
 
 void WrenchMenuModel::AddGlobalErrorMenuItems() {

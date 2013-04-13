@@ -1,5 +1,5 @@
-// Copyright (c) 2011 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,17 +10,15 @@
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
 #include "ui/base/cocoa/window_size_constants.h"
 
+using content::RenderViewHost;
 
 namespace {
 // The duration for any animations that might be invoked by this controller.
@@ -40,127 +38,85 @@ CGFloat Clamp(CGFloat value, CGFloat min, CGFloat max) {
 
 }  // namespace
 
-using extensions::ExtensionHost;
-
-class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
- public:
-  explicit DevtoolsNotificationBridgeMy(FacebookPopupController* controller)
-    : controller_(controller) {}
-
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
-    switch (type) {
-      case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING: {
-        if (content::Details<ExtensionHost>([controller_ extensionHost]) ==
-                details) {
-          [controller_ showDevTools];
-        }
-        break;
-      }
-      case content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING: {
-        content::RenderViewHost* rvh = [controller_ extensionHost]->render_view_host();
-        if (content::Details<content::RenderViewHost>(rvh) == details)
-          // Allow the devtools to finish detaching before we close the popup
-          [controller_ performSelector:@selector(close)
-                            withObject:nil
-                            afterDelay:0.0];
-        break;
-      }
-      default: {
-        LOG(INFO) << type;
-        NOTREACHED() << "Received unexpected notification";
-        break;
-      }
-    };
-  }
-
- private:
-  FacebookPopupController* controller_;
-};
-
 @interface FacebookPopupController(Private)
 // Callers should be using the public static method for initialization.
 // NOTE: This takes ownership of |host|.
-- (id)initWithHost:(ExtensionHost*)host
+- (id)initWithHost:(extensions::ExtensionHost*)host
       parentWindow:(NSWindow*)parentWindow
         anchoredAt:(NSPoint)anchoredAt
-     arrowLocation:(fb_bubble::BubbleArrowLocation)arrowLocation
-           devMode:(BOOL)devMode;
+     arrowLocation:(info_bubble::BubbleArrowLocation)arrowLocation;
 
 // Called when the extension's hosted NSView has been resized.
 - (void)extensionViewFrameChanged;
-//- (void)parentWindowDidBecomeKey:(NSNotification*)notification;
+
+// Called when the extension's size changes.
+- (void)onSizeChanged:(NSSize)newSize;
+
+// Called when the extension view is shown.
+- (void)onViewDidShow;
 @end
+
+class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
+ public:
+  explicit FacebookExtensionPopupContainer(FacebookPopupController* controller)
+      : controller_(controller) {
+  }
+
+  virtual void OnExtensionSizeChanged(
+      ExtensionViewMac* view,
+      const gfx::Size& new_size) OVERRIDE {
+    [controller_ onSizeChanged:
+        NSMakeSize(new_size.width(), new_size.height())];
+  }
+
+  virtual void OnExtensionViewDidShow(ExtensionViewMac* view) OVERRIDE {
+    [controller_ onViewDidShow];
+  }
+
+ private:
+  FacebookPopupController* controller_; // Weak; owns this.
+};
 
 @implementation FacebookPopupController
 
-@synthesize anchor = anchor_;
-
-- (id)initWithHost:(ExtensionHost*)host
+- (id)initWithHost:(extensions::ExtensionHost*)host
       parentWindow:(NSWindow*)parentWindow
         anchoredAt:(NSPoint)anchoredAt
-     arrowLocation:(fb_bubble::BubbleArrowLocation)arrowLocation
-           devMode:(BOOL)devMode {
-
-  parentWindow_ = parentWindow;
-  anchor_ = [parentWindow convertBaseToScreen:anchoredAt];
-  host_.reset(host);
-  beingInspected_ = devMode;
-
-  scoped_nsobject<FacebookBubbleView> view([[FacebookBubbleView alloc] init]);
-  if (!view.get())
+     arrowLocation:(info_bubble::BubbleArrowLocation)arrowLocation {
+  if (arrowLocation != info_bubble::kBottomCenter)
     return nil;
-  [view setArrowLocation:arrowLocation];
-  [view setBackgroundColor:[NSColor whiteColor]];
 
-  extensionView_ = host->view()->native_view();
-  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-  //[center addObserver:self
-  //           selector:@selector(extensionViewFrameChanged)
-  //               name:NSViewFrameDidChangeNotification
-  //             object:extensionView_];
-
-  // Watch to see if the parent window closes, and if so, close this one.
-  [center addObserver:self
-             selector:@selector(parentWindowWillClose:)
-                 name:NSWindowWillCloseNotification
-               object:parentWindow_];
-
-  [center addObserver:self
-             selector:@selector(parentWindowDidBecomeKey:)
-                 name:NSWindowDidBecomeKeyNotification
-               object:parentWindow_];
-
-  [view addSubview:extensionView_];
   scoped_nsobject<InfoBubbleWindow> window(
       [[InfoBubbleWindow alloc]
-          initWithContentRect:(ui::kWindowSizeDeterminedLater)
+          initWithContentRect:ui::kWindowSizeDeterminedLater
                     styleMask:NSBorderlessWindowMask
                       backing:NSBackingStoreBuffered
                         defer:YES]);
   if (!window.get())
     return nil;
 
-  [window setDelegate:self];
-  [window setContentView:view];
-  self = [super initWithWindow:window];
-  if (beingInspected_) {
-    // Listen for the the devtools window closing.
-    notificationBridge_.reset(new DevtoolsNotificationBridgeMy(self));
-    registrar_.reset(new content::NotificationRegistrar);
-    registrar_->Add(notificationBridge_.get(),
-                    content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
-                    content::Source<content::BrowserContext>(host->profile()));
-    registrar_->Add(notificationBridge_.get(),
-                    chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
-                    content::Source<Profile>(host->profile()));
+  anchoredAt = [parentWindow convertBaseToScreen:anchoredAt];
+  if ((self = [super initWithWindow:window
+                       parentWindow:parentWindow
+                         anchoredAt:anchoredAt])) {
+    host_.reset(host);
+
+    InfoBubbleView* view = self.bubble;
+    [view setArrowLocation:arrowLocation];
+
+    extensionView_ = host->view()->native_view();
+    container_.reset(new FacebookExtensionPopupContainer(self));
+    host->view()->set_container(container_.get());
+
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    [center addObserver:self
+               selector:@selector(extensionViewFrameChanged)
+                   name:NSViewFrameDidChangeNotification
+                 object:extensionView_];
+
+    [view addSubview:extensionView_];
   }
   return self;
-}
-
-- (void)showDevTools {
-  DevToolsWindow::OpenDevToolsWindow(host_->render_view_host());
 }
 
 - (void)dealloc {
@@ -168,63 +124,49 @@ class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
   [super dealloc];
 }
 
-- (void)parentWindowWillClose:(NSNotification*)notification {
-  [self close];
+- (void)windowWillClose:(NSNotification *)notification {
+  [super windowWillClose:notification];
+  gPopup = nil;
+  if (host_->view())
+    host_->view()->set_container(NULL);
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification {
+  // [super windowDidResignKey:notification];
 }
 
 - (void)parentWindowDidBecomeKey:(NSNotification*)notification {
   NSWindow* window = [self window];
   DCHECK_EQ([notification object], [window parentWindow]);
-  if ([window isVisible] && !beingInspected_)
+  if ([window isVisible])
     [self close];
-}
-
-- (void)windowWillClose:(NSNotification *)notification {
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
-  [gPopup autorelease];
-  gPopup = nil;
-}
-
-// - (void)windowDidResignKey:(NSNotification *)notification {
-//   NSWindow* window = [self window];
-//   DCHECK_EQ([notification object], window);
-//   // If the window isn't visible, it is already closed, and this notification
-//   // has been sent as part of the closing operation, so no need to close.
-//   if ([window isVisible] && !beingInspected_) {
-//   }
-// }
-
-- (void)close {
-  [[[self window] parentWindow] removeChildWindow:[self window]];
-  [super close];
 }
 
 - (BOOL)isClosing {
   return [static_cast<InfoBubbleWindow*>([self window]) isClosing];
 }
 
-- (ExtensionHost*)extensionHost {
+- (extensions::ExtensionHost*)extensionHost {
   return host_.get();
 }
 
 + (FacebookPopupController*)showURL:(GURL)url
-                          inBrowser:(Browser*)browser
-                         anchoredAt:(NSPoint)anchoredAt
-                      arrowLocation:(fb_bubble::BubbleArrowLocation)
-                                        arrowLocation
-                            devMode:(BOOL)devMode {
+                           inBrowser:(Browser*)browser
+                          anchoredAt:(NSPoint)anchoredAt
+                       arrowLocation:(info_bubble::BubbleArrowLocation)
+                                         arrowLocation {
   DCHECK([NSThread isMainThread]);
   DCHECK(browser);
   if (!browser)
     return nil;
 
   ExtensionProcessManager* manager =
-      browser->profile()->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(browser->profile())->process_manager();
   DCHECK(manager);
   if (!manager)
     return nil;
 
-  ExtensionHost* host = manager->CreatePopupHost(url, browser);
+  extensions::ExtensionHost* host = manager->CreatePopupHost(url, browser);
   DCHECK(host);
   if (!host)
     return nil;
@@ -245,15 +187,7 @@ class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
       initWithHost:host
       parentWindow:browser->window()->GetNativeWindow()
         anchoredAt:anchoredAt
-     arrowLocation:arrowLocation
-           devMode:devMode];
-
-  NSRect extFrame = gPopup->extensionView_.frame;
-  extFrame.size = NSMakeSize(kPopupWidth, kPopupHeight);
-  gPopup->extensionView_.frame = extFrame;
-
-  [gPopup extensionViewFrameChanged];
-
+     arrowLocation:arrowLocation];
   return gPopup;
 }
 
@@ -262,43 +196,33 @@ class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
 }
 
 - (void)extensionViewFrameChanged {
-  // If there are no changes in the width or height of the frame, then ignore.
-  if (NSEqualSizes([extensionView_ frame].size, extensionFrame_.size) &&
-      NSEqualPoints(oldAnchor_, anchor_))
+// If there are no changes in the width or height of the frame, then ignore.
+  if (NSEqualSizes([extensionView_ frame].size, extensionFrame_.size))
     return;
 
   extensionFrame_ = [extensionView_ frame];
-  oldAnchor_ = anchor_;
-
   // Constrain the size of the view.
   [extensionView_ setFrameSize:NSMakeSize(
       Clamp(NSWidth(extensionFrame_),
-            ExtensionViewMac::kMinWidth,
-            ExtensionViewMac::kMaxWidth),
+            ExtensionViewMac::kMinWidth, kPopupWidth),
       Clamp(NSHeight(extensionFrame_),
-            ExtensionViewMac::kMinHeight,
-            ExtensionViewMac::kMaxHeight))];
+            ExtensionViewMac::kMinHeight, kPopupHeight))];
 
   // Pad the window by half of the rounded corner radius to prevent the
   // extension's view from bleeding out over the corners.
-  CGFloat inset = fb_bubble::kBubbleCornerRadius / 2.0;
+  CGFloat inset = info_bubble::kBubbleCornerRadius / 2.0;
   [extensionView_ setFrameOrigin:NSMakePoint(inset, inset +
-      fb_bubble::kBubbleArrowHeight)];
+      info_bubble::kBubbleArrowHeight)];
 
   NSRect frame = [extensionView_ frame];
-  frame.size.height += fb_bubble::kBubbleArrowHeight +
-                       fb_bubble::kBubbleCornerRadius;
-  frame.size.width += fb_bubble::kBubbleCornerRadius;
-  frame = [extensionView_ convertRectToBase:frame];
+  frame.size.height += info_bubble::kBubbleArrowHeight +
+                       info_bubble::kBubbleCornerRadius;
+  frame.size.width += info_bubble::kBubbleCornerRadius;
+  frame = [extensionView_ convertRect:frame toView:nil];
   // Adjust the origin according to the height and width so that the arrow is
   // positioned correctly at the middle and slightly down from the button.
-  NSPoint windowOrigin = anchor_;
-  //NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
-  //                                info_bubble::kBubbleArrowWidth / 2.0,
-  //                            info_bubble::kBubbleArrowHeight / 2.0);
-  // offsets = [extensionView_ convertSize:offsets toView:nil];
+  NSPoint windowOrigin = self.anchorPoint;
   windowOrigin.x -= NSWidth(frame) / 2;
-  //windowOrigin.y -= NSHeight(frame) - offsets.height;
   frame.origin = windowOrigin;
 
   // Is the window still animating in? If so, then cancel that and create a new
@@ -324,14 +248,27 @@ class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
   }
 }
 
-// We want this to be a child of a browser window. addChildWindow: (called from
-// this function) will bring the window on-screen; unfortunately,
-// [NSWindowController showWindow:] will also bring it on-screen (but will cause
-// unexpected changes to the window's position). We cannot have an
-// addChildWindow: and a subsequent showWindow:. Thus, we have our own version.
-- (void)showWindow:(id)sender {
-  [parentWindow_ addChildWindow:[self window] ordered:NSWindowAbove];
-  [[self window] makeKeyAndOrderFront:self];
+- (void)onSizeChanged:(NSSize)newSize {
+  // When we update the size, the window will become visible. Stay hidden until
+  // the host is loaded.
+  pendingSize_ = newSize;
+  if (!host_->did_stop_loading())
+    return;
+
+  // No need to use CA here, our caller calls us repeatedly to animate the
+  // resizing.
+  NSRect frame = [extensionView_ frame];
+  frame.size = newSize;
+
+  // |new_size| is in pixels. Convert to view units.
+  frame.size = [extensionView_ convertSize:frame.size fromView:nil];
+
+  [extensionView_ setFrame:frame];
+  [extensionView_ setNeedsDisplay:YES];
+}
+
+- (void)onViewDidShow {
+  [self onSizeChanged:pendingSize_];
 }
 
 - (void)windowDidResize:(NSNotification*)notification {
@@ -346,10 +283,7 @@ class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
     host_->view()->WindowFrameChanged();
 }
 
-- (BOOL)beingInspected {
-  return beingInspected_;
-}
-
+/*
 - (void)setAnchor:(NSPoint)anchorPoint {
   NSWindow* window = [self window];
   if ([[window animator] alphaValue] == 1.0) {
@@ -357,12 +291,7 @@ class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
     [self extensionViewFrameChanged];
   }
 }
-
-- (void)reparentWindowTo:(NSWindow*)window {
-  [parentWindow_ removeChildWindow:[self window]];
-  [window addChildWindow:[self window] ordered:NSWindowAbove];
-  parentWindow_ = window;
-}
+*/
 
 @end
 

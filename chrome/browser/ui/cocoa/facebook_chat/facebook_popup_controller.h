@@ -1,31 +1,25 @@
-// Copyright (c) 2011 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2011 Crystalnix <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_POPUP_CONTROLLER_H_
 #define CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_POPUP_CONTROLLER_H_
 
-#pragma once
-
 #import <Cocoa/Cocoa.h>
 
-#import "base/mac/cocoa_protocols.h"
 #import "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/ui/cocoa/facebook_chat/facebook_bubble_view.h"
+#import "chrome/browser/ui/cocoa/base_bubble_controller.h"
+#import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #include "googleurl/src/gurl.h"
 
 
 class Browser;
-class DevtoolsNotificationBridgeMy;
-namespace extensions {
-  class ExtensionHost;
-}
-@class InfoBubbleWindow;
+class FacebookExtensionPopupContainer;
 
-namespace content {
-class NotificationRegistrar;
+namespace extensions {
+class ExtensionHost;
 }
 
 // This controller manages a single browser action popup that can appear once a
@@ -35,19 +29,10 @@ class NotificationRegistrar;
 //
 // There can only be one browser action popup open at a time, so a static
 // variable holds a reference to the current popup.
-@interface FacebookPopupController : NSWindowController<NSWindowDelegate> {
+@interface FacebookPopupController : BaseBubbleController {
  @private
   // The native extension view retrieved from the extension host. Weak.
   NSView* extensionView_;
-
-  // The popup's parent window. Weak.
-  NSWindow* parentWindow_;
-
-  // Where the window is anchored. Right now it's the bottom center of the
-  // browser action button.
-  NSPoint anchor_;
-
-  NSPoint oldAnchor_;
 
   // The current frame of the extension view. Cached to prevent setting the
   // frame if the size hasn't changed.
@@ -56,14 +41,11 @@ class NotificationRegistrar;
   // The extension host object.
   scoped_ptr<extensions::ExtensionHost> host_;
 
-  scoped_ptr<content::NotificationRegistrar> registrar_;
-  scoped_ptr<DevtoolsNotificationBridgeMy> notificationBridge_;
+  scoped_ptr<FacebookExtensionPopupContainer> container_;
 
-  // Whether the popup has a devtools window attached to it.
-  BOOL beingInspected_;
+  // The size once the ExtensionView has loaded.
+  NSSize pendingSize_;
 }
-
-@property (nonatomic,assign) NSPoint anchor;
 
 // Returns the ExtensionHost object associated with this popup.
 - (extensions::ExtensionHost*)extensionHost;
@@ -80,11 +62,10 @@ class NotificationRegistrar;
 // and prevent the popup from closing when focus is lost.  It will be closed
 // after the inspector is closed, or another popup is opened.
 + (FacebookPopupController*)showURL:(GURL)url
-                          inBrowser:(Browser*)browser
-                         anchoredAt:(NSPoint)anchoredAt
-                      arrowLocation:(fb_bubble::BubbleArrowLocation)
-                                        arrowLocation
-                            devMode:(BOOL)devMode;
+                           inBrowser:(Browser*)browser
+                          anchoredAt:(NSPoint)anchoredAt
+                       arrowLocation:(info_bubble::BubbleArrowLocation)
+                                         arrowLocation;
 
 // Returns the controller used to display the popup being shown. If no popup is
 // currently open, then nil is returned. Static because only one extension popup
@@ -94,12 +75,6 @@ class NotificationRegistrar;
 // Whether the popup is in the process of closing (via Core Animation).
 - (BOOL)isClosing;
 
-// Show the dev tools attached to the popup.
-- (void)showDevTools;
-
-- (BOOL)beingInspected;
-
-- (void)reparentWindowTo:(NSWindow*)window;
 @end
 
 #endif   // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_POPUP_CONTROLLER_H_

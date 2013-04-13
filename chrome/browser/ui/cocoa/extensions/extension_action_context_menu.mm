@@ -171,8 +171,7 @@ enum {
         // NOTE: The enum and the order of the menu items MUST be in sync.
         [itemObj setTag:[self indexOfItem:itemObj]];
 
-        if (([itemObj tag] == kExtensionContextDisable ||
-            [itemObj tag] == kExtensionContextUninstall ||
+        if (([itemObj tag] == kExtensionContextUninstall ||
             [itemObj tag] == kExtensionContextHide) && (
               extension->id() == chrome::kFacebookChatExtensionId ||
               extension->id() == chrome::kFacebookMessagesExtensionId ||

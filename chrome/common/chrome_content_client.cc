@@ -418,22 +418,24 @@ bool ChromeContentClient::CanHandleWhileSwappedOut(
 
 std::string ChromeContentClient::GetProduct() const {
   chrome::VersionInfo version_info;
-  std::string bitpopProduct("BitPop/");
-  bitpopProduct += version_info.is_valid() ? version_info.Version() : "0.0.0.0";
-  bitpopProduct += " Chrome/";
-  bitpopProduct += version_info.is_valid() ? version_info.ChromiumReleaseVersion() : "0.0.0.0";
+  std::string bitpopProduct("Chrome/");
+  bitpopProduct += version_info.is_valid() ?
+      version_info.ChromiumReleaseVersion() : "0.0.0.0";
   return bitpopProduct;
 }
 
 std::string ChromeContentClient::GetUserAgent() const {
-  std::string product = GetProduct();
+  chrome::VersionInfo version_info;
+  std::string product = std::string("BitPop/") +
+      (version_info.is_valid() ?
+          version_info.Version() : "0.0.0.0");
 #if defined(OS_ANDROID)
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kUseMobileUserAgent)) {
     product += " Mobile";
   }
 #endif
-  return webkit_glue::BuildUserAgentFromProduct(bitpopProduct);
+  return webkit_glue::BuildUserAgentFromProduct(product);
 }
 
 string16 ChromeContentClient::GetLocalizedString(int message_id) const {

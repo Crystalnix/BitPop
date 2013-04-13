@@ -68,8 +68,6 @@ class FacebookChatItem;
 
 - (void)viewFrameDidChange:(NSNotification*)notification;
 
-- (void)switchParentWindow:(NSWindow*)window;
-
 - (void)layoutItemsChildWindows;
 - (void)closeAllChildrenPopups;
 @end

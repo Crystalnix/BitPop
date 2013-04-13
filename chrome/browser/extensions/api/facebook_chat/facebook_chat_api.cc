@@ -6,7 +6,6 @@
 #include "chrome/browser/extensions/api/facebook_chat/facebook_chat_api.h"
 
 #include "base/values.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/pref_names.h"

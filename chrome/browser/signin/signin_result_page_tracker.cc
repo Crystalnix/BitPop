@@ -137,7 +137,7 @@ void SigninResultPageTracker::Track(WebContents *contents,
 	tracked_state_ = state;
 	observer_ = observer;
 
-	browser_ = browser::FindBrowserWithWebContents(contents);
+	browser_ = chrome::FindBrowserWithWebContents(contents);
 	if (browser_ && profile_ == browser_->profile()) {
 		registrar_.Add(
 	      this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,

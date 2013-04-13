@@ -515,7 +515,7 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
   const Extension *chatExtension = NULL;
   const Extension *messagesExtension = NULL;
   const Extension *notificationsExtension = NULL;
-  for (ExtensionList::iterator iter = toolbarModel_->toolbar_items().begin();
+  for (ExtensionList::const_iterator iter = toolbarModel_->toolbar_items().begin();
        iter != toolbarModel_->toolbar_items().end(); ++iter) {
     if ((*iter)->id() == chrome::kFacebookChatExtensionId)
       chatExtension = *iter;
@@ -540,7 +540,7 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
   [self positionCustomExtensionActions];
 
   NSUInteger i = 0;
-  for (ExtensionList::iterator iter = toolbarModel_->toolbar_items().begin();
+  for (ExtensionList::const_iterator iter = toolbarModel_->toolbar_items().begin();
        iter != toolbarModel_->toolbar_items().end(); ++iter) {
     if (![self shouldDisplayBrowserAction:*iter])
       continue;
@@ -556,8 +556,8 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
     return;
 
   //NSUInteger i = 0;
-  for (ExtensionList::iterator iter = toolbarModel_->begin();
-       iter != toolbarModel_->end(); ++iter) {
+  for (ExtensionList::const_iterator iter = toolbarModel_->toolbar_items().begin();
+       iter != toolbarModel_->toolbar_items().end(); ++iter) {
     if (![self shouldDisplayBrowserAction:*iter])
       continue;
 

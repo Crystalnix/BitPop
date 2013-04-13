@@ -191,10 +191,10 @@ void APIPermissionInfo::RegisterAllPermissions(
     { APIPermission::kAppNotifications, "appNotifications" },
 
     // Register extension permissions.
-    { kActiveTab, "activeTab" },
-    { kAlarms, "alarms" },
-    { kBitpopFacebookChat, "bitpop" },
-    { kBookmark, "bookmarks", kFlagNone,
+    { APIPermission::kActiveTab, "activeTab" },
+    { APIPermission::kAlarms, "alarms" },
+    { APIPermission::kBitpopFacebookChat, "bitpop" },
+    { APIPermission::kBookmark, "bookmarks", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_BOOKMARKS,
       PermissionMessage::kBookmarks },
     { APIPermission::kBrowsingData, "browsingData" },

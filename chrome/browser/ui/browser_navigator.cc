@@ -606,7 +606,18 @@ bool IsURLAllowedInIncognito(const GURL& url,
        url.host() == chrome::kChromeUISyncPromoHost ||
        url.host() == chrome::kChromeUIUberHost ||
        url.host() == chrome::kChromeUIBitpopSettingsHost ||
-       url.host() == chrome::kChromeUIBitpopSettingsFrameHost));
+       url.host() == chrome::kChromeUIBitpopSettingsFrameHost)) {
+    return false;
+  }
+
+  GURL rewritten_url = url;
+  bool reverse_on_redirect = false;
+  content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
+      &rewritten_url, browser_context, &reverse_on_redirect);
+
+  // Some URLs are mapped to uber subpages. Do not allow them in incognito.
+  return !(rewritten_url.scheme() == chrome::kChromeUIScheme &&
+      rewritten_url.host() == chrome::kChromeUIUberHost);
 }
 
 }  // namespace chrome

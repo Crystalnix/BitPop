@@ -369,11 +369,6 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
   [self layoutItems];
 }
 
-- (void)switchParentWindow:(NSWindow*)window {
-  for (FacebookChatItemController *controller in chatItemControllers_.get())
-    [controller switchParentWindow:window];
-}
-
 - (void)animationDidEnd:(NSAnimation *)animation {
   if (animation == addAnimation_) {
     [lastAddedItem_ layedOutAfterAddingToChatbar];

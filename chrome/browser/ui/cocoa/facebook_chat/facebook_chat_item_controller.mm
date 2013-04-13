@@ -139,9 +139,11 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
 - (void)awakeFromNib {
   if (!availableImage || !idleImage || !composingImage) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    availableImage = rb.GetNativeImageNamed(IDR_FACEBOOK_ONLINE_ICON_14);
-    idleImage = rb.GetNativeImageNamed(IDR_FACEBOOK_IDLE_ICON_14);
-    composingImage = rb.GetNativeImageNamed(IDR_FACEBOOK_COMPOSING_ICON_14);
+    availableImage =
+    		rb.GetNativeImageNamed(IDR_FACEBOOK_ONLINE_ICON_14).ToNSImage();
+    idleImage = rb.GetNativeImageNamed(IDR_FACEBOOK_IDLE_ICON_14).ToNSImage();
+    composingImage =
+    		rb.GetNativeImageNamed(IDR_FACEBOOK_COMPOSING_ICON_14).ToNSImage();
   }
 
   NSFont* font = [NSFont controlContentFontOfSize:11];
@@ -185,8 +187,7 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
     [FacebookPopupController showURL:popupUrl
                            inBrowser:[chatbarController_ bridge]->browser()
                           anchoredAt:arrowPoint
-                       arrowLocation:fb_bubble::kBottomCenter
-                             devMode:NO];
+                       arrowLocation:info_bubble::kBottomCenter];
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
   [center addObserver:self
              selector:@selector(chatWindowWillClose:)
@@ -335,24 +336,24 @@ if (!button_)
 
     // Overlay the gradient. It is stretchy, so we do this in three parts.
     ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
-    SkBitmap* gradient_left = resource_bundle.GetBitmapNamed(
-        IDR_BROWSER_ACTION_BADGE_LEFT);
-    SkBitmap* gradient_right = resource_bundle.GetBitmapNamed(
-        IDR_BROWSER_ACTION_BADGE_RIGHT);
-    SkBitmap* gradient_center = resource_bundle.GetBitmapNamed(
-        IDR_BROWSER_ACTION_BADGE_CENTER);
+    SkBitmap gradient_left = resource_bundle.GetNativeImageNamed(
+        IDR_BROWSER_ACTION_BADGE_LEFT).AsBitmap();
+    SkBitmap gradient_right = resource_bundle.GetNativeImageNamed(
+        IDR_BROWSER_ACTION_BADGE_RIGHT).AsBitmap();
+    SkBitmap gradient_center = resource_bundle.GetNativeImageNamed(
+        IDR_BROWSER_ACTION_BADGE_CENTER).AsBitmap();
 
-    canvas.drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
+    canvas.drawBitmap(gradient_left, rect.fLeft, rect.fTop);
 
     TileImageInt(canvas,
-        *gradient_center,
-        SkScalarFloor(rect.fLeft) + gradient_left->width(),
+        gradient_center,
+        SkScalarFloor(rect.fLeft) + gradient_left.width(),
         SkScalarFloor(rect.fTop),
-        SkScalarFloor(rect.width()) - gradient_left->width() -
-                      gradient_right->width(),
+        SkScalarFloor(rect.width()) - gradient_left.width() -
+                      gradient_right.width(),
         SkScalarFloor(rect.height()));
-    canvas.drawBitmap(*gradient_right,
-        rect.fRight - SkIntToScalar(gradient_right->width()), rect.fTop);
+    canvas.drawBitmap(gradient_right,
+        rect.fRight - SkIntToScalar(gradient_right.width()), rect.fTop);
 
     // Finally, draw the text centered within the badge. We set a clip in case the
     // text was too large.
@@ -456,7 +457,7 @@ if (!button_)
       [[FacebookPopupController popup] window] &&
       [[[FacebookPopupController popup] window] isVisible]) {
     NSPoint p = [self popupPointForChatWindow];
-    [[FacebookPopupController popup] setAnchor:p];
+    [[FacebookPopupController popup] setAnchorPoint:p];
   }
 
   if (notificationController_.get() && [notificationController_ window] //&&
@@ -488,18 +489,6 @@ if (!button_)
     [notificationController_ hideWindow];
     showMouseEntered_ = NO;
   }
-}
-
-- (void)switchParentWindow:(NSWindow*)window {
-  if (notificationController_.get()) {
-    [notificationController_ reparentWindowTo:window];
-  }
-
-  if ([self active] && [FacebookPopupController popup]) {
-    [[FacebookPopupController popup] reparentWindowTo:window];
-  }
-
-  [self layoutChildWindows];
 }
 
 - (void)closeAllPopups {

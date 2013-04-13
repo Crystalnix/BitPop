@@ -52,6 +52,13 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
 
+  // SigninResultPageTracker::Observer implementation
+  virtual void OnSigninCredentialsReady(const std::string& username,
+                                        const std::string& token,
+                                        const std::string& type) OVERRIDE;
+  virtual void OnSigninErrorOccurred(
+    	const std::string& error_message) OVERRIDE;
+
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
       content::WebUI* web_ui);
