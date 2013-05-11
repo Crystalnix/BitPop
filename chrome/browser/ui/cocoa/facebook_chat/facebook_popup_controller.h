@@ -17,6 +17,7 @@
 
 class Browser;
 class FacebookExtensionPopupContainer;
+class FacebookExtensionObserverBridge;
 
 namespace extensions {
 class ExtensionHost;
@@ -37,6 +38,8 @@ class ExtensionHost;
   // The current frame of the extension view. Cached to prevent setting the
   // frame if the size hasn't changed.
   NSRect extensionFrame_;
+
+  scoped_ptr<FacebookExtensionObserverBridge> fbObserverBridge_;
 
   // The extension host object.
   scoped_ptr<extensions::ExtensionHost> host_;

@@ -27,6 +27,9 @@
 - (void)drawRect:(NSRect)rect {
   // Make room for the border to be seen.
   NSRect bounds = [self bounds];
+  if (arrowLocation_ == info_bubble::kBottomCenter) {
+    bounds.origin.y += info_bubble::kBubbleArrowHeight;
+  }
   if (arrowLocation_ != info_bubble::kNoArrow) {
     bounds.size.height -= info_bubble::kBubbleArrowHeight;
   }

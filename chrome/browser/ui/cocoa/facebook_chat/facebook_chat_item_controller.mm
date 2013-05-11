@@ -9,6 +9,7 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#include "base/string_number_conversions.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
@@ -19,20 +20,18 @@
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_popup_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_controller.h"
-#include "chrome/common/badge_util.h"
+#include "chrome/browser/ui/lion_badge_image_source.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkPaint.h"
-#include "third_party/skia/include/core/SkTypeface.h"
-#include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia_util_mac.h"
 #include "ui/gfx/skia_util.h"
 
 namespace {
@@ -41,71 +40,14 @@ namespace {
 
   const CGFloat kNotificationWindowAnchorPointXOffset = 13.0;
 
-  const CGFloat kChatWindowAnchorPointYOffset = 3.0;
-
-  //const CGFloat kBadgeImageDim = 14;
+  const CGFloat kChatWindowAnchorPointYOffset = 0.0;
 
   NSImage *availableImage = nil;
   NSImage *idleImage = nil;
   NSImage *composingImage = nil;
 
-  const int kNotifyIconDimX = 16;
-  const int kNotifyIconDimY = 11;
-
-  const float kTextSize = 10;
-  const int kBottomMargin = 0;
-  const int kPadding = 2;
-  // The padding between the top of the badge and the top of the text.
-  const int kTopTextPadding = -1;
-  const int kBadgeHeight = 11;
-  const int kMaxTextWidth = 23;
-  // The minimum width for center-aligning the badge.
-  const int kCenterAlignThreshold = 20;
-
-// duplicate methods (ui/gfx/canvas_skia.cc)
-bool IntersectsClipRectInt(const SkCanvas& canvas, int x, int y, int w, int h) {
-  SkRect clip;
-  return canvas.getClipBounds(&clip) &&
-      clip.intersect(SkIntToScalar(x), SkIntToScalar(y), SkIntToScalar(x + w),
-                     SkIntToScalar(y + h));
-}
-
-bool ClipRectInt(SkCanvas& canvas, int x, int y, int w, int h) {
-  SkRect new_clip;
-  new_clip.set(SkIntToScalar(x), SkIntToScalar(y),
-               SkIntToScalar(x + w), SkIntToScalar(y + h));
-  return canvas.clipRect(new_clip);
-}
-
-void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
-                  int src_x, int src_y,
-                  int dest_x, int dest_y, int w, int h) {
-  if (!IntersectsClipRectInt(canvas, dest_x, dest_y, w, h))
-    return;
-
-  SkPaint paint;
-
-  SkShader* shader = SkShader::CreateBitmapShader(bitmap,
-                                                  SkShader::kRepeat_TileMode,
-                                                  SkShader::kRepeat_TileMode);
-  paint.setShader(shader);
-  paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
-
-  // CreateBitmapShader returns a Shader with a reference count of one, we
-  // need to unref after paint takes ownership of the shader.
-  shader->unref();
-  canvas.save();
-  canvas.translate(SkIntToScalar(dest_x - src_x), SkIntToScalar(dest_y - src_y));
-  ClipRectInt(canvas, src_x, src_y, w, h);
-  canvas.drawPaint(paint);
-  canvas.restore();
-}
-
-void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
-                  int x, int y, int w, int h) {
-  TileImageInt(canvas, bitmap, 0, 0, x, y, w, h);
-}
-
+  const int kNotifyIconDimX = 26;
+  const int kNotifyIconDimY = 15;
 }
 
 @interface FacebookChatItemController(Private)
@@ -119,6 +61,7 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
             chatbar:(FacebookChatbarController*)chatbar {
   if ((self = [super initWithNibName:@"FacebookChatItem"
                               bundle:base::mac::FrameworkBundle()])) {
+
     bridge_.reset(new FacebookChatItemMac(downloadModel, self));
 
     chatbarController_ = chatbar;
@@ -264,111 +207,16 @@ if (!button_)
 
 + (NSImage*)imageForNotificationBadgeWithNumber:(int)number {
   if (number > 0) {
-    SkBitmap* notification_icon = new SkBitmap();
-    notification_icon->setConfig(SkBitmap::kARGB_8888_Config, kNotifyIconDimX, kNotifyIconDimY);
-    notification_icon->allocPixels();
 
-    SkCanvas canvas(*notification_icon);
-    canvas.clear(SkColorSetARGB(0, 0, 0, 0));
+   if (number > 99)
+      number = 99;
+    std::string num = base::IntToString(number);
 
-    // ----------------------------------------------------------------------
-    gfx::Rect bounds(0, 0, kNotifyIconDimX, kNotifyIconDimY);
+    LionBadgeImageSource* source = new LionBadgeImageSource(
+            gfx::Size(kNotifyIconDimX, kNotifyIconDimY),
+            num);
 
-    char text_s[4] = { '\0', '\0', '\0', '\0' };
-    char *p = text_s;
-    int num = number;
-    if (num > 99)
-      num = 99;
-    if (num > 9)
-      *p++ = num / 10 + '0';
-    *p = num % 10 + '0';
-
-    std::string text(text_s);
-    if (text.empty())
-      return NULL;
-
-    SkColor text_color = SK_ColorWHITE;
-    SkColor background_color = SkColorSetARGB(255, 218, 0, 24);
-
-    //canvas->Save();
-
-    SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
-    text_paint->setTextSize(SkFloatToScalar(kTextSize));
-    text_paint->setColor(text_color);
-
-    // Calculate text width. We clamp it to a max size.
-    SkScalar text_width = text_paint->measureText(text.c_str(), text.size());
-    text_width = SkIntToScalar(
-        std::min(kMaxTextWidth, SkScalarFloor(text_width)));
-
-    // Calculate badge size. It is clamped to a min width just because it looks
-    // silly if it is too skinny.
-    int badge_width = SkScalarFloor(text_width) + kPadding * 2;
-    int icon_width = kNotifyIconDimX;
-    // Force the pixel width of badge to be either odd (if the icon width is odd)
-    // or even otherwise. If there is a mismatch you get http://crbug.com/26400.
-    if (icon_width != 0 && (badge_width % 2 != kNotifyIconDimX % 2))
-      badge_width += 1;
-    badge_width = std::max(kBadgeHeight, badge_width);
-
-    // Paint the badge background color in the right location. It is usually
-    // right-aligned, but it can also be center-aligned if it is large.
-    SkRect rect;
-    rect.fBottom = SkIntToScalar(bounds.bottom() - kBottomMargin);
-    rect.fTop = rect.fBottom - SkIntToScalar(kBadgeHeight);
-    if (badge_width >= kCenterAlignThreshold) {
-      rect.fLeft = SkIntToScalar(
-                       SkScalarFloor(SkIntToScalar(bounds.x()) +
-                                     SkIntToScalar(bounds.width()) / 2 -
-                                     SkIntToScalar(badge_width) / 2));
-      rect.fRight = rect.fLeft + SkIntToScalar(badge_width);
-    } else {
-      rect.fRight = SkIntToScalar(bounds.right());
-      rect.fLeft = rect.fRight - badge_width;
-    }
-
-    SkPaint rect_paint;
-    rect_paint.setStyle(SkPaint::kFill_Style);
-    rect_paint.setAntiAlias(true);
-    rect_paint.setColor(background_color);
-    canvas.drawRoundRect(rect, SkIntToScalar(2),
-                                          SkIntToScalar(2), rect_paint);
-
-    // Overlay the gradient. It is stretchy, so we do this in three parts.
-    ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
-    SkBitmap gradient_left = resource_bundle.GetNativeImageNamed(
-        IDR_BROWSER_ACTION_BADGE_LEFT).AsBitmap();
-    SkBitmap gradient_right = resource_bundle.GetNativeImageNamed(
-        IDR_BROWSER_ACTION_BADGE_RIGHT).AsBitmap();
-    SkBitmap gradient_center = resource_bundle.GetNativeImageNamed(
-        IDR_BROWSER_ACTION_BADGE_CENTER).AsBitmap();
-
-    canvas.drawBitmap(gradient_left, rect.fLeft, rect.fTop);
-
-    TileImageInt(canvas,
-        gradient_center,
-        SkScalarFloor(rect.fLeft) + gradient_left.width(),
-        SkScalarFloor(rect.fTop),
-        SkScalarFloor(rect.width()) - gradient_left.width() -
-                      gradient_right.width(),
-        SkScalarFloor(rect.height()));
-    canvas.drawBitmap(gradient_right,
-        rect.fRight - SkIntToScalar(gradient_right.width()), rect.fTop);
-
-    // Finally, draw the text centered within the badge. We set a clip in case the
-    // text was too large.
-    rect.fLeft += kPadding;
-    rect.fRight -= kPadding;
-    canvas.clipRect(rect);
-    canvas.drawText(text.c_str(), text.size(),
-                                     rect.fLeft + (rect.width() - text_width) / 2,
-                                     rect.fTop + kTextSize + kTopTextPadding,
-                                     *text_paint);
-
-    NSImage* img = gfx::SkBitmapToNSImage(*notification_icon);
-    delete notification_icon;
-
-    return [img retain];
+    return NSImageFromImageSkia(gfx::ImageSkia(source, source->size()));
   }
 
   return NULL;
@@ -377,16 +225,14 @@ if (!button_)
 - (void)setUnreadMessagesNumber:(int)number {
   if (number != 0) {
     NSImage *img = [FacebookChatItemController
-        imageForNotificationBadgeWithNumber:number];
+                       imageForNotificationBadgeWithNumber:number];
     [button_ setImage:img];
-    [img release];
 
     if (!notificationController_.get()) {
       notificationController_.reset([[FacebookNotificationController alloc]
           initWithParentWindow:[chatbarController_ bridge]->
                                  browser()->window()->GetNativeWindow()
                     anchoredAt:[self popupPointForNotificationWindow]]);
-
     }
 
     [chatbarController_ placeFirstInOrder:self];
@@ -394,9 +240,7 @@ if (!button_)
     std::string newMessage = [self chatItem]->GetMessageAtIndex(number-1);
     [notificationController_ messageReceived:
         base::SysUTF8ToNSString(newMessage)];
-    //[button_ highlight:YES];
   } else {
-    //[button_ highlight:NO];
     [self statusChanged];
     [notificationController_ close];
     notificationController_.reset(nil);
@@ -420,7 +264,6 @@ if (!button_)
     NSImage *img = [FacebookChatItemController
         imageForNotificationBadgeWithNumber:numNotifications];
     [button_ setImage:img];
-    [img release];
 
     [button_ setNeedsDisplay:YES];
   }
@@ -457,6 +300,10 @@ if (!button_)
       [[FacebookPopupController popup] window] &&
       [[[FacebookPopupController popup] window] isVisible]) {
     NSPoint p = [self popupPointForChatWindow];
+
+    NSWindow* parentWindow = [[self view] window];
+    p = [parentWindow convertBaseToScreen:p];
+
     [[FacebookPopupController popup] setAnchorPoint:p];
   }
 

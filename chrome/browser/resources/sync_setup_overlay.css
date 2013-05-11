@@ -509,3 +509,7 @@ html[dir='rtl'] .signin-box .throbber {
   margin: 0;
   padding: 0;
 }
+
+.logout-facebook-checkbox-wrap {
+  margin-top: 15px;
+}

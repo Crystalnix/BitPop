@@ -26,6 +26,12 @@ if (!localStorage.firstRunCompleted) {
       localStorage.setItem("firstRunCompleted", true);
       chrome.tabs.onUpdated.removeListener(arguments.callee);
     }
+    if (changeInfo && changeInfo.url &&
+        changeInfo.url == 'https://sync.bitpop.com/facebook/logout') {
+      chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
+        { type: 'logout' });
+      chrome.tabs.remove(tabId);
+    }
   });
 }
 
@@ -381,6 +387,5 @@ function onSuppressChatChanged(details) {
 }
 
 chrome.bitpop.prefs.facebookShowChat.onChange.addListener(onSuppressChatChanged);
-chrome.bitpop.prefs.facebookShowJewels.onChange.addListener(onSuppressChatChanged);
 
 addFbFunctionality();

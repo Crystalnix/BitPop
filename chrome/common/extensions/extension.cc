@@ -4154,7 +4154,7 @@ bool Extension::CheckMinimumChromeVersion(string16* error) const {
     return false;
   }
 
-  Version current_version(current_version_info.Version());
+  Version current_version(current_version_info.ChromiumReleaseVersion());
   if (!current_version.IsValid()) {
     DCHECK(false);
     return false;

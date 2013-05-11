@@ -244,12 +244,14 @@ function initJewelAndChatSuppress_( )
                 ".fbNubGroup {display: none ;visibility: hidden;}" +
                 ".fbChatSidebarBody {display: none ;visibility: hidden; }" +
                 ".fbChatSidebarFooter {display: none ;visibility: hidden; }" +
+                ".fbDockChatBuddylistNub { visibility:hidden; }" +
                 ".rmJewel #jewelCase { visibility: visible !important; display: block !important;} " +
                 ".rmJewel #jewelContainer {visibility: visible !important;display: block !important;}"+
                 ".rmChat .fbNubGroup {visibility: visible !important;display: block !important;}" +
                 ".rmChat #fbNubGroup {visibility: visible !important;display: block !important;}" +
                 ".rmChat .fbChatSidebarBody {visibility: visible !important;display: block !important;}" +
                 ".rmChat .fbChatSidebarFooter {visibility: visible !important;display: block !important;}" +
+                ".rmChat .fbDockChatBuddylistNub { visibility: visible !important; }"
                 ""
                 ));
         document.body.appendChild(styleElement);

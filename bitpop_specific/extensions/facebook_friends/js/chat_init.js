@@ -1,9 +1,3 @@
-if (location.search !== "?foo") {
-  location.search = "?foo";
-  throw new Error;  // load everything on the next page;
-                        // stop execution on this page
-}
-
 $(function() {
     bitpop.chat.init();
 

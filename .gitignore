@@ -4,6 +4,7 @@
 *.ncb
 *.ninja
 *.opensdf
+*.orig
 *.props
 *.pyc
 *.rules

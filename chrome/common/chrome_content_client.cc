@@ -426,9 +426,9 @@ std::string ChromeContentClient::GetProduct() const {
 
 std::string ChromeContentClient::GetUserAgent() const {
   chrome::VersionInfo version_info;
-  std::string product = std::string("BitPop/") +
-      (version_info.is_valid() ?
-          version_info.Version() : "0.0.0.0");
+  std::string product = GetProduct();
+  product += std::string(" BitPop/");
+  product += (version_info.is_valid() ? version_info.Version() : "0.0.0.0");
 #if defined(OS_ANDROID)
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kUseMobileUserAgent)) {

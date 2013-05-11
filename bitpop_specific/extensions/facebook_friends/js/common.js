@@ -74,8 +74,11 @@ bitpop.saveToLocalStorage = function(jidSelf, jidOther, msg, timestamp, me) {
 }
 
 bitpop.preprocessMessageText = function(msgText) {
-  return msgText.replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .autoLink({ 'target': '_blank' });
+  if (!msgText)
+    return '<span style="color: #ff4444">&lt;Invalid message&gt;</span>';
+
+  var res = msgText.replace(/&/g, "&amp;")
+                   .replace(/</g, "&lt;")
+                   .replace(/>/g, "&gt;");
+  return $.autolink(res, {'target': '_blank', 'tabIndex': '-1'});
 };

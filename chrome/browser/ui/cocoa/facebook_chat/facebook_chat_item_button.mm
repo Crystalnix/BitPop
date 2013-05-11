@@ -14,6 +14,7 @@
 
 namespace {
   static const CGFloat kDefaultCornerRadius = 3;
+  const CGFloat kRightDecorationDim = 16;
 }
 
 @implementation FacebookChatItemCell
@@ -53,6 +54,10 @@ namespace {
   [super drawWithFrame:hlBounds inView:controlView];
 }
 
+- (NSRect)drawTitle:(NSAttributedString *)title withFrame:(NSRect)frame inView:(NSView *)controlView {
+  frame.size.width -= kRightDecorationDim;
+  return [super drawTitle:title withFrame:frame inView:controlView];
+}
 @end
 
 @implementation FacebookChatItemButton

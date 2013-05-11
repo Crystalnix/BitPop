@@ -69,6 +69,7 @@ using l10n_util::GetStringUTF16;
 namespace {
 
 const char kSyncStatusChanged[] = "bitpop.onSyncStatusChanged";
+const char kDummyFacebookLogoutURL[] = "https://sync.bitpop.com/facebook/logout";
 
 // A structure which contains all the configuration information for sync.
 struct SyncConfigInfo {
@@ -305,6 +306,8 @@ void SyncSetupHandler::GetStaticLocalizedValues(
               chrome::kSyncGoogleDashboardURL))));
   localized_strings->SetString("stopSyncingTitle",
       l10n_util::GetStringUTF16(IDS_SYNC_STOP_SYNCING_DIALOG_TITLE));
+  localized_strings->SetString("stopSyncingLogoutFacebook",
+      l10n_util::GetStringUTF16(IDS_SYNC_STOP_SYNCING_FACEBOOK_LOGOUT_LABEL));
   localized_strings->SetString("stopSyncingConfirm",
         l10n_util::GetStringUTF16(IDS_SYNC_STOP_SYNCING_CONFIRM_BUTTON_LABEL));
 
@@ -1077,6 +1080,10 @@ void SyncSetupHandler::HandleDoSignOutOnAuthError(const ListValue* args) {
 }
 
 void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
+  DCHECK_EQ(args->GetSize(), 1ul);
+  bool logout_from_fb_com;
+  DCHECK(args->GetBoolean(0, &logout_from_fb_com));
+
   ProfileSyncService* service = GetSyncService();
   DCHECK(service);
 
@@ -1095,6 +1102,17 @@ void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
                                        true,
                                        GURL()
                                        );
+    if (logout_from_fb_com) {
+      Browser* browser = chrome::FindBrowserWithWebContents(
+          web_ui()->GetWebContents());
+      if (browser) {
+        chrome::NavigateParams params(browser,
+            GURL(kDummyFacebookLogoutURL),
+            content::PAGE_TRANSITION_LINK);
+        params.disposition = NEW_BACKGROUND_TAB;
+        chrome::Navigate(&params);
+      }
+    }
   }
 }
 

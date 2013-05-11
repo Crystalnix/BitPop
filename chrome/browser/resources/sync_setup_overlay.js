@@ -89,7 +89,7 @@ cr.define('options', function() {
         self.closeOverlay_();
       };
       $('stop-syncing-ok').onclick = function() {
-        chrome.send('SyncSetupStopSyncing');
+        chrome.send('SyncSetupStopSyncing', [$('facebook-logout').checked]);
         self.closeOverlay_();
       };
       $('different-email').innerHTML = loadTimeData.getString('differentEmail');
@@ -691,6 +691,7 @@ cr.define('options', function() {
       this.allowEmptyPassword_ = false;
       this.captchaChallengeActive_ = false;
 
+      /*
       var f = $('gaia-login-form');
       var email = $('gaia-email');
       var passwd = $('gaia-passwd');
@@ -712,6 +713,7 @@ cr.define('options', function() {
         f.accessCode.disabled = true;
         f.otp.disabled = true;
       }
+      */
 
       if (1 == args.error) {
         // if (oldAccessCodeValue) {
@@ -781,6 +783,7 @@ cr.define('options', function() {
 
     setErrorVisibility_: function() {
       this.resetErrorVisibility_();
+      /*
       var f = $('gaia-login-form');
       var email = $('gaia-email');
       var passwd = $('gaia-passwd');
@@ -813,6 +816,7 @@ cr.define('options', function() {
         $('errormsg-0-otp').hidden = false;
         return false;
       }
+      */
 
       return true;
     },

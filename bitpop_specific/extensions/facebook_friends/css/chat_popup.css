@@ -108,6 +108,15 @@ textarea#msg {
       margin-bottom: 3px;
       white-space: pre-wrap;
     }
+      #chat .message-group .messages .chat-message a:link,
+      #chat .message-group .messages .chat-message a:visited,
+      #chat .message-group .messages .chat-message a:active {
+        color: #2233CC;
+        text-decoration: none;
+      }
+      #chat .message-group .messages .chat-message a:hover {
+        text-decoration: underline;
+      }
 
 #chat .chat-timestamp {
   text-align: center;

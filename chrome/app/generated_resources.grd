@@ -13575,6 +13575,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_SYNC_STOP_SYNCING_DIALOG_TITLE" desc="The title of the dialog that explains what 'stop syncing' means.">
         Disconnect your Facebook/BitPop Account
       </message>
+      <message name="IDS_SYNC_STOP_SYNCING_FACEBOOK_LOGOUT_LABEL" desc="Label for checkbox asking to logout from facebook.com website when stopping sync.">
+        Also logout from facebook.com to allow different user sign-in later
+      </message>
       <if expr="pp_ifdef('android')">
         <message name="IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL" desc="Mobile: The text to display below the 'Stop syncing this account' button on the options pane, explaining what the button does.">
           By disconnecting your BitPop Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this mobile device will no longer be synced to your BitPop Account. Data already stored in your BitPop Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>BitPop Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
@@ -15751,6 +15754,12 @@ Some features may be unavailable.  Please check that the profile exists and you 
     </message>
     <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED" desc="">
       &lt;strong&gt;Encryption and passwords sync may be disabled, if you have not enabled it intentionally.&lt;/strong&gt; Go to <ph name="BEGIN_LINK">&lt;a href="#" id=&quot;login-status-advanced&quot;&gt;<ex>&lt;a href=&quot;#&quot; id=&quot;login-status-advanced&quot;&gt;</ex></ph><ph name="SYNC_CUSTOMIZE">$1<ex>Advanced...</ex></ph><ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to enable encryption and configure synced data.
+    </message>
+    <message name="IDS_FBB_BUBBLE_TITLE" desc="Title of the 'f' button bubble shown on first launch">
+      Open Facebook chat sidebar from here
+    </message>
+    <message name="IDS_FBB_BUBBLE_SUBTEXT" desc="Text below the title for the 'f' button bubble">
+      Click the button and login to Facebook to stay online with your friends. You will be able to use 'Messages' and 'Notifications' popups right near this button after a successful login.
     </message>
     </messages>
 

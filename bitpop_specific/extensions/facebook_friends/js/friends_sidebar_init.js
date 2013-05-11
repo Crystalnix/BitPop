@@ -6,6 +6,7 @@ function setAntiscrollHeight() {
 }
 
 $(document).ready(function() {
+
   setAntiscrollHeight();
   $('.box-wrap').antiscroll();
 
@@ -21,3 +22,4 @@ $(window).resize(function() {
     $('.box-wrap').data('antiscroll').rebuild();
     }
 });
+

@@ -29,13 +29,16 @@ bitpop.FriendsSidebar = (function() {
     var bgPage = chrome.extension.getBackgroundPage();
 
     $('#login-button').click(function () {
+      self.loginClicked = true;
       chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'login' },
         function (params) {
           if (params.canLogin && $('p.error').is(':visible'))
             $('p.error').fadeOut();
-          else if (!params.canLogin)
+          else if (!params.canLogin) {
             $('p.error').fadeIn();
+            self.loginClicked = false;
+          }
         });
     });
 
@@ -315,11 +318,12 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.slideToFriendsView = function(dontAnimate) {
-    if ($('#enable-sync').attr('checked')) {
+    if ($('#enable-sync').attr('checked') && self.loginClicked) {
       $('#enable-sync').attr('checked', false);
       $('#enable-sync').attr('disabled', true);
       $('#sync-para').hide();
       chrome.bitpop.launchFacebookSync();
+      self.loginClicked = false;
     }
 
     var bgPage = chrome.extension.getBackgroundPage();
@@ -598,6 +602,7 @@ bitpop.FriendsSidebar = (function() {
       self.updateFriendList(request.data);
       break;
     case 'loggedOut':
+      self.loginClicked = false;
       onLoggedOut();
       break;
     case 'userStatusChanged':

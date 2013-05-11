@@ -24,52 +24,6 @@
               <div id="signin-header-logo"></div>
             </div>
             <form id="gaia-login-form">
-              <div id="email-row" class="reset-shown">
-                <label for="gaia-email" i18n-content="emailLabel">
-                </label>
-                <input id="gaia-email" type="text" name="email" value=""
-                    class="reset-enabled reset-shown reset-value"
-                    autocomplete="off">
-              </div>
-              <div id="email-readonly-row" class="reset-hidden">
-                <strong class="email-label" i18n-content="emailLabel"></strong>
-                <div id="email-readonly"></div>
-              </div>
-              <div id="errormsg-0-email" class="errormsg reset-hidden"
-                  i18n-content="cannotBeBlank" hidden>
-              </div>
-              <div id="password-row" class="reset-shown">
-                <label>
-                  <strong class="password-label" i18n-content="passwordLabel">
-                  </strong>
-                  <input id="gaia-passwd" type="password" name="passwd"
-                      class="reset-enabled reset-value" autocomplete="off">
-                </label>
-                <div id="errormsg-0-password" class="errormsg reset-hidden"
-                    i18n-content="cannotBeBlank" hidden>
-                </div>
-              </div>
-              <div id="access-code-input-row"
-                  class="access-code-row reset-hidden" hidden>
-                <label>
-                  <strong i18n-content="enterAccessCode"></strong>
-                  <a i18n-values="href:getAccessCodeURL"
-                      i18n-content="getAccessCodeHelp" target="_blank"
-                      class="account-link"></a>
-                  <input id="access-code" type="password" name="accessCode"
-                      class="reset-enabled reset-value">
-                </label>
-              </div>
-              <div id="otp-input-row" class="otp-row reset-hidden" hidden>
-                <label>
-                  <strong i18n-content="enterOtp"></strong>
-                  <a i18n-values="href:getOtpURL"
-                      i18n-content="getOtpHelp" target="_blank"
-                      class="account-link"></a>
-                  <input id="otp" type="text" name="otp"
-                      class="reset-enabled reset-value">
-                </label>
-              </div>
               <div id="errormsg-1-password" class="errormsg reset-hidden"
                   hidden>
                 <span i18n-content="invalidCredentials"></span>
@@ -373,6 +327,12 @@
     <h1 i18n-content="stopSyncingTitle"></h1>
     <div class="content-area">
       <span i18n-values=".innerHTML:stopSyncingExplanation"></span>
+      <div class="checkbox logout-facebook-checkbox-wrap">
+        <label>
+          <input id="logout-facebook" type="checkbox">
+          <span i18n-content="stopSyncingLogoutFacebook"></span>
+        </label>
+      </div>
     </div>
     <div class="action-area button-strip">
       <input id="stop-syncing-cancel" type="button"

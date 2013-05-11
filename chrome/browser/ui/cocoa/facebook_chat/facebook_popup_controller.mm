@@ -16,6 +16,10 @@
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
 #include "ui/base/cocoa/window_size_constants.h"
 
 using content::RenderViewHost;
@@ -54,6 +58,8 @@ CGFloat Clamp(CGFloat value, CGFloat min, CGFloat max) {
 
 // Called when the extension view is shown.
 - (void)onViewDidShow;
+
+- (void)parentWindowDidBecomeKey:(NSNotification*)notification;
 @end
 
 class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
@@ -75,6 +81,43 @@ class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
 
  private:
   FacebookPopupController* controller_; // Weak; owns this.
+};
+
+class FacebookExtensionObserverBridge : public content::NotificationObserver {
+ public:
+  FacebookExtensionObserverBridge(FacebookPopupController* owner)
+    : owner_(owner) {
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
+                   content::Source<Profile>([owner_ extensionHost]->profile()));
+  }
+
+  // Overridden from content::NotificationObserver.
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    switch (type) {
+      case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
+        extensions::ExtensionHost* host =
+            content::Details<extensions::ExtensionHost>(details).ptr();
+        if (host == [owner_ extensionHost]) {
+          FacebookPopupController* popup = [FacebookPopupController popup];
+          if (popup && ![popup isClosing])
+            [popup close];
+        }
+
+        break;
+      }
+    }
+  }
+
+ private:
+  // The object we need to inform when we get a notification. Weak. Owns us.
+  FacebookPopupController* owner_;
+
+  // Used for registering to receive notifications and automatic clean up.
+  content::NotificationRegistrar registrar_;
+
+  DISALLOW_COPY_AND_ASSIGN(FacebookExtensionObserverBridge);
 };
 
 @implementation FacebookPopupController
@@ -114,7 +157,14 @@ class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
                    name:NSViewFrameDidChangeNotification
                  object:extensionView_];
 
+    [center addObserver:self
+               selector:@selector(parentWindowDidBecomeKey:)
+                   name:NSWindowDidBecomeKeyNotification
+                 object:parentWindow];
+
     [view addSubview:extensionView_];
+
+    fbObserverBridge_.reset(new FacebookExtensionObserverBridge(self));
   }
   return self;
 }
@@ -132,7 +182,7 @@ class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
-  // [super windowDidResignKey:notification];
+//  [super windowDidResignKey:notification];
 }
 
 - (void)parentWindowDidBecomeKey:(NSNotification*)notification {
@@ -196,7 +246,7 @@ class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
 }
 
 - (void)extensionViewFrameChanged {
-// If there are no changes in the width or height of the frame, then ignore.
+  // If there are no changes in the width or height of the frame, then ignore.
   if (NSEqualSizes([extensionView_ frame].size, extensionFrame_.size))
     return;
 
@@ -215,6 +265,7 @@ class FacebookExtensionPopupContainer : public ExtensionViewMac::Container {
       info_bubble::kBubbleArrowHeight)];
 
   NSRect frame = [extensionView_ frame];
+  frame.origin.y -= info_bubble::kBubbleArrowHeight;
   frame.size.height += info_bubble::kBubbleArrowHeight +
                        info_bubble::kBubbleCornerRadius;
   frame.size.width += info_bubble::kBubbleCornerRadius;

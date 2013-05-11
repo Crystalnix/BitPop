@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/webui/options2/bitpop_uncensor_filter_handler.h"
+#include "chrome/browser/ui/webui/options/bitpop_uncensor_filter_handler.h"
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"

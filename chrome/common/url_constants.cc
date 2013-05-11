@@ -302,7 +302,7 @@ const char kExtensionResourceInvalidRequestURL[] =
     "chrome-extension-resource://invalid/";
 
 const char kSyncGoogleDashboardURL[] =
-    "https://www.google.com/settings/chrome/sync/";
+    "https://sync.bitpop.com/reset_sync_data/";
 
 const char kAutoPasswordGenerationLearnMoreURL[] =
     "https://support.google.com/chrome/?p=ui_generate_password";

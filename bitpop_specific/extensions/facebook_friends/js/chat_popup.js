@@ -220,7 +220,7 @@ bitpop.chat = (function() {
             chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
               {
                 "type": "fqlQuery",
-                "query": "SELECT author_id, body, created_time FROM message " +
+                "query": "SELECT author_id, body, attachment, created_time FROM message " +
                          "WHERE thread_id='" + thread.thread_id + "' " +
                          "ORDER BY created_time DESC LIMIT 0,25"
               },
@@ -238,7 +238,18 @@ bitpop.chat = (function() {
         var out = [];
         for (var i = data.length-1; i >= 0; --i) {
           var msg = data[i];
-          out.push({ "msg": bitpop.preprocessMessageText(msg.body),
+          var body = msg.body ? bitpop.preprocessMessageText(msg.body) : '';
+          if (msg.attachment &&
+              ((isArray(msg.attachment) && msg.attachment.length > 0) ||
+                (!isArray(msg.attachment) && isObject(msg.attachment)))) {
+            if (body.length)
+              body += '<br/>';
+            body += '--<br/>';
+            body += '<a href="https://www.facebook.com/messages/' + friendUid +
+                    '" title="Click to view the attachment" target="_blank">' +
+                    'View Attachments</a>';
+          }
+          out.push({ "msg": body,
                      "time": new Date(msg.created_time * 1000).getTime(),
                      "me": (msg.author_id == +myUid) });
         }
@@ -372,6 +383,15 @@ bitpop.chat = (function() {
     bitpop.saveToLocalStorage(myUid,
       friendUid, escMsg, new Date(), true);
     appendMessage(escMsg, new Date(), true);
+  }
+
+  // helpers
+  function isObject ( obj ) {
+    return obj && (typeof obj  === "object");
+  }
+
+  function isArray ( obj ) {
+    return isObject(obj) && (obj instanceof Array);
   }
 
   // Private data members ============================================
