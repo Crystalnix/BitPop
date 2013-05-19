@@ -37,7 +37,7 @@ public:
   const MessageContainer& GetMessages();
 
   // views::ButtonListener protocol
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event) OVERRIDE;
+  virtual void ButtonPressed(views::Button* sender, const ui::Event& event) OVERRIDE;
 
   // Overridden from ui::AnimationDelegate:
   //virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;

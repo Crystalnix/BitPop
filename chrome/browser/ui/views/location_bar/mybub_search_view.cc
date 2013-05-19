@@ -123,7 +123,7 @@ gfx::Size MybubSearchView::GetMinimumSize() {
 void MybubSearchView::Layout() {
 }
 
-void MybubSearchView::ButtonPressed(views::Button* button, const views::Event& event) {
+void MybubSearchView::ButtonPressed(views::Button* button, const ui::Event& event) {
   if (!omnibox_view_)
     return;
 
@@ -170,9 +170,9 @@ MybubButton* MybubSearchView::CreateMybubButton(int normal_image_id, int hot_ima
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   gfx::ImageSkia *normalImage = rb.GetImageSkiaNamed(normal_image_id);
-  button->SetImage(views::CustomButton::BS_NORMAL, normalImage);
-  button->SetImage(views::CustomButton::BS_HOT, rb.GetImageSkiaNamed(hot_image_id));
-  button->SetImage(views::CustomButton::BS_PUSHED, rb.GetImageSkiaNamed(pushed_image_id));
+  button->SetImage(views::CustomButton::STATE_NORMAL, normalImage);
+  button->SetImage(views::CustomButton::STATE_HOVERED, rb.GetImageSkiaNamed(hot_image_id));
+  button->SetImage(views::CustomButton::STATE_PRESSED, rb.GetImageSkiaNamed(pushed_image_id));
 
   button->SetSize(gfx::Size(normalImage->width(), normalImage->height()));
 

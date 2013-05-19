@@ -2893,6 +2893,28 @@ bool BrowserView::DoCutCopyPasteForWebContents(
   return false;
 }
 
+void BrowserView::ActivateAppModalDialog() const {
+  // If another browser is app modal, flash and activate the modal browser.
+  AppModalDialog* active_dialog =
+      AppModalDialogQueue::GetInstance()->active_dialog();
+  if (!active_dialog)
+    return;
+
+  Browser* modal_browser =
+      chrome::FindBrowserWithWebContents(active_dialog->web_contents());
+  if (modal_browser && (browser_ != modal_browser)) {
+    modal_browser->window()->FlashFrame(true);
+    modal_browser->window()->Activate();
+  }
+
+  AppModalDialogQueue::GetInstance()->ActivateModalDialog();
+}
+
+void BrowserView::MaybeStackBookmarkBarAtTop() {
+  if (bookmark_bar_view_.get())
+    bookmark_bar_view_->MaybeStackAtTop();
+}
+
 void BrowserView::SetFriendsSidebarVisible(bool visible) {
   if (browser_ == NULL || browser_->profile()->IsOffTheRecord())
     return;

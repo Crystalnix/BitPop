@@ -8,6 +8,7 @@
 #include "base/message_loop.h"
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -91,12 +92,12 @@ ExtensionChatPopup::ExtensionChatPopup(
 
   // Listen for the dev tools opening on this popup, so we can stop it going
   // away when the dev tools get focus.
-  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING,
+  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED,
                  content::Source<Profile>(host->profile()));
 
   // Listen for the dev tools closing, so we can close this window if it is
   // being inspected and the inspector is closed.
-  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
+  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED,
       content::Source<content::BrowserContext>(host->profile()));
 }
 
@@ -118,7 +119,7 @@ void ExtensionChatPopup::Observe(int type,
       if (content::Details<extensions::ExtensionHost>(host()) == details)
         GetWidget()->Close();
       break;
-    case content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING:
+    case content::NOTIFICATION_DEVTOOLS_AGENT_DETACHED:
       // Make sure it's the devtools window that inspecting our popup.
       // Widget::Close posts a task, which should give the devtools window a
       // chance to finish detaching from the inspected RenderViewHost.
@@ -127,7 +128,7 @@ void ExtensionChatPopup::Observe(int type,
         GetWidget()->Close();
       }
       break;
-    case content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING:
+    case content::NOTIFICATION_DEVTOOLS_AGENT_ATTACHED:
       // First check that the devtools are being opened on this popup.
       if (content::Details<RenderViewHost>(host()->render_view_host()) ==
           details) {
@@ -141,7 +142,7 @@ void ExtensionChatPopup::Observe(int type,
   }
 }
 
-void ExtensionChatPopup::OnExtensionSizeChanged(ExtensionView* view) {
+void ExtensionChatPopup::OnExtensionSizeChanged(ExtensionViewViews* view) {
   SizeToContents();
 }
 
@@ -178,7 +179,7 @@ ExtensionChatPopup* ExtensionChatPopup::ShowPopup(
     views::View* anchor_view,
     views::BitpopBubbleBorder::ArrowLocation arrow_location) {
   ExtensionProcessManager* manager =
-      browser->profile()->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(browser->profile())->process_manager();
   extensions::ExtensionHost* host = manager->CreatePopupHost(url, browser);
   ExtensionChatPopup* popup = new ExtensionChatPopup(browser, host, anchor_view,
       arrow_location);
@@ -213,6 +214,7 @@ void ExtensionChatPopup::ShowBubble() {
 
   if (inspect_with_devtools_) {
     DevToolsWindow::ToggleDevToolsWindow(host()->render_view_host(),
+        true,
         DEVTOOLS_TOGGLE_ACTION_SHOW_CONSOLE);
   }
 }

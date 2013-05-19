@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -82,7 +83,7 @@ void ChatPopup::Observe(int type,
   }
 }
 
-void ChatPopup::OnExtensionSizeChanged(ExtensionView* view) {
+void ChatPopup::OnExtensionSizeChanged(ExtensionViewViews* view) {
   SizeToContents();
 }
 
@@ -124,7 +125,7 @@ ChatPopup* ChatPopup::ShowPopup(
     views::View* anchor_view,
     BitpopBubbleBorder::ArrowLocation arrow_location) {
   ExtensionProcessManager* manager =
-      browser->profile()->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(browser->profile())->process_manager();
   ExtensionHost* host = manager->CreatePopupHost(url, browser);
   ChatPopup* popup = new ChatPopup(browser, host, anchor_view,
       arrow_location);

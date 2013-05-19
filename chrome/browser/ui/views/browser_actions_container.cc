@@ -163,7 +163,8 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
   if (!model_)
     return;
 
-  if (model_->size() != 0 && (*model_->toolbar_items().begin())->id() != chrome::kFacebookChatExtensionId) {
+  if (model_->toolbar_items().size() != 0 && 
+      (*model_->toolbar_items().begin())->id() != chrome::kFacebookChatExtensionId) {
       MessageLoopForUI::current()->PostTask(
         FROM_HERE,
         base::Bind(&BrowserActionsContainer::MoveBrowserAction,

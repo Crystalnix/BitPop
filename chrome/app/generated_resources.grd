@@ -15761,6 +15761,18 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_FBB_BUBBLE_SUBTEXT" desc="Text below the title for the 'f' button bubble">
       Click the button and login to Facebook to stay online with your friends. You will be able to use 'Messages' and 'Notifications' popups right near this button after a successful login.
     </message>
+    <message name="IDS_TOOLTIP_MYBUB_WIKIPEDIA" desc="">
+      Wikipedia Search
+    </message>
+    <message name="IDS_TOOLTIP_MYBUB_YOUTUBE" desc="">
+      YouTube Search
+    </message>
+    <message name="IDS_TOOLTIP_MYBUB_REVIEWS" desc="">
+      Reviews Search
+    </message>
+    <message name="IDS_TOOLTIP_MYBUB_NEWS" desc="">
+      News Search
+    </message>
     </messages>
 
     <structures fallback_to_english="true">

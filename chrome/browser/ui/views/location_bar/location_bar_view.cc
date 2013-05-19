@@ -313,7 +313,7 @@ void LocationBarView::Init() {
                  chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
                  content::Source<Profile>(profile_));
 
-  Browser* browser = browser::FindBrowserWithProfile(profile_);
+  Browser* browser = chrome::FindBrowserWithProfile(profile_, chrome::HOST_DESKTOP_TYPE_FIRST);
   if (browser) {
     mybub_search_view_ = new MybubSearchView(location_entry_.get(), browser);
     AddChildView(mybub_search_view_);

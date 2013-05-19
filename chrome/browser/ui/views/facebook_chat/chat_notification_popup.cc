@@ -43,7 +43,7 @@ public:
       owner_(owner) {
     SetMultiLine(true);
     SetAllowCharacterBreak(true);
-    SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+    SetHorizontalAlignment(gfx::ALIGN_LEFT);
     //SkColor labelBgr = SkColorSetA(kNotificationPopupBackgroundColor, 0);
     SetAutoColorReadabilityEnabled(false);
     SetBackgroundColor(kNotificationPopupBackgroundColor);
@@ -94,11 +94,11 @@ public:
     // Add the Close Button.
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-    close_button_->SetImage(views::CustomButton::BS_NORMAL,
+    close_button_->SetImage(views::CustomButton::STATE_NORMAL,
                             rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
-    close_button_->SetImage(views::CustomButton::BS_HOT,
+    close_button_->SetImage(views::CustomButton::STATE_HOVERED,
                             rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
-    close_button_->SetImage(views::CustomButton::BS_PUSHED,
+    close_button_->SetImage(views::CustomButton::STATE_PRESSED,
                             rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
 
     // Disable animation so that the red danger sign shows up immediately
@@ -197,7 +197,7 @@ const ChatNotificationPopup::MessageContainer& ChatNotificationPopup::GetMessage
   return this->messages_;
 }
 
-void ChatNotificationPopup::ButtonPressed(views::Button* sender, const views::Event& event) {
+void ChatNotificationPopup::ButtonPressed(views::Button* sender, const ui::Event& event) {
   //DCHECK(sender == close_button_);
   GetWidget()->Close();
 }

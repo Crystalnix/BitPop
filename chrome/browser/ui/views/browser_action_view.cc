@@ -135,7 +135,7 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
   if (extension->id() == chrome::kFacebookChatExtensionId) {
     is_custom_extension_ = true;
 
-    PrefService *prefService = panel->profile()->GetPrefs();
+    PrefService *prefService = browser_->profile()->GetPrefs();
     set_should_draw_as_pushed(prefService->GetBoolean(prefs::kFacebookShowFriendsList));
   }
 
@@ -357,7 +357,7 @@ void BrowserActionButton::OnMouseReleased(const ui::MouseEvent& event) {
   }
 
   if (should_draw_as_pushed_)
-    SetState(views::CustomButton::BS_PUSHED);
+    SetState(views::CustomButton::STATE_PRESSED);
 }
 
 void BrowserActionButton::OnMouseExited(const ui::MouseEvent& event) {
@@ -459,15 +459,14 @@ void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
           extensions::CommandService::ACTIVE_ONLY,
           &browser_action_command,
           NULL)) {
-    panel_->GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
+    GetFocusManager()->UnregisterAccelerator(*keybinding_.get(), this);
   }
 }
 
 void BrowserActionButton::set_should_draw_as_pushed(bool flag) {
   should_draw_as_pushed_ = flag;
   if (flag)
-    SetState(views::CustomButton::BS_PUSHED);
+    SetState(views::CustomButton::STATE_PRESSED);
   else
-    SetState(views::CustomButton::BS_NORMAL);
-}
+    SetState(views::CustomButton::STATE_NORMAL);
 }

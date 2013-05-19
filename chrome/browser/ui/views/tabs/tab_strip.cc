@@ -474,7 +474,7 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   if (base::FieldTrialList::FindFullName(kNewTabButtonFieldTrialName) ==
           kNewTabButtonFieldTrialPlusGroupName) {
   */
-    overlay_id = state == views::CustomButton::BS_PUSHED ?
+    overlay_id = state == views::CustomButton::STATE_PRESSED ?
         IDR_NEWTAB_BUTTON_P_PLUS : IDR_NEWTAB_BUTTON_PLUS;
   /*
   } else {

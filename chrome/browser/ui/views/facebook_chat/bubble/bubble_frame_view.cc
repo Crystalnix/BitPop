@@ -49,8 +49,7 @@ BitpopBubbleFrameView::BitpopBubbleFrameView(const gfx::Insets& margins,
 BitpopBubbleFrameView::~BitpopBubbleFrameView() {}
 
 gfx::Rect BitpopBubbleFrameView::GetBoundsForClientView() const {
-  gfx::Insets margin;
-  bubble_border()->GetInsets(&margin);
+  gfx::Insets margin = bubble_border()->GetInsets();
   margin += content_margins();
   return gfx::Rect(margin.left(), margin.top(),
                    std::max(width() - margin.width(), 0),
@@ -97,7 +96,9 @@ void BitpopBubbleFrameView::SetBubbleBorder(BitpopBubbleBorder* border) {
 }
 
 gfx::Rect BitpopBubbleFrameView::GetMonitorBounds(const gfx::Rect& rect) {
-  return gfx::Screen::GetDisplayNearestPoint(rect.CenterPoint()).work_area();
+  gfx::Screen* screen =
+      gfx::Screen::GetScreenFor(this->GetWidget()->GetNativeView());
+  return screen->GetDisplayNearestPoint(rect.CenterPoint()).work_area();
 }
 
 void BitpopBubbleFrameView::MirrorArrowIfOffScreen(

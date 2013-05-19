@@ -124,7 +124,7 @@ class BitpopBubbleBorder : public Border {
   int SetArrowOffset(int offset, const gfx::Size& contents_size);
 
   // Overridden from Border:
-  virtual void GetInsets(gfx::Insets* insets) const OVERRIDE;
+  virtual gfx::Insets GetInsets() const OVERRIDE;
 
   // How many pixels the bubble border is from the edge of the images.
   virtual int GetBorderThickness() const;
@@ -146,7 +146,7 @@ class BitpopBubbleBorder : public Border {
 
   // Overridden from Border:
   virtual void Paint(const View& view,
-                     gfx::Canvas* canvas) const OVERRIDE;
+                     gfx::Canvas* canvas) OVERRIDE;
 
   void DrawEdgeWithArrow(gfx::Canvas* canvas,
                          bool is_horizontal,

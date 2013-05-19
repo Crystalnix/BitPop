@@ -46,13 +46,13 @@ public:
   virtual ~ChatItemView();
 
   // views::ButtonListener protocol
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event) OVERRIDE;
+  virtual void ButtonPressed(views::Button* sender, const ui::Event& event) OVERRIDE;
 
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
   // FacebookChatItem::Observer protocol
   virtual void OnChatUpdated(FacebookChatItem *source) OVERRIDE;

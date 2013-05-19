@@ -84,8 +84,7 @@ gfx::Rect BitpopBubbleBorder::GetBounds(const gfx::Rect& position_relative_to,
                                   const gfx::Size& contents_size) const {
   // Desired size is size of contents enlarged by the size of the border images.
   gfx::Size border_size(contents_size);
-  gfx::Insets insets;
-  GetInsets(&insets);
+  gfx::Insets insets = GetInsets();
   border_size.Enlarge(insets.width(), insets.height());
 
   // Ensure the bubble has a minimum size that draws arrows correctly.
@@ -175,8 +174,10 @@ gfx::Rect BitpopBubbleBorder::GetBounds(const gfx::Rect& position_relative_to,
   return gfx::Rect(x, y, border_size.width(), border_size.height());
 }
 
-void BitpopBubbleBorder::GetInsets(gfx::Insets* insets) const {
-  return GetInsetsForArrowLocation(insets, arrow_location());
+gfx::Insets BitpopBubbleBorder::GetInsets() const {
+  gfx::Insets insets;
+  GetInsetsForArrowLocation(&insets, arrow_location());
+  return insets;
 }
 
 void BitpopBubbleBorder::GetInsetsForArrowLocation(gfx::Insets* insets,
@@ -221,8 +222,7 @@ int BitpopBubbleBorder::GetBorderThickness() const {
 
 int BitpopBubbleBorder::SetArrowOffset(int offset, const gfx::Size& contents_size) {
   gfx::Size border_size(contents_size);
-  gfx::Insets insets;
-  GetInsets(&insets);
+  gfx::Insets insets = GetInsets();
   border_size.Enlarge(insets.left() + insets.right(),
                       insets.top() + insets.bottom());
   offset = std::max(arrow_offset_,
@@ -272,7 +272,7 @@ BitpopBubbleBorder::BorderImages* BitpopBubbleBorder::GetBorderImages(Shadow sha
 
 BitpopBubbleBorder::~BitpopBubbleBorder() {}
 
-void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) const {
+void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   // Convenience shorthand variables.
   const int tl_width = images_->top_left->width();
   const int tl_height = images_->top_left->height();
@@ -287,8 +287,7 @@ void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) con
   const int bl_width = images_->bottom_left->width();
   const int bl_height = images_->bottom_left->height();
 
-  gfx::Insets insets;
-  GetInsets(&insets);
+  gfx::Insets insets = GetInsets();
   const int top = insets.top() - t_height;
   const int bottom = view.height() - insets.bottom() + b_height;
   const int left = insets.left() - l_width;

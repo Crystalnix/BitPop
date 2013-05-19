@@ -55,7 +55,7 @@ public:
   // Implementation of ButtonListener.
   // Invoked when the user clicks the close button. Asks the browser to
   // hide the chatbar.
-  virtual void ButtonPressed(views::Button* button, const views::Event& event);
+  virtual void ButtonPressed(views::Button* button, const ui::Event& event);
 
   bool IsShowing() const;
   bool IsClosing() const;

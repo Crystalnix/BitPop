@@ -1081,7 +1081,7 @@ void SyncSetupHandler::HandleDoSignOutOnAuthError(const ListValue* args) {
 
 void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
   DCHECK_EQ(args->GetSize(), 1ul);
-  bool logout_from_fb_com;
+  bool logout_from_fb_com = false;
   DCHECK(args->GetBoolean(0, &logout_from_fb_com));
 
   ProfileSyncService* service = GetSyncService();

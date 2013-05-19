@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/ui/views/extensions/extension_view.h"
+#include "chrome/browser/ui/views/extensions/extension_view_views.h"
 #include "chrome/browser/ui/views/facebook_chat/bubble/bubble_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "googleurl/src/gurl.h"
@@ -16,7 +16,7 @@
 class Browser;
 
 class ExtensionChatPopup : public views::BitpopBubbleDelegateView,
-                       public ExtensionView::Container,
+                       public ExtensionViewViews::Container,
                        public content::NotificationObserver,
                        public views::WidgetFocusChangeListener {
  public:
@@ -46,7 +46,7 @@ class ExtensionChatPopup : public views::BitpopBubbleDelegateView,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ExtensionView::Container overrides.
-  virtual void OnExtensionSizeChanged(ExtensionView* view) OVERRIDE;
+  virtual void OnExtensionSizeChanged(ExtensionViewViews* view) OVERRIDE;
 
   // views::View overrides.
   virtual gfx::Size GetPreferredSize() OVERRIDE;

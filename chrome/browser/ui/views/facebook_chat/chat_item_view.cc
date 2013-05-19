@@ -117,11 +117,11 @@ public:
       owner_(owner) {
   }
 
-  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE {
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE {
     owner_->OnMouseEntered(event);
   }
 
-  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE {
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE {
     owner_->OnMouseExited(event);
   }
 protected:
@@ -165,11 +165,11 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
 
   // Add the Close Button.
   close_button_ = new views::ImageButton(this);
-  close_button_->SetImage(views::CustomButton::BS_NORMAL,
+  close_button_->SetImage(views::CustomButton::STATE_NORMAL,
                           rb.GetImageSkiaNamed(IDR_TAB_CLOSE));
-  close_button_->SetImage(views::CustomButton::BS_HOT,
+  close_button_->SetImage(views::CustomButton::STATE_HOVERED,
                           rb.GetImageSkiaNamed(IDR_TAB_CLOSE_H));
-  close_button_->SetImage(views::CustomButton::BS_PUSHED,
+  close_button_->SetImage(views::CustomButton::STATE_PRESSED,
                           rb.GetImageSkiaNamed(IDR_TAB_CLOSE_P));
   //close_button_->SetTooltipText(
   //    UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_CLOSE_TAB)));
@@ -210,7 +210,7 @@ ChatItemView::~ChatItemView() {
   }
 }
 
-void ChatItemView::ButtonPressed(views::Button* sender, const views::Event& event) {
+void ChatItemView::ButtonPressed(views::Button* sender, const ui::Event& event) {
   if (sender == close_button_) {
     Close(true);
   } else if (sender == openChatButton_) {
@@ -269,16 +269,16 @@ void ChatItemView::StatusChanged() {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   if (model_->num_notifications() == 0) {
     if (model_->status() == FacebookChatItem::AVAILABLE)
-      openChatButton_->SetIcon(*rb.GetBitmapNamed(IDR_FACEBOOK_ONLINE_ICON_14));
+      openChatButton_->SetIcon(*rb.GetImageSkiaNamed(IDR_FACEBOOK_ONLINE_ICON_14));
     else if (model_->status() == FacebookChatItem::IDLE)
-      openChatButton_->SetIcon(*rb.GetBitmapNamed(IDR_FACEBOOK_IDLE_ICON_14));
+      openChatButton_->SetIcon(*rb.GetImageSkiaNamed(IDR_FACEBOOK_IDLE_ICON_14));
     else
-      openChatButton_->SetIcon(SkBitmap::SkBitmap());
+      openChatButton_->SetIcon(gfx::ImageSkia::ImageSkia());
   } else if (model_->status() != FacebookChatItem::COMPOSING)
     UpdateNotificationIcon();
 
   if (model_->status() == FacebookChatItem::COMPOSING)
-    openChatButton_->SetIcon(*rb.GetBitmapNamed(IDR_FACEBOOK_COMPOSING_ICON_14));
+    openChatButton_->SetIcon(*rb.GetImageSkiaNamed(IDR_FACEBOOK_COMPOSING_ICON_14));
 }
 
 void ChatItemView::Close(bool should_animate) {
@@ -403,7 +403,7 @@ gfx::Rect ChatItemView::RectForNotificationPopup() {
   return rect;
 }
 
-void ChatItemView::OnMouseEntered(const views::MouseEvent& event) {
+void ChatItemView::OnMouseEntered(const ui::MouseEvent& event) {
   if (!notification_popup_ && model_->num_notifications() > 0) {
 
     notification_popup_ = ChatNotificationPopup::Show(this, BitpopBubbleBorder::BOTTOM_CENTER);
@@ -413,7 +413,7 @@ void ChatItemView::OnMouseEntered(const views::MouseEvent& event) {
   }
 }
 
-void ChatItemView::OnMouseExited(const views::MouseEvent& event) {
+void ChatItemView::OnMouseExited(const ui::MouseEvent& event) {
   if (isMouseOverNotification_ && notification_popup_) {
     //notification_popup_->set_fade_away_on_close(false);
     notification_popup_->GetWidget()->Close();
@@ -503,12 +503,12 @@ void ChatItemView::UpdateNotificationIcon() {
 
     // Overlay the gradient. It is stretchy, so we do this in three parts.
     ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
-    SkBitmap* gradient_left = resource_bundle.GetBitmapNamed(
-        IDR_BROWSER_ACTION_BADGE_LEFT);
-    SkBitmap* gradient_right = resource_bundle.GetBitmapNamed(
-        IDR_BROWSER_ACTION_BADGE_RIGHT);
-    SkBitmap* gradient_center = resource_bundle.GetBitmapNamed(
-        IDR_BROWSER_ACTION_BADGE_CENTER);
+    const SkBitmap* gradient_left = resource_bundle.GetImageNamed(
+        IDR_BROWSER_ACTION_BADGE_LEFT).ToSkBitmap();
+    const SkBitmap* gradient_right = resource_bundle.GetImageNamed(
+        IDR_BROWSER_ACTION_BADGE_RIGHT).ToSkBitmap();
+    const SkBitmap* gradient_center = resource_bundle.GetImageNamed(
+        IDR_BROWSER_ACTION_BADGE_CENTER).ToSkBitmap();
 
     canvas.drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
 
@@ -532,6 +532,6 @@ void ChatItemView::UpdateNotificationIcon() {
                                      rect.fTop + kTextSize + kTopTextPadding,
                                      *text_paint);
 
-    openChatButton_->SetIcon(*notification_icon_);
+    openChatButton_->SetIcon(gfx::ImageSkia(*notification_icon_));
   }
 }

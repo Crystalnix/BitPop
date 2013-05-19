@@ -117,7 +117,7 @@ void FacebookBitpopNotificationWin::ClearNotification() {
 void FacebookBitpopNotificationWin::NotifyUnreadMessagesWithLastUser(int num_unread,
                                                 const std::string& user_id) {
 
-  Browser* browser = browser::FindTabbedBrowser(profile_, false);
+  Browser* browser = browser::FindTabbedBrowser(profile_, false, chrome::HOST_DESKTOP_TYPE_FIRST);
   if (browser == NULL)
     return;
 
@@ -212,12 +212,12 @@ void FacebookBitpopNotificationWin::NotifyUnreadMessagesWithLastUser(int num_unr
 
   // Overlay the gradient. It is stretchy, so we do this in three parts.
   ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
-  SkBitmap* gradient_left = resource_bundle.GetBitmapNamed(
-      IDR_BROWSER_ACTION_BADGE_LEFT);
-  SkBitmap* gradient_right = resource_bundle.GetBitmapNamed(
-      IDR_BROWSER_ACTION_BADGE_RIGHT);
-  SkBitmap* gradient_center = resource_bundle.GetBitmapNamed(
-      IDR_BROWSER_ACTION_BADGE_CENTER);
+  const SkBitmap* gradient_left = resource_bundle.GetImageNamed(
+      IDR_BROWSER_ACTION_BADGE_LEFT).ToSkBitmap();
+  const SkBitmap* gradient_right = resource_bundle.GetImageNamed(
+      IDR_BROWSER_ACTION_BADGE_RIGHT).ToSkBitmap();
+  const SkBitmap* gradient_center = resource_bundle.GetImageNamed(
+      IDR_BROWSER_ACTION_BADGE_CENTER).ToSkBitmap();
 
   canvas.drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
 

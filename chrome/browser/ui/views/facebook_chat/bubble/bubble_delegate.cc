@@ -28,8 +28,8 @@ Widget* CreateBubbleWidget(BitpopBubbleDelegateView* bubble) {
   bubble_params.transparent = true;
   if (bubble->parent_window())
     bubble_params.parent = bubble->parent_window();
-  else
-    bubble_params.parent_widget = bubble->anchor_widget();
+  else if (bubble->anchor_widget())
+    bubble_params.parent = bubble->anchor_widget()->GetNativeView();
   if (bubble->use_focusless())
     bubble_params.can_activate = false;
 #if defined(OS_WIN) && !defined(USE_AURA)
@@ -87,7 +87,7 @@ Widget* CreateBorderWidget(BitpopBubbleDelegateView* bubble) {
   Widget::InitParams border_params(Widget::InitParams::TYPE_BUBBLE);
   border_params.delegate = new BitpopBubbleBorderDelegate(bubble, border_widget);
   border_params.transparent = true;
-  border_params.parent_widget = bubble->anchor_widget();
+  //border_params.parent_widget = bubble->anchor_widget();
   border_params.can_activate = false;
   border_widget->Init(border_params);
   return border_widget;
@@ -227,7 +227,8 @@ void BitpopBubbleDelegateView::OnWidgetActivationChanged(Widget* widget,
     GetWidget()->Close();
 }
 
-void BitpopBubbleDelegateView::OnWidgetMoved(Widget* widget) {
+void BitpopBubbleDelegateView::OnWidgetBoundsChanged(Widget* widget,
+                                                     const gfx::Rect& new_bounds) {
   if (move_with_anchor() && anchor_widget() == widget)
     SizeToContents();
 }
@@ -345,7 +346,8 @@ gfx::Rect BitpopBubbleDelegateView::GetBubbleBounds() {
 #if defined(OS_WIN) && !defined(USE_AURA)
 gfx::Rect BitpopBubbleDelegateView::GetBubbleClientBounds() const {
   gfx::Rect client_bounds(GetBubbleFrameView()->GetBoundsForClientView());
-  client_bounds.Offset(border_widget_->GetWindowBoundsInScreen().origin());
+  gfx::Point pt = border_widget_->GetWindowBoundsInScreen().origin();
+  client_bounds.Offset(gfx::Vector2d(int(pt.x()), int(pt.y())));
   return client_bounds;
 }
 #endif

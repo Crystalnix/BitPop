@@ -33,7 +33,7 @@ class MybubSearchView : public views::View,
   virtual void Layout() OVERRIDE;
 
   // views::ButtonListener overrides
-  virtual void ButtonPressed(views::Button* button, const views::Event& event) OVERRIDE;
+  virtual void ButtonPressed(views::Button* button, const ui::Event& event) OVERRIDE;
 
  private:
   MybubButton* CreateMybubButton(int normal_image_id, int hot_image_id,

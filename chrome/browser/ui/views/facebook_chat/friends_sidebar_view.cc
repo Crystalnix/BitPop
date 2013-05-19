@@ -6,6 +6,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/view_ids.h"
@@ -46,7 +47,7 @@ gfx::Size FriendsSidebarView::GetPreferredSize() {
   return prefsize;
 }
 
-void FriendsSidebarView::OnExtensionSizeChanged(ExtensionView* view) {
+void FriendsSidebarView::OnExtensionSizeChanged(ExtensionViewViews* view) {
   // IGNORE
 }
 
@@ -54,7 +55,7 @@ void FriendsSidebarView::InitializeExtensionHost() {
   std::string url = std::string("chrome-extension://") + std::string(chrome::kFacebookChatExtensionId) +
         std::string("/friends_sidebar.html");
   ExtensionProcessManager* manager =
-      browser_->profile()->GetExtensionProcessManager();
+      extensions::ExtensionSystem::Get(browser_->profile())->process_manager();
   extension_host_.reset(manager->CreateViewHost(GURL(url), browser_, chrome::VIEW_TYPE_PANEL));
 
   registrar_.RemoveAll();

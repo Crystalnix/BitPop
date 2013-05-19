@@ -35,7 +35,12 @@ const wchar_t kBinariesAppGuid[] = L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}";
 // Copied from google_chrome_distribution.cc.
 const wchar_t kBrowserAppGuid[] = L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 
+// Copied from util_constants.cc.
+const wchar_t kChromeAppHostExe[] = L"app_host.exe";
+const char kChromeAppLauncher[] = "app-launcher";
 const wchar_t kChromeExe[] = L"bitpop.exe";
+const wchar_t kUninstallArgumentsField[] = L"UninstallArguments";
+const wchar_t kUninstallStringField[] = L"UninstallString";
 
 #ifndef OFFICIAL_BUILD
 FilePath GetDevelopmentExe(const wchar_t* exe_file) {
