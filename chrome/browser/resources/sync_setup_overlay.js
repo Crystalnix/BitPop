@@ -89,7 +89,7 @@ cr.define('options', function() {
         self.closeOverlay_();
       };
       $('stop-syncing-ok').onclick = function() {
-        chrome.send('SyncSetupStopSyncing', [$('facebook-logout').checked]);
+        chrome.send('SyncSetupStopSyncing', [$('logout-facebook').checked]);
         self.closeOverlay_();
       };
       $('different-email').innerHTML = loadTimeData.getString('differentEmail');

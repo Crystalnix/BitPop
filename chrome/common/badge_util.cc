@@ -189,14 +189,7 @@ void PaintBadge(gfx::Canvas* canvas,
   if (text.empty())
    return;
 
-  // SkColor text_color = text_color_in;
-  // if (SkColorGetA(text_color_in) == 0x00)
-  //   text_color = SK_ColorWHITE;
   SkColor text_color = SK_ColorWHITE;
-
-  // SkColor background_color = background_color_in;
-  // if (SkColorGetA(background_color_in) == 0x00)
-  //   background_color = SkColorSetARGB(255, 218, 0, 24);
 
   SkColor background_color_bottom = SkColorSetARGB(0xff, 0x9d, 0x00, 0x00);
   SkColor background_color_top    = SkColorSetARGB(0xff, 0xfb, 0x00, 0x00);
@@ -272,24 +265,6 @@ void PaintBadge(gfx::Canvas* canvas,
   rect_paint.setStrokeWidth(2);
   rect_paint.setColor(SK_ColorWHITE);
   canvas->DrawRoundRect(rect, 8, rect_paint);
-
-  // // Overlay the gradient. It is stretchy, so we do this in three parts.
-  // ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  // gfx::ImageSkia* gradient_left = rb.GetImageSkiaNamed(
-  //     IDR_BROWSER_ACTION_BADGE_LEFT);
-  // gfx::ImageSkia* gradient_right = rb.GetImageSkiaNamed(
-  //     IDR_BROWSER_ACTION_BADGE_RIGHT);
-  // gfx::ImageSkia* gradient_center = rb.GetImageSkiaNamed(
-  //     IDR_BROWSER_ACTION_BADGE_CENTER);
-
-  // canvas->DrawImageInt(*gradient_left, rect.x(), rect.y());
-  // canvas->TileImageInt(*gradient_center,
-  //     rect.x() + gradient_left->width(),
-  //     rect.y(),
-  //     rect.width() - gradient_left->width() - gradient_right->width(),
-  //     rect.height());
-  // canvas->DrawImageInt(*gradient_right,
-  //     rect.right() - gradient_right->width(), rect.y());
 
   // Finally, draw the text centered within the badge. We set a clip in case the
   // text was too large.

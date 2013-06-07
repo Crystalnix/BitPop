@@ -10,7 +10,7 @@
 #include <deque>
 #include <string>
 
-#include "chrome/browser/ui/views/facebook_chat/bubble/bubble_delegate.h"
+#include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/focus/widget_focus_manager.h"
@@ -19,15 +19,14 @@ namespace views {
   class ImageButton;
 }
 
-using views::BitpopBubbleDelegateView;
-using views::BitpopBubbleBorder;
+using views::BubbleDelegateView;
+using views::BubbleBorder;
 
-class ChatNotificationPopup : public BitpopBubbleDelegateView,
-                              public views::ButtonListener /*,
-                              public views::WidgetFocusChangeListener */ {
+class ChatNotificationPopup : public BubbleDelegateView,
+                              public views::ButtonListener {
 public:
   static ChatNotificationPopup* Show(views::View* anchor_view,
-      BitpopBubbleBorder::ArrowLocation arrow_location);
+      BubbleBorder::ArrowLocation arrow_location);
 
   void PushMessage(const std::string& message);
   std::string PopMessage();
@@ -39,17 +38,14 @@ public:
   // views::ButtonListener protocol
   virtual void ButtonPressed(views::Button* sender, const ui::Event& event) OVERRIDE;
 
-  // Overridden from ui::AnimationDelegate:
-  //virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  //virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
-
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   views::View* container_view() { return container_view_; }
 
 private:
 
-  ChatNotificationPopup();
+  ChatNotificationPopup(views::View* anchor_view,
+                        BubbleBorder::ArrowLocation arrow_location);
 
   MessageContainer messages_;
   views::View* container_view_;

@@ -34,11 +34,11 @@ ChatPopup::ChatPopup(
     Browser* browser,
     ExtensionHost* host,
     views::View* anchor_view,
-    BitpopBubbleBorder::ArrowLocation arrow_location)
-    : BitpopBubbleDelegateView(anchor_view, arrow_location),
+    BubbleBorder::ArrowLocation arrow_location)
+    : BubbleDelegateView(anchor_view, arrow_location),
       extension_host_(host) {
   // Adjust the margin so that contents fit better.
-  int margin = BitpopBubbleBorder::GetCornerRadius() / 2;
+  int margin = BubbleBorder::GetCornerRadius() / 2;
   set_margins(gfx::Insets(margin, margin, margin, margin));
   SetLayoutManager(new views::FillLayout());
   AddChildView(host->view());
@@ -123,13 +123,13 @@ ChatPopup* ChatPopup::ShowPopup(
     const GURL& url,
     Browser* browser,
     views::View* anchor_view,
-    BitpopBubbleBorder::ArrowLocation arrow_location) {
+    BubbleBorder::ArrowLocation arrow_location) {
   ExtensionProcessManager* manager =
       extensions::ExtensionSystem::Get(browser->profile())->process_manager();
   ExtensionHost* host = manager->CreatePopupHost(url, browser);
   ChatPopup* popup = new ChatPopup(browser, host, anchor_view,
       arrow_location);
-  BitpopBubbleDelegateView::CreateBubble(popup);
+  BubbleDelegateView::CreateBubble(popup);
 
   // If the host had somehow finished loading, then we'd miss the notification
   // and not show.  This seems to happen in single-process mode.

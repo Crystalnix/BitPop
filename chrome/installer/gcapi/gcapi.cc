@@ -54,10 +54,10 @@ const wchar_t kChromeRegClientsKey[] =
     L"Software\\HouseOfLife\\BitpopUpdate\\Clients\\"
     L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegClientStateKey[] =
-    L"Software\\Google\\Update\\ClientState\\"
+    L"Software\\HouseOfLife\\BitpopUpdate\\ClientState\\"
     L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegClientStateMediumKey[] =
-    L"Software\\Google\\Update\\ClientStateMedium\\"
+    L"Software\\HouseOfLife\\BitpopUpdate\\ClientStateMedium\\"
     L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 
 const wchar_t kGCAPITempKey[] = L"Software\\HouseOfLife\\GCAPITemp";

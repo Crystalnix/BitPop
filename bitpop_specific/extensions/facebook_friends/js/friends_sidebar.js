@@ -545,8 +545,8 @@ bitpop.FriendsSidebar = (function() {
     $('#scrollable-area').append('<div id="friend_list" class="overview"></div>');
     $('#friend_list').append(newDom);
 
-    if ($('.box-wrap').data('antiscroll'))
-      $('.box-wrap').data('antiscroll').rebuild();
+    if ($('.antiscroll-wrap').data('antiscroll'))
+      $('.antiscroll-wrap').data('antiscroll').rebuild();
   };
 
   self.updateFriendList = function(response, dontAnimate) {

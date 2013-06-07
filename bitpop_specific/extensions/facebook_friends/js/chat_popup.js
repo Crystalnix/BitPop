@@ -66,11 +66,20 @@ bitpop.chat = (function() {
       chrome.extension.onMessageExternal.addListener(function (request, sender, sendResponse) {
         if (request.type == 'newMessage') {
           if (friendUid == request.from) {
-            appendMessage(bitpop.preprocessMessageText(request.body), new Date(), false);
+            var timestamp = new Date();
+            appendMessage(bitpop.preprocessMessageText(request.body), timestamp, false);
+            var MESSAGES_EXTENSION_ID = 'dhcejgafhmkdfanoalflifpjimaaijda';
+            chrome.extension.sendMessage(MESSAGES_EXTENSION_ID,
+                                         {
+                                           "type": "inPopupMessageReceived",
+                                           "friend_uid": request.from,
+                                           "timestamp": timestamp
+                                         });
             if ($('.box-wrap').data('antiscroll')) {
               $('.box-wrap').data('antiscroll').rebuild();
             }
           }
+          return false;
         }
       });
 
@@ -246,8 +255,8 @@ bitpop.chat = (function() {
               body += '<br/>';
             body += '--<br/>';
             body += '<a href="https://www.facebook.com/messages/' + friendUid +
-                    '" title="Click to view the attachment" target="_blank">' +
-                    'View Attachments</a>';
+                    '" title="Click to view the attachment" target="_blank" ' +
+                    'tabIndex="-1">View Attachments</a>';
           }
           out.push({ "msg": body,
                      "time": new Date(msg.created_time * 1000).getTime(),

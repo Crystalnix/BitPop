@@ -79,6 +79,10 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_WIN)
+#include "chrome/browser/ui/views/browser_actions_container.h"
+#include "chrome/browser/ui/views/fb_button_bubble.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/toolbar_view.h"
 #include "ui/native_theme/native_theme_win.h"
 #endif
 
@@ -1308,7 +1312,12 @@ void LocationBarView::ShowFirstRunBubbleInternal() {
     return; // Possible when browser is shutting down.
 
   FirstRunBubble::ShowBubble(browser, location_icon_view_);
+
+  BrowserView* browser_view = static_cast<BrowserView*>(browser->window());
+  FbButtonBubble::ShowBubble(browser,
+      browser_view->toolbar()->browser_actions()->GetBrowserActionViewAt(0));
 #endif
+
 }
 
 void LocationBarView::PaintPageActionBackgrounds(gfx::Canvas* canvas) {

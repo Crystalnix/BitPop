@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/location.h"
+#include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/lion_badge_image_source.h"
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_notification_popup.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -50,64 +52,10 @@ const int kCloseButtonPadding = 3;
 
 const int kNotificationMessageDelaySec = 10;
 
-const int kNotifyIconDimX = 16;
-const int kNotifyIconDimY = 11;
+const int kNotifyIconDimX = 26;
+const int kNotifyIconDimY = 15;
 
-const float kTextSize = 10;
-const int kBottomMargin = 0;
-const int kPadding = 2;
-// The padding between the top of the badge and the top of the text.
-const int kTopTextPadding = -1;
-const int kBadgeHeight = 11;
-const int kMaxTextWidth = 23;
-// The minimum width for center-aligning the badge.
-const int kCenterAlignThreshold = 20;
-const int kTextRightPadding = 10;
-
-// duplicate methods (ui/gfx/canvas_skia.cc)
-bool IntersectsClipRectInt(const SkCanvas& canvas, int x, int y, int w, int h) {
-  SkRect clip;
-  return canvas.getClipBounds(&clip) &&
-      clip.intersect(SkIntToScalar(x), SkIntToScalar(y), SkIntToScalar(x + w),
-                     SkIntToScalar(y + h));
-}
-
-bool ClipRectInt(SkCanvas& canvas, int x, int y, int w, int h) {
-  SkRect new_clip;
-  new_clip.set(SkIntToScalar(x), SkIntToScalar(y),
-               SkIntToScalar(x + w), SkIntToScalar(y + h));
-  return canvas.clipRect(new_clip);
-}
-
-void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
-                  int src_x, int src_y,
-                  int dest_x, int dest_y, int w, int h) {
-  if (!IntersectsClipRectInt(canvas, dest_x, dest_y, w, h))
-    return;
-
-  SkPaint paint;
-
-  SkShader* shader = SkShader::CreateBitmapShader(bitmap,
-                                                  SkShader::kRepeat_TileMode,
-                                                  SkShader::kRepeat_TileMode);
-  paint.setShader(shader);
-  paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
-
-  // CreateBitmapShader returns a Shader with a reference count of one, we
-  // need to unref after paint takes ownership of the shader.
-  shader->unref();
-  canvas.save();
-  canvas.translate(SkIntToScalar(dest_x - src_x), SkIntToScalar(dest_y - src_y));
-  ClipRectInt(canvas, src_x, src_y, w, h);
-  canvas.drawPaint(paint);
-  canvas.restore();
-}
-
-void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
-                  int x, int y, int w, int h) {
-  TileImageInt(canvas, bitmap, 0, 0, x, y, w, h);
-}
-
+const int kTextRightPadding = 13;
 }
 
 class OverOutTextButton : public views::TextButton {
@@ -126,8 +74,20 @@ public:
   }
 protected:
   virtual gfx::Rect GetTextBounds() const OVERRIDE {
+    DCHECK_EQ(alignment_, ALIGN_LEFT);
+    DCHECK_EQ(icon_placement(), ICON_ON_LEFT);
+    gfx::Insets insets = GetInsets();
+    int content_width = width() - insets.right() - insets.left();
+    int extra_width = 0;
+
+    const gfx::ImageSkia& icon = GetImageToPaint();
+    if (icon.width() > 0)
+      extra_width = icon.width() + (text_.empty() ? 0 : icon_text_spacing());
+    content_width -= extra_width;
+
     gfx::Rect bounds = TextButton::GetTextBounds();
-    bounds.set_width(bounds.width() - kTextRightPadding);
+    bounds.set_width(content_width - kTextRightPadding);
+
     return bounds;
   }
 
@@ -235,11 +195,13 @@ void ChatItemView::Layout() {
                             closeButtonSize.height());
 
   if (notification_popup_) {
-    notification_popup_->SizeToContents();
+    // For the call to SizeToContents() to be made
+    notification_popup_->SetAlignment(views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR);
   }
 
   if (chat_popup_) {
-    chat_popup_->SizeToContents();
+    // For the call to SizeToContents() to be made
+    chat_popup_->SetAlignment(views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR);
   }
 }
 
@@ -319,7 +281,7 @@ void ChatItemView::ActivateChat() {
     urlString += model_->jid() + "&" + mgr->global_my_uid();
 
     chat_popup_ = ExtensionChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
-                                  this, BitpopBubbleBorder::BOTTOM_CENTER);
+                                  this, BubbleBorder::BOTTOM_CENTER);
     chat_popup_->GetWidget()->AddObserver(this);
     openChatButton_->SetEnabled(false);
   }
@@ -350,7 +312,7 @@ void ChatItemView::OnWidgetClosing(views::Widget* bubble) {
 void ChatItemView::NotifyUnread() {
   if (model_->num_notifications() > 0) {
     if (!notification_popup_) {
-      notification_popup_ = ChatNotificationPopup::Show(this, BitpopBubbleBorder::BOTTOM_CENTER);
+      notification_popup_ = ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
       notification_popup_->GetWidget()->AddObserver(this);
     }
 
@@ -406,7 +368,7 @@ gfx::Rect ChatItemView::RectForNotificationPopup() {
 void ChatItemView::OnMouseEntered(const ui::MouseEvent& event) {
   if (!notification_popup_ && model_->num_notifications() > 0) {
 
-    notification_popup_ = ChatNotificationPopup::Show(this, BitpopBubbleBorder::BOTTOM_CENTER);
+    notification_popup_ = ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
     notification_popup_->GetWidget()->AddObserver(this);
     notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
     isMouseOverNotification_ = true;
@@ -430,108 +392,16 @@ void ChatItemView::UpdateNotificationIcon() {
     notification_icon_ = NULL;
   }
 
-  if (model_->num_notifications() > 0) {
-    notification_icon_ = new SkBitmap();
-    notification_icon_->setConfig(SkBitmap::kARGB_8888_Config, kNotifyIconDimX, kNotifyIconDimY);
-    notification_icon_->allocPixels();
+  int number = model_->num_notifications();
+  if (number > 0) {
+    if (number > 99)
+      number = 99;
+    std::string num = base::IntToString(number);
 
-    SkCanvas canvas(*notification_icon_);
-    canvas.clear(SkColorSetARGB(0, 0, 0, 0));
+    LionBadgeImageSource* source = new LionBadgeImageSource(
+            gfx::Size(kNotifyIconDimX, kNotifyIconDimY),
+            num);
 
-    // ----------------------------------------------------------------------
-    gfx::Rect bounds(0, 0, kNotifyIconDimX, kNotifyIconDimY);
-
-    char text_s[4] = { '\0', '\0', '\0', '\0' };
-    char *p = text_s;
-    int num = model_->num_notifications();
-    if (num > 99)
-      num = 99;
-    if (num > 9)
-      *p++ = num / 10 + '0';
-    *p = num % 10 + '0';
-
-    std::string text(text_s);
-    if (text.empty())
-      return;
-
-    SkColor text_color = SK_ColorWHITE;
-    SkColor background_color = SkColorSetARGB(255, 218, 0, 24);
-
-    //canvas->Save();
-
-    SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
-    text_paint->setTextSize(SkFloatToScalar(kTextSize));
-    text_paint->setColor(text_color);
-
-    // Calculate text width. We clamp it to a max size.
-    SkScalar text_width = text_paint->measureText(text.c_str(), text.size());
-    text_width = SkIntToScalar(
-        std::min(kMaxTextWidth, SkScalarFloor(text_width)));
-
-    // Calculate badge size. It is clamped to a min width just because it looks
-    // silly if it is too skinny.
-    int badge_width = SkScalarFloor(text_width) + kPadding * 2;
-    int icon_width = kNotifyIconDimX;
-    // Force the pixel width of badge to be either odd (if the icon width is odd)
-    // or even otherwise. If there is a mismatch you get http://crbug.com/26400.
-    if (icon_width != 0 && (badge_width % 2 != kNotifyIconDimX % 2))
-      badge_width += 1;
-    badge_width = std::max(kBadgeHeight, badge_width);
-
-    // Paint the badge background color in the right location. It is usually
-    // right-aligned, but it can also be center-aligned if it is large.
-    SkRect rect;
-    rect.fBottom = SkIntToScalar(bounds.bottom() - kBottomMargin);
-    rect.fTop = rect.fBottom - SkIntToScalar(kBadgeHeight);
-    if (badge_width >= kCenterAlignThreshold) {
-      rect.fLeft = SkIntToScalar(
-                       SkScalarFloor(SkIntToScalar(bounds.x()) +
-                                     SkIntToScalar(bounds.width()) / 2 -
-                                     SkIntToScalar(badge_width) / 2));
-      rect.fRight = rect.fLeft + SkIntToScalar(badge_width);
-    } else {
-      rect.fRight = SkIntToScalar(bounds.right());
-      rect.fLeft = rect.fRight - badge_width;
-    }
-
-    SkPaint rect_paint;
-    rect_paint.setStyle(SkPaint::kFill_Style);
-    rect_paint.setAntiAlias(true);
-    rect_paint.setColor(background_color);
-    canvas.drawRoundRect(rect, SkIntToScalar(2),
-                                          SkIntToScalar(2), rect_paint);
-
-    // Overlay the gradient. It is stretchy, so we do this in three parts.
-    ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
-    const SkBitmap* gradient_left = resource_bundle.GetImageNamed(
-        IDR_BROWSER_ACTION_BADGE_LEFT).ToSkBitmap();
-    const SkBitmap* gradient_right = resource_bundle.GetImageNamed(
-        IDR_BROWSER_ACTION_BADGE_RIGHT).ToSkBitmap();
-    const SkBitmap* gradient_center = resource_bundle.GetImageNamed(
-        IDR_BROWSER_ACTION_BADGE_CENTER).ToSkBitmap();
-
-    canvas.drawBitmap(*gradient_left, rect.fLeft, rect.fTop);
-
-    TileImageInt(canvas,
-        *gradient_center,
-        SkScalarFloor(rect.fLeft) + gradient_left->width(),
-        SkScalarFloor(rect.fTop),
-        SkScalarFloor(rect.width()) - gradient_left->width() -
-                      gradient_right->width(),
-        SkScalarFloor(rect.height()));
-    canvas.drawBitmap(*gradient_right,
-        rect.fRight - SkIntToScalar(gradient_right->width()), rect.fTop);
-
-    // Finally, draw the text centered within the badge. We set a clip in case the
-    // text was too large.
-    rect.fLeft += kPadding;
-    rect.fRight -= kPadding;
-    canvas.clipRect(rect);
-    canvas.drawText(text.c_str(), text.size(),
-                                     rect.fLeft + (rect.width() - text_width) / 2,
-                                     rect.fTop + kTextSize + kTopTextPadding,
-                                     *text_paint);
-
-    openChatButton_->SetIcon(gfx::ImageSkia(*notification_icon_));
+    openChatButton_->SetIcon(gfx::ImageSkia(source, source->size()));
   }
 }

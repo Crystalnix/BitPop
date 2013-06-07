@@ -319,6 +319,7 @@
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
               'files': [
                 '<(PRODUCT_DIR)/extensions/external_extensions.json',
+                '<(PRODUCT_DIR)/extensions/bitpop_gift.crx',
                 '<(PRODUCT_DIR)/extensions/dropdown_most_visited.crx',
                 '<(PRODUCT_DIR)/extensions/facebook_controller.crx',
                 '<(PRODUCT_DIR)/extensions/facebook_friends.crx',

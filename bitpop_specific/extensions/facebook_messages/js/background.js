@@ -8,6 +8,7 @@ window.options.init();
 var current = window.options.current;
 
 var myUid = null;
+var dn = DesktopNotifications;
 
 setTimeout(
   function() {
@@ -19,10 +20,10 @@ setTimeout(
           if (response && response.id) {
             myUid = response.id;
 
-            DesktopNotifications.threads_unseen_before = [];
-            DesktopNotifications.just_connected = true;
+            dn.threads_unseen_before = [];
+            dn.just_connected = true;
 
-            DesktopNotifications.start(current.refreshTime);
+            dn.start(current.refreshTime);
           }
         }
       );
@@ -30,8 +31,8 @@ setTimeout(
   },
   5000);
 
-DesktopNotifications.controllerExtensionId = current.controllerExtensionId;
-DesktopNotifications.start(current.refreshTime);
+dn.controllerExtensionId = current.controllerExtensionId;
+dn.start(current.refreshTime);
 
 chrome.extension.onMessageExternal.addListener(function (request, sender, sendResponse) {
   if (!request.type)
@@ -40,27 +41,28 @@ chrome.extension.onMessageExternal.addListener(function (request, sender, sendRe
   if (request.type == 'myUidAvailable') {
     myUid = request.myUid;
 
-    DesktopNotifications.threads_unseen_before = [];
-    DesktopNotifications.just_connected = true;
+    dn.threads_unseen_before = [];
+    dn.just_connected = true;
 
-    DesktopNotifications.start(current.refreshTime);
+    dn.start(current.refreshTime);
 
   } else if (request.type == 'newMessage') {
-    DesktopNotifications.received_cache.push({ body: request.body,
-                                               from: request.from,
-                                               timestamp: new Date()
-                                               });
-    if (DesktopNotifications.received_cache.length > 50)
-      DesktopNotifications.received_cache.shift();
+    dn.received_cache.push({ body: request.body,
+                             from: request.from,
+                             timestamp: new Date()
+                           });
+    if (dn.received_cache.length > 50)
+      dn.received_cache.shift();
+  } else if (request.type == 'inPopupMessageReceived') {
+    dn.time_chat_was_read_indexed_by_friend_uid[''+request.from] = request.timestamp;
   } else if (request.type == 'loggedOut') {
-    DesktopNotifications.just_connected = false;
+    dn.just_connected = false;
   } else if (request.type == 'wentOffline' || request.type == 'chatIsIdle') {
-    DesktopNotifications.threads_unseen_before = [];
-    DesktopNotifications.just_connected = true;
+    dn.threads_unseen_before = [];
+    dn.just_connected = true;
     if (request.type == 'chatIsIdle')
-      DesktopNotifications.stop();
+      dn.stop();
   } else if (request.type == 'chatIsAvailable') {
-    DesktopNotifications.start(current.refreshTime);
+    dn.start(current.refreshTime);
   }
 });
-

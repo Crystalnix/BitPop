@@ -1,6 +1,6 @@
 function setAntiscrollHeight() {
-  $('.box, .box .antiscroll-inner').height(
-    $('body').height() - $('.box-wrap').offset().top
+  $('#friend_list').height(
+    $('body').height() - $('.antiscroll-wrap').offset().top
   );
   $('.antiscroll-inner').width($('body').width());
 }
@@ -8,7 +8,7 @@ function setAntiscrollHeight() {
 $(document).ready(function() {
 
   setAntiscrollHeight();
-  $('.box-wrap').antiscroll();
+  $('.antiscroll-wrap').antiscroll();
 
   try {
     $('body select').msDropDown();
@@ -18,8 +18,8 @@ $(document).ready(function() {
 });
 $(window).resize(function() {
   setAntiscrollHeight();
-  if ($('.box-wrap').data('antiscroll')) {
-    $('.box-wrap').data('antiscroll').rebuild();
+  if ($('.antiscroll-wrap').data('antiscroll')) {
+    $('.antiscroll-wrap').data('antiscroll').rebuild();
     }
 });
 

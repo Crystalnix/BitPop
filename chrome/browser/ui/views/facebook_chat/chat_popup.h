@@ -10,17 +10,17 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/ui/views/extensions/extension_view_views.h"
-#include "chrome/browser/ui/views/facebook_chat/bubble/bubble_delegate.h"
+#include "ui/views/bubble/bubble_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "googleurl/src/gurl.h"
 #include "ui/views/focus/widget_focus_manager.h"
 
 class Browser;
 
-using views::BitpopBubbleDelegateView;
-using views::BitpopBubbleBorder;
+using views::BubbleDelegateView;
+using views::BubbleBorder;
 
-class ChatPopup : public BitpopBubbleDelegateView,
+class ChatPopup : public BubbleDelegateView,
                   public ExtensionViewViews::Container,
                   public content::NotificationObserver,
                   public views::WidgetFocusChangeListener {
@@ -41,7 +41,7 @@ class ChatPopup : public BitpopBubbleDelegateView,
       const GURL& url,
       Browser* browser,
       views::View* anchor_view,
-      BitpopBubbleBorder::ArrowLocation arrow_location);
+      BubbleBorder::ArrowLocation arrow_location);
 
   extensions::ExtensionHost* host() const { return extension_host_.get(); }
 
@@ -73,7 +73,7 @@ class ChatPopup : public BitpopBubbleDelegateView,
   ChatPopup(Browser* browser,
             extensions::ExtensionHost* host,
             views::View* anchor_view,
-            BitpopBubbleBorder::ArrowLocation arrow_location);
+            BubbleBorder::ArrowLocation arrow_location);
 
   // Show the bubble, focus on its content, and register listeners.
   void ShowBubble();

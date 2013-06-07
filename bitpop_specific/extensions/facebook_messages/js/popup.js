@@ -87,12 +87,13 @@ function showMessages(data) {
   var messages = findResultSet('messages', data);
 
   var messagesByThread = [];
-  for (var i = 0; i < threads.length; ++i)
+  var i = 0;
+  for (; i < threads.length; ++i)
     messagesByThread.push(filterMessagesByThreadId(threads[i].thread_id, messages));
 
   var newDom = '';
 
-  if (threads.length == 0) {
+  if (threads.length === 0) {
     newDom =
       "<div class='empty-feed'>" +
       "  <span>No New Messages.</span>" +
@@ -101,13 +102,13 @@ function showMessages(data) {
     appendFooter();
   } else {
     var total_unread = 0;
-    for (var i = 0; i < threads.length; ++i)
+    for (i = 0; i < threads.length; ++i)
       total_unread += threads[i].unread;
     appendFooter(total_unread);
   }
 
 
-  for (var i = 0; i < Math.min(threads.length, NUM_MESSAGES_SHOW); i++) {
+  for (i = 0; i < Math.min(threads.length, NUM_MESSAGES_SHOW); i++) {
     newDom += formatFeedItem(threads[i], users);
   }
 
@@ -145,10 +146,10 @@ function showMessages(data) {
   $('#slide-wrap').scrollLeft(0);
 
   var dn = chrome.extension.getBackgroundPage().DesktopNotifications;
-  for (var i = 0; i < threads.length; i++) {
-    var index_tub = dn.threads_unseen_before.indexOf(threads[i].thread_id);
+  for (i = 0; i < threads.length; i++) {
+    var index_tub = dn.threads.indexOf(threads[i].thread_id);
     if (index_tub != -1) {
-      dn.threads_unseen_before.splice(index_tub, 1);
+      dn.threads.splice(index_tub, 1);
       localStorage.setCacheItem('xx_' + threads[i].thread_id,
           (new Date()).toString(), { days: 21 });
     }
@@ -250,17 +251,6 @@ function formatThreadItems(messages, users) {
 
   var res = '';
 
-  //if (!itemData.comments || itemData.comments.data.length == 0) {
-  //  var template = template0.replace('{{photoUrl}}',
-  //      'http://graph.facebook.com/' + itemData.from.id.toString() + '/picture?type=square');
-  //  template = template.replace('{{getNameText}}', itemData.from.name);
-  //  template = template.replace('{{time-since}}',
-  //    humane_date(itemData.updated_time));
-  //  template = template.replace('{{subject}}', '');
-  //  template = template.replace('{{snippet}}', itemData.message);
-
-  //  res += template;
-  //} else {
   for (var i = messages.length-1; i >= 0; --i) {
       var template = template0.replace('{{photoUrl}}',
           'http://graph.facebook.com/' + messages[i].author_id.toString() + '/picture?type=square');
@@ -274,7 +264,6 @@ function formatThreadItems(messages, users) {
 
       res += template;
     }
-  //}
 
   return res;
 }
@@ -301,7 +290,7 @@ var onNewMessageClick = function () {
       if (tablink.indexOf('chrome://') != -1)
         tablink = 'http://www.bitpop.com';
 
-      chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&display=popup&link=" + encodeURIComponent(tablink) + "&redirect_uri=https://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })
+      chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=234959376616529&display=popup&link=" + encodeURIComponent(tablink) + "&redirect_uri=https://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })
   });
 };
 
@@ -326,10 +315,6 @@ window.onload = function() {
 
   $(function(){setTimeout(function(){$('#slide-wrap').scrollLeft(0);},100)});
 
-  // $('.thread-item').live('click', function() {
-  //     chrome.tabs.create({ url: 'http://www.facebook.com/messages' });
-  // });
-
   var queryObj = {
     threads: "SELECT thread_id, subject, snippet, snippet_author, " +
              "object_id, unread, viewer_id, message_count, updated_time, " +
@@ -346,10 +331,6 @@ window.onload = function() {
 
   chrome.extension.sendMessage(current.controllerExtensionId,
       {
-        //type: 'graphApiCall',
-        //path: '/me/inbox',
-        //params: { fields: 'id,from,to,updated_time,unread,unseen,comments,message',
-        //limit: NUM_MESSAGES_SHOW }
         type: 'fqlQuery',
         query: query
       },

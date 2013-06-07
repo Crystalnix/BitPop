@@ -73,7 +73,7 @@ public:
     //SetText(L"");
     //owner_->SizeToContents();  // dirty hack to force the window redraw
     SetText(UTF8ToWide(concat));
-    owner_->SizeToContents();
+    owner_->SetAlignment(views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR);  // for the call to SizeToContents() to be made
   }
 
 private:
@@ -137,10 +137,9 @@ private:
 
 // static
 ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
-                     BitpopBubbleBorder::ArrowLocation arrow_location) {
-  ChatNotificationPopup* popup = new ChatNotificationPopup();
-  popup->set_anchor_view(anchor_view);
-  popup->set_arrow_location(arrow_location);
+                     BubbleBorder::ArrowLocation arrow_location) {
+  ChatNotificationPopup* popup = new ChatNotificationPopup(anchor_view,
+                                                           arrow_location);
   popup->set_color(kNotificationPopupBackgroundColor);
   popup->set_close_on_deactivate(false);
   popup->set_use_focusless(true);
@@ -159,15 +158,17 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
 
   popup->AddChildView(popup->container_view());
 
-  BitpopBubbleDelegateView::CreateBubble(popup);
+  BubbleDelegateView::CreateBubble(popup);
 
   popup->GetWidget()->ShowInactive();
 
   return popup;
 }
 
-ChatNotificationPopup::ChatNotificationPopup()
-  : BitpopBubbleDelegateView() {
+ChatNotificationPopup::ChatNotificationPopup(
+    views::View* anchor,
+    BubbleBorder::ArrowLocation arrow_location)
+  : BubbleDelegateView(anchor, arrow_location) {
   container_view_ = new NotificationContainerView(this);
 }
 

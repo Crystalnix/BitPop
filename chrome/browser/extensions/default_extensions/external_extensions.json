@@ -12,11 +12,11 @@
   },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.10.12"
+    "external_version": "1.11.2"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
-    "external_version": "1.19"
+    "external_version": "1.22"
   },
   "omkphklbdjafhafacohmepaahbofnkcp": {
     "external_crx": "facebook_notifications.crx",
@@ -36,5 +36,9 @@
   "geoplninmkljnhklaihoejihlogghapi": {
     "external_crx": "share_button.crx",
     "external_version": "0.2"
+  },
+  "cpddlamhdjcphlndialfmbdfgafnnpjk": {
+    "external_crx": "bitpop_gift.crx",
+    "external_version": "1.5"
   }
 }

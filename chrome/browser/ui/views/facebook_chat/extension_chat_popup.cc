@@ -66,13 +66,13 @@ ExtensionChatPopup::ExtensionChatPopup(
     Browser* browser,
     extensions::ExtensionHost* host,
     views::View* anchor_view,
-    views::BitpopBubbleBorder::ArrowLocation arrow_location)
-    : BitpopBubbleDelegateView(anchor_view, arrow_location),
+    views::BubbleBorder::ArrowLocation arrow_location)
+    : BubbleDelegateView(anchor_view, arrow_location),
       extension_host_(host),
       inspect_with_devtools_(false),
       close_bubble_factory_(this) {
   // Adjust the margin so that contents fit better.
-  const int margin = views::BitpopBubbleBorder::GetCornerRadius() / 2;
+  const int margin = views::BubbleBorder::GetCornerRadius() / 2;
   set_margins(gfx::Insets(margin, margin, margin, margin));
   SetLayoutManager(new views::FillLayout());
   AddChildView(host->view());
@@ -177,13 +177,13 @@ ExtensionChatPopup* ExtensionChatPopup::ShowPopup(
     const GURL& url,
     Browser* browser,
     views::View* anchor_view,
-    views::BitpopBubbleBorder::ArrowLocation arrow_location) {
+    views::BubbleBorder::ArrowLocation arrow_location) {
   ExtensionProcessManager* manager =
       extensions::ExtensionSystem::Get(browser->profile())->process_manager();
   extensions::ExtensionHost* host = manager->CreatePopupHost(url, browser);
   ExtensionChatPopup* popup = new ExtensionChatPopup(browser, host, anchor_view,
       arrow_location);
-  views::BitpopBubbleDelegateView::CreateBubble(popup);
+  views::BubbleDelegateView::CreateBubble(popup);
 
 #if defined(USE_ASH)
   gfx::NativeView native_view = popup->GetWidget()->GetNativeView();

@@ -23,7 +23,7 @@
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING_PATH L"Google\\Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING_PATH L"Chromium"
+#define PRODUCT_STRING_PATH L"BitPop"
 #else
 #error Unknown branding
 #endif
@@ -67,7 +67,7 @@ const FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
 #elif defined(OS_ANDROID)
 // NOTE: Keep it synced with the process names defined in AndroidManifest.xml.
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("");
 const FilePath::CharType kHelperProcessExecutableName[] =
@@ -76,7 +76,7 @@ const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("");
 #elif defined(OS_POSIX)
 const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("chrome");
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 // Helper processes end up with a name of "exe" due to execing via
 // /proc/self/exe.  See bug 22703.
 const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("exe");
@@ -251,6 +251,9 @@ const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
 const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
 const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
 const char kUncensorFilterExtensionId[] = "oadgfoondcimpmclpkphkdnjhaddaehg";
+const char kGoogleDocsExtensionId[] = "nnbmlagghjjcbdhgmkedmbmedengocbn";
+const char kFacebookShareExtensionId[] = "geoplninmkljnhklaihoejihlogghapi";
+const char kDropdownListExtensionId[] = "jcpicigjjhpmobmnaoegfajemdcjkjdm";
 }  // namespace chrome
 
 #undef FPL

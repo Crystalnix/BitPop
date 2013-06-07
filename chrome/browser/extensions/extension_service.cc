@@ -2452,12 +2452,13 @@ void ExtensionService::OnExtensionInstalled(
   // auto-acknowledge any extension that came from one of them.
   if (extension->location() == Extension::EXTERNAL_POLICY_DOWNLOAD)
     AcknowledgeExternalExtension(extension->id());
-  const Extension::State initial_state =
+
+  Extension::State initial_state =
       initial_enable ? Extension::ENABLED : Extension::DISABLED;
+
   if (ShouldDelayExtensionUpdate(id, wait_for_idle)) {
     extension_prefs_->SetDelayedInstallInfo(extension, initial_state,
                                             page_ordinal);
-
     // Transfer ownership of |extension|.
     delayed_updates_for_idle_.Insert(extension);
 

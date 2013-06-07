@@ -167,6 +167,7 @@
               'destination': '<(PRODUCT_DIR)/extensions',
               'files': [
                 'browser/extensions/default_extensions/external_extensions.json',
+                'browser/extensions/default_extensions/bitpop_gift.crx',
                 'browser/extensions/default_extensions/dropdown_most_visited.crx',
                 'browser/extensions/default_extensions/share_button.crx',
                 'browser/extensions/default_extensions/facebook_controller.crx',

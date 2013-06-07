@@ -146,6 +146,9 @@ extern const char kFacebookMessagesExtensionId[];
 extern const char kFacebookNotificationsExtensionId[];
 extern const char kUncensorISPExtensionId[];
 extern const char kUncensorFilterExtensionId[];
+extern const char kGoogleDocsExtensionId[];
+extern const char kFacebookShareExtensionId[];
+extern const char kDropdownListExtensionId[];
 
 }  // namespace chrome
 

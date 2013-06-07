@@ -60,7 +60,9 @@ DesktopNotifications = {
 
   received_cache: [],
 
-  threads_unseen_before: [],
+  threads: [],
+  time_chat_was_read_indexed_by_friend_uid: {},
+  chat_last_read_by_thread: {},
   just_connected: false,
 
   //FIXME: should be merged with popup.js constant
@@ -98,13 +100,7 @@ DesktopNotifications = {
    * Get the best popup type to show. See WebDesktopNotificationsBaseController
    */
   getPopupType: function() {
-    var self = DesktopNotifications;
-
-    var type = 'inbox';
-    // if (self._num_unseen_inbox && !self._num_unread_notif) {
-    //   type = 'inbox';
-    // }
-    return type;
+    return 'inbox';
   },
 
   /**
@@ -186,69 +182,76 @@ DesktopNotifications = {
   handleServerInfo: function(serverInfo0) {
     var self = DesktopNotifications;
 
-    var p = {}
+    if (self.just_connected)
+      localStorage.setCacheItem('connect_time', (new Date()).toString(),
+                                { 'days': 21 });
+
+    var p = {};
     p.data = serverInfo0;
     var serverInfo = p;
 
     serverInfo.summary = { unseen_count: 0, unread_count: 0 };
-    for (var i = 0; i < serverInfo0.length; ++i) {
+    var i = 0;
+    for (; i < serverInfo0.length; ++i) {
       serverInfo.summary.unseen_count += serverInfo0[i].unseen;
       serverInfo.summary.unread_count += serverInfo0[i].unread;
     }
 
     var thread_ids_received = [];
-    for (var i = 0; i < serverInfo.data.length; i++)
+    for (i = 0; i < serverInfo.data.length; i++)
       thread_ids_received.push(serverInfo.data[i].thread_id);
 
-    //self._handleNotifInfo(serverInfo);
-    if (serverInfo.summary.unseen_count != 0) {
+    if (serverInfo.summary.unseen_count !== 0) {
       var first_unseen_thread_index = -1;  // not set equivalent
       var local_unseen_count = 0;
-      for (var i = 0; i < serverInfo.data.length; i++) {
-        //if (serverInfo.data[i].unseen > 0) {
-          if (self.just_connected ||
-              self.threads_unseen_before.contains(serverInfo.data[i].thread_id)) {
+      for (i = 0; i < serverInfo.data.length; i++) {
+        var th_id = serverInfo.data[i].thread_id;
+        var upd_time = serverInfo.data[i].updated_time;
 
-            var d = localStorage.getCacheItem('xx_' + serverInfo.data[i].thread_id);
-            if (d) {
-              var date = new Date(d);
-              if (date.getTime() >
-                  (new Date(serverInfo.data[i].updated_time * 1000)).getTime())
-                    continue;
-            }
+        var d = localStorage.getCacheItem('xx_' + th_id);
+        if (!d) {
+          d = 'January 1, 1970 00:00:00';
+        }
+        var date = new Date(d);
 
-            local_unseen_count++;
+        if (self.just_connected ||
+          date.getTime() <
+            (new Date(upd_time * 1000)).getTime()) {
 
-            if (first_unseen_thread_index === -1)
-              first_unseen_thread_index = i;
+          self.threads.push(th_id);
+          // var update_add_time = localStorage.getCacheItem('xu_' + th_id) ||
+          //                             'January 1, 2047 00:00:00';
+          // var update_add_time_date = new Date(update_add_time);
+          // if (update_add_time_date < new Date(upd_time * 1000)) {
+          //   self.chat_last_read_by_thread[''+th_id] = update_add_time_date;
+          // }
+          // localStorage.setCacheItem('xu_' + th_id, upd_time * 1000);
+          local_unseen_count++;
 
-          }
-          if (self.just_connected) {
-            self.threads_unseen_before.push(serverInfo.data[i].thread_id);
-          }
-        //}
+          if (first_unseen_thread_index === -1)
+            first_unseen_thread_index = i;
+        }
       }
 
-      self.just_connected = false;
       serverInfo.summary.unseen_count = local_unseen_count;
 
       // get message for last unseen thread
       if (first_unseen_thread_index !== -1) {
 
         var query_obj = {
-          users: "SELECT uid, name FROM user " +
-                 "WHERE uid IN (SELECT recipients FROM thread WHERE " +
-                 "folder_id = 0 AND thread_id IN ('" +
-                 thread_ids_received
-                   .slice(0, self.MAX_NOTIFICATIONS_TO_SHOW).join("','") +
-                 "'))"
+          recipients: "SELECT thread_id, recipients FROM thread WHERE " +
+                      "folder_id=0 AND thread_id IN ('" +
+                      thread_ids_received.
+                        slice(0, self.MAX_NOTIFICATIONS_TO_SHOW).join("','") +
+                      "')",
+          users: "SELECT uid, name FROM user WHERE uid IN #recipients"
         };
 
         var message_query_tmpl =
              "SELECT message_id, thread_id, author_id, body, created_time FROM message WHERE" +
              " thread_id='{{thread_id}}'" +
-             " ORDER BY created_time DESC LIMIT 1";
-        for (var i = 0; i < thread_ids_received.length &&
+             " ORDER BY created_time DESC LIMIT 10";
+        for (i = 0; i < thread_ids_received.length &&
                         i < self.MAX_NOTIFICATIONS_TO_SHOW; i++) {
           query_obj['message_'+thread_ids_received[i]] =
             message_query_tmpl.replace('{{thread_id}}', thread_ids_received[i]);
@@ -270,31 +273,14 @@ DesktopNotifications = {
           }
         );
       }
+    }
 
-      if (serverInfo.summary.unseen_count == 0) {
-        self._num_unseen_inbox = 0;
-        self.updateUnreadCounter();
-      }
-
+    if (serverInfo.summary.unseen_count === 0) {
+      self._num_unseen_inbox = 0;
+      self.updateUnreadCounter();
     } else if (serverInfo.summary.unseen_count !== self._num_unseen_inbox) {
       self._num_unseen_inbox = serverInfo.summary.unseen_count; // actually 0
       self.updateUnreadCounter();
-    }
-
-    for (var j = 0; j < self.threads_unseen_before.length; j++) {
-      if (thread_ids_received.indexOf(self.threads_unseen_before[j]) == -1) {
-        var index = j;
-        // remove element from array logic
-        if (index == 0)
-          self.threads_unseen_before.shift();
-        else if (index == self.threads_unseen_before.length - 1)
-          self.threads_unseen_before.pop();
-        else
-          self.threads_unseen_before = self.threads_unseen_before.slice(0, index)
-            .concat(
-              self.threads_unseen_before.slice(index + 1,
-                self.threads_unseen_before.length));
-      }
     }
   },
 
@@ -306,21 +292,59 @@ DesktopNotifications = {
     return null;
   },
 
+  _findFirstFriendInRecipientsList: function(recipientsList, thread_id, uid_self) {
+    var res = [];
+    for (var i = 0; i < recipientsList.length; ++i) {
+      if (recipientsList[i].thread_id == thread_id) {
+        res = recipientsList[i];
+        break;
+      }
+    }
+    return (res[0] != uid_self) ? res[0] : res[1];
+  },
+
   _handleInboxInfo: function(threads, data) {
     var self = DesktopNotifications;
 
     var users = self._findResultSet('users', data);
+    var recipients = self._findResultSet('recipients', data);
     var messages = {};
     for (var i = 0; i < threads.data.length &&
                     i < self.MAX_NOTIFICATIONS_TO_SHOW; i++) {
-      var rs = self._findResultSet('message_' + threads.data[i].thread_id, data);
+      var th_id = threads.data[i].thread_id;
+      var rs = self._findResultSet('message_' + th_id, data);
       var msg = (rs && rs[0]) ? rs[0] : null;
-      messages[threads.data[i].thread_id] = msg;
+      messages[th_id] = msg;
+
+      if (!self.just_connected) {
+        var d = localStorage.getCacheItem('xx_' + th_id) ||
+            "January 1, 1970 00:00:00";
+        var date = new Date(d);
+        var counter = Math.min(rs.length, threads.data[i].unseen);
+        var msgList = [];
+        for (var j = 0; j < counter && rs[j].author_id != myUid; ++j) {
+          msgList.unshift(rs[j]);
+        }
+
+        for (j = msgList.length - 1; j >= 0; --j) {
+          if (this.threads.indexOf(th_id) !== -1 &&
+              this.time_chat_was_read_indexed_by_friend_uid[''+th_id].getTime() <
+                msgList[j].created_time * 1000) {
+            // Send message to friends extension to add message to chats
+            chrome.extension.sendMessage("engefnlnhcgeegefndkhijjfdfbpbeah",
+              {
+                "type": "newInboxMessage",
+                "from": msgList[j].author_id,
+                "body": msgList[j].body,
+                "created_time": msgList[j].created_time
+              });
+          }
+        }
+      }
     }
 
     if (threads.summary.unseen_count !== self._num_unseen_inbox) {
       if (threads.summary.unseen_count > self._num_unseen_inbox) {
-        // see WebDesktopNotificationsBaseController::TYPE_INBOX
         self._latest_data = {
           threads: threads.data.slice(0, self.MAX_NOTIFICATIONS_TO_SHOW),
           users: users,
@@ -332,6 +356,8 @@ DesktopNotifications = {
       self._num_unseen_inbox = threads.summary.unseen_count;
       self.updateUnreadCounter();
     }
+
+    self.just_connected = false;
   },
 
   /**
@@ -388,20 +414,6 @@ DesktopNotifications = {
         body = lastComment.body;
 
         localStorage.setCacheItem(lastComment.message_id, 1, { days: 21 });
-
-        // var uri = self.protocol + self.domain + self.getEndpoint +
-        //   '?type=' + (type || '');
-        // var notification =
-        //   window.webkitNotifications.createNotification(
-        //       'http://graph.facebook.com/' + fromUid + '/picture?type=square',
-        //       'New message from ' + name + '.', body);
-        // notification.clickHref =
-        //   "https://www.facebook.com/messages";
-        // // In case the user has multiple windows or tabs open, replace
-        // // any existing windows for this alert with this one.
-        // notification.replaceId = 'com.facebook.alert.' + thread_id;
-
-        // self.showNotification(notification, self.DEFAULT_FADEOUT_DELAY);
       }
     }
   },
@@ -411,26 +423,6 @@ DesktopNotifications = {
    * After an expiration period, it is closed.
    */
   addNotification: function(alert_id, delay) {
-    //var self = DesktopNotifications;
-    //if (!window.webkitNotifications) {
-    //  return;
-    //}
-
-    //if (typeof delay == 'undefined') {
-    //  delay = self.DEFAULT_FADEOUT_DELAY;
-    //}
-    //var uri = self.protocol + self.domain + self.getEndpoint +
-    //  '?alert_id=' + (alert_id || '') +
-    //  '&latest=' + self._latest_notif +
-    //  '&latest_read=' + self._latest_read_notif;
-    // var notification =
-    //   window.webkitNotifications.createHTMLNotification(uri);
-
-    // // In case the user has multiple windows or tabs open, replace
-    // //// any existing windows for this alert with this one.
-    // notification.replaceId = 'com.facebook.alert.' + alert_id;
-
-    // self.showNotification(notification, delay);
   },
 
   showNotification: function(notification, delay) {

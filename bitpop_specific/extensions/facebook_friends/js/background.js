@@ -135,10 +135,13 @@ chrome.extension.onMessageExternal.addListener(function (request, sender, sendRe
     // set global variable storing each user status, reported by XMPP
     statuses[request.uid.toString()] = request.status;
 
-  } else if (request.type == 'newMessage') {
-    var msgDate = new Date();  // set 'now' as the message arrive time
+  } else if (request.type == 'newMessage' ||
+             request.type == 'newInboxMessage') {
+    var isInbox = request.type == 'newInboxMessage';
+    var msgDate = isInbox ?  new Date(request.created_time * 1000) :
+        new Date(); // set 'now' as the message arrive time
 
-    console.assert(myUid != null);
+    console.assert(myUid !== null);
 
     bitpop.saveToLocalStorage(myUid, request.from,
       bitpop.preprocessMessageText(request.body),
@@ -155,7 +158,7 @@ chrome.extension.onMessageExternal.addListener(function (request, sender, sendRe
     }
 
     if (!found) {
-      for (var i = 0; i < friendList.length; ++i) {
+      for (i = 0; i < friendList.length; ++i) {
         if (friendList[i].uid == request.from) {
           // use status from fql result first,
           // then from xmpp server status update,
@@ -197,6 +200,8 @@ chrome.extension.onMessageExternal.addListener(function (request, sender, sendRe
       }
     }
   }
+
+  return false;
 });
 
 function sendInboxRequest() {
